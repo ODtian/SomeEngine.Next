@@ -6,7 +6,6 @@ using SomeEngine.ECS.Entities;
 namespace SomeEngine.Animation;
 
 /// <summary>Actual ECS storage for one complete value, operations, parameter, state, and evaluator combination.</summary>
-[BufferCapacity(1)]
 public struct MotionInstance<T, TOps, TParameters, TState, TEvaluator> : IBufferElement
     where T : unmanaged
     where TOps : struct, IValueOps<T>
@@ -18,7 +17,6 @@ public struct MotionInstance<T, TOps, TParameters, TState, TEvaluator> : IBuffer
 }
 
 /// <summary>The target holds the relationship to each declared source output.</summary>
-[BufferCapacity(1)]
 public struct PropertySource<T> : IBufferElement where T : unmanaged
 {
     public Channel<T> Channel;
@@ -31,14 +29,12 @@ public struct PropertySource<T> : IBufferElement where T : unmanaged
     public bool Active, Dirty, Selected, Direct, HadDynamic;
 }
 
-[BufferCapacity(1)]
 internal struct PropertyChannelRange<T> : IBufferElement where T : unmanaged
 {
     internal Channel<T> Channel;
     internal int FirstSource, SourceCount;
 }
 
-[BufferCapacity(1)]
 internal struct MotionDeclaration<T> : IBufferElement where T : unmanaged
 {
     internal Channel<T> Channel;
@@ -46,7 +42,6 @@ internal struct MotionDeclaration<T> : IBufferElement where T : unmanaged
     internal int Type, Capacity;
 }
 
-[BufferCapacity(1)]
 internal unsafe struct MotionStop : IBufferElement
 {
     internal int Type;
@@ -54,7 +49,6 @@ internal unsafe struct MotionStop : IBufferElement
     internal delegate* managed<World, Entity, void> Stop;
 }
 
-[BufferCapacity(1)]
 internal struct DirectBoundary : IBufferElement
 {
     internal int ValueType, Track;
@@ -109,47 +103,44 @@ internal static unsafe class MotionStorage<T, TOps, TParameters, TState, TEvalua
     private static void Retarget(World world, Entity animation, int index, in MotionValues<T> values)
     {
         TParameters[]? parameters = world.Has<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation)
-            ? world.Read<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation).Values : null;
+            ? world.ReadComponentData<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation).Values : null;
         var update = (Index: index, Values: values, Parameters: parameters);
-        world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>, (int Index, MotionValues<T> Values, TParameters[]? Parameters)>(
-            animation, ref update, static (instances, ref update) =>
-            {
-                ref MotionData<T, TParameters, TState> data = ref instances[update.Index].Data;
-                ref readonly TParameters parameters = ref (update.Parameters is null ? ref data.Parameters : ref update.Parameters[update.Index]);
-                TEvaluator.Retarget(in parameters, in parameters, in update.Values, ref data.State);
-                data.Values = update.Values;
-            });
+        {
+            using var instances = world.GetBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(animation);
+            ref MotionData<T, TParameters, TState> data = ref instances[update.Index].Data;
+            ref readonly TParameters sourceParameters = ref (update.Parameters is null ? ref data.Parameters : ref update.Parameters[update.Index]);
+            TEvaluator.Retarget(in sourceParameters, in sourceParameters, in update.Values, ref data.State);
+            data.Values = update.Values;
+        }
     }
 
     internal static void UseInstanceParameters(World world, Entity animation)
     {
         if (!world.Has<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation))
             return;
-        TParameters[]? parameters = world.Read<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation).Values;
+        TParameters[]? parameters = world.ReadComponentData<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation).Values;
         if (parameters is null)
             return;
-        world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>, TParameters[]>(
-            animation, ref parameters, static (instances, ref parameters) =>
-            {
-                for (int index = 0; index < parameters.Length; index++)
-                    instances[index].Data.Parameters = parameters[index];
-            });
-        world.Replace(animation, default(GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>));
+        {
+            using var instances = world.GetBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(animation);
+            for (int index = 0; index < parameters.Length; index++)
+                instances[index].Data.Parameters = parameters[index];
+        }
+        world.Set(animation, default(GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>));
     }
 
     private static void Release(World world, Entity animation, int index)
     {
-        world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>, int>(
-            animation, ref index, static (instances, ref index) =>
-            {
-                ref MotionData<T, TParameters, TState> data = ref instances[index].Data;
-                TEvaluator.Release(ref data.State);
-                data.Active = false;
-                data.Parameters = default;
-                data.Values = default;
-                data.Time = default;
-                data.Sample = default;
-            });
+        {
+            using var instances = world.GetBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(animation);
+            ref MotionData<T, TParameters, TState> data = ref instances[index].Data;
+            TEvaluator.Release(ref data.State);
+            data.Active = false;
+            data.Parameters = default;
+            data.Values = default;
+            data.Time = default;
+            data.Sample = default;
+        }
     }
 
     private static void Stop(World world, Entity animation)

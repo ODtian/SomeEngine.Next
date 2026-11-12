@@ -16,7 +16,7 @@ public sealed class NavigationMotionAssetTests : IDisposable
     [Fact]
     public async Task ReopenedVehicleProfileAndMotionSetDriveAnActorThroughTheBend()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var model = new NavigationVehicleModel(2, allowReverse: true);
         var sourceProfile = new NavigationProfile(
             [new(-0.25f, -0.6f), new(0.25f, -0.6f), new(0.25f, 0.6f), new(-0.25f, 0.6f)],
@@ -53,13 +53,13 @@ public sealed class NavigationMotionAssetTests : IDisposable
             grid = await (await navigationAsset.GetBlockAsync<NavigationGridBlock>()).CreateAsync(selection);
         }
 
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var space = new NavigationVehicleSpace(grid, motions);
         var navigation = new NavigationSystems<NavigationVehicleSpace, StateLatticeSearch,
             StateLatticeSearchState, AssetVehicleMotion, AssetVehicleMotionReader>(world);
-        Entity actor = world.CreateEntity(new AssetVehicleMotion(new(1.75f, 0, 1.25f), default, 0));
+        Entity actor = world.Create(new AssetVehicleMotion(new(1.75f, 0, 1.25f), default, 0));
         navigation.AddAgent(actor, space, profile, new(), new NavigationGoal(new Vector3(6.75f, 0, 5.25f), 0.04f, MathF.PI / 2, 0.03f), 1);
-        for (int step = 0; step < 240 && world.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived; step++)
+        for (int step = 0; step < 240 && world.ReadComponentData<NavigationProgress>(actor).Status != NavigationStatus.Arrived; step++)
         {
             JobHandle steering = navigation.Schedule(0.1f, 32).Steering;
             navigation.ScheduleProgress(new ConsumeAssetVehicle(0.1f, motions.Model).ScheduleParallel(world, steering)).Complete();
@@ -74,8 +74,8 @@ public sealed class NavigationMotionAssetTests : IDisposable
         Assert.Equal(sourceMotions.SweptGeometry.ToArray(), motions.SweptGeometry.ToArray());
         Assert.All(motions.Controls.ToArray(), control =>
             Assert.InRange(MathF.Abs(control.Speed * control.Curvature), 0, profile.MaximumAngularSpeed + 0.00001f));
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
-        Assert.Contains(world.Read<NavigationPathResult>(actor).Path!.MotionSegments.ToArray(),
+        Assert.Equal(NavigationStatus.Arrived, world.ReadComponentData<NavigationProgress>(actor).Status);
+        Assert.Contains(world.ReadComponentData<NavigationPathResult>(actor).Path!.MotionSegments.ToArray(),
             segment => MathF.Abs(segment.Control.Curvature) > 0.1f);
     }
 

@@ -13,14 +13,14 @@ public static partial class NavigationSave
 {
     private static NavigationSavedControls CaptureControls(World world, Entity entity, NavigationSaveResourceCapture capture)
     {
-        AvoidanceAgent? avoidance = world.Has<AvoidanceAgent>(entity) ? world.Read<AvoidanceAgent>(entity) : null;
+        AvoidanceAgent? avoidance = world.Has<AvoidanceAgent>(entity) ? world.ReadComponentData<AvoidanceAgent>(entity) : null;
         NavigationPrediction<NavigationVelocityPrediction>? prediction = world.Has<NavigationPrediction<NavigationVelocityPrediction>>(entity)
-            ? world.Read<NavigationPrediction<NavigationVelocityPrediction>>(entity) : null;
-        NavigationTrajectoryKind? source = world.Has<NavigationTrajectorySource>(entity) ? world.Read<NavigationTrajectorySource>(entity).Kind : null;
+            ? world.ReadComponentData<NavigationPrediction<NavigationVelocityPrediction>>(entity) : null;
+        NavigationTrajectoryKind? source = world.Has<NavigationTrajectorySource>(entity) ? world.ReadComponentData<NavigationTrajectorySource>(entity).Kind : null;
         NavigationSavedMppi? mppi = null;
         if (world.Has<NavigationMppi<NavigationVehicleSpace, NavigationVehicleMppiModel>>(entity))
         {
-            var value = world.Read<NavigationMppi<NavigationVehicleSpace, NavigationVehicleMppiModel>>(entity);
+            var value = world.ReadComponentData<NavigationMppi<NavigationVehicleSpace, NavigationVehicleMppiModel>>(entity);
             mppi = new(capture.Add(value.Space), value.Settings);
         }
         return new(avoidance, prediction, source, mppi);
@@ -34,7 +34,7 @@ public static partial class NavigationSave
             NavigationComponents.AddMppi<NavigationVehicleSpace, NavigationVehicleMppiModel>(world, entity,
                 (NavigationVehicleSpace)await reader.Get(mppi.Space).ConfigureAwait(false), mppi.Settings, controls.Avoidance!.Value);
         else if (controls.Avoidance is { } avoidance) NavigationComponents.AddAvoidance(world, entity, avoidance);
-        if (controls.Trajectory is { } kind) world.Replace(entity, new NavigationTrajectorySource(kind));
+        if (controls.Trajectory is { } kind) world.Set(entity, new NavigationTrajectorySource(kind));
     }
 }
 
@@ -79,11 +79,22 @@ internal readonly partial struct NavigationSaveCodec
             int space = reader.ReadInt32();
             var settings = new NavigationMppiSettings
             {
-                CandidateCount = reader.ReadInt32(), HorizonSteps = reader.ReadInt32(), TimeStep = reader.ReadSingle(), Iterations = reader.ReadInt32(),
-                NoiseStandardDeviation = new(reader.ReadSingle(), reader.ReadSingle()), NoiseCorrelation = reader.ReadSingle(), Temperature = reader.ReadSingle(),
-                ControlWeight = reader.ReadSingle(), PathWeight = reader.ReadSingle(), GoalWeight = reader.ReadSingle(), HeadingWeight = reader.ReadSingle(),
-                NeighborWeight = reader.ReadSingle(), TraversalWeight = reader.ReadSingle(), CollisionResolution = reader.ReadSingle(),
-                ReferenceLookahead = reader.ReadSingle(), Seed = reader.ReadUInt32(),
+                CandidateCount = reader.ReadInt32(),
+                HorizonSteps = reader.ReadInt32(),
+                TimeStep = reader.ReadSingle(),
+                Iterations = reader.ReadInt32(),
+                NoiseStandardDeviation = new(reader.ReadSingle(), reader.ReadSingle()),
+                NoiseCorrelation = reader.ReadSingle(),
+                Temperature = reader.ReadSingle(),
+                ControlWeight = reader.ReadSingle(),
+                PathWeight = reader.ReadSingle(),
+                GoalWeight = reader.ReadSingle(),
+                HeadingWeight = reader.ReadSingle(),
+                NeighborWeight = reader.ReadSingle(),
+                TraversalWeight = reader.ReadSingle(),
+                CollisionResolution = reader.ReadSingle(),
+                ReferenceLookahead = reader.ReadSingle(),
+                Seed = reader.ReadUInt32(),
             };
             mppi = new(space, settings);
         }

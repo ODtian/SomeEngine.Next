@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using System.Numerics;
 using SomeEngine.Animation;
 using SomeEngine.Animation.Pose;
@@ -61,12 +62,14 @@ public sealed partial class SkinningRenderingTests
                 animations[0] = graph.Play(frame.World, targets[0]);
                 animations[1] = graph.Play(frame.World, targets[1]);
                 float control = 1;
-                frame.World.ExecuteBufferWrite<GpuStateInstance, float>(animations[1], ref control,
-                    static (instances, ref control) => instances[0].Controls[0] = control);
+                {
+                    using DynamicBuffer<GpuStateInstance> instances = frame.World.GetBuffer<GpuStateInstance>(animations[1]);
+                    instances[0].Controls[0] = control;
+                }
                 foreach (Entity mesh in frame.Scene.MeshEntities)
                 {
-                    bool right = frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0;
-                    frame.World.Add(mesh, new MeshSkin(right ? second : first, binding));
+                    bool right = frame.World.ReadComponentData<WorldTransform>(mesh).Qvvs.Position.X > 0;
+                    frame.World.Set(mesh, new MeshSkin(right ? second : first, binding));
                 }
             },
             UpdateFrame = frame =>
@@ -75,14 +78,18 @@ public sealed partial class SkinningRenderingTests
                 if (frame.Index == 3)
                 {
                     float control = 1;
-                    frame.World.ExecuteBufferWrite<GpuStateInstance, float>(animations[0], ref control,
-                        static (instances, ref control) => instances[0].Controls[0] = control);
+                    {
+                        using DynamicBuffer<GpuStateInstance> instances = frame.World.GetBuffer<GpuStateInstance>(animations[0]);
+                        instances[0].Controls[0] = control;
+                    }
                 }
                 if (frame.Index == 4)
                 {
                     float control = 0;
-                    frame.World.ExecuteBufferWrite<GpuStateInstance, float>(animations[1], ref control,
-                        static (instances, ref control) => instances[0].Controls[0] = control);
+                    {
+                        using DynamicBuffer<GpuStateInstance> instances = frame.World.GetBuffer<GpuStateInstance>(animations[1]);
+                        instances[0].Controls[0] = control;
+                    }
                 }
                 if (frame.Index == 8)
                     completed = !frame.World.IsEnabled<Timeline>(animations[0]) && !frame.World.IsEnabled<Timeline>(animations[1]);

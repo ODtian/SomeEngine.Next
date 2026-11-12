@@ -1,5 +1,5 @@
+using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 
@@ -21,28 +21,27 @@ public sealed partial class XrayRenderExtractor : IRenderExtractionSystem
 
     public void Reset() { _effects.Clear(); _sources.Clear(); }
 
-    public void Collect(QueryChunkView chunk) => Collect(ReadOnlyQueryPacketJobs.Borrow(chunk));
-
-    private void Collect(ReadOnlyQueryPacket chunk)
+    public void Collect(QueryChunk chunk)
     {
         if (!chunk.TryRead<Xray>(out ReadOnlySpan<Xray> effects)) return;
         for (int row = 0; row < chunk.Count; row++)
         {
+            if (!chunk.Has<Xray>(row)) continue;
             _effects.Add((chunk.Entities[row], new(effects[row])));
             _sources.Add(chunk.Entities[row]);
         }
     }
 
-    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context) =>
-        CollectChanges(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion);
+    public bool CollectChanges(QueryChunk chunk, ulong since, RenderExtractionContext context) =>
+        CollectChanges(chunk, since);
 
-    private bool CollectChanges(ReadOnlyQueryPacket chunk, uint lastSystemVersion)
+    private bool CollectChanges(QueryChunk chunk, ulong lastSystemVersion)
     {
         if (!chunk.TryRead<Xray>(out ReadOnlySpan<Xray> effects) ||
-            !chunk.ChangedSince<Xray>(lastSystemVersion)) return false;
+            !chunk.WasWritten<Xray>(lastSystemVersion)) return false;
         int count = _effects.Count;
         for (int row = 0; row < chunk.Count; row++)
-            if (chunk.RowChangedSince<Xray>(row, lastSystemVersion))
+            if (chunk.WasWritten<Xray>(row, lastSystemVersion))
                 _effects.Add((chunk.Entities[row], new(effects[row])));
         return _effects.Count != count;
     }

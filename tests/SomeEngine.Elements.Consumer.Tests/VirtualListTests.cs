@@ -24,15 +24,15 @@ public sealed partial class VirtualListTests
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new ListExample(10000));
         frames.Frame();
         frames.Frame();
-        Entity panel = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity list = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, panel));
-        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
+        Entity panel = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity list = Assert.Single(ElementChildren.Read(frames.World, panel));
+        Entity[] rows = ElementChildren.Read(frames.World, list);
 
-        Assert.Equal([0, 1, 2], rows.Select(row => frames.World.Read<ItemRow>(row).Index));
-        Assert.Equal(new VisibleRange(0, 3), frames.World.Read<DisplayedRange>(root).Value);
-        Assert.Equal(new Vector2(0, 319936), frames.World.Read<ScrollOffset>(list).Max);
-        Assert.Equal(new Rect(0, 0, 100, 32), frames.World.Read<LayoutRect>(rows[0]).Value);
-        Assert.Equal(new Rect(0, 64, 100, 32), frames.World.Read<LayoutRect>(rows[2]).Value);
+        Assert.Equal([0, 1, 2], rows.Select(row => frames.World.ReadComponentData<ItemRow>(row).Index));
+        Assert.Equal(new VisibleRange(0, 3), frames.World.ReadComponentData<DisplayedRange>(root).Value);
+        Assert.Equal(new Vector2(0, 319936), frames.World.ReadComponentData<ScrollOffset>(list).Max);
+        Assert.Equal(new Rect(0, 0, 100, 32), frames.World.ReadComponentData<LayoutRect>(rows[0]).Value);
+        Assert.Equal(new Rect(0, 64, 100, 32), frames.World.ReadComponentData<LayoutRect>(rows[2]).Value);
     }
 
     [Fact]
@@ -42,25 +42,25 @@ public sealed partial class VirtualListTests
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new ListExample(10000));
         frames.Frame();
         frames.Frame();
-        Entity panel = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity list = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, panel));
-        Entity[] before = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
-        frames.World.Replace(before[1], new RowText("Editing item 1"));
+        Entity panel = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity list = Assert.Single(ElementChildren.Read(frames.World, panel));
+        Entity[] before = ElementChildren.Read(frames.World, list);
+        frames.World.Set(before[1], new RowText("Editing item 1"));
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 10));
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(0, 64));
         frames.Frame();
         frames.Frame();
-        Entity[] after = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
+        Entity[] after = ElementChildren.Read(frames.World, list);
 
-        Assert.Equal(new VisibleRange(1, 5), frames.World.Read<DisplayedRange>(root).Value);
-        Assert.Equal([1, 2, 3, 4], after.Select(row => frames.World.Read<ItemRow>(row).Index));
+        Assert.Equal(new VisibleRange(1, 5), frames.World.ReadComponentData<DisplayedRange>(root).Value);
+        Assert.Equal([1, 2, 3, 4], after.Select(row => frames.World.ReadComponentData<ItemRow>(row).Index));
         Assert.Equal(before[1], after[0]);
         Assert.Equal(before[2], after[1]);
-        Assert.False(frames.World.IsAlive(before[0]));
-        Assert.Equal("Editing item 1", frames.World.Read<RowText>(after[0]).Value);
-        Assert.Equal("Item 3", frames.World.Read<RowText>(after[2]).Value);
-        Assert.Equal(new Rect(0, 0, 100, 32), frames.World.Read<LayoutRect>(after[1]).Value);
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(before[0]));
+        Assert.Equal("Editing item 1", frames.World.ReadComponentData<RowText>(after[0]).Value);
+        Assert.Equal("Item 3", frames.World.ReadComponentData<RowText>(after[2]).Value);
+        Assert.Equal(new Rect(0, 0, 100, 32), frames.World.ReadComponentData<LayoutRect>(after[1]).Value);
     }
 
     [Fact]
@@ -70,32 +70,32 @@ public sealed partial class VirtualListTests
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new ListExample(12, Height: 84, Padding: 10));
         frames.Frame();
         frames.Frame();
-        Entity panel = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity list = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, panel));
-        Assert.Equal(new VisibleRange(0, 3), frames.World.Read<DisplayedRange>(root).Value);
-        Assert.Equal(320, frames.World.Read<ScrollOffset>(list).Max.Y);
+        Entity panel = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity list = Assert.Single(ElementChildren.Read(frames.World, panel));
+        Assert.Equal(new VisibleRange(0, 3), frames.World.ReadComponentData<DisplayedRange>(root).Value);
+        Assert.Equal(320, frames.World.ReadComponentData<ScrollOffset>(list).Max.Y);
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(20, 20));
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(0, 1000));
         frames.Frame();
         frames.Frame();
-        Entity[] endRows = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
-        Assert.Equal([9, 10, 11], endRows.Select(row => frames.World.Read<ItemRow>(row).Index));
-        Assert.Equal(new VisibleRange(9, 12), frames.World.Read<DisplayedRange>(root).Value);
-        Assert.Equal(-22, frames.World.Read<LayoutRect>(endRows[0]).Value.Y);
+        Entity[] endRows = ElementChildren.Read(frames.World, list);
+        Assert.Equal([9, 10, 11], endRows.Select(row => frames.World.ReadComponentData<ItemRow>(row).Index));
+        Assert.Equal(new VisibleRange(9, 12), frames.World.ReadComponentData<DisplayedRange>(root).Value);
+        Assert.Equal(-22, frames.World.ReadComponentData<LayoutRect>(endRows[0]).Value.Y);
 
-        frames.World.Replace(root, new ListExample(2, Height: 84, Padding: 10));
+        frames.World.Set(root, new ListExample(2, Height: 84, Padding: 10));
         frames.Frame();
         frames.Frame();
-        Assert.Equal(new VisibleRange(0, 2), frames.World.Read<DisplayedRange>(root).Value);
-        Assert.Equal(0, frames.World.Read<ScrollOffset>(list).Value.Y);
-        Assert.Equal(0, frames.World.Read<ScrollOffset>(list).Max.Y);
-        Assert.All(endRows, row => Assert.False(frames.World.IsAlive(row)));
+        Assert.Equal(new VisibleRange(0, 2), frames.World.ReadComponentData<DisplayedRange>(root).Value);
+        Assert.Equal(0, frames.World.ReadComponentData<ScrollOffset>(list).Value.Y);
+        Assert.Equal(0, frames.World.ReadComponentData<ScrollOffset>(list).Max.Y);
+        Assert.All(endRows, row => Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(row)));
 
-        frames.World.Replace(root, new ListExample(0, Height: 84, Padding: 10));
+        frames.World.Set(root, new ListExample(0, Height: 84, Padding: 10));
         frames.Frame();
-        Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, list));
-        Assert.Equal(default, frames.World.Read<DisplayedRange>(root).Value);
+        Assert.Empty(ElementChildren.Read(frames.World, list));
+        Assert.Equal(default, frames.World.ReadComponentData<DisplayedRange>(root).Value);
     }
 
     [Fact]
@@ -105,38 +105,38 @@ public sealed partial class VirtualListTests
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new ListExample(10));
         frames.Frame();
         frames.Frame();
-        Entity panel = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity list = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, panel));
-        Entity first = Hierarchy<ElementTree>.GetChildren(frames.World, list)[0];
-        frames.World.Replace(first, new RowText("Editing item 0"));
+        Entity panel = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity list = Assert.Single(ElementChildren.Read(frames.World, panel));
+        Entity first = ElementChildren.Read(frames.World, list)[0];
+        frames.World.Set(first, new RowText("Editing item 0"));
 
-        frames.World.Replace(root, new ListExample(10, RowHeight: 16, Height: 100));
+        frames.World.Set(root, new ListExample(10, RowHeight: 16, Height: 100));
         frames.Frame();
         frames.Frame();
-        Assert.Equal(new VisibleRange(0, 8), frames.World.Read<DisplayedRange>(root).Value);
-        Assert.Equal(first, Hierarchy<ElementTree>.GetChildren(frames.World, list)[0]);
-        Assert.Equal("Editing item 0", frames.World.Read<RowText>(first).Value);
-        Assert.Equal(new Rect(0, 0, 100, 16), frames.World.Read<LayoutRect>(first).Value);
+        Assert.Equal(new VisibleRange(0, 8), frames.World.ReadComponentData<DisplayedRange>(root).Value);
+        Assert.Equal(first, ElementChildren.Read(frames.World, list)[0]);
+        Assert.Equal("Editing item 0", frames.World.ReadComponentData<RowText>(first).Value);
+        Assert.Equal(new Rect(0, 0, 100, 16), frames.World.ReadComponentData<LayoutRect>(first).Value);
 
-        frames.World.Replace(root, new ListExample(10, RowHeight: 16, Height: 0));
+        frames.World.Set(root, new ListExample(10, RowHeight: 16, Height: 0));
         frames.Frame();
         frames.Frame();
-        Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, list));
-        Assert.Equal(default, frames.World.Read<DisplayedRange>(root).Value);
-        Assert.Equal(160, frames.World.Read<ScrollOffset>(list).Max.Y);
-        Assert.False(frames.World.IsAlive(first));
+        Assert.Empty(ElementChildren.Read(frames.World, list));
+        Assert.Equal(default, frames.World.ReadComponentData<DisplayedRange>(root).Value);
+        Assert.Equal(160, frames.World.ReadComponentData<ScrollOffset>(list).Max.Y);
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(first));
 
-        frames.World.Replace(root, new ListExample(10, RowHeight: 16, Height: 32));
+        frames.World.Set(root, new ListExample(10, RowHeight: 16, Height: 32));
         frames.Frame();
         frames.Frame();
-        Assert.Equal(new VisibleRange(0, 3), frames.World.Read<DisplayedRange>(root).Value);
+        Assert.Equal(new VisibleRange(0, 3), frames.World.ReadComponentData<DisplayedRange>(root).Value);
         Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 10));
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(0, 1));
         frames.Frame();
         frames.Frame();
-        Assert.Equal(new VisibleRange(0, 4), frames.World.Read<DisplayedRange>(root).Value);
-        Entity row = Hierarchy<ElementTree>.GetChildren(frames.World, list)[0];
-        Assert.Equal(new Rect(0, -1, 100, 16), frames.World.Read<LayoutRect>(row).Value);
+        Assert.Equal(new VisibleRange(0, 4), frames.World.ReadComponentData<DisplayedRange>(root).Value);
+        Entity row = ElementChildren.Read(frames.World, list)[0];
+        Assert.Equal(new Rect(0, -1, 100, 16), frames.World.ReadComponentData<LayoutRect>(row).Value);
     }
 
 #if DEBUG
@@ -151,7 +151,7 @@ public sealed partial class VirtualListTests
         Entity list = Views.Views.Spawn(frames.World, Entity.Null, new VirtualList(height));
         frames.Frame();
 
-        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(list).Exception);
+        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(list).Exception);
     }
 
     [Fact]
@@ -161,7 +161,7 @@ public sealed partial class VirtualListTests
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new ListExample(-1));
         frames.Frame();
 
-        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
+        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(root).Exception);
     }
 
     [Fact]
@@ -172,7 +172,7 @@ public sealed partial class VirtualListTests
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new OtherContainer());
         frames.Frame();
 
-        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
+        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(root).Exception);
     }
 
     private readonly record struct OtherContainer() : IView, IComponent

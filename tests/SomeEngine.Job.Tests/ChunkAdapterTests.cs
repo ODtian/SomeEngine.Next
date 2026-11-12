@@ -6,7 +6,7 @@ public sealed class ChunkAdapterTests
 
     public ChunkAdapterTests()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
         _data.Reset();
     }
 

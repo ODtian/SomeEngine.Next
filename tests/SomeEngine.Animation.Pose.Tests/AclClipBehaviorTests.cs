@@ -121,7 +121,7 @@ public sealed class AclClipBehaviorTests
         Within(Matrix4x4.CreateTranslation(1, 1, 0), instance.ModelPose.Transforms[1], .001f);
         systems.Update(ref context);
         Within(Matrix4x4.CreateTranslation(2, 1, 0), instance.ModelPose.Transforms[1], .001f);
-        Assert.Equal(1u, world.Read<Timeline>(animation).Completions);
+        Assert.Equal(1u, world.ReadComponentData<Timeline>(animation).Completions);
         Assert.Equal(1, instance.ModelPose.SampleTime);
     }
 
@@ -133,7 +133,9 @@ public sealed class AclClipBehaviorTests
 
     private static BoneTransform At(float x, float y, float z) => new()
     {
-        Translation = new(x, y, z), Rotation = Quaternion.Identity, Scale = Vector3.One,
+        Translation = new(x, y, z),
+        Rotation = Quaternion.Identity,
+        Scale = Vector3.One,
     };
 
     private sealed class ClipFiles : IDisposable

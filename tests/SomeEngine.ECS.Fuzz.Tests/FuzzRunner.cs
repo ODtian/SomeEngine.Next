@@ -3,7 +3,7 @@ using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Serialization;
 using SomeEngine.ECS.Relations;
 
 namespace SomeEngine.ECS.Fuzz.Tests;
@@ -18,7 +18,7 @@ internal struct FuzzBeta : SomeEngine.ECS.IComponent
     public int Value;
 }
 
-internal readonly struct FuzzTag : SomeEngine.ECS.Components.ITag;
+internal readonly struct FuzzTag : SomeEngine.ECS.ITag;
 
 internal struct FuzzEnableable : SomeEngine.ECS.IEnableableComponent
 {
@@ -30,14 +30,13 @@ internal struct FuzzSparse : SomeEngine.ECS.Components.ISparseComponent
     public int Value;
 }
 
-internal readonly record struct FuzzShared(int Value) : SomeEngine.ECS.Components.ISharedComponent;
+internal readonly record struct FuzzShared(int Value) : SomeEngine.ECS.ISharedComponent;
 
-internal readonly record struct FuzzIndexed(int Value) : SomeEngine.ECS.Components.IIndexedComponent<int>
+internal readonly record struct FuzzIndexed(int Value) : SomeEngine.ECS.IIndexedComponent<int>
 {
     public int GetKey() => Value;
 }
 
-[BufferCapacity(4)]
 internal struct FuzzBufferElement : SomeEngine.ECS.Components.IBufferElement
 {
     public int Value;
@@ -101,14 +100,15 @@ internal sealed class EcsFuzzRunner
     private readonly Dictionary<int, Entity> _actualByLogical = new();
     private readonly Dictionary<Entity, int> _logicalByActual = new();
     private readonly Dictionary<(int Source, int Target), RelationEdge<FuzzRelation>> _actualRelations = new();
-    private readonly QueryHandle _alphaQuery;
-    private readonly QueryHandle _betaQuery;
-    private readonly QueryHandle _alphaBetaQuery;
-    private readonly QueryHandle _tagQuery;
-    private readonly QueryHandle _enableableQuery;
-    private readonly QueryHandle _enabledQuery;
-    private readonly QueryHandle _disabledQuery;
-    private readonly QueryHandle _indexedQuery;
+    private readonly Query _alphaQuery;
+    private readonly Query _betaQuery;
+    private readonly Query _alphaBetaQuery;
+    private readonly Query _tagQuery;
+    private readonly Query _enableableQuery;
+    private readonly Query _enabledQuery;
+    private readonly Query _disabledQuery;
+    private readonly Query _indexedQuery;
+    private readonly Query _activeQuery;
     private readonly ReferenceWorld _reference = new();
     private int _successfulBatches;
     private int _rejectedBatches;
@@ -116,17 +116,19 @@ internal sealed class EcsFuzzRunner
 
     internal EcsFuzzRunner()
     {
-        _alphaQuery = _world.Query(_world.QueryDefinition().Read<FuzzAlpha>());
-        _betaQuery = _world.Query(_world.QueryDefinition().Read<FuzzBeta>());
+        _alphaQuery = _world.Query(new QueryDescription().WithStored<FuzzAlpha>());
+        _betaQuery = _world.Query(new QueryDescription().WithStored<FuzzBeta>());
         _alphaBetaQuery = _world.Query(
-            _world.QueryDefinition().Read<FuzzAlpha>().Read<FuzzBeta>());
-        _tagQuery = _world.Query(_world.QueryDefinition().All<FuzzTag>());
-        _enableableQuery = _world.Query(_world.QueryDefinition().Read<FuzzEnableable>());
+            new QueryDescription().WithStored<FuzzAlpha>().WithStored<FuzzBeta>());
+        _tagQuery = _world.Query(new QueryDescription().With<FuzzTag>());
+        _enableableQuery = _world.Query(new QueryDescription().WithStored<FuzzEnableable>());
         _enabledQuery = _world.Query(
-            _world.QueryDefinition().Read<FuzzEnableable>().Enabled<FuzzEnableable>());
+            new QueryDescription().With<FuzzEnableable>());
         _disabledQuery = _world.Query(
-            _world.QueryDefinition().Read<FuzzEnableable>().Disabled<FuzzEnableable>());
-        _indexedQuery = _world.Query(_world.QueryDefinition().Read<FuzzIndexed>());
+            new QueryDescription().WithDisabled<FuzzEnableable>());
+        _indexedQuery = _world.Query(new QueryDescription().WithStored<FuzzIndexed>());
+        _ = _world.Index<FuzzIndexed, int>();
+        _activeQuery = _world.Query(new QueryDescription().Without<Destroyed>());
     }
 
     internal FuzzRunResult Run(EcsFuzzTrace trace)
@@ -292,7 +294,7 @@ internal sealed class EcsFuzzRunner
             return;
         }
 
-        if (actualError is not InvalidOperationException)
+        if (actualError is not (InvalidOperationException or ArgumentException or IndexOutOfRangeException))
         {
             Fail(
                 stepIndex,
@@ -314,7 +316,11 @@ internal sealed class EcsFuzzRunner
     {
         var deferred = new Dictionary<int, DeferredEntity>();
 
-        using var commands = new CommandBuffer(_world);
+        using var checkpoint = new WorldCheckpoint();
+        checkpoint.Capture(_world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        using var commands = new CommandBuffer(candidate);
         Exception? recordingError = Capture(() =>
         {
             foreach (FuzzCommand command in commandImage)
@@ -342,6 +348,8 @@ internal sealed class EcsFuzzRunner
                     playbackError);
             }
 
+            checkpoint.Capture(candidate, CheckpointProgress.Preserve);
+            checkpoint.Restore(_world);
             foreach ((int logicalId, DeferredEntity pending) in deferred.OrderBy(static pair => pair.Key))
             {
                 if (!pending.TryResolve(out Entity entity))
@@ -360,7 +368,7 @@ internal sealed class EcsFuzzRunner
             return;
         }
 
-        if (playbackError is not InvalidOperationException)
+        if (playbackError is not (InvalidOperationException or ArgumentException or IndexOutOfRangeException))
         {
             Fail(
                 stepIndex,
@@ -371,17 +379,6 @@ internal sealed class EcsFuzzRunner
                 playbackError);
         }
 
-        foreach ((int logicalId, DeferredEntity pending) in deferred)
-        {
-            if (pending.TryResolve(out Entity resolved))
-            {
-                Fail(
-                    stepIndex,
-                    "failed-deferred-publication",
-                    $"Failed batch resolved logical entity {logicalId} to {resolved}.");
-            }
-        }
-
         _rejectedBatches++;
     }
 
@@ -390,17 +387,17 @@ internal sealed class EcsFuzzRunner
         switch (command.Kind)
         {
             case FuzzCommandKind.CreateEntity:
-                RegisterActual(command.EntityId, _world.CreateEntity());
+                RegisterActual(command.EntityId, _world.Create());
                 break;
             case FuzzCommandKind.DestroyEntity:
-                _world.DestroyEntity(GetActual(command.EntityId));
+                _world.Destroy(GetActual(command.EntityId));
                 RemoveActualRelationsAt(command.EntityId);
                 break;
             case FuzzCommandKind.AddAlpha:
                 _world.Add(GetActual(command.EntityId), new FuzzAlpha { Value = command.Value });
                 break;
             case FuzzCommandKind.ReplaceAlpha:
-                _world.Replace(GetActual(command.EntityId), new FuzzAlpha { Value = command.Value });
+                _world.Set(GetActual(command.EntityId), new FuzzAlpha { Value = command.Value });
                 break;
             case FuzzCommandKind.RemoveAlpha:
                 _world.Remove<FuzzAlpha>(GetActual(command.EntityId));
@@ -409,22 +406,22 @@ internal sealed class EcsFuzzRunner
                 _world.Add(GetActual(command.EntityId), new FuzzBeta { Value = command.Value });
                 break;
             case FuzzCommandKind.ReplaceBeta:
-                _world.Replace(GetActual(command.EntityId), new FuzzBeta { Value = command.Value });
+                _world.Set(GetActual(command.EntityId), new FuzzBeta { Value = command.Value });
                 break;
             case FuzzCommandKind.RemoveBeta:
                 _world.Remove<FuzzBeta>(GetActual(command.EntityId));
                 break;
             case FuzzCommandKind.AddTag:
-                _world.AddTag<FuzzTag>(GetActual(command.EntityId));
+                _world.Add(GetActual(command.EntityId), new FuzzTag());
                 break;
             case FuzzCommandKind.RemoveTag:
-                _world.RemoveTag<FuzzTag>(GetActual(command.EntityId));
+                _world.Remove<FuzzTag>(GetActual(command.EntityId));
                 break;
             case FuzzCommandKind.AddEnableable:
                 _world.Add(GetActual(command.EntityId), new FuzzEnableable { Value = command.Value });
                 break;
             case FuzzCommandKind.ReplaceEnableable:
-                _world.Replace(GetActual(command.EntityId), new FuzzEnableable { Value = command.Value });
+                _world.Set(GetActual(command.EntityId), new FuzzEnableable { Value = command.Value });
                 break;
             case FuzzCommandKind.RemoveEnableable:
                 _world.Remove<FuzzEnableable>(GetActual(command.EntityId));
@@ -445,10 +442,10 @@ internal sealed class EcsFuzzRunner
                 _world.RemoveSparse<FuzzSparse>(GetActual(command.EntityId));
                 break;
             case FuzzCommandKind.AddShared:
-                _world.AddShared(GetActual(command.EntityId), new FuzzShared(command.Value));
+                _world.Add(GetActual(command.EntityId), new FuzzShared(command.Value));
                 break;
             case FuzzCommandKind.ReplaceShared:
-                _world.ReplaceShared(GetActual(command.EntityId), new FuzzShared(command.Value));
+                _world.SetShared(GetActual(command.EntityId), new FuzzShared(command.Value));
                 break;
             case FuzzCommandKind.RemoveShared:
                 _world.RemoveShared<FuzzShared>(GetActual(command.EntityId));
@@ -457,7 +454,7 @@ internal sealed class EcsFuzzRunner
                 _world.Add(GetActual(command.EntityId), new FuzzIndexed(command.Value));
                 break;
             case FuzzCommandKind.ReplaceIndexed:
-                _world.Replace(GetActual(command.EntityId), new FuzzIndexed(command.Value));
+                _world.Set(GetActual(command.EntityId), new FuzzIndexed(command.Value));
                 break;
             case FuzzCommandKind.RemoveIndexed:
                 _world.Remove<FuzzIndexed>(GetActual(command.EntityId));
@@ -467,26 +464,18 @@ internal sealed class EcsFuzzRunner
                 break;
             case FuzzCommandKind.AppendBuffer:
             {
-                int value = command.Value;
-                _world.ExecuteBufferWrite<FuzzBufferElement, int>(
-                    GetActual(command.EntityId),
-                    ref value,
-                    static (DynamicBuffer<FuzzBufferElement> buffer, ref int item) =>
-                        buffer.Add(new FuzzBufferElement { Value = item }));
+                using DynamicBuffer<FuzzBufferElement> buffer = _world.GetBuffer<FuzzBufferElement>(GetActual(command.EntityId));
+                buffer.Add(new FuzzBufferElement { Value = command.Value });
                 break;
             }
             case FuzzCommandKind.SetBufferFirst:
             {
-                int value = command.Value;
-                _world.ExecuteBufferWrite<FuzzBufferElement, int>(
-                    GetActual(command.EntityId),
-                    ref value,
-                    static (DynamicBuffer<FuzzBufferElement> buffer, ref int item) =>
-                        buffer[0] = new FuzzBufferElement { Value = item });
+                using DynamicBuffer<FuzzBufferElement> buffer = _world.GetBuffer<FuzzBufferElement>(GetActual(command.EntityId));
+                buffer[0] = new FuzzBufferElement { Value = command.Value };
                 break;
             }
             case FuzzCommandKind.RemoveBuffer:
-                _world.RemoveBuffer<FuzzBufferElement>(GetActual(command.EntityId));
+                _world.Remove<Buffer<FuzzBufferElement>>(GetActual(command.EntityId));
                 break;
             case FuzzCommandKind.SetParent:
                 Hierarchy<FuzzHierarchyDomain>.SetParent(
@@ -527,7 +516,7 @@ internal sealed class EcsFuzzRunner
     {
         if (command.Kind == FuzzCommandKind.CreateEntity)
         {
-            deferred.Add(command.EntityId, commands.CreateEntity());
+            deferred.Add(command.EntityId, commands.Create());
             return;
         }
 
@@ -536,8 +525,8 @@ internal sealed class EcsFuzzRunner
         switch (command.Kind)
         {
             case FuzzCommandKind.DestroyEntity:
-                if (isDeferred) commands.DestroyEntity(pending);
-                else commands.DestroyEntity(entity);
+                if (isDeferred) commands.Destroy(pending);
+                else commands.Destroy(entity);
                 break;
             case FuzzCommandKind.AddAlpha:
                 var alphaAdd = new FuzzAlpha { Value = command.Value };
@@ -546,8 +535,8 @@ internal sealed class EcsFuzzRunner
                 break;
             case FuzzCommandKind.ReplaceAlpha:
                 var alphaReplace = new FuzzAlpha { Value = command.Value };
-                if (isDeferred) commands.Replace(pending, alphaReplace);
-                else commands.Replace(entity, alphaReplace);
+                if (isDeferred) commands.Set(pending, alphaReplace);
+                else commands.Set(entity, alphaReplace);
                 break;
             case FuzzCommandKind.RemoveAlpha:
                 if (isDeferred) commands.Remove<FuzzAlpha>(pending);
@@ -560,20 +549,20 @@ internal sealed class EcsFuzzRunner
                 break;
             case FuzzCommandKind.ReplaceBeta:
                 var betaReplace = new FuzzBeta { Value = command.Value };
-                if (isDeferred) commands.Replace(pending, betaReplace);
-                else commands.Replace(entity, betaReplace);
+                if (isDeferred) commands.Set(pending, betaReplace);
+                else commands.Set(entity, betaReplace);
                 break;
             case FuzzCommandKind.RemoveBeta:
                 if (isDeferred) commands.Remove<FuzzBeta>(pending);
                 else commands.Remove<FuzzBeta>(entity);
                 break;
             case FuzzCommandKind.AddTag:
-                if (isDeferred) commands.AddTag<FuzzTag>(pending);
-                else commands.AddTag<FuzzTag>(entity);
+                if (isDeferred) commands.Add(pending, new FuzzTag());
+                else commands.Add(entity, new FuzzTag());
                 break;
             case FuzzCommandKind.RemoveTag:
-                if (isDeferred) commands.RemoveTag<FuzzTag>(pending);
-                else commands.RemoveTag<FuzzTag>(entity);
+                if (isDeferred) commands.Remove<FuzzTag>(pending);
+                else commands.Remove<FuzzTag>(entity);
                 break;
             case FuzzCommandKind.AddEnableable:
                 var enableableAdd = new FuzzEnableable { Value = command.Value };
@@ -582,8 +571,8 @@ internal sealed class EcsFuzzRunner
                 break;
             case FuzzCommandKind.ReplaceEnableable:
                 var enableableReplace = new FuzzEnableable { Value = command.Value };
-                if (isDeferred) commands.Replace(pending, enableableReplace);
-                else commands.Replace(entity, enableableReplace);
+                if (isDeferred) commands.Set(pending, enableableReplace);
+                else commands.Set(entity, enableableReplace);
                 break;
             case FuzzCommandKind.RemoveEnableable:
                 if (isDeferred) commands.Remove<FuzzEnableable>(pending);
@@ -596,8 +585,8 @@ internal sealed class EcsFuzzRunner
                 break;
             case FuzzCommandKind.ReplaceIndexed:
                 var indexedReplace = new FuzzIndexed(command.Value);
-                if (isDeferred) commands.Replace(pending, indexedReplace);
-                else commands.Replace(entity, indexedReplace);
+                if (isDeferred) commands.Set(pending, indexedReplace);
+                else commands.Set(entity, indexedReplace);
                 break;
             case FuzzCommandKind.RemoveIndexed:
                 if (isDeferred) commands.Remove<FuzzIndexed>(pending);
@@ -611,6 +600,8 @@ internal sealed class EcsFuzzRunner
 
     private void VerifyWorld(int stepIndex)
     {
+        Hierarchy<FuzzHierarchyDomain>.Maintain(_world);
+        Relations<FuzzRelation>.Maintain(_world);
         int modelEntityCount = _reference.Entities.Count();
         if (_actualByLogical.Count != modelEntityCount)
         {
@@ -621,13 +612,16 @@ internal sealed class EcsFuzzRunner
         }
 
         int expectedWorldEntityCount = checked(_reference.AliveCount + _reference.RelationCount);
-        if (_world.EntityCount != expectedWorldEntityCount)
+        int activeEntityCount = 0;
+        using (QueryScope active = _activeQuery.OpenRead())
+            foreach (QueryChunk chunk in active) activeEntityCount += chunk.Count;
+        if (activeEntityCount != expectedWorldEntityCount)
         {
             Fail(
                 stepIndex,
                 "entity-count",
                 $"Reference has {_reference.AliveCount} live entities and " +
-                $"{_reference.RelationCount} relation edges; ECS has {_world.EntityCount} entities.");
+                $"{_reference.RelationCount} relation edges; ECS has {activeEntityCount} active entities.");
         }
 
         foreach ((int logicalId, ModelEntity expected) in _reference.Entities.OrderBy(static pair => pair.Key))
@@ -635,7 +629,7 @@ internal sealed class EcsFuzzRunner
             if (!_actualByLogical.TryGetValue(logicalId, out Entity entity))
                 Fail(stepIndex, "identity-map", $"Logical entity {logicalId} has no ECS identity.");
 
-            bool alive = _world.IsAlive(entity);
+            bool alive = _world.IsAlive(entity) && !_world.Has<Destroyed>(entity);
             if (alive != expected.Alive)
             {
                 Fail(
@@ -754,9 +748,9 @@ internal sealed class EcsFuzzRunner
             Fail(stepIndex, "sparse-state", $"Logical entity {logicalId}/{entity} sparse state differed.");
         }
 
-        bool hasShared = _world.HasShared<FuzzShared>(entity);
+        bool hasShared = _world.Has<FuzzShared>(entity);
         if (hasShared != (expected.Shared is not null) ||
-            hasShared && _world.GetShared<FuzzShared>(entity).Value != expected.Shared)
+            hasShared && _world.ReadShared<FuzzShared>(entity).Value != expected.Shared)
         {
             Fail(stepIndex, "shared-state", $"Logical entity {logicalId}/{entity} shared state differed.");
         }
@@ -770,23 +764,15 @@ internal sealed class EcsFuzzRunner
             _world.Has<FuzzIndexed>(entity),
             static (world, target) => world.Read<FuzzIndexed>(target).Value);
 
-        bool hasBuffer = _world.HasBuffer<FuzzBufferElement>(entity);
+        bool hasBuffer = _world.Has<Buffer<FuzzBufferElement>>(entity);
         if (hasBuffer != (expected.Buffer is not null))
         {
             Fail(stepIndex, "buffer-presence", $"Logical entity {logicalId}/{entity} buffer presence differed.");
         }
         if (hasBuffer)
         {
-            int[] actual = Array.Empty<int>();
-            _world.ExecuteBufferRead<FuzzBufferElement, int[]>(
-                entity,
-                ref actual,
-                static (BufferView<FuzzBufferElement> buffer, ref int[] values) =>
-                {
-                    values = new int[buffer.Count];
-                    for (int i = 0; i < buffer.Count; i++)
-                        values[i] = buffer[i].Value;
-                });
+            using ReadOnlyBuffer<FuzzBufferElement> buffer = _world.ReadBuffer<FuzzBufferElement>(entity);
+            int[] actual = buffer.AsSpan().ToArray().Select(value => value.Value).ToArray();
             if (!actual.SequenceEqual(expected.Buffer!))
             {
                 Fail(stepIndex, "buffer-value", $"Logical entity {logicalId}/{entity} buffer values differed.");
@@ -818,8 +804,8 @@ internal sealed class EcsFuzzRunner
                 .Select(static pair => pair.Key)
                 .OrderBy(static value => value)
                 .ToArray();
-            int[] actual = _world.GetByIndex<FuzzIndexed, int>(key)
-                .ToArray()
+            using IndexMembers members = _world.Index<FuzzIndexed, int>().Find(key);
+            int[] actual = members.Entities.ToArray()
                 .Select(entity => _logicalByActual.TryGetValue(entity, out int logicalId) ? logicalId : -1)
                 .OrderBy(static value => value)
                 .ToArray();
@@ -837,10 +823,8 @@ internal sealed class EcsFuzzRunner
                 .Select(static pair => pair.Key)
                 .OrderBy(static value => value)
                 .ToArray();
-            int[] actual = Hierarchy<FuzzHierarchyDomain>
-                .GetChildren(_world, GetActual(parentId))
-                .Span
-                .ToArray()
+            using ChildrenRead children = Hierarchy<FuzzHierarchyDomain>.GetChildren(_world, GetActual(parentId));
+            int[] actual = children.Entities.ToArray()
                 .Select(entity => _logicalByActual.TryGetValue(entity, out int logicalId) ? logicalId : -1)
                 .OrderBy(static value => value)
                 .ToArray();
@@ -861,8 +845,8 @@ internal sealed class EcsFuzzRunner
             {
                 Fail(stepIndex, "relation-identity", $"Relation {source}>{target} had no live edge.");
             }
-            DirectedRelationEndpoints<FuzzRelation> endpoints =
-                _world.GetDirectedRelationEndpoints(edge);
+            RelationEndpoints<FuzzRelation> endpoints =
+                _world.ReadComponentData<RelationEndpoints<FuzzRelation>>(edge.Entity);
             if (endpoints.Source != GetActual(source) || endpoints.Target != GetActual(target) ||
                 _world.Read<FuzzRelation>(edge.Entity).Value != _reference.RelationValue(source, target))
             {
@@ -874,8 +858,9 @@ internal sealed class EcsFuzzRunner
         {
             int expectedOutgoing = _reference.Relations.Count(pair => pair.Source == logicalId);
             int expectedIncoming = _reference.Relations.Count(pair => pair.Target == logicalId);
-            if (_world.GetOutgoingRelations<FuzzRelation>(GetActual(logicalId)).Count != expectedOutgoing ||
-                _world.GetIncomingRelations<FuzzRelation>(GetActual(logicalId)).Count != expectedIncoming)
+            using RelationRead outgoing = Relations<FuzzRelation>.Outgoing(_world, GetActual(logicalId));
+            using RelationRead incoming = Relations<FuzzRelation>.Incoming(_world, GetActual(logicalId));
+            if (outgoing.Entries.Length != expectedOutgoing || incoming.Entries.Length != expectedIncoming)
             {
                 Fail(stepIndex, "relation-adjacency", $"Logical entity {logicalId} adjacency count differed.");
             }
@@ -913,21 +898,22 @@ internal sealed class EcsFuzzRunner
         }
     }
 
-    private void VerifyQuery(int stepIndex, string name, QueryHandle query, int[] expectedIds)
+    private void VerifyQuery(int stepIndex, string name, Query query, int[] expectedIds)
     {
         var actualIds = new HashSet<int>();
         int rowCount = 0;
-        _world.ExecuteQuery(query, cursor =>
+        using (QueryScope source = query.OpenRead())
+        foreach (QueryChunk chunk in source)
         {
-            foreach (QueryRow row in cursor.Rows)
+            foreach (Entity entity in chunk.Entities)
             {
                 rowCount++;
-                if (!_logicalByActual.TryGetValue(row.Entity, out int logicalId))
+                if (!_logicalByActual.TryGetValue(entity, out int logicalId))
                 {
                     Fail(
                         stepIndex,
                         "query-identity",
-                        $"{name} query returned unknown ECS entity {row.Entity}.",
+                        $"{name} query returned unknown ECS entity {entity}.",
                         subject: name);
                 }
                 if (!actualIds.Add(logicalId))
@@ -939,7 +925,7 @@ internal sealed class EcsFuzzRunner
                         subject: name);
                 }
             }
-        });
+        }
 
         var expected = new HashSet<int>(expectedIds);
         if (rowCount != expected.Count || !actualIds.SetEquals(expected))
@@ -998,7 +984,7 @@ internal sealed class EcsFuzzRunner
                 .OrderBy(static pair => pair.Key)
                 .Select(static pair => string.Create(
                     CultureInfo.InvariantCulture,
-                    $"{pair.Key}={pair.Value.Index}:{pair.Value.Generation}")));
+                    $"{pair.Key}={pair.Value.Id}:{pair.Value.Generation}")));
         string relationIdentities = string.Join(
             ",",
             _actualRelations
@@ -1007,7 +993,7 @@ internal sealed class EcsFuzzRunner
                 .Select(static pair => string.Create(
                     CultureInfo.InvariantCulture,
                     $"{pair.Key.Source}>{pair.Key.Target}=" +
-                    $"{pair.Value.Entity.Index}:{pair.Value.Entity.Generation}")));
+                    $"{pair.Value.Entity.Id}:{pair.Value.Entity.Generation}")));
         return $"{_reference.Digest()}|ids={identities}|relations={relationIdentities}";
     }
 

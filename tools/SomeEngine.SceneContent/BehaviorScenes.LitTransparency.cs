@@ -75,13 +75,13 @@ public static partial class BehaviorScenes
         project.RegisterAsset(await casterMesh.SaveAsync(Path.Combine(destination, "assets/Meshes/shadow-caster.mesh.asset")));
 
         using var world = new World();
-        Entity litEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity) });
-        world.Add(litEntity, new MeshSource { Mesh = litMesh.Reference });
-        Entity unlitEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity) });
-        world.Add(unlitEntity, new MeshSource { Mesh = unlitMesh.Reference });
-        Entity casterEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(-1, 1, 3.5f), Quaternion.Identity, .4f) });
-        world.Add(casterEntity, new MeshSource { Mesh = casterMesh.Reference });
-        world.CreateEntity(new PointLight(new(-2, 2, 1), 20, Vector3.One, 40));
+        Entity litEntity = world.Create(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity) });
+        world.Set(litEntity, new MeshSource { Mesh = litMesh.Reference });
+        Entity unlitEntity = world.Create(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity) });
+        world.Set(unlitEntity, new MeshSource { Mesh = unlitMesh.Reference });
+        Entity casterEntity = world.Create(new WorldTransform { Qvvs = new(new Vector3(-1, 1, 3.5f), Quaternion.Identity, .4f) });
+        world.Set(casterEntity, new MeshSource { Mesh = casterMesh.Reference });
+        world.Create(new PointLight(new(-2, 2, 1), 20, Vector3.One, 40));
         await WriteSceneAsync(project, world);
         await SceneContent.SetOutputSizeAsync(destination, 128, 128);
 

@@ -29,10 +29,10 @@ public sealed partial class GlyphExtractionTests(SurfaceExtractionDevice graphic
         systems.Add(new ViewRebuildSystem());
         systems.Add(shaping);
         int layout = systems.Add(new LayoutSystem(shaping));
-        Entity atlasSource = game.CreateEntity(new TextAtlas(new GlyphAtlas(128, 128)));
+        Entity atlasSource = game.Create(new TextAtlas(new GlyphAtlas(128, 128)));
         using var extraction = new RenderExtractionSystems(render,
             new SurfaceRenderExtractor(), new GlyphRenderExtractor(atlasSource));
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(320, 240) });
         var clip = new Rect(10, 5, 100, 60);
         game.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 48 }));
         Entity node = Views.Views.Spawn(game, canvas, new Text("A"));
@@ -40,8 +40,8 @@ public sealed partial class GlyphExtractionTests(SurfaceExtractionDevice graphic
         systems.Update();
         systems.Disable(layout);
         game.Add(canvas, new ScrollOffset());
-        game.Replace(canvas, new LayoutRect { Value = clip });
-        game.Replace(node, new LayoutRect { Value = clip });
+        game.Set(canvas, new LayoutRect { Value = clip });
+        game.Set(node, new LayoutRect { Value = clip });
         game.Add(node, new Surface { Fill = new Color(1, 1, 1) });
         game.Add(node, new Image(default, ImageFit.Stretch));
         extraction.Extract(game);
@@ -50,15 +50,17 @@ public sealed partial class GlyphExtractionTests(SurfaceExtractionDevice graphic
         GlyphInstance glyph = Assert.Single(ReadGlyphs(render, mirror));
         SurfaceInstance[] surfaces = [];
         ImageInstance[] images = [];
-        render.ExecuteBufferRead<SurfaceInstance>(mirror, buffer => surfaces = buffer.AsSpan().ToArray());
-        render.ExecuteBufferRead<ImageInstance>(mirror, buffer => images = buffer.AsSpan().ToArray());
+        using (ReadOnlyBuffer<SurfaceInstance> buffer = render.World.ReadBuffer<SurfaceInstance>(mirror))
+            surfaces = buffer.AsSpan().ToArray();
+        using (ReadOnlyBuffer<ImageInstance> buffer = render.World.ReadBuffer<ImageInstance>(mirror))
+            images = buffer.AsSpan().ToArray();
         Assert.Equal(clip, glyph.ClipRectangle);
         Assert.Equal(glyph.ClipRectangle, Assert.Single(surfaces).ClipRectangle);
         Assert.Equal(glyph.ClipRectangle, Assert.Single(images).ClipRectangle);
         Assert.Equal(glyph.DrawOrder, surfaces[0].DrawOrder);
         Assert.Equal(glyph.DrawOrder, images[0].DrawOrder);
 
-        game.Replace(node, new TextStyle { Color = new Color(0, 1, 0) });
+        game.Set(node, new TextStyle { Color = new Color(0, 1, 0) });
         systems.Update();
         extraction.Extract(game);
         graphics.Apply(extraction, render);
@@ -76,10 +78,10 @@ public sealed partial class GlyphExtractionTests(SurfaceExtractionDevice graphic
         using var render = new RenderWorld();
         using var systems = TextSystems(game);
         var atlas = new GlyphAtlas(128, 128);
-        Entity atlasSource = game.CreateEntity(new TextAtlas(atlas));
+        Entity atlasSource = game.Create(new TextAtlas(atlas));
         using var extraction = new RenderExtractionSystems(render,
             new SurfaceRenderExtractor(), new GlyphRenderExtractor(atlasSource));
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(320, 240) });
         game.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 48 }));
         Entity node = Views.Views.Spawn(game, canvas, new Text("A V"));
 
@@ -104,8 +106,8 @@ public sealed partial class GlyphExtractionTests(SurfaceExtractionDevice graphic
         Assert.Equal(location.UV1, glyphs[0].UV1);
         Assert.Equal(location.Region.PageIndex, glyphs[0].PageIndex);
         Entity atlasMirror = extraction.RequireMirror(atlasSource);
-        Assert.Equal(atlasMirror, render.Read<CanvasGlyphAtlas>(mirror).Atlas);
-        RenderGlyphAtlas pixels = render.Read<RenderGlyphAtlas>(atlasMirror);
+        Assert.Equal(atlasMirror, render.World.ReadComponentData<CanvasGlyphAtlas>(mirror).Atlas);
+        RenderGlyphAtlas pixels = render.World.ReadComponentData<RenderGlyphAtlas>(atlasMirror);
         Assert.Equal(atlas.Pages[0].Pixels.ToArray(), pixels.Pages.Span[0].Pixels.ToArray());
         Assert.Empty(atlas.DirtyRegions.ToArray());
     }
@@ -119,24 +121,24 @@ public sealed partial class GlyphExtractionTests(SurfaceExtractionDevice graphic
         using var game = new World();
         using var render = new RenderWorld();
         using var systems = TextSystems(game);
-        Entity atlasSource = game.CreateEntity(new TextAtlas(new GlyphAtlas(128, 128)));
+        Entity atlasSource = game.Create(new TextAtlas(new GlyphAtlas(128, 128)));
         using var extraction = new RenderExtractionSystems(render,
             new SurfaceRenderExtractor(), new GlyphRenderExtractor(atlasSource));
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(320, 240) });
         game.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 48 }));
         Entity root = Views.Views.Spawn(game, canvas, new ScrollText());
         systems.Update();
-        Entity panel = Hierarchy<ElementTree>.GetChildren(game, root)[0];
-        Entity outer = Hierarchy<ElementTree>.GetChildren(game, panel)[0];
+        Entity panel = ElementChildren.Read(game, root)[0];
+        Entity outer = ElementChildren.Read(game, panel)[0];
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         Entity mirror = extraction.RequireMirror(canvas);
         GlyphInstance before = Assert.Single(ReadGlyphs(render, mirror));
         Assert.Equal(new Rect(90, 40, 30, 30), before.ClipRectangle);
 
-        Box box = game.Read<Box>(outer);
+        Box box = game.ReadComponentData<Box>(outer);
         box.Fixed = new Size(120, 80);
-        game.Replace(outer, box);
+        game.Set(outer, box);
         systems.Update();
         extraction.Extract(game);
         graphics.Apply(extraction, render);
@@ -167,10 +169,10 @@ public sealed partial class GlyphExtractionTests(SurfaceExtractionDevice graphic
         using var render = new RenderWorld();
         using var systems = TextSystems(game);
         var atlas = new GlyphAtlas(128, 128);
-        Entity atlasSource = game.CreateEntity(new TextAtlas(atlas));
+        Entity atlasSource = game.Create(new TextAtlas(atlas));
         using var extraction = new RenderExtractionSystems(render,
             new SurfaceRenderExtractor(), new GlyphRenderExtractor(atlasSource));
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(320, 240) });
         game.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 48 }));
         Entity node = Views.Views.Spawn(game, canvas, new Text("A"));
         systems.Update();
@@ -178,11 +180,11 @@ public sealed partial class GlyphExtractionTests(SurfaceExtractionDevice graphic
         graphics.Apply(extraction, render);
         Entity mirror = extraction.RequireMirror(canvas);
         Entity atlasMirror = extraction.RequireMirror(atlasSource);
-        ShapedText shape = game.Read<ShapedText>(node);
+        ShapedText shape = game.ReadComponentData<ShapedText>(node);
         GlyphInstance before = Assert.Single(ReadGlyphs(render, mirror));
-        RenderGlyphAtlas pixels = render.Read<RenderGlyphAtlas>(atlasMirror);
-        uint pixelsVersion = render.WriteVersion<RenderGlyphAtlas>(atlasMirror);
-        uint layoutVersion = game.WriteVersion<LayoutRect>(node);
+        RenderGlyphAtlas pixels = render.World.ReadComponentData<RenderGlyphAtlas>(atlasMirror);
+        ulong pixelsVersion = render.World.ComponentDataWriteVersion<RenderGlyphAtlas>(atlasMirror);
+        ulong layoutVersion = game.ComponentDataWriteVersion<LayoutRect>(node);
 
         game.Add(node, new TextStyle { Color = new Color(0.2f, 0.4f, 0.6f) });
         systems.Update();
@@ -193,10 +195,10 @@ public sealed partial class GlyphExtractionTests(SurfaceExtractionDevice graphic
         Assert.Equal(before with { Color = after.Color, Version = after.Version }, after);
         Assert.Equal(new Color(0.2f, 0.4f, 0.6f), after.Color);
         Assert.NotEqual(before.Version, after.Version);
-        Assert.Equal(shape.Version, game.Read<ShapedText>(node).Version);
-        Assert.Equal(layoutVersion, game.WriteVersion<LayoutRect>(node));
-        Assert.Equal(pixels, render.Read<RenderGlyphAtlas>(atlasMirror));
-        Assert.Equal(pixelsVersion, render.WriteVersion<RenderGlyphAtlas>(atlasMirror));
+        Assert.Equal(shape.Version, game.ReadComponentData<ShapedText>(node).Version);
+        Assert.Equal(layoutVersion, game.ComponentDataWriteVersion<LayoutRect>(node));
+        Assert.Equal(pixels, render.World.ReadComponentData<RenderGlyphAtlas>(atlasMirror));
+        Assert.Equal(pixelsVersion, render.World.ComponentDataWriteVersion<RenderGlyphAtlas>(atlasMirror));
         Assert.Empty(atlas.DirtyRegions.ToArray());
     }
 
@@ -207,10 +209,10 @@ public sealed partial class GlyphExtractionTests(SurfaceExtractionDevice graphic
         using var game = new World();
         using var render = new RenderWorld();
         using var systems = TextSystems(game);
-        Entity atlasSource = game.CreateEntity(new TextAtlas(new GlyphAtlas(128, 128)));
+        Entity atlasSource = game.Create(new TextAtlas(new GlyphAtlas(128, 128)));
         using var extraction = new RenderExtractionSystems(render,
             new SurfaceRenderExtractor(), new GlyphRenderExtractor(atlasSource));
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(320, 240) });
         game.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 48 }));
         Entity node = Views.Views.Spawn(game, canvas, new Text("A"));
         systems.Update();
@@ -247,7 +249,8 @@ public sealed partial class GlyphExtractionTests(SurfaceExtractionDevice graphic
     private static GlyphInstance[] ReadGlyphs(RenderWorld world, Entity canvas)
     {
         GlyphInstance[] glyphs = [];
-        world.ExecuteBufferRead<GlyphInstance>(canvas, buffer => glyphs = buffer.AsSpan().ToArray());
+        using (ReadOnlyBuffer<GlyphInstance> buffer = world.World.ReadBuffer<GlyphInstance>(canvas))
+            glyphs = buffer.AsSpan().ToArray();
         return glyphs;
     }
 }

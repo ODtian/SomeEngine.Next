@@ -2,12 +2,13 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Job;
 
 internal interface IWorkQueue : IDisposable
 {
-    void EnqueueSynchronous(QueuedWork stream, int participants, JobScheduleOptions options);
+    void EnqueueSynchronousRanges(SynchronousRangeBatch batch, uint epoch, int count, JobScheduleOptions options);
     void RegisterCategory(JobCategory category);
 
     void CategoryExecutionFinished();
@@ -56,7 +57,7 @@ internal sealed partial class WorkQueue : IWorkQueue
     private const int DrainBatchItemLimit = 64;
 
     private readonly Scheduler _scheduler;
-    private readonly RuntimeCounters _counters;
+    private readonly JobCounters _counters;
     private readonly int _maxQueuedWorkItems;
     private readonly int _baseSpinCount;
     private readonly int _busySpinCount;
@@ -64,10 +65,10 @@ internal sealed partial class WorkQueue : IWorkQueue
     private readonly object _stateLock = new();
     private readonly object _workerWaitLock = new();
     private readonly AutoResetEvent _latencyCompletedSignal = new(initialState: false);
-    private readonly MpmcInjector<ReadyTicket>[] _injectors;
+    private readonly MpmcInjector<ReadyTicket>?[] _injectors;
     private readonly ConcurrentQueue<ReadyTicket>[] _injectorOverflow;
-    private readonly ChaseLevDeque<ReadyTicket>[,] _localQueues;
-    private readonly Thread[] _workers;
+    private readonly ChaseLevDeque<ReadyTicket>?[,] _localQueues;
+    private readonly WorkQueueThread[] _workers;
     private int _queuedWorkItemCount;
     private int _readyTicketCount;
     private int _activeDrainerCount;
@@ -97,53 +98,37 @@ internal sealed partial class WorkQueue : IWorkQueue
     [ThreadStatic]
     private static int s_latencySampleCounter;
 
-    internal WorkQueue(Scheduler scheduler, JobRuntimeConfig config, RuntimeCounters counters)
+    internal WorkQueue(Scheduler scheduler, JobConfiguration config, JobCounters counters)
     {
         _scheduler = scheduler;
         _counters = counters;
         _maxQueuedWorkItems = config.MaxQueuedWorkItems;
         _baseSpinCount = config.WorkerSpinCount;
         _busySpinCount = config.BusyWorkerSpinCount;
-        int injectorCapacity = Math.Clamp(config.MaxQueuedWorkItems, 64, 65_536);
-        _injectors = new MpmcInjector<ReadyTicket>[JobPriorityOrder.Count];
+        _injectors = new MpmcInjector<ReadyTicket>?[JobPriorityOrder.Count];
         _injectorOverflow = new ConcurrentQueue<ReadyTicket>[JobPriorityOrder.Count];
-        for (int i = 0; i < _injectors.Length; i++)
-        {
-            _injectors[i] = new MpmcInjector<ReadyTicket>(injectorCapacity);
-            _injectorOverflow[i] = new ConcurrentQueue<ReadyTicket>();
-        }
-
-        _localQueues = new ChaseLevDeque<ReadyTicket>[config.WorkerCount, JobPriorityOrder.Count];
-        for (int worker = 0; worker < config.WorkerCount; worker++)
-        {
-            for (int priority = 0; priority < JobPriorityOrder.Count; priority++)
-            {
-                _localQueues[worker, priority] = new ChaseLevDeque<ReadyTicket>(LocalDequeCapacity);
-            }
-        }
-
-        _workers = new Thread[config.WorkerCount];
-        for (int i = 0; i < _workers.Length; i++)
-        {
-            int workerIndex = i;
-            Thread worker = new(() => WorkerLoop(workerIndex))
-            {
-                IsBackground = true,
-                Name = $"SomeEngine.Job Worker {i}"
-            };
-            _workers[i] = worker;
-            worker.Start();
-        }
+        for (int index = 0; index < _injectors.Length; index++) _injectorOverflow[index] = new();
+        _localQueues = new ChaseLevDeque<ReadyTicket>?[config.WorkerCount, JobPriorityOrder.Count];
+        _workers = new WorkQueueThread[config.WorkerCount];
+        for (int index = 0; index < _workers.Length; index++) _workers[index] = WorkQueueThread.Rent(this, index);
     }
 
-    public void EnqueueSynchronous(QueuedWork stream, int participants, JobScheduleOptions options)
+    public void EnqueueSynchronousRanges(SynchronousRangeBatch batch, uint epoch, int count, JobScheduleOptions options)
     {
-        ReserveQueuedCapacity(participants);
-        int workerIndex = CurrentWorkerIndex;
-        PublishDrainers(stream, participants, JobPriorityOrder.PriorityIndex(options.Priority), workerIndex);
-        bool useLocalQueue = stream.Category is null && workerIndex != NoWorkerThread && workerIndex < _workers.Length;
-        _counters.Queued(participants, useLocalQueue);
-        _counters.QueueHighWater(Volatile.Read(ref _queuedWorkItemCount));
+        ReserveQueuedCapacity(count);
+        try
+        {
+            int worker = CurrentWorkerIndex;
+            ReadyTicket ticket = new(batch, SampleReadyTime(), epoch);
+            PublishTickets(ticket, count, JobPriorityOrder.PriorityIndex(options.Priority), worker, options.Category);
+            _counters.Queued(count, options.Category is null && worker != NoWorkerThread && worker < _workers.Length);
+            _counters.QueueHighWater(Volatile.Read(ref _queuedWorkItemCount));
+        }
+        catch
+        {
+            ReleaseQueuedCapacity(count);
+            throw;
+        }
     }
 
     public void EnsureItemCapacity(int workItemCount)
@@ -237,70 +222,45 @@ internal sealed partial class WorkQueue : IWorkQueue
 
     private bool TryExecuteOne(bool wait, bool waitIndefinitely, long wakeVersion, bool waitForState = false)
     {
-        QueuedWork stream;
-        long publishedAt;
-        bool stole = false;
-        int priorityIndex = JobPriorityOrder.PriorityIndex(JobPriority.Normal);
         int workerIndex = CurrentWorkerIndex;
-        if (!TryDequeueForWorker(
-                workerIndex,
-                out stream,
-                out publishedAt,
-                out stole,
-                out priorityIndex))
+        if (!TryDequeueForWorker(workerIndex, out ReadyTicket ticket, out bool stole, out int priorityIndex, out JobCategory? category))
         {
-            if (!wait || !WaitForWork(waitIndefinitely, wakeVersion, waitForState))
-                return false;
-            if (!TryDequeueForWorker(
-                    workerIndex,
-                    out stream,
-                    out publishedAt,
-                    out stole,
-                    out priorityIndex))
-                return false;
+            if (!wait || !WaitForWork(waitIndefinitely, wakeVersion, waitForState)) return false;
+            if (!TryDequeueForWorker(workerIndex, out ticket, out stole, out priorityIndex, out category)) return false;
         }
-
         Interlocked.Decrement(ref _readyTicketCount);
         Interlocked.Increment(ref _activeDrainerCount);
         if (_counters.Enabled)
-        {
-            long latency = publishedAt == 0
-                ? 0
-                : Stopwatch.GetTimestamp() - publishedAt;
-            _counters.ReadyTicketExecuted(latency);
-        }
+            _counters.ReadyTicketExecuted(ticket.PublishedAt == 0 ? 0 : Stopwatch.GetTimestamp() - ticket.PublishedAt);
         int claimed = 0;
         bool hasMoreWork = false;
-        JobCategory? category = stream.Category;
+        WorkStream? stream = null;
         bool acquiredCategory = category is not null && !_scheduler.IsExecutingCategory(category);
         JobCategory? previousCategory = _scheduler.SetCurrentCategory(category);
         try
         {
-            claimed = stream.DrainAndFinish(
-                _scheduler,
-                maxItems: DrainBatchItemLimit,
-                priorityIndex,
-                maxDrainers: StreamDrainerLimit(stream),
-                out _,
-                out hasMoreWork);
+            if (ticket.Data is SynchronousRangeBatch ranges) ranges.Execute(_scheduler, ticket.Epoch, workerIndex);
+            else
+            {
+                stream = (WorkStream)ticket.Data;
+                claimed = stream.DrainAndFinish(_scheduler, DrainBatchItemLimit, priorityIndex,
+                    StreamDrainerLimit(stream), out _, out hasMoreWork);
+            }
         }
         finally
         {
             _scheduler.SetCurrentCategory(previousCategory);
-            FinishDrain(stream, claimed, hasMoreWork, priorityIndex);
-            stream.DrainExited();
-            if (acquiredCategory)
-                category!.CompleteExecution();
+            if (stream is not null) FinishDrain(stream, claimed, hasMoreWork, priorityIndex);
+            else
+            {
+                ReleaseQueuedCapacity(1);
+                Interlocked.Decrement(ref _activeDrainerCount);
+                if (IsDisposed) WakeWorkers();
+            }
+            if (acquiredCategory) category!.CompleteExecution();
         }
-
-        if (stole)
-        {
-            _counters.Stolen();
-        }
-
-        if (workerIndex != NoWorkerThread)
-            s_spinBudget = _busySpinCount;
-
+        if (stole) _counters.Stolen();
+        if (workerIndex != NoWorkerThread) s_spinBudget = _busySpinCount;
         return true;
     }
 
@@ -401,7 +361,7 @@ internal sealed partial class WorkQueue : IWorkQueue
     }
 
     private void FinishDrain(
-        QueuedWork stream,
+        WorkStream stream,
         int claimed,
         bool hasMoreWork,
         int priorityIndex)
@@ -441,13 +401,7 @@ internal sealed partial class WorkQueue : IWorkQueue
         }
 
         WakeWorkerThreads(int.MaxValue);
-        foreach (Thread worker in _workers)
-        {
-            if (worker.IsAlive)
-            {
-                worker.Join();
-            }
-        }
+        foreach (WorkQueueThread worker in _workers) worker.Return();
         _latencyCompletedSignal.Dispose();
     }
 
@@ -484,41 +438,52 @@ internal sealed partial class WorkQueue : IWorkQueue
             $"Job queue capacity exhausted ({_maxQueuedWorkItems}).");
     }
 
-    private void PublishDrainers(
-        QueuedWork stream,
-        int drainerCount,
-        int priorityIndex,
-        int workerIndex)
+    private void PublishDrainers(WorkStream stream, int count, int priorityIndex, int workerIndex)
     {
-        if (drainerCount <= 0)
-            return;
+        if (count <= 0) return;
+        PublishTickets(new ReadyTicket(stream, SampleReadyTime()), count, priorityIndex, workerIndex, stream.Category);
+    }
 
-        Interlocked.Add(ref _readyTicketCount, drainerCount);
-        _counters.ReadyTicketsPublished(drainerCount);
-        bool useLocalQueue = workerIndex != NoWorkerThread && workerIndex < _workers.Length;
-        var ticket = new ReadyTicket(
-            stream,
-            _counters.Enabled && ((++s_latencySampleCounter & 15) == 1)
-                ? Stopwatch.GetTimestamp()
-                : 0);
-        if (stream.Category is { } category)
+    private long SampleReadyTime() =>
+        _counters.Enabled && ((++s_latencySampleCounter & 15) == 1) ? Stopwatch.GetTimestamp() : 0;
+
+    private void PublishTickets(in ReadyTicket ticket, int count, int priorityIndex, int workerIndex, JobCategory? category)
+    {
+        Interlocked.Add(ref _readyTicketCount, count);
+        _counters.ReadyTicketsPublished(count);
+        if (category is not null)
         {
             ConcurrentQueue<ReadyTicket> queue = _categoryQueues[category].Priorities[priorityIndex];
-            for (int i = 0; i < drainerCount; i++)
-                queue.Enqueue(ticket);
-            WakeWorkers(drainerCount);
+            for (int index = 0; index < count; index++) queue.Enqueue(ticket);
+            WakeWorkers(count);
             return;
         }
-        for (int i = 0; i < drainerCount; i++)
+        bool local = workerIndex != NoWorkerThread && workerIndex < _workers.Length;
+        ChaseLevDeque<ReadyTicket>? deque = local
+            ? Volatile.Read(ref _localQueues[workerIndex, priorityIndex]) ?? CreateLocalQueue(workerIndex, priorityIndex) : null;
+        MpmcInjector<ReadyTicket>? injector = local
+            ? null : Volatile.Read(ref _injectors[priorityIndex]) ?? CreateInjector(priorityIndex);
+        for (int index = 0; index < count; index++)
         {
-            if ((!useLocalQueue || !_localQueues[workerIndex, priorityIndex].TryPush(ticket)) &&
-                !_injectors[priorityIndex].TryEnqueue(ticket))
-            {
-                _injectorOverflow[priorityIndex].Enqueue(ticket);
-            }
+            if (deque is not null && deque.TryPush(ticket)) continue;
+            injector ??= Volatile.Read(ref _injectors[priorityIndex]) ?? CreateInjector(priorityIndex);
+            if (!injector.TryEnqueue(ticket)) _injectorOverflow[priorityIndex].Enqueue(ticket);
         }
+        WakeWorkers(count);
+    }
 
-        WakeWorkers(drainerCount);
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private MpmcInjector<ReadyTicket> CreateInjector(int priority)
+    {
+        var injector = new MpmcInjector<ReadyTicket>(Math.Clamp(_maxQueuedWorkItems, 64, 65_536));
+        return Interlocked.CompareExchange(ref _injectors[priority], injector, null) ?? injector;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private ChaseLevDeque<ReadyTicket> CreateLocalQueue(int worker, int priority)
+    {
+        var queue = new ChaseLevDeque<ReadyTicket>(Math.Min(LocalDequeCapacity, _maxQueuedWorkItems));
+        return Interlocked.CompareExchange(ref _localQueues[worker, priority], queue, null) ?? queue;
     }
 
     private bool WaitForWork(bool waitIndefinitely, long observedEpoch, bool waitForState)
@@ -586,73 +551,50 @@ internal sealed partial class WorkQueue : IWorkQueue
 
     private bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
 
-    private bool TryDequeueForWorker(
-        int workerIndex,
-        out QueuedWork stream,
-        out long publishedAt,
-        out bool stole,
-        out int priorityIndex)
+    private bool TryDequeueForWorker(int workerIndex, out ReadyTicket ticket,
+        out bool stole, out int priorityIndex, out JobCategory? category)
     {
+        category = null;
         return Volatile.Read(ref _categoryCount) == 0
-            ? TryDequeueDefault(workerIndex, out stream, out publishedAt, out stole, out priorityIndex)
-            : TryDequeueByCategory(workerIndex, out stream, out publishedAt, out stole, out priorityIndex);
+            ? TryDequeueDefault(workerIndex, out ticket, out stole, out priorityIndex)
+            : TryDequeueByCategory(workerIndex, out ticket, out stole, out priorityIndex, out category);
     }
 
-    private bool TryDequeueDefault(
-        int workerIndex,
-        out QueuedWork stream,
-        out long publishedAt,
-        out bool stole,
-        out int priorityIndex)
+    private bool TryDequeueDefault(int workerIndex, out ReadyTicket ticket, out bool stole, out int priorityIndex)
     {
-        stream = null!;
-        publishedAt = 0;
+        ticket = default;
         stole = false;
         priorityIndex = JobPriorityOrder.PriorityIndex(JobPriority.Normal);
-
+        if (Volatile.Read(ref _readyTicketCount) == 0) return false;
         for (int priority = 0; priority < JobPriorityOrder.Count; priority++)
         {
             if (workerIndex != NoWorkerThread &&
-                _localQueues[workerIndex, priority].TryPop(out ReadyTicket local))
+                Volatile.Read(ref _localQueues[workerIndex, priority]) is { } local && local.TryPop(out ticket))
             {
-                stream = local.Stream;
-                publishedAt = local.PublishedAt;
                 priorityIndex = priority;
                 return true;
             }
-
-            if ((_injectors[priority].TryDequeue(out ReadyTicket injected) ||
-                 _injectorOverflow[priority].TryDequeue(out injected)) &&
-                injected.Stream is not null)
+            if (Volatile.Read(ref _injectors[priority]) is { } injector && injector.TryDequeue(out ticket) ||
+                _injectorOverflow[priority].TryDequeue(out ticket))
             {
-                stream = injected.Stream;
-                publishedAt = injected.PublishedAt;
                 priorityIndex = priority;
                 return true;
             }
-
-            for (int i = 0; i < _workers.Length; i++)
+            for (int worker = 0; worker < _workers.Length; worker++)
             {
-                if (i == workerIndex)
+                if (worker == workerIndex) continue;
+                if (Volatile.Read(ref _localQueues[worker, priority]) is { } victim && victim.TrySteal(out ticket))
                 {
-                    continue;
-                }
-
-                if (_localQueues[i, priority].TrySteal(out ReadyTicket stolen))
-                {
-                    stream = stolen.Stream;
-                    publishedAt = stolen.PublishedAt;
                     stole = workerIndex != NoWorkerThread;
                     priorityIndex = priority;
                     return true;
                 }
             }
         }
-
         return false;
     }
 
-    private void WorkerLoop(int workerIndex)
+    internal void WorkerLoop(int workerIndex)
     {
         s_workerQueue = this;
         s_workerIndexPlusOne = workerIndex + 1;
@@ -741,13 +683,13 @@ internal sealed partial class WorkQueue : IWorkQueue
     {
         for (int priority = 0; priority < priorityIndex; priority++)
         {
-            if (!_injectors[priority].IsEmpty || !_injectorOverflow[priority].IsEmpty)
+            if (Volatile.Read(ref _injectors[priority]) is { IsEmpty: false } || !_injectorOverflow[priority].IsEmpty)
             {
                 return true;
             }
             for (int worker = 0; worker < _workers.Length; worker++)
             {
-                if (!_localQueues[worker, priority].IsEmpty)
+                if (Volatile.Read(ref _localQueues[worker, priority]) is { IsEmpty: false })
                 {
                     return true;
                 }
@@ -763,20 +705,14 @@ internal sealed partial class WorkQueue : IWorkQueue
 
     private int MaxStreamDrainers => Math.Max(1, _workers.Length + 1);
 
-    private int StreamDrainerLimit(QueuedWork stream) => stream.Category is { } category
+    private int StreamDrainerLimit(WorkStream stream) => stream.Category is { } category
         ? Math.Min(MaxStreamDrainers, category.Config.MaxExecuting) : MaxStreamDrainers;
 
-    private readonly struct ReadyTicket
+    private readonly struct ReadyTicket(object data, long publishedAt, uint epoch = 0)
     {
-        internal ReadyTicket(QueuedWork stream, long publishedAt)
-        {
-            Stream = stream;
-            PublishedAt = publishedAt;
-        }
-
-        internal QueuedWork Stream { get; }
-
-        internal long PublishedAt { get; }
+        internal object Data { get; } = data;
+        internal long PublishedAt { get; } = publishedAt;
+        internal uint Epoch { get; } = epoch;
     }
 
 }

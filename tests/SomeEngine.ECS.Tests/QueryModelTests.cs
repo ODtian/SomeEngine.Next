@@ -1,174 +1,116 @@
-using SomeEngine.ECS;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
-using SomeEngine.ECS.Registry;
-using Xunit;
+using SomeEngine.ECS.Serialization;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Tests;
 
 public class QueryModelTests
 {
     [Fact]
-    public void ReleaseQuery_InvalidatesEveryHandleCopyAndReusesSlotGeneration()
+    public void QueryCopiesKeepTheirOwnObservationWindows()
     {
-        var world = new World();
-        QueryHandle released = world.Query(world.QueryDefinition().Read<Position>());
-        QueryHandle copy = released;
-
-        world.ReleaseQuery(released);
-
-        Assert.Throws<InvalidOperationException>(() => world.GetQueryDefinition(released));
-        Assert.Throws<InvalidOperationException>(() => world.GetQueryDefinition(copy));
-        Assert.Throws<InvalidOperationException>(() => world.ReleaseQuery(released));
-
-        // A structural publication must preserve the released slot and its next generation.
-        world.CreateEntity(new Position { X = 1, Y = 2 });
-
-        QueryHandle replacement = world.Query(world.QueryDefinition().Read<Velocity>());
-        Assert.NotEqual(copy, replacement);
-        Assert.NotEqual(released, replacement);
-        Assert.Equal(
-            world.QueryDefinition().Read<Velocity>().Build().Key,
-            world.GetQueryDefinition(replacement).Key);
+        using var world = new World();
+        Entity entity = world.Create(new Position { X = 1 });
+        Query allChanges = world.Query(new QueryDescription().WithChanged<Position>(0));
+        Query laterChanges = allChanges.Since(world.Version);
+        Assert.Equal(1, world.Query(new QueryDescription().WithChanged<Position>(0)).Count);
+        Assert.Equal(0, laterChanges.Count);
+        world.Set(entity, new Position { X = 2 });
+        Assert.Equal(1, laterChanges.Count);
+        laterChanges = laterChanges.Since(world.Version);
+        Assert.Equal(0, laterChanges.Count);
+        Assert.Equal(1, world.Query(new QueryDescription().WithChanged<Position>(0)).Count);
     }
 
     [Fact]
-    public void ReleaseQuery_KeepsIndependentAcquisitionOfInternedDefinitionAlive()
+    public void RepeatedQueriesShareMembershipAndKeepIndependentWindows()
     {
-        var world = new World();
-        QueryDefinition definition = world.QueryDefinition().Read<Position>().Build();
-        QueryHandle first = world.Query(definition);
-        QueryHandle second = world.Query(definition);
-        Assert.Equal(first, second);
-
-        world.ReleaseQuery(first);
-
-        // Root publication must preserve the remaining acquisition without reviving the release.
-        world.CreateEntity(new Position { X = 1, Y = 2 });
-        Assert.Equal(definition.Key, world.GetQueryDefinition(second).Key);
-
-        world.ReleaseQuery(second);
-
-        Assert.Throws<InvalidOperationException>(() => world.GetQueryDefinition(first));
-        Assert.Throws<InvalidOperationException>(() => world.GetQueryDefinition(second));
-        QueryHandle replacement = world.Query(world.QueryDefinition().Read<Velocity>());
-        Assert.NotEqual(first, replacement);
+        using var world = new World();
+        Entity entity = world.Create(new Position());
+        var description = new QueryDescription().WithChanged<Position>(0);
+        Query first = world.Query(description);
+        Query second = world.Query(description);
+        ulong membership = first.MembershipVersion;
+        first = first.Since(world.Version);
+        Assert.Equal(0, first.Count);
+        Assert.Equal(1, second.Count);
+        world.Set(entity, new Position { X = 3 });
+        Assert.Equal(membership, first.MembershipVersion);
+        Assert.Equal(first.MembershipVersion, second.MembershipVersion);
+        Assert.Equal(1, first.Count);
     }
 
     [Fact]
-    public void QueryLifetimeMutation_IsRejectedInsideStructuralTransaction()
+    public void CandidateQueriesReadTheirOwnWorldAndKeepSourceMembership()
     {
-        var world = new QueryTransactionWorld();
-        QueryDefinition position = world.QueryDefinition().Read<Position>().Build();
-        QueryDefinition velocity = world.QueryDefinition().Read<Velocity>().Build();
-        QueryHandle existing = world.Query(position);
-        Exception? acquireFault = null;
-        Exception? releaseFault = null;
-
-        world.ExecuteCandidate(() =>
-        {
-            acquireFault = Record.Exception(() => world.Query(velocity));
-            releaseFault = Record.Exception(() => world.ReleaseQuery(existing));
-        });
-
-        InvalidOperationException acquireError =
-            Assert.IsType<InvalidOperationException>(acquireFault);
-        InvalidOperationException releaseError =
-            Assert.IsType<InvalidOperationException>(releaseFault);
-
-        Assert.Equal(position.Key, world.GetQueryDefinition(existing).Key);
-
-        QueryHandle next = world.Query(velocity);
-        Assert.NotEqual(existing, next);
-        Assert.Equal(velocity.Key, world.GetQueryDefinition(next).Key);
+        using var world = new World();
+        Entity entity = world.Create(new Position());
+        Query source = world.Query<Position>();
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        candidate.Add(entity, new Velocity());
+        Assert.Equal(1, source.Count);
+        Assert.Equal(0, world.Query<Velocity>().Count);
+        Assert.Equal(1, candidate.Query<Velocity>().Count);
     }
 
     [Fact]
     public void PresenceOnly_All_DoesNotBumpChangeVersion()
     {
         using var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1, Y = 2 });
-        uint baseline = world.AcquireSystemTick();
-        var query = world.Query(world.QueryDefinition().All<Position>());
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (var row in cursor.Rows)
-            {
-                Assert.True(row.Has<Position>());
-            }
-        });
-        var changed = world.Query(world.QueryDefinition().Changed<Position>());
-        Assert.Equal(0, CountRows(world, changed, baseline, world.CurrentTick));
+        world.Create(new Position { X = 1, Y = 2 });
+        ulong baseline = world.Version;
+        using (QueryScope scope = world.Query<Position>().OpenRead())
+            foreach (QueryChunk chunk in scope) Assert.True(chunk.Has<Position>());
+        Assert.Equal(0, world.Query(new QueryDescription().WithChanged<Position>(baseline)).Count);
     }
 
     [Fact]
     public void ReadAccess_DoesNotBump_AndWriteAccess_BumpsOnceReached()
     {
         using var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1, Y = 2 });
-        uint baseline = world.AcquireSystemTick();
-        var query = world.Query(world.QueryDefinition().ReadWrite<Position>());
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (var row in cursor.Rows)
-            {
-                Assert.True(row.Has<Position>());
-                row.ReadWrite<Position>().X = 7;
-            }
-        });
-        var changed = world.Query(world.QueryDefinition().Changed<Position>());
-        Assert.Equal(1, CountRows(world, changed, baseline, world.CurrentTick));
+        Entity entity = world.Create(new Position { X = 1, Y = 2 });
+        ulong baseline = world.Version;
+        using (QueryScope scope = world.Query<Position>().Open())
+            foreach (QueryChunk chunk in scope)
+                for (int row = 0; row < chunk.Count; row++) chunk.Write<Position>(row).X = 7;
+        Assert.Equal(1, world.Query(new QueryDescription().WithChanged<Position>(baseline)).Count);
         Assert.Equal(7, world.Read<Position>(entity).X);
     }
 
     [Fact]
     public void ChangedFilter_UsesSuppliedBaseline()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1, Y = 2 });
-        uint last = world.AcquireSystemTick();
-
-        var handle = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Changed<Position>());
-
-        Assert.Equal(0, CountRows(world, handle, last, world.CurrentTick));
-
-        world.Replace(entity, new Position { X = 3, Y = 4 });
-
-        Assert.Equal(1, CountRows(world, handle, last, world.CurrentTick));
+        using var world = new World();
+        Entity entity = world.Create(new Position { X = 1, Y = 2 });
+        ulong last = world.Version;
+        Query query = world.Query(new QueryDescription().WithChanged<Position>(last));
+        Assert.Equal(0, query.Count);
+        world.Set(entity, new Position { X = 3, Y = 4 });
+        Assert.Equal(1, query.Count);
     }
 
     [Fact]
     public void OptionalTerm_WidensMatchAndExposesAccessWhenPresent()
     {
-        var world = new World();
-        world.CreateEntity(new Position { X = 1, Y = 2 });
-        var withHealth = world.CreateEntity(new Position { X = 3, Y = 4 });
+        using var world = new World();
+        world.Create(new Position { X = 1 });
+        Entity withHealth = world.Create(new Position { X = 3 });
         world.Add(withHealth, new Health { Value = 25 });
-
-        var handle = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Optional<Health>(QueryAccess.Read));
-
-        int rows = 0;
-        int healthRows = 0;
-        world.ExecuteQuery(handle, cursor =>
-        {
-            foreach (var row in cursor.Rows)
-            {
-                rows++;
-                if (row.TryRead<Health>(out var health))
+        Query query = world.Query(new QueryDescription().WithStored<Position>().Optional<Health>());
+        int rows = 0, healthRows = 0;
+        using (QueryScope scope = query.OpenRead())
+            foreach (QueryChunk chunk in scope)
+                for (int row = 0; row < chunk.Count; row++)
                 {
-                    healthRows++;
-                    Assert.Equal(25, health.Value);
+                    rows++;
+                    OptionalComponent<Health> health = chunk.Optional<Health>(row);
+                    if (health.IsPresent) { healthRows++; Assert.Equal(25, health.Value.Value); }
                 }
-            }
-        });
-
         Assert.Equal(2, rows);
         Assert.Equal(1, healthRows);
     }
@@ -176,320 +118,151 @@ public class QueryModelTests
     [Fact]
     public void QueryCanMatchMoreThanSixteenTerms()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new Extra01 { Value = 1 });
-        world.Add(entity, new Extra02());
-        world.Add(entity, new Extra03());
-        world.Add(entity, new Extra04());
-        world.Add(entity, new Extra05());
-        world.Add(entity, new Extra06());
-        world.Add(entity, new Extra07());
-        world.Add(entity, new Extra08());
-        world.Add(entity, new Extra09());
-        world.Add(entity, new Extra10());
-        world.Add(entity, new Extra11());
-        world.Add(entity, new Extra12());
-        world.Add(entity, new Extra13());
-        world.Add(entity, new Extra14());
-        world.Add(entity, new Extra15());
-        world.Add(entity, new Extra16());
+        using var world = new World();
+        Entity entity = world.Create(new Extra01 { Value = 1 });
+        world.Add(entity, new Extra02()); world.Add(entity, new Extra03()); world.Add(entity, new Extra04());
+        world.Add(entity, new Extra05()); world.Add(entity, new Extra06()); world.Add(entity, new Extra07());
+        world.Add(entity, new Extra08()); world.Add(entity, new Extra09()); world.Add(entity, new Extra10());
+        world.Add(entity, new Extra11()); world.Add(entity, new Extra12()); world.Add(entity, new Extra13());
+        world.Add(entity, new Extra14()); world.Add(entity, new Extra15()); world.Add(entity, new Extra16());
         world.Add(entity, new Extra17());
-
-        var handle = world.Query(
-            world.QueryDefinition()
-                .Read<Extra01>()
-                .All<Extra02>()
-                .All<Extra03>()
-                .All<Extra04>()
-                .All<Extra05>()
-                .All<Extra06>()
-                .All<Extra07>()
-                .All<Extra08>()
-                .All<Extra09>()
-                .All<Extra10>()
-                .All<Extra11>()
-                .All<Extra12>()
-                .All<Extra13>()
-                .All<Extra14>()
-                .All<Extra15>()
-                .All<Extra16>()
-                .All<Extra17>());
-
-        int rows = 0;
-        world.ExecuteQuery(handle, cursor =>
-        {
-            foreach (var row in cursor.Rows)
-            {
-                rows++;
-                Assert.Equal(1, row.Read<Extra01>().Value);
-            }
-        });
-
-        Assert.Equal(1, rows);
+        Query query = world.Query(new QueryDescription().WithStored<Extra01>().WithStored<Extra02>().WithStored<Extra03>()
+            .WithStored<Extra04>().WithStored<Extra05>().WithStored<Extra06>().WithStored<Extra07>().WithStored<Extra08>()
+            .WithStored<Extra09>().WithStored<Extra10>().WithStored<Extra11>().WithStored<Extra12>().WithStored<Extra13>()
+            .WithStored<Extra14>().WithStored<Extra15>().WithStored<Extra16>().WithStored<Extra17>());
+        using QueryScope scope = query.OpenRead();
+        Assert.True(scope.Contains(entity));
+        Assert.Equal(1, query.Count);
+        foreach (QueryChunk chunk in scope) Assert.Equal(1, chunk.Read<Extra01>()[0].Value);
     }
 
     [Fact]
     public void EquivalentSpecs_DedupeToSameHandle()
     {
-        var world = new World();
-
-        var first = world.Query(
-            world.QueryDefinition()
-                .All<Position>()
-                .Read<Position>()
-                .None<Velocity>());
-
-        var second = world.Query(
-            world.QueryDefinition()
-                .None<Velocity>()
-                .Read<Position>()
-                .All<Position>());
-
+        using var world = new World();
+        Query first = world.Query(new QueryDescription().WithStored<Position>().WithStored<Position>().Without<Velocity>());
+        Query second = world.Query(new QueryDescription().Without<Velocity>().WithStored<Position>());
         Assert.Equal(first, second);
     }
 
     [Fact]
-    public void ConcurrentQueryRegistration_PublishesStableHandles()
+    public void ConcurrentQueryRegistration_PublishesSharedQueryValues()
     {
-        var world = new World();
-        QueryDefinition position = new QueryDefinitionBuilder().Read<Position>().Build();
-        QueryDefinition velocity = new QueryDefinitionBuilder().Read<Velocity>().Build();
-        var handles = new QueryHandle[32];
-
-        Parallel.For(
-            0,
-            handles.Length,
-            index => handles[index] = world.Query((index & 1) == 0 ? position : velocity));
-
-        QueryHandle positionHandle = handles[0];
-        QueryHandle velocityHandle = handles[1];
-        Assert.NotEqual(positionHandle, velocityHandle);
-        for (int i = 0; i < handles.Length; i++)
-        {
-            Assert.Equal((i & 1) == 0 ? positionHandle : velocityHandle, handles[i]);
-        }
+        using var world = new World();
+        var position = new QueryDescription().WithStored<Position>();
+        var velocity = new QueryDescription().WithStored<Velocity>();
+        var queries = new Query[32];
+        Parallel.For(0, queries.Length, index => queries[index] = world.Query((index & 1) == 0 ? position : velocity));
+        Assert.NotEqual(queries[0], queries[1]);
+        for (int index = 0; index < queries.Length; index++) Assert.Equal(queries[index & 1], queries[index]);
     }
 
     [Fact]
-    public void QueryDefinitionExposesTermsAndAccesses()
+    public void QueryDescriptionPreservesItsCriteriaAfterFurtherComposition()
     {
-        QueryDefinition definition = new QueryDefinitionBuilder()
-            .Read<Position>()
-            .Changed<Velocity>()
-            .Build();
-        QueryKey key = definition.Key;
-        QueryTerm firstTerm = definition.Terms[0];
-        QueryAccessEntry firstAccess = definition.Accesses[0];
-
-        Assert.Equal(2, definition.Terms.Length);
-        Assert.Single(definition.Accesses.ToArray());
-
-        Assert.Equal(key, definition.Key);
-        Assert.Equal(firstTerm, definition.Terms[0]);
-        Assert.Equal(firstAccess.ComponentId, definition.Accesses[0].ComponentId);
-        Assert.Equal(firstAccess.Access, definition.Accesses[0].Access);
-        Assert.Equal(firstAccess.Kind, definition.Accesses[0].Kind);
+        using var world = new World();
+        var description = new QueryDescription().WithStored<Position>();
+        Query positions = world.Query(description);
+        Query moving = world.Query(description.WithChanged<Velocity>(0));
+        world.Create(new Position());
+        world.Create(new Position(), new Velocity());
+        Assert.Equal(2, positions.Count);
+        Assert.Equal(1, moving.Count);
     }
 
     [Fact]
-    public void NewArchetype_IncrementallyUpdatesExistingPlan()
+    public void NewLayoutsUpdateExistingQueries()
     {
-        var world = new World();
-        var handle = world.Query(world.QueryDefinition().All<Position>());
-        Assert.Equal(0, CountRows(world, handle, 0, world.CurrentTick));
-
-        world.CreateEntity(new Position { X = 1, Y = 2 });
-
-        Assert.Equal(1, CountRows(world, handle, 0, world.CurrentTick));
+        using var world = new World();
+        Query query = world.Query<Position>();
+        Assert.Equal(0, query.Count);
+        world.Create(new Position { X = 1, Y = 2 });
+        Assert.Equal(1, query.Count);
     }
 
     [Fact]
-    public void DirectBufferElementQuery_IsRejectedWithClearError()
+    public void OrdinaryValuesAndBufferColumnsRemainDistinct()
     {
-        var world = new World();
-
-        var ex = Assert.Throws<InvalidOperationException>(() =>
-            world.QueryDefinition().All<IntElement>().Build());
-
+        using var world = new World();
+        Entity value = world.Create(new IntElement { Value = 3 });
+        Entity buffer = world.Create();
+        world.AddBuffer<IntElement>(buffer);
+        using QueryScope values = world.Query<IntElement>().OpenRead();
+        Assert.True(values.Contains(value));
+        Assert.False(values.Contains(buffer));
+        Assert.Equal(1, world.Query<Buffer<IntElement>>().Count);
     }
 
     [Fact]
     public void ReadBuffer_DoesNotExposeMutableBufferAccess()
     {
-        var world = new World();
-        var entity = world.CreateEntity();
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
+        using var world = new World(execution: new WorldJobs(scheduler));
+        Entity entity = world.Create();
         world.AddBuffer<IntElement>(entity);
-        world.ExecuteBufferWrite<IntElement>(
-            entity,
-            static buffer => buffer.Add(new IntElement { Value = 42 }));
-
-        var readHandle = world.Query(world.QueryDefinition().ReadBuffer<IntElement>());
-        world.ExecuteQuery(readHandle, cursor =>
+        var buffer = world.GetBuffer<IntElement>(entity);
+        try { buffer.Add(new IntElement { Value = 42 }); }
+        finally { buffer.Dispose(); }
+        using QueryScope scope = world.Query<Buffer<IntElement>>().OpenRead();
+        foreach (QueryChunk chunk in scope)
         {
-            foreach (var row in cursor.Rows)
-            {
-                Assert.Equal(42, row.ReadBuffer<IntElement>().Read(0).Value);
-                AssertMutableBufferRejected(row);
-            }
-
-            foreach (var chunk in cursor.Chunks)
-            {
-                Assert.Equal(42, chunk.ReadBuffer<IntElement>(0).Read(0).Value);
-                AssertMutableBufferRejected(chunk);
-            }
-        });
+            using ReadOnlyBuffer<IntElement> read = chunk.ReadBuffer<IntElement>(0);
+            Assert.Equal(42, read[0].Value);
+            Assert.ThrowsAny<InvalidOperationException>(() => chunk.GetBuffer<IntElement>(0).Add(new IntElement { Value = 99 }));
+        }
     }
 
     [Fact]
-    public void PresenceOnlyBuffer_DoesNotExposeDataAccess()
+    public void BufferPresenceQueriesRetainTheirSelectedIdentity()
     {
-        var world = new World();
-        var entity = world.CreateEntity();
+        using var world = new World();
+        Entity entity = world.Create();
         world.AddBuffer<IntElement>(entity);
-
-        var presenceHandle = world.Query(world.QueryDefinition().Buffer<IntElement>());
-        world.ExecuteQuery(presenceHandle, cursor =>
-        {
-            foreach (var row in cursor.Rows)
-                AssertPresenceOnlyBufferRejected(row);
-        });
-    }
-
-    private static void AssertMutableBufferRejected(QueryRow row)
-    {
-        InvalidOperationException? error = null;
-        try
-        {
-            row.Buffer<IntElement>().Add(new IntElement { Value = 99 });
-        }
-        catch (InvalidOperationException exception)
-        {
-            error = exception;
-        }
-
-        Assert.NotNull(error);
-    }
-
-    private static void AssertMutableBufferRejected(QueryChunkView chunk)
-    {
-        InvalidOperationException? error = null;
-        try
-        {
-            chunk.Buffer<IntElement>(0).Add(new IntElement { Value = 99 });
-        }
-        catch (InvalidOperationException exception)
-        {
-            error = exception;
-        }
-
-        Assert.NotNull(error);
-    }
-
-    private static void AssertPresenceOnlyBufferRejected(QueryRow row)
-    {
-        InvalidOperationException? readError = null;
-        try
-        {
-            _ = row.ReadBuffer<IntElement>().Read(0);
-        }
-        catch (InvalidOperationException exception)
-        {
-            readError = exception;
-        }
-
-        InvalidOperationException? writeError = null;
-        try
-        {
-            row.Buffer<IntElement>().Add(new IntElement { Value = 99 });
-        }
-        catch (InvalidOperationException exception)
-        {
-            writeError = exception;
-        }
-
-        Assert.NotNull(readError);
-        Assert.NotNull(writeError);
+        using QueryScope scope = world.Query(new QueryDescription().WithStored<Buffer<IntElement>>()).OpenRead();
+        Assert.True(scope.Contains(entity));
+        foreach (QueryChunk chunk in scope) Assert.True(chunk.Has<Buffer<IntElement>>());
     }
 
     [Fact]
-    public void SharedRuntimeFilter_DoesNotCreateSeparateStaticPlanKeys()
+    public void SharedValuesSelectTheirOwnMatchingEntities()
     {
-        var world = new World();
-        var first = world.CreateEntity(new Position { X = 1, Y = 1 });
-        var second = world.CreateEntity(new Position { X = 2, Y = 2 });
-        world.AddShared(first, new SceneId { Value = 10 });
-        world.AddShared(second, new SceneId { Value = 20 });
-
-        var handleA = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Shared<SceneId>());
-        var handleB = world.Query(
-            world.QueryDefinition()
-                .Shared<SceneId>()
-                .Read<Position>());
-
-        Assert.Equal(handleA, handleB);
-
-        var results = new List<float>();
-        world.ExecuteQuery(handleA, cursor =>
-        {
-            foreach (var row in cursor.RowsWithShared(new SceneId { Value = 10 }))
-                results.Add(row.Read<Position>().X);
-        });
-
-        Assert.Equal([1f], results);
-    }
-
-    private static int CountRows(
-        World world,
-        QueryHandle query,
-        uint lastSystemVersion,
-        uint currentSystemVersion)
-    {
-        int count = 0;
-        world.ExecuteQuery(
-            query,
-            lastSystemVersion,
-            ref count,
-            static (scoped QueryCursor cursor, ref int state) =>
-            {
-                foreach (var _ in cursor.Rows)
-                    state++;
-            });
-        return count;
-    }
-
-    private sealed class QueryTransactionWorld : World
-    {
-        internal void ExecuteCandidate(Action execution)
-        {
-            ExecuteStructuralTransaction(execution, static action => action());
-        }
+        using var world = new World();
+        SharedId<SceneId> firstId = world.InternShared(new SceneId { Value = 10 });
+        SharedId<SceneId> secondId = world.InternShared(new SceneId { Value = 20 });
+        Entity first = world.Create(new Position { X = 1 }, new SceneId { Value = 10 });
+        Entity second = world.Create(new Position { X = 2 }, new SceneId { Value = 20 });
+        Query firstQuery = world.Query(new QueryDescription().WithStored<Position>().WithShared(firstId));
+        Query secondQuery = world.Query(new QueryDescription().WithShared(secondId).WithStored<Position>());
+        using QueryScope firstMembers = firstQuery.OpenRead();
+        using QueryScope secondMembers = secondQuery.OpenRead();
+        Assert.True(firstMembers.Contains(first));
+        Assert.False(firstMembers.Contains(second));
+        Assert.True(secondMembers.Contains(second));
+        Assert.False(secondMembers.Contains(first));
     }
 }
 
 public readonly struct QueryAdmissionDomain : IHierarchyDomain;
 
-public struct AdmissionOnlyBufferElement : IBufferElement
+public struct AdmissionOnlyBufferElement : IBufferElement, IAddedComponent
 {
     public int Value;
 }
 
-public struct Extra01 : SomeEngine.ECS.IComponent { public int Value; }
-public struct Extra02 : SomeEngine.ECS.IComponent { }
-public struct Extra03 : SomeEngine.ECS.IComponent { }
-public struct Extra04 : SomeEngine.ECS.IComponent { }
-public struct Extra05 : SomeEngine.ECS.IComponent { }
-public struct Extra06 : SomeEngine.ECS.IComponent { }
-public struct Extra07 : SomeEngine.ECS.IComponent { }
-public struct Extra08 : SomeEngine.ECS.IComponent { }
-public struct Extra09 : SomeEngine.ECS.IComponent { }
-public struct Extra10 : SomeEngine.ECS.IComponent { }
-public struct Extra11 : SomeEngine.ECS.IComponent { }
-public struct Extra12 : SomeEngine.ECS.IComponent { }
-public struct Extra13 : SomeEngine.ECS.IComponent { }
-public struct Extra14 : SomeEngine.ECS.IComponent { }
-public struct Extra15 : SomeEngine.ECS.IComponent { }
-public struct Extra16 : SomeEngine.ECS.IComponent { }
-public struct Extra17 : SomeEngine.ECS.IComponent { }
+public struct Extra01 : SomeEngine.ECS.IAddedComponent { public int Value; }
+public struct Extra02 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra03 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra04 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra05 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra06 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra07 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra08 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra09 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra10 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra11 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra12 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra13 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra14 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra15 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra16 : SomeEngine.ECS.IAddedComponent { }
+public struct Extra17 : SomeEngine.ECS.IAddedComponent { }

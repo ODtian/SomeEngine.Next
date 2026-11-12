@@ -16,16 +16,16 @@ public sealed partial class EnvironmentTests
 
         frames.Frame();
 
-        Assert.Equal(new Theme(3), frames.World.Read<Theme>(root));
-        Assert.Equal(new SparseTheme(5), frames.World.ReadSparse<SparseTheme>(root));
-        Assert.Equal(root, frames.World.Read<ThemeNode>(root).Value);
-        uint tableVersion = frames.World.WriteVersion<Theme>(root);
-        uint sparseVersion = frames.World.SparseWriteVersion<SparseTheme>(root);
-        frames.World.Replace(root, new ThemePair(3, 5, 1));
+        Assert.Equal(new Theme(3), frames.World.ReadComponentData<Theme>(root));
+        Assert.Equal(new SparseTheme(5), frames.World.ReadComponentData<SparseTheme>(root));
+        Assert.Equal(root, frames.World.ReadComponentData<ThemeNode>(root).Value);
+        ulong tableVersion = frames.World.ComponentDataWriteVersion<Theme>(root);
+        ulong sparseVersion = frames.World.ComponentDataWriteVersion<SparseTheme>(root);
+        frames.World.Set(root, new ThemePair(3, 5, 1));
         frames.Frame();
 
-        Assert.Equal(tableVersion, frames.World.WriteVersion<Theme>(root));
-        Assert.Equal(sparseVersion, frames.World.SparseWriteVersion<SparseTheme>(root));
+        Assert.Equal(tableVersion, frames.World.ComponentDataWriteVersion<Theme>(root));
+        Assert.Equal(sparseVersion, frames.World.ComponentDataWriteVersion<SparseTheme>(root));
     }
 
     [Theory]
@@ -36,22 +36,22 @@ public sealed partial class EnvironmentTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ThemeGroup(3, sparse));
         frames.Frame();
-        var children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
+        var children = ElementChildren.Read(frames.World, root);
         Entity reader = children[0];
         Entity other = children[1];
-        Assert.Equal("3", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(reader).Value);
         frames.Frame();
-        uint otherVersion = frames.World.WriteVersion<DisplayText>(other);
+        ulong otherVersion = frames.World.ComponentDataWriteVersion<DisplayText>(other);
 
-        frames.World.Replace(root, new ThemeGroup(7, sparse));
+        frames.World.Set(root, new ThemeGroup(7, sparse));
         frames.Frame();
 
-        Assert.Equal("7", frames.World.Read<DisplayText>(reader).Value);
-        Assert.Equal("other", frames.World.Read<DisplayText>(other).Value);
-        Assert.Equal(otherVersion, frames.World.WriteVersion<DisplayText>(other));
-        uint readerVersion = frames.World.WriteVersion<DisplayText>(reader);
+        Assert.Equal("7", frames.World.ReadComponentData<DisplayText>(reader).Value);
+        Assert.Equal("other", frames.World.ReadComponentData<DisplayText>(other).Value);
+        Assert.Equal(otherVersion, frames.World.ComponentDataWriteVersion<DisplayText>(other));
+        ulong readerVersion = frames.World.ComponentDataWriteVersion<DisplayText>(reader);
         frames.Frame();
-        Assert.Equal(readerVersion, frames.World.WriteVersion<DisplayText>(reader));
+        Assert.Equal(readerVersion, frames.World.ComponentDataWriteVersion<DisplayText>(reader));
     }
 
     [Theory]
@@ -62,21 +62,21 @@ public sealed partial class EnvironmentTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ThemeGroup(3, sparse, ChildColor: 0));
         frames.Frame();
-        var children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
+        var children = ElementChildren.Read(frames.World, root);
         Entity outerReader = children[0];
         Entity middle = children[2];
-        Entity innerReader = Hierarchy<ElementTree>.GetChildren(frames.World, middle)[0];
+        Entity innerReader = ElementChildren.Read(frames.World, middle)[0];
 
-        Assert.Equal("3", frames.World.Read<DisplayText>(outerReader).Value);
-        Assert.Equal("0", frames.World.Read<DisplayText>(innerReader).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(outerReader).Value);
+        Assert.Equal("0", frames.World.ReadComponentData<DisplayText>(innerReader).Value);
         Assert.True(sparse ? frames.World.HasSparse<SparseTheme>(middle) : frames.World.Has<Theme>(middle));
-        uint innerVersion = frames.World.WriteVersion<DisplayText>(innerReader);
-        frames.World.Replace(root, new ThemeGroup(7, sparse, ChildColor: 0));
+        ulong innerVersion = frames.World.ComponentDataWriteVersion<DisplayText>(innerReader);
+        frames.World.Set(root, new ThemeGroup(7, sparse, ChildColor: 0));
         frames.Frame();
 
-        Assert.Equal("7", frames.World.Read<DisplayText>(outerReader).Value);
-        Assert.Equal("0", frames.World.Read<DisplayText>(innerReader).Value);
-        Assert.Equal(innerVersion, frames.World.WriteVersion<DisplayText>(innerReader));
+        Assert.Equal("7", frames.World.ReadComponentData<DisplayText>(outerReader).Value);
+        Assert.Equal("0", frames.World.ReadComponentData<DisplayText>(innerReader).Value);
+        Assert.Equal(innerVersion, frames.World.ComponentDataWriteVersion<DisplayText>(innerReader));
     }
 
     [Theory]
@@ -87,17 +87,17 @@ public sealed partial class EnvironmentTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ThemeGroup(0, sparse, ThemePresent: false));
         frames.Frame();
-        Entity reader = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Assert.Equal("0", frames.World.Read<DisplayText>(reader).Value);
+        Entity reader = ElementChildren.Read(frames.World, root)[0];
+        Assert.Equal("0", frames.World.ReadComponentData<DisplayText>(reader).Value);
         frames.Frame();
 
-        frames.World.Replace(root, new ThemeGroup(7, sparse));
+        frames.World.Set(root, new ThemeGroup(7, sparse));
         frames.Frame();
 
-        Assert.Equal("7", frames.World.Read<DisplayText>(reader).Value);
-        uint displayVersion = frames.World.WriteVersion<DisplayText>(reader);
+        Assert.Equal("7", frames.World.ReadComponentData<DisplayText>(reader).Value);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayText>(reader);
         frames.Frame();
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayText>(reader));
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayText>(reader));
     }
 
     [Theory]
@@ -108,35 +108,35 @@ public sealed partial class EnvironmentTests
     public void ThemeCalculationsFollowTheirViewThroughChangesAndMissingSources(bool sparse, bool memo)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity first = frames.World.CreateEntity();
-        Entity second = frames.World.CreateEntity();
+        Entity first = frames.World.Create();
+        Entity second = frames.World.Create();
         SetTheme(frames.World, first, sparse, 3);
         SetTheme(frames.World, second, sparse, 5);
         Entity reader = Views.Spawn(frames.World, first, new ThemeCalculationDisplay(sparse, memo));
         frames.Frame();
-        Assert.Equal("3", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(reader).Value);
         frames.Frame();
 
         SetTheme(frames.World, first, sparse, 7);
         frames.Frame();
-        Assert.Equal("7", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("7", frames.World.ReadComponentData<DisplayText>(reader).Value);
 
         Hierarchy<ElementTree>.SetParent(frames.World, reader, second);
         frames.Frame();
-        Assert.Equal("5", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("5", frames.World.ReadComponentData<DisplayText>(reader).Value);
 
         RemoveTheme(frames.World, second, sparse);
         frames.Frame();
-        Assert.Equal("0", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("0", frames.World.ReadComponentData<DisplayText>(reader).Value);
 
         SetTheme(frames.World, second, sparse, 11);
         frames.Frame();
-        Assert.Equal("11", frames.World.Read<DisplayText>(reader).Value);
-        uint displayVersion = frames.World.WriteVersion<DisplayText>(reader);
+        Assert.Equal("11", frames.World.ReadComponentData<DisplayText>(reader).Value);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayText>(reader);
         SetTheme(frames.World, first, sparse, 13);
         frames.Frame();
-        Assert.Equal("11", frames.World.Read<DisplayText>(reader).Value);
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayText>(reader));
+        Assert.Equal("11", frames.World.ReadComponentData<DisplayText>(reader).Value);
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayText>(reader));
     }
 
     [Theory]
@@ -148,8 +148,8 @@ public sealed partial class EnvironmentTests
         try
         {
             using var frames = new HeadlessFrameDriver();
-            Entity first = frames.World.CreateEntity();
-            Entity second = frames.World.CreateEntity();
+            Entity first = frames.World.Create();
+            Entity second = frames.World.Create();
             SetTheme(frames.World, first, sparse, 3);
             SetTheme(frames.World, second, sparse, 3);
             Entity reader = Views.Spawn(frames.World, first, new ThemeDisplay(sparse));
@@ -158,8 +158,8 @@ public sealed partial class EnvironmentTests
             Hierarchy<ElementTree>.SetParent(frames.World, reader, second);
             frames.Frame();
 
-            Assert.Equal("3;3", frames.World.Read<DisplayText>(reader).Value);
-            ushort component = sparse ? ComponentId<SparseTheme>.Value : ComponentId<Theme>.Value;
+            Assert.Equal("3;3", frames.World.ReadComponentData<DisplayText>(reader).Value);
+            int component = sparse ? ComponentId<SparseTheme>.Value : ComponentId<Theme>.Value;
             Assert.Contains(new RebuildRecord(reader, first, component),
                 RebuildDiagnostics.LastFrame(frames.World).ToArray());
         }
@@ -189,29 +189,29 @@ public sealed partial class EnvironmentTests
     public void AncestorThemeChangesUpdateItsReadersAndKeepOtherDisplays(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity ancestor = frames.World.CreateEntity();
+        Entity ancestor = frames.World.Create();
         SetTheme(frames.World, ancestor, sparse, 3);
         Entity reader = Views.Spawn(frames.World, ancestor, new ThemeDisplay(sparse));
         Entity other = Views.Spawn(frames.World, ancestor, new FixedDisplay("other"));
 
         frames.Frame();
-        Assert.Equal("3", frames.World.Read<DisplayText>(reader).Value);
-        uint themeVersion = sparse
-            ? frames.World.SparseWriteVersion<SparseTheme>(ancestor)
-            : frames.World.WriteVersion<Theme>(ancestor);
-        uint otherDisplayVersion = frames.World.WriteVersion<DisplayText>(other);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(reader).Value);
+        ulong themeVersion = sparse
+            ? frames.World.ComponentDataWriteVersion<SparseTheme>(ancestor)
+            : frames.World.ComponentDataWriteVersion<Theme>(ancestor);
+        ulong otherDisplayVersion = frames.World.ComponentDataWriteVersion<DisplayText>(other);
         frames.Frame();
-        Assert.Equal("3", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(reader).Value);
         Assert.Equal(themeVersion, sparse
-            ? frames.World.SparseWriteVersion<SparseTheme>(ancestor)
-            : frames.World.WriteVersion<Theme>(ancestor));
+            ? frames.World.ComponentDataWriteVersion<SparseTheme>(ancestor)
+            : frames.World.ComponentDataWriteVersion<Theme>(ancestor));
 
         SetTheme(frames.World, ancestor, sparse, 7);
         frames.Frame();
 
-        Assert.Equal("3;7", frames.World.Read<DisplayText>(reader).Value);
-        Assert.Equal("other", frames.World.Read<DisplayText>(other).Value);
-        Assert.Equal(otherDisplayVersion, frames.World.WriteVersion<DisplayText>(other));
+        Assert.Equal("3;7", frames.World.ReadComponentData<DisplayText>(reader).Value);
+        Assert.Equal("other", frames.World.ReadComponentData<DisplayText>(other).Value);
+        Assert.Equal(otherDisplayVersion, frames.World.ComponentDataWriteVersion<DisplayText>(other));
     }
 
     [Theory]
@@ -220,9 +220,9 @@ public sealed partial class EnvironmentTests
     public void NearestThemeSuppliesItsSubtreeIncludingTheProvidingNode(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity ancestor = frames.World.CreateEntity();
+        Entity ancestor = frames.World.Create();
         SetTheme(frames.World, ancestor, sparse, 3);
-        Entity middle = frames.World.CreateEntity();
+        Entity middle = frames.World.Create();
         Hierarchy<ElementTree>.SetParent(frames.World, middle, ancestor);
         SetTheme(frames.World, middle, sparse, 5);
         Entity outerReader = Views.Spawn(frames.World, ancestor, new ThemeDisplay(sparse));
@@ -232,19 +232,19 @@ public sealed partial class EnvironmentTests
 
         frames.Frame();
 
-        Assert.Equal("3", frames.World.Read<DisplayText>(outerReader).Value);
-        Assert.Equal("5", frames.World.Read<DisplayText>(innerReader).Value);
-        Assert.Equal("11", frames.World.Read<DisplayText>(selfReader).Value);
-        uint innerDisplayVersion = frames.World.WriteVersion<DisplayText>(innerReader);
-        uint selfDisplayVersion = frames.World.WriteVersion<DisplayText>(selfReader);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(outerReader).Value);
+        Assert.Equal("5", frames.World.ReadComponentData<DisplayText>(innerReader).Value);
+        Assert.Equal("11", frames.World.ReadComponentData<DisplayText>(selfReader).Value);
+        ulong innerDisplayVersion = frames.World.ComponentDataWriteVersion<DisplayText>(innerReader);
+        ulong selfDisplayVersion = frames.World.ComponentDataWriteVersion<DisplayText>(selfReader);
         SetTheme(frames.World, ancestor, sparse, 7);
         frames.Frame();
 
-        Assert.Equal("3;7", frames.World.Read<DisplayText>(outerReader).Value);
-        Assert.Equal("5", frames.World.Read<DisplayText>(innerReader).Value);
-        Assert.Equal("11", frames.World.Read<DisplayText>(selfReader).Value);
-        Assert.Equal(innerDisplayVersion, frames.World.WriteVersion<DisplayText>(innerReader));
-        Assert.Equal(selfDisplayVersion, frames.World.WriteVersion<DisplayText>(selfReader));
+        Assert.Equal("3;7", frames.World.ReadComponentData<DisplayText>(outerReader).Value);
+        Assert.Equal("5", frames.World.ReadComponentData<DisplayText>(innerReader).Value);
+        Assert.Equal("11", frames.World.ReadComponentData<DisplayText>(selfReader).Value);
+        Assert.Equal(innerDisplayVersion, frames.World.ComponentDataWriteVersion<DisplayText>(innerReader));
+        Assert.Equal(selfDisplayVersion, frames.World.ComponentDataWriteVersion<DisplayText>(selfReader));
     }
 
     [Theory]
@@ -253,23 +253,23 @@ public sealed partial class EnvironmentTests
     public void MissingThemeUsesTheDefaultUntilAnAncestorProvidesIt(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity ancestor = frames.World.CreateEntity();
-        Entity middle = frames.World.CreateEntity();
+        Entity ancestor = frames.World.Create();
+        Entity middle = frames.World.Create();
         Hierarchy<ElementTree>.SetParent(frames.World, middle, ancestor);
         Entity reader = Views.Spawn(frames.World, middle, new ThemeDisplay(sparse));
         frames.Frame();
-        Assert.Equal("0", frames.World.Read<DisplayText>(reader).Value);
-        uint displayVersion = frames.World.WriteVersion<DisplayText>(reader);
+        Assert.Equal("0", frames.World.ReadComponentData<DisplayText>(reader).Value);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayText>(reader);
 
-        Entity other = frames.World.CreateEntity();
+        Entity other = frames.World.Create();
         SetTheme(frames.World, other, sparse, 3);
         frames.Frame();
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayText>(reader));
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayText>(reader));
 
         SetTheme(frames.World, ancestor, sparse, 7);
         frames.Frame();
 
-        Assert.Equal("0;7", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("0;7", frames.World.ReadComponentData<DisplayText>(reader).Value);
     }
 
     [Theory]
@@ -280,32 +280,32 @@ public sealed partial class EnvironmentTests
     public void RelevantParentChangesSupplyTheNewAncestorTheme(bool sparse, bool moveAncestor)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity first = frames.World.CreateEntity();
-        Entity second = frames.World.CreateEntity();
+        Entity first = frames.World.Create();
+        Entity second = frames.World.Create();
         SetTheme(frames.World, first, sparse, 3);
         SetTheme(frames.World, second, sparse, 5);
-        Entity middle = frames.World.CreateEntity();
+        Entity middle = frames.World.Create();
         Hierarchy<ElementTree>.SetParent(frames.World, middle, first);
         Entity reader = Views.Spawn(frames.World, middle, new ThemeDisplay(sparse));
         frames.Frame();
-        Assert.Equal("3", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(reader).Value);
 
         Entity moved = moveAncestor ? middle : reader;
         Hierarchy<ElementTree>.SetParent(frames.World, moved, second);
         frames.Frame();
-        Assert.Equal("3;5", frames.World.Read<DisplayText>(reader).Value);
-        uint displayVersion = frames.World.WriteVersion<DisplayText>(reader);
+        Assert.Equal("3;5", frames.World.ReadComponentData<DisplayText>(reader).Value);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayText>(reader);
         SetTheme(frames.World, first, sparse, 7);
         frames.Frame();
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayText>(reader));
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayText>(reader));
 
         SetTheme(frames.World, second, sparse, 11);
         frames.Frame();
-        Assert.Equal("3;5;11", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("3;5;11", frames.World.ReadComponentData<DisplayText>(reader).Value);
 
         Hierarchy<ElementTree>.Detach(frames.World, moved);
         frames.Frame();
-        Assert.Equal("3;5;11;0", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("3;5;11;0", frames.World.ReadComponentData<DisplayText>(reader).Value);
     }
 
     [Theory]
@@ -314,26 +314,26 @@ public sealed partial class EnvironmentTests
     public void ProviderChangesRebindTheDisplayEvenWhenTheThemeValuesMatch(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity first = frames.World.CreateEntity();
-        Entity second = frames.World.CreateEntity();
+        Entity first = frames.World.Create();
+        Entity second = frames.World.Create();
         SetTheme(frames.World, first, sparse, 3);
         SetTheme(frames.World, second, sparse, 3);
         Entity reader = Views.Spawn(frames.World, first, new ThemeDisplay(sparse));
         frames.Frame();
-        uint firstDisplayVersion = frames.World.WriteVersion<DisplayText>(reader);
+        ulong firstDisplayVersion = frames.World.ComponentDataWriteVersion<DisplayText>(reader);
 
         Hierarchy<ElementTree>.SetParent(frames.World, reader, second);
         frames.Frame();
-        Assert.NotEqual(firstDisplayVersion, frames.World.WriteVersion<DisplayText>(reader));
-        Assert.Equal("3;3", frames.World.Read<DisplayText>(reader).Value);
-        uint secondDisplayVersion = frames.World.WriteVersion<DisplayText>(reader);
+        Assert.NotEqual(firstDisplayVersion, frames.World.ComponentDataWriteVersion<DisplayText>(reader));
+        Assert.Equal("3;3", frames.World.ReadComponentData<DisplayText>(reader).Value);
+        ulong secondDisplayVersion = frames.World.ComponentDataWriteVersion<DisplayText>(reader);
         SetTheme(frames.World, first, sparse, 5);
         frames.Frame();
-        Assert.Equal(secondDisplayVersion, frames.World.WriteVersion<DisplayText>(reader));
+        Assert.Equal(secondDisplayVersion, frames.World.ComponentDataWriteVersion<DisplayText>(reader));
 
         SetTheme(frames.World, second, sparse, 7);
         frames.Frame();
-        Assert.Equal("3;3;7", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("3;3;7", frames.World.ReadComponentData<DisplayText>(reader).Value);
     }
 
     [Theory]
@@ -342,28 +342,28 @@ public sealed partial class EnvironmentTests
     public void AddingAndRemovingNearestThemesRefreshesTheDisplayedSource(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity ancestor = frames.World.CreateEntity();
+        Entity ancestor = frames.World.Create();
         SetTheme(frames.World, ancestor, sparse, 3);
-        Entity middle = frames.World.CreateEntity();
+        Entity middle = frames.World.Create();
         Hierarchy<ElementTree>.SetParent(frames.World, middle, ancestor);
         Entity reader = Views.Spawn(frames.World, middle, new ThemeDisplay(sparse));
         frames.Frame();
 
         SetTheme(frames.World, middle, sparse, 5);
         frames.Frame();
-        Assert.Equal("3;5", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("3;5", frames.World.ReadComponentData<DisplayText>(reader).Value);
 
         RemoveTheme(frames.World, middle, sparse);
         frames.Frame();
-        Assert.Equal("3;5;3", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("3;5;3", frames.World.ReadComponentData<DisplayText>(reader).Value);
 
         RemoveTheme(frames.World, ancestor, sparse);
         frames.Frame();
-        Assert.Equal("3;5;3;0", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("3;5;3;0", frames.World.ReadComponentData<DisplayText>(reader).Value);
 
         SetTheme(frames.World, reader, sparse, 11);
         frames.Frame();
-        Assert.Equal("3;5;3;0;11", frames.World.Read<DisplayText>(reader).Value);
+        Assert.Equal("3;5;3;0;11", frames.World.ReadComponentData<DisplayText>(reader).Value);
     }
 
     [Theory]
@@ -372,18 +372,18 @@ public sealed partial class EnvironmentTests
     public void OnceThemeReadsRetainTheirInitialDisplay(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity ancestor = frames.World.CreateEntity();
+        Entity ancestor = frames.World.Create();
         SetTheme(frames.World, ancestor, sparse, 3);
         Entity reader = Views.Spawn(frames.World, ancestor, new OnceThemeDisplay(sparse));
         frames.Frame();
-        uint displayVersion = frames.World.WriteVersion<DisplayText>(reader);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayText>(reader);
 
         SetTheme(frames.World, ancestor, sparse, 7);
         Hierarchy<ElementTree>.Detach(frames.World, reader);
         frames.Frame();
 
-        Assert.Equal("3", frames.World.Read<DisplayText>(reader).Value);
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayText>(reader));
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(reader).Value);
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayText>(reader));
     }
 
     private readonly record struct OnceThemeDisplay(bool Sparse) : IView, IComponent
@@ -439,14 +439,14 @@ public sealed partial class EnvironmentTests
         if (sparse)
         {
             if (world.HasSparse<SparseTheme>(entity))
-                world.ReplaceSparse(entity, new SparseTheme(color));
+                world.SetSparse(entity, new SparseTheme(color));
             else
-                world.AddSparse(entity, new SparseTheme(color));
+                world.SetSparse(entity, new SparseTheme(color));
         }
         else
         {
             if (world.Has<Theme>(entity))
-                world.Replace(entity, new Theme(color));
+                world.Set(entity, new Theme(color));
             else
                 world.Add(entity, new Theme(color));
         }
@@ -456,8 +456,8 @@ public sealed partial class EnvironmentTests
     {
         if (Scope.World.Has<DisplayText>(Scope.Entity))
         {
-            text = $"{Scope.World.Read<DisplayText>(Scope.Entity).Value};{text}";
-            Scope.World.Replace(Scope.Entity, new DisplayText(text));
+            text = $"{Scope.World.ReadComponentData<DisplayText>(Scope.Entity).Value};{text}";
+            Scope.World.Set(Scope.Entity, new DisplayText(text));
         }
         else
         {
@@ -520,7 +520,7 @@ public sealed partial class EnvironmentTests
         {
             Entity node = Scope.Entity.Provide(new Theme(TableColor)).Provide(new SparseTheme(SparseColor));
             if (Scope.World.Has<ThemeNode>(Scope.Entity))
-                Scope.World.Replace(Scope.Entity, new ThemeNode(node));
+                Scope.World.Set(Scope.Entity, new ThemeNode(node));
             else
                 Scope.World.Add(Scope.Entity, new ThemeNode(node));
             return default;
@@ -528,7 +528,7 @@ public sealed partial class EnvironmentTests
     }
 
     private readonly record struct ThemeNode(Entity Value) : IComponent;
-    private readonly record struct Theme(int Color) : IComponent;
-    private readonly record struct SparseTheme(int Color) : ISparseComponent;
-    private readonly record struct DisplayText(string Value) : IComponent;
+    private readonly record struct Theme(int Color) : ITrackedComponent;
+    private readonly record struct SparseTheme(int Color) : ISparseComponent, ITrackedComponent;
+    private readonly record struct DisplayText(string Value) : ITrackedComponent;
 }

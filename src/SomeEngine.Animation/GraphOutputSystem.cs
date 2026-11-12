@@ -1,7 +1,6 @@
 using System.Buffers;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation;
@@ -12,53 +11,57 @@ public struct GraphOutputSystem<T, TOps>(TrackFields fields = TrackFields.Proper
     where TOps : struct, IValueOps<T>
 {
     private readonly TrackFields _fields = fields;
-    private QueryHandle _outputs;
+    private Query _outputs;
     private FieldWrite<T>[] _writes = null!;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _writes = ArrayPool<FieldWrite<T>>.Shared.Rent(64);
-        _outputs = context.World.Query(context.World.QueryDefinition().Read<Timeline>().ReadBuffer<Track<T>>()
-            .ReadBuffer<GraphFieldOutput<T>>().ReadBuffer<GraphFieldTrack<T>>()
-            .OptionalBuffer<PropertySource<T>>(QueryAccess.ReadWrite).Optional<AnimationLayers>(QueryAccess.Read)
-            .OptionalBuffer<BaseValue<T>>(QueryAccess.Read).OptionalBuffer<LayerChannel>(QueryAccess.Read)
-            .OptionalBuffer<Contribution<T>>(QueryAccess.ReadWrite)
-            .OptionalBuffer<GraphMotion>(QueryAccess.Read));
+        _outputs = context.World.Query(new QueryDescription().WithStored<Timeline>().WithStored<Buffer<Track<T>>>()
+            .WithStored<Buffer<GraphFieldOutput<T>>>().WithStored<Buffer<GraphFieldTrack<T>>>()
+            .Optional<Buffer<PropertySource<T>>>().Optional<AnimationLayers>()
+            .Optional<Buffer<BaseValue<T>>>().Optional<Buffer<LayerChannel>>()
+            .Optional<Buffer<Contribution<T>>>()
+            .Optional<Buffer<GraphMotion>>());
     }
 
     public unsafe void OnUpdate(ref ImmediateSystemContext context)
     {
-        if (!context.World.HasQueryMembers(_outputs)) return;
+        if (!(_outputs.Count != 0)) return;
         var evaluation = (World: context.World, Weights: _fields == TrackFields.LayerWeights, Writes: _writes, Count: 0);
-        context.World.ExecuteQuery(_outputs, context.LastSystemVersion, ref evaluation, &Evaluate);
+        {
+            using QueryScope read = _outputs.Since(context.LastSystemVersion).Open();
+            Evaluate(in read, ref evaluation);
+        }
         _writes = evaluation.Writes;
         FieldWrites<T>.Flush(context.World, _writes, ref evaluation.Count);
     }
 
-    private static void Evaluate(QueryCursor rows, ref (World World, bool Weights, FieldWrite<T>[] Writes, int Count) evaluation)
+    private static void Evaluate(scoped in QueryScope rows, ref (World World, bool Weights, FieldWrite<T>[] Writes, int Count) evaluation)
     {
         World world = evaluation.World;
         int count = 0;
-        foreach (QueryChunkView chunk in rows.Chunks)
+        foreach (QueryChunk chunk in rows)
         {
-            bool hasMotions = chunk.HasBuffer<GraphMotion>();
-            foreach (QueryRow row in chunk.Rows)
+            bool hasMotions = chunk.Has<Buffer<GraphMotion>>();
+            chunk.TryRead<Timeline>(out var values0);
+            for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
             {
-                Timeline timeline = row.Read<Timeline>();
-                BufferView<Track<T>> tracks = row.ReadBuffer<Track<T>>();
-                BufferView<GraphFieldTrack<T>> entries = row.ReadBuffer<GraphFieldTrack<T>>();
-                ReadOnlySpan<GraphMotion> motions = hasMotions ? row.ReadBuffer<GraphMotion>().AsSpan() : default;
-                foreach (GraphFieldOutput<T> output in row.ReadBuffer<GraphFieldOutput<T>>().AsSpan())
+                Timeline timeline = values0[rowIndex];
+                ReadOnlyBuffer<Track<T>> tracks = chunk.ReadBuffer<Track<T>>(rowIndex);
+                ReadOnlyBuffer<GraphFieldTrack<T>> entries = chunk.ReadBuffer<GraphFieldTrack<T>>(rowIndex);
+                ReadOnlySpan<GraphMotion> motions = hasMotions ? chunk.ReadBuffer<GraphMotion>(rowIndex).AsSpan() : default;
+                foreach (GraphFieldOutput<T> output in chunk.ReadBuffer<GraphFieldOutput<T>>(rowIndex).AsSpan())
                 {
                     Track<T> leader = tracks[output.Leader];
                     if ((leader.Channel.Component == ComponentId<AnimationLayers>.Value) != evaluation.Weights)
                         continue;
-                    Entity target = leader.Target == Entity.Null ? row.Entity : leader.Target;
+                    Entity target = leader.Target == Entity.Null ? chunk.Entities[rowIndex] : leader.Target;
                     if (!world.IsAlive(target))
                         continue;
-                    if (!world.IsEnabled<Timeline>(row.Entity) && !world.Has<AnimationLayers>(target))
+                    if (!world.IsEnabled<Timeline>(chunk.Entities[rowIndex]) && !world.Has<AnimationLayers>(target))
                     {
-                        PropertyAnimation.FinishSource(world, row.Entity, in leader);
+                        PropertyAnimation.FinishSource(world, chunk.Entities[rowIndex], in leader);
                         continue;
                     }
                     T value = default;
@@ -87,9 +90,10 @@ public struct GraphOutputSystem<T, TOps>(TrackFields fields = TrackFields.Proper
                     leader.Current = value;
                     leader.Endpoints = TrackEndpoints.Values;
                     leader.Typed = true;
-                    if (PropertyAnimation.TrySubmitTyped<T, TOps>(world, row.Entity, (uint)output.Leader, in leader, out FieldWrite<T> write))
+                    if (PropertyAnimation.TrySubmitTyped<T, TOps>(world, chunk.Entities[rowIndex], (uint)output.Leader, in leader, out FieldWrite<T> write))
                         FieldWrites<T>.Add(ref evaluation.Writes, ref count, write.Target, write.Channel, write.Value);
                 }
+
             }
         }
         evaluation.Count = count;
@@ -105,7 +109,7 @@ public struct GraphOutputSystem<T, TOps>(TrackFields fields = TrackFields.Proper
             return;
         T sample = selected.Current;
         if (selected.Endpoints != TrackEndpoints.Values && selected.Channel.Component != ComponentId<AnimationLayers>.Value &&
-            world.Has<AnimationLayers>(target) && world.Read<AnimationLayers>(target).Items[selected.Layer].Mode == LayerMode.Additive)
+            world.Has<AnimationLayers>(target) && world.ReadComponentData<AnimationLayers>(target).Items[selected.Layer].Mode == LayerMode.Additive)
         {
             T basis = selected.To;
             PropertyAnimation.ReadBase(world, target, selected.Channel, ref basis);
@@ -118,7 +122,7 @@ public struct GraphOutputSystem<T, TOps>(TrackFields fields = TrackFields.Proper
 
     public void OnDestroy(ref ImmediateSystemContext context)
     {
-        context.World.ReleaseQuery(_outputs);
+
         ArrayPool<FieldWrite<T>>.Shared.Return(_writes);
     }
 }

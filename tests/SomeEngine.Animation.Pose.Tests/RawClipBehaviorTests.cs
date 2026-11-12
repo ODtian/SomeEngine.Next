@@ -174,8 +174,10 @@ public sealed class RawClipBehaviorTests
                 }
                 var accessor = new JsonObject
                 {
-                    ["bufferView"] = views.Count, ["componentType"] = 5126,
-                    ["count"] = values.Length / components, ["type"] = type,
+                    ["bufferView"] = views.Count,
+                    ["componentType"] = 5126,
+                    ["count"] = values.Length / components,
+                    ["type"] = type,
                 };
                 if (type == "SCALAR")
                 {
@@ -247,7 +249,8 @@ public sealed partial class ConsumerLinearClipBlock : AnimationClipBlock
     [BinaryIgnore] public override float Duration => DurationSeconds;
     [BinaryIgnore] public override short RootMotionBone => RootBone;
     [BinaryIgnore] public override ImmutableArray<ClipEvent> Events => Markers.ToImmutableArray();
-    [BinaryIgnore] public override ClipSampler Sampler => ClipSampler.Create<ConsumerLinearClipData, ConsumerLinearClipSampler>(
+    [BinaryIgnore]
+    public override ClipSampler Sampler => ClipSampler.Create<ConsumerLinearClipData, ConsumerLinearClipSampler>(
         new(RootBone, EndX / DurationSeconds));
 }
 

@@ -18,7 +18,7 @@ public sealed partial class StackLayoutTests
     public void InvalidAlignmentIsReportedByDevelopmentChecks(Align horizontal, Align vertical)
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(100, 100) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(100, 100) });
         Views.Views.Spawn(frames.World, canvas, new Stack(horizontal, vertical));
 
         Assert.Throws<InvalidOperationException>(frames.Frame);
@@ -29,15 +29,15 @@ public sealed partial class StackLayoutTests
     public void StackStretchesAutomaticDimensionsWithinBoxLimitsAndKeepsFixedDimensions()
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(400, 300) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(400, 300) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new StretchedChildren());
         frames.Frame();
-        Entity stack = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, stack).ToArray();
+        Entity stack = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] children = ElementChildren.Read(frames.World, stack);
 
-        Assert.Equal(new Rect(10, 10, 160, 120), frames.World.Read<LayoutRect>(children[0]).Value);
-        Assert.Equal(new Rect(10, 10, 60, 40), frames.World.Read<LayoutRect>(children[1]).Value);
-        Assert.Equal(new Rect(10, 10, 380, 280), frames.World.Read<LayoutRect>(children[2]).Value);
+        Assert.Equal(new Rect(10, 10, 160, 120), frames.World.ReadComponentData<LayoutRect>(children[0]).Value);
+        Assert.Equal(new Rect(10, 10, 60, 40), frames.World.ReadComponentData<LayoutRect>(children[1]).Value);
+        Assert.Equal(new Rect(10, 10, 380, 280), frames.World.ReadComponentData<LayoutRect>(children[2]).Value);
     }
 
     [Theory]
@@ -48,16 +48,16 @@ public sealed partial class StackLayoutTests
         float firstX, float secondY)
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(400, 300) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(400, 300) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new OverlaidChildren(horizontal, vertical));
         frames.Frame();
-        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity stack = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, absolute));
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, stack).ToArray();
+        Entity absolute = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity stack = Assert.Single(ElementChildren.Read(frames.World, absolute));
+        Entity[] children = ElementChildren.Read(frames.World, stack);
 
-        Assert.Equal(new Rect(10, 15, 130, 90), frames.World.Read<LayoutRect>(stack).Value);
-        Assert.Equal(new Rect(firstX, 20, 40, 80), frames.World.Read<LayoutRect>(children[0]).Value);
-        Assert.Equal(new Rect(15, secondY, 120, 20), frames.World.Read<LayoutRect>(children[1]).Value);
+        Assert.Equal(new Rect(10, 15, 130, 90), frames.World.ReadComponentData<LayoutRect>(stack).Value);
+        Assert.Equal(new Rect(firstX, 20, 40, 80), frames.World.ReadComponentData<LayoutRect>(children[0]).Value);
+        Assert.Equal(new Rect(15, secondY, 120, 20), frames.World.ReadComponentData<LayoutRect>(children[1]).Value);
     }
 
     private readonly record struct OverlaidChildren(Align Horizontal, Align Vertical) : IView, IComponent

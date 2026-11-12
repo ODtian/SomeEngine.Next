@@ -13,7 +13,7 @@ public sealed class TerrainGpuLodGeometryTests(SceneContentFixture content)
     [Fact]
     public async Task GpuLodAndDetailEditingMatchCpuPictures()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using GpuLodTerrainExample gpu = await GpuLodTerrainExample.CreateAsync(scheduler, content.DirectoryPath);
         var cpu = new LodTerrainExample(scheduler);
         SceneImage? near = null, far = null, expectedNear = null, expectedFar = null;

@@ -67,7 +67,7 @@ public sealed class TraceCapture : IDisposable
         lock (_threadsGate)
         {
             if (!IsRecording) return null;
-            var writer = new TraceWriter(this); _threads.Add(writer); return writer;
+            var writer = new TraceWriter(this, _threads.Count + 1); _threads.Add(writer); return writer;
         }
     }
     internal bool TryGetBlock(out TraceBlock? block) => _free.Reader.TryRead(out block);

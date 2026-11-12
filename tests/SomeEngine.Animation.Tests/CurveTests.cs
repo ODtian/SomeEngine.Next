@@ -33,25 +33,27 @@ public class CurveTests
     public void KeyframeCurveSamplesItsInstanceBufferAndSegmentEasing()
     {
         using var world = new World();
-        var entity = world.CreateEntity();
+        var entity = world.Create();
         world.AddBuffer<Keyframe>(entity);
-        world.ExecuteBufferWrite<Keyframe>(entity, static keys =>
         {
+            using var keys = world.GetBuffer<Keyframe>(entity);
             keys.Add(new Keyframe(0, 999));
             keys.Add(new Keyframe(0, 0));
             keys.Add(new Keyframe(0.5f, 0.8f, EasingType.QuadIn));
             keys.Add(new Keyframe(1, 1));
-        });
+
+        }
         Spec spec = Spec.Keyframes(2, start: 1, count: 3);
 
-        world.ExecuteBufferRead<Keyframe>(entity, keys =>
         {
+            using var keys = world.ReadBuffer<Keyframe>(entity);
             Assert.Equal(0, spec.Curve.Sample(-1, keys.AsSpan()));
             Assert.Equal(0.4f, spec.Curve.Sample(0.25f, keys.AsSpan()), 5);
             Assert.Equal(0.8f, spec.Curve.Sample(0.5f, keys.AsSpan()), 5);
             Assert.Equal(0.85f, spec.Curve.Sample(0.75f, keys.AsSpan()), 5);
             Assert.Equal(1, spec.Curve.Sample(2, keys.AsSpan()));
-        });
+
+        }
     }
 
     [Fact]

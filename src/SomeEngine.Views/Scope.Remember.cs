@@ -19,14 +19,14 @@ public static partial class Scope
 
         if (!current.World.HasSparse<RememberedValues>(current.Entity))
         {
-            current.World.AddSparse(current.Entity, new RememberedValues(new()));
+            current.World.SetSparse(current.Entity, new RememberedValues(new()));
             if (!current.World.Has<LocalState>(current.Entity))
-                current.World.AddTag<LocalState>(current.Entity);
+                current.World.Set(current.Entity, default(LocalState));
         }
         var values = current.World.ReadSparse<RememberedValues>(current.Entity).Values;
         if (values.TryGetValue((key, occurrence), out object? value))
             return (T)value!;
-        T initialized = init();
+        T initialized = init!();
         values.Add((key, occurrence), initialized);
         return initialized;
     }

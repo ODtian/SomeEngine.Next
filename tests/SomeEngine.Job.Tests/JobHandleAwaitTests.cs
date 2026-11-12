@@ -7,7 +7,7 @@ public sealed class JobHandleAwaitTests
     [InlineData(2)]
     public async Task AsyncCompletionIncludesTheJobAndItsChild(int workerCount)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = workerCount });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = workerCount });
         var number = new NumberData();
         JobHandle work = scheduler.Schedule(new ScheduleNumber(scheduler, number));
 
@@ -19,7 +19,7 @@ public sealed class JobHandleAwaitTests
     [Fact]
     public async Task AsyncCompletionFromAZeroWorkerCallbackContinuesThroughItsParent()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         var number = new NumberData();
         var result = new Task[1];
         JobHandle parent = scheduler.Schedule(new CompleteChild(scheduler, number, result));
@@ -35,7 +35,7 @@ public sealed class JobHandleAwaitTests
     [InlineData(2)]
     public async Task AsyncCompletionPreservesTheJobFailure(int workerCount)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = workerCount });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = workerCount });
         using var release = new ManualResetEventSlim(true);
         var error = new ApplicationException();
         JobHandle work = scheduler.Schedule(new ThrowErrorJob(error, release));
@@ -49,7 +49,7 @@ public sealed class JobHandleAwaitTests
     [Fact]
     public async Task CompletedJobCanBeAwaitedToReadItsResult()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         var number = new NumberData();
         JobHandle handle = scheduler.Schedule(new WriteNumberJob(number, 42));
         handle.Complete();
@@ -60,7 +60,7 @@ public sealed class JobHandleAwaitTests
     [Fact]
     public async Task UnfinishedJobCanBeAwaitedToReadItsResultOnTheCompletionThread()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 1 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 1 });
         using var started = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         var number = new NumberData();
@@ -96,7 +96,7 @@ public sealed class JobHandleAwaitTests
     [InlineData(true)]
     public async Task AwaitPropagatesJobFailure(bool completed)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 1 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 1 });
         using var release = new ManualResetEventSlim();
         using var observed = new ManualResetEventSlim();
         var error = new ApplicationException("Job failed");
@@ -126,7 +126,7 @@ public sealed class JobHandleAwaitTests
     [Fact]
     public void CompletionBetweenCheckingAndRegisteringResumesOnTheRegisteringThread()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         var number = new NumberData();
         JobHandle handle = scheduler.Schedule(new WriteNumberJob(number, 42));
         JobHandleAwaiter awaiter = handle.GetAwaiter();
@@ -141,7 +141,7 @@ public sealed class JobHandleAwaitTests
     [Fact]
     public async Task RegisteredWaitersKeepTheirFailureAfterCompletionRecordsAreReused()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, MaxCompletionStates = 1 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0, MaxCompletionStates = 1 });
         using var release = new ManualResetEventSlim(true);
         var failure = new ApplicationException();
         JobHandle handle = scheduler.Schedule(new ThrowErrorJob(failure, release));
@@ -165,7 +165,7 @@ public sealed class JobHandleAwaitTests
     [Fact]
     public async Task CompletedFailureCanBeSharedAsAnAsynchronousResult()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, MaxCompletionStates = 1 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0, MaxCompletionStates = 1 });
         using var release = new ManualResetEventSlim(true);
         var failure = new ApplicationException();
         JobHandle handle = scheduler.Schedule(new ThrowErrorJob(failure, release));

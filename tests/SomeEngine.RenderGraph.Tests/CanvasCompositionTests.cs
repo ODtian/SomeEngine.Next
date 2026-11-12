@@ -52,39 +52,39 @@ public sealed partial class CanvasCompositionTests
         Texture yellow = SolidTexture([255, 255, 0, 128]);
         using var renderer = new CanvasRenderer(backend, device, graph, world, surfaces,
             Format.R8G8B8A8UNorm, glyphs, images, renderDevice);
-        Entity atlas = world.CreateEntity(new RenderGlyphAtlas(
+        Entity atlas = world.World.Create(new RenderGlyphAtlas(
             new[] { new GlyphPagePixels(4, 4, Enumerable.Repeat((byte)255, 16).ToArray()) },
             new[] { new AtlasDirtyRegion(0, 0, 0, 4, 4) }, 8, 1));
-        Entity view = world.CreateEntity(new RenderView(Matrix4x4.Identity, Matrix4x4.Identity, 64, 64));
+        Entity view = world.World.Create(new RenderView(Matrix4x4.Identity, Matrix4x4.Identity, 64, 64));
         var canvasValue = new RenderCanvas(worldSpace ? CanvasTarget.WorldSpace(Entity.Null) : CanvasTarget.Screen,
             new Size(64, 64), 1)
         {
             Transform = Matrix4x4.CreateScale(1f / 32, 1f / 32, 1) * Matrix4x4.CreateTranslation(-1, 1, 0.25f),
             DepthTest = worldSpace,
         };
-        Entity canvas = world.CreateEntity(canvasValue);
-        world.Add(canvas, new CanvasGlyphAtlas(atlas));
-        world.AddBuffer<SurfaceInstance>(canvas);
-        world.AddBuffer<GlyphInstance>(canvas);
-        world.AddBuffer<ImageInstance>(canvas);
+        Entity canvas = world.World.Create(canvasValue);
+        world.World.Add(canvas, new CanvasGlyphAtlas(atlas));
+        world.World.AddBuffer<SurfaceInstance>(canvas);
+        world.World.AddBuffer<GlyphInstance>(canvas);
+        world.World.AddBuffer<ImageInstance>(canvas);
         var clip = new Rect(0, 0, 64, 64);
-        world.ExecuteBufferWrite<SurfaceInstance>(canvas, values =>
+        using (SomeEngine.ECS.DynamicBuffer<SurfaceInstance> values = world.World.GetBuffer<SurfaceInstance>(canvas))
         {
             values.Add(new(Entity.Null, clip, new Color(0, 0, 1), 0, default, 0, clip, 0, 1));
             values.Add(new(Entity.Null, new Rect(24, 24, 8, 8), new Color(0, 1, 0), 0, default, 0, clip, 3, 1));
-        });
-        world.ExecuteBufferWrite<GlyphInstance>(canvas, values =>
+        }
+        using (SomeEngine.ECS.DynamicBuffer<GlyphInstance> values = world.World.GetBuffer<GlyphInstance>(canvas))
         {
             values.Add(new(Entity.Null, 0, new Rect(8, 8, 32, 32), Vector2.Zero, Vector2.One,
                 new Color(1, 1, 1, 0.5f), new Rect(0, 0, 40, 64), 0, 1, 1));
             values.Add(new(Entity.Null, 1, new Rect(16, 16, 8, 8), Vector2.Zero, Vector2.One,
                 new Color(0, 1, 1, 0.5f), clip, 0, 4, 1));
-        });
-        world.ExecuteBufferWrite<ImageInstance>(canvas, values =>
+        }
+        using (SomeEngine.ECS.DynamicBuffer<ImageInstance> values = world.World.GetBuffer<ImageInstance>(canvas))
         {
             values.Add(new(Entity.Null, red, new Rect(16, 8, 32, 40), new Rect(0, 0, 1, 1), clip, 2, 1));
             values.Add(new(Entity.Null, yellow, new Rect(32, 32, 8, 8), new Rect(0, 0, 1, 1), clip, 5, 1));
-        });
+        }
         using SomeEngine.Graphics.Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(64 * 256, BufferUsages.CopyDestination), MemoryType.Readback);
         GraphTextureId target = CreateTarget(graph, readback, out GraphTextureId depth, out GraphPassId copy);
@@ -93,16 +93,18 @@ public sealed partial class CanvasCompositionTests
         ulong structure = 0;
         for (int index = 0; index < (worldSpace ? 5 : 4); index++)
         {
-            world.AcquireSystemTick();
+            world.World.AcquireSystemVersion();
             if (index == 2)
             {
-                world.Replace(atlas, new RenderGlyphAtlas(new[] { new GlyphPagePixels(4, 4, new byte[16]) },
+                world.World.Set(atlas, new RenderGlyphAtlas(new[] { new GlyphPagePixels(4, 4, new byte[16]) },
                     new[] { new AtlasDirtyRegion(0, 0, 0, 4, 4) }, 8, 2));
-                world.ExecuteBufferWrite<ImageInstance>(canvas, values =>
-                    values[0] = values[0] with { Texture = magenta, Version = 2 });
+                using (SomeEngine.ECS.DynamicBuffer<ImageInstance> values = world.World.GetBuffer<ImageInstance>(canvas))
+                {
+                    values[0] = values[0] with { Texture = magenta, Version = 2 };
+                }
             }
             if (index == 3) { GC.Collect(); GC.WaitForPendingFinalizers(); }
-            if (index == 4) world.Replace(canvas, canvasValue with
+            if (index == 4) world.World.Set(canvas, canvasValue with
             {
                 Transform = Matrix4x4.CreateScale(1f / 32, 1f / 32, 1) * Matrix4x4.CreateTranslation(-1, 1, 0.75f),
             });

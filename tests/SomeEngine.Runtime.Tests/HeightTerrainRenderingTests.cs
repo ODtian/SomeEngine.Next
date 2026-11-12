@@ -14,7 +14,7 @@ public sealed class HeightTerrainRenderingTests(SceneContentFixture content)
     [Fact]
     public async Task HeightEditMovesBothSharedPlacementsToTheRaisedSurface()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var example = new HeightTerrainExample(scheduler);
         SceneImage? before = null, after = null, expectedBefore = null, expectedAfter = null;
         var application = new ApplicationScene(content.DirectoryPath)

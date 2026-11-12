@@ -3,7 +3,6 @@ using SomeEngine.Animation;
 using SomeEngine.Animation.Pose;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Features.Skinning;
 using SomeEngine.Runtime;
@@ -54,11 +53,11 @@ public sealed class CrowdScene(CrowdExample example) : IDisposable
             SkeletonInstance skeleton = _characters[index] = storage.CreateInstance(example.Skeleton);
             Entity target = _targets[index] = GpuPoseAnimation.CreateTarget(frame.World, skeleton);
             Entity animation = graph.Play(frame.World, target);
-            Timeline clock = frame.World.Read<Timeline>(animation);
+            Timeline clock = frame.World.ReadComponentData<Timeline>(animation);
             clock.Time = CrowdExample.Phase(index);
-            frame.World.Replace(animation, clock);
-            frame.World.Add(animation, new CrowdCharacter(index));
-            frame.World.Add(mesh, new MeshSkin(skeleton, example.Binding));
+            frame.World.Set(animation, clock);
+            frame.World.Set(animation, new CrowdCharacter(index));
+            frame.World.Set(mesh, new MeshSkin(skeleton, example.Binding));
             index++;
         }
     }
@@ -118,32 +117,29 @@ public sealed class CrowdScene(CrowdExample example) : IDisposable
 
     private sealed class CrowdControls : ISystem<ImmediateSystemContext>
     {
-        private QueryHandle _characters;
+        private Query _characters;
         public double Seconds { get; private set; }
         public int[] Counts { get; } = new int[4];
         public void OnCreate(ref ImmediateSystemContext context) => _characters = context.World.Query(
-            new QueryDefinitionBuilder().Read<CrowdCharacter>().WriteBuffer<GpuStateInstance>());
+            new QueryDescription().WithStored<CrowdCharacter>().WithStored<Buffer<GpuStateInstance>>());
         public void OnUpdate(ref ImmediateSystemContext context)
         {
             Seconds += context.DeltaTime;
             Array.Clear(Counts);
-            CrowdControls controls = this;
-            context.World.ExecuteQuery(_characters, ref controls, static (scoped QueryCursor rows, ref CrowdControls controls) =>
+            using QueryScope rows = _characters.Open();
+            foreach (QueryChunk chunk in rows)
             {
-                foreach (QueryChunkView chunk in rows.Chunks)
+                ReadOnlySpan<CrowdCharacter> characters = chunk.Read<CrowdCharacter>();
+                for (int row = 0; row < chunk.Count; row++)
                 {
-                    ReadOnlySpan<CrowdCharacter> characters = chunk.Read<CrowdCharacter>();
-                    BufferWriteColumn<GpuStateInstance> states = chunk.WriteBufferColumn<GpuStateInstance>();
-                    foreach (int row in chunk.RowIndices)
-                    {
-                        int state = CrowdExample.RequestedState(characters[row].Index, controls.Seconds);
-                        states[row][0].Controls[0] = state;
-                        controls.Counts[state]++;
-                    }
+                    using DynamicBuffer<GpuStateInstance> states = chunk.GetBuffer<GpuStateInstance>(row);
+                    int state = CrowdExample.RequestedState(characters[row].Index, Seconds);
+                    states[0].Controls[0] = state;
+                    Counts[state]++;
                 }
-            });
+            }
         }
-        public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_characters);
+        public void OnDestroy(ref ImmediateSystemContext context) => _characters = default;
     }
 }
 

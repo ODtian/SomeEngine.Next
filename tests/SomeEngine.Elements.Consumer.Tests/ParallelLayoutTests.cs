@@ -36,10 +36,10 @@ public sealed partial class ParallelLayoutTests
             {
                 Assert.Equal(serial.World.Has<LayoutRect>(node), parallel.World.Has<LayoutRect>(node));
                 if (serial.World.Has<LayoutRect>(node))
-                    Assert.Equal(serial.World.Read<LayoutRect>(node), parallel.World.Read<LayoutRect>(node));
+                    Assert.Equal(serial.World.ReadComponentData<LayoutRect>(node), parallel.World.ReadComponentData<LayoutRect>(node));
                 if (!serial.World.Has<ShapedText>(node)) continue;
-                ShapedText expected = serial.World.Read<ShapedText>(node);
-                ShapedText actual = parallel.World.Read<ShapedText>(node);
+                ShapedText expected = serial.World.ReadComponentData<ShapedText>(node);
+                ShapedText actual = parallel.World.ReadComponentData<ShapedText>(node);
                 Assert.Equal(expected.Size, actual.Size);
                 Assert.Equal(expected.Version, actual.Version);
                 Assert.Equal(expected.Shape.Glyphs.ToArray(), actual.Shape.Glyphs.ToArray());
@@ -63,7 +63,7 @@ public sealed partial class ParallelLayoutTests
             _systems.Add(new LayoutSystem(shaping) { Parallel = parallel });
             for (int index = 0; index < _canvases.Length; index++)
             {
-                Entity canvas = World.CreateEntity(new Canvas { Size = new Size(500, 400) });
+                Entity canvas = World.Create(new Canvas { Size = new Size(500, 400) });
                 _canvases[index] = canvas;
                 World.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 16 }));
                 Views.Views.Spawn(World, canvas, new Tree(seed + index));
@@ -74,7 +74,7 @@ public sealed partial class ParallelLayoutTests
         private IEnumerable<Entity> Descendants(Entity node)
         {
             yield return node;
-            foreach (Entity child in Hierarchy<ElementTree>.GetChildren(World, node))
+            foreach (Entity child in ElementChildren.Read(World, node))
                 foreach (Entity descendant in Descendants(child)) yield return descendant;
         }
 
@@ -88,22 +88,22 @@ public sealed partial class ParallelLayoutTests
                     node.SetText(World, $"office {random.Next(100000)} AV\nnext line");
                 if (World.Has<Box>(node) && random.Next(6) == 0)
                 {
-                    Box box = World.Read<Box>(node);
+                    Box box = World.ReadComponentData<Box>(node);
                     box.Fixed = random.Next(2) == 0 ? new Size(random.Next(60, 180), random.Next(40, 100)) : Size.Auto;
-                    World.Replace(node, box);
+                    World.Set(node, box);
                 }
                 if (World.Has<Flex>(node) && random.Next(7) == 0)
-                    World.Replace(node, new Flex((Axis)random.Next(2), random.Next(6), CrossAlign: Align.Start));
+                    World.Set(node, new Flex((Axis)random.Next(2), random.Next(6), CrossAlign: Align.Start));
                 if (frame % 5 == 4 && World.Has<LayoutCache>(node)) World.Remove<LayoutCache>(node);
             }
             if (frame % 3 == 1)
             {
                 Entity parent = nodes.FirstOrDefault(node => World.Has<Flex>(node));
-                var children = Hierarchy<ElementTree>.GetChildren(World, parent);
-                if (children.Count > 1) Hierarchy<ElementTree>.Reorder(World, children[^1], 0);
+                var children = ElementChildren.Read(World, parent);
+                if (children.Length > 1) Hierarchy<ElementTree>.SetParent(World, children[^1], parent, 0);
             }
             if (frame % 4 == 2)
-                World.Replace(_canvases[0], new Canvas { Size = new Size(420 + random.Next(160), 400), Scale = 2 });
+                World.Set(_canvases[0], new Canvas { Size = new Size(420 + random.Next(160), 400), Scale = 2 });
         }
 
         public void Update() => _systems.Update();

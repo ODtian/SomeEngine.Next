@@ -20,7 +20,7 @@ public sealed class TerrainCacheRenderingTests(SceneContentFixture content)
         Terrain? restored = null;
         try
         {
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
             var editing = new TerrainEditing(scheduler);
             using Terrain original = CreateTerrain(editing);
             using var materialAsset = await MaterialAsset.OpenAsync(Path.Combine(content.DirectoryPath, "assets/Materials/sphere-0.material.asset"));

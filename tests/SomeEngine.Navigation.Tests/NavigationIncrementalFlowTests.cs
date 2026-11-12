@@ -10,13 +10,13 @@ public sealed class NavigationIncrementalFlowTests
     [Fact]
     public void CompletedSourceChangesUpdateSharedGridCostsAndMoveFollowersAroundTheNewObstacle()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3 });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1);
         var scene = new NavigationScene(new(default, default, default));
         var region = new NavigationRegionSources(scene, 3, new(new(0, -1, 0), new(12, 4, 6)), profile,
             new NavigationPolicy(), new() { CellSize = 0.5f, CellHeight = 0.1f, TileSize = 8 });
-        var floor = world.CreateEntity(new NavigationSource(new NavigationGeometry(
+        var floor = world.Create(new NavigationSource(new NavigationGeometry(
             [new(-1, 0, -1), new(-1, 0, 7), new(13, 0, 7), new(13, 0, -1)], [new(0, 1, 2, 0), new(0, 2, 3, 0)])));
         world.Add(floor, new SourcePlacement(Matrix4x4.Identity));
         var sources = new NavigationSourceSystem<SourcePlacement, SourcePlacementReader>(world, region, scheduler);
@@ -28,11 +28,11 @@ public sealed class NavigationIncrementalFlowTests
         var solver = new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler);
         ReverseDijkstraFlowState retained = solver.Schedule().Complete();
         var navigation = new NavigationSystems<Motion, MotionReader>(world);
-        var actor = world.CreateEntity(new Motion(new(1.25f, 0, 1.25f), default, 0));
+        var actor = world.Create(new Motion(new(1.25f, 0, 1.25f), default, 0));
         navigation.AddFlowAgent(actor, flow, 2);
 
         // This box is an example source change that closes the lower part of the middle tile.
-        var obstacle = world.CreateEntity(new NavigationObstacle(new NavigationGeometry(
+        var obstacle = world.Create(new NavigationObstacle(new NavigationGeometry(
             [new(5, 0, -1), new(5, 0, 2.5f), new(6, 0, 2.5f), new(6, 0, -1),
              new(5, 3, -1), new(5, 3, 2.5f), new(6, 3, 2.5f), new(6, 3, -1)],
             [new(0, 2, 1, 0), new(0, 3, 2, 0), new(4, 5, 6, 0), new(4, 6, 7, 0),
@@ -47,13 +47,13 @@ public sealed class NavigationIncrementalFlowTests
         for (int frame = 0; frame < 120; frame++)
         {
             navigation.Schedule(0.1f, repaired.Completion).Steering.Complete();
-            Motion motion = world.Read<Motion>(actor);
-            NavigationSteering steering = world.Read<NavigationSteering>(actor);
+            Motion motion = world.ReadValue<Motion>(actor);
+            NavigationSteering steering = world.ReadValue<NavigationSteering>(actor);
             Vector3 position = motion.Position + steering.Velocity * 0.1f;
-            world.Replace(actor, new Motion(position, steering.Velocity, steering.Heading));
+            world.Set(actor, new Motion(position, steering.Velocity, steering.Heading));
             positions.Add(position);
             navigation.ScheduleProgress(default).Complete();
-            if (world.Read<NavigationProgress>(actor).Status == NavigationStatus.Arrived) break;
+            if (world.ReadValue<NavigationProgress>(actor).Status == NavigationStatus.Arrived) break;
         }
         Assert.Same(retained, repaired.State);
         Assert.Same(flow.Costs, other.Costs);
@@ -61,14 +61,14 @@ public sealed class NavigationIncrementalFlowTests
         Assert.Equal(first.Grid.ResidenceVersion, flow.Costs.Grid.ResidenceVersion);
         Assert.Same(first.Grid.Tiles.Span[2].Grid, flow.Costs.Grid.Tiles.Span[2].Grid);
         Assert.Contains(positions, position => position.X > 5 && position.X < 6 && position.Z > 2.5f);
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(actor).Status);
     }
 
     [Fact]
     public void EikonalFollowersRepairBothUpwindDirectionsAfterCostAndGoalChanges()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3 });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy();
         NavigationGrid grid = NavigationGridRegionBuilder.Schedule(OpenArea(), profile, policy, scheduler: scheduler).Complete().Grid;
@@ -80,7 +80,7 @@ public sealed class NavigationIncrementalFlowTests
         Vector3 probe = new(0.5f, 0, 1.5f);
         Assert.Equal(8f, previous.CumulativeCosts.Span[grid.FindCell(probe)], 4);
         var navigation = new NavigationSystems<Motion, MotionReader>(world);
-        var actor = world.CreateEntity(new Motion(probe, default, 0));
+        var actor = world.Create(new Motion(probe, default, 0));
         navigation.AddFlowAgent(actor, flow, 2);
         MoveOneFrame();
 
@@ -110,18 +110,18 @@ public sealed class NavigationIncrementalFlowTests
         for (int frame = 0; frame < 120; frame++)
         {
             MoveOneFrame();
-            if (world.Read<NavigationProgress>(actor).Status == NavigationStatus.Arrived) break;
+            if (world.ReadValue<NavigationProgress>(actor).Status == NavigationStatus.Arrived) break;
         }
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(actor).Status);
         Assert.Equal(flow.Input.GoalVersion, flow.Field!.Input.GoalVersion);
         Assert.All(retained.TileStates.ToArray(), tile => Assert.Equal(NavigationFlowStatus.Ready, tile.Status));
 
         void MoveOneFrame()
         {
             navigation.Schedule(0.1f).Steering.Complete();
-            Motion motion = world.Read<Motion>(actor);
-            NavigationSteering steering = world.Read<NavigationSteering>(actor);
-            world.Replace(actor, new Motion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
+            Motion motion = world.ReadValue<Motion>(actor);
+            NavigationSteering steering = world.ReadValue<NavigationSteering>(actor);
+            world.Set(actor, new Motion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
             navigation.ScheduleProgress(default).Complete();
         }
     }
@@ -129,8 +129,8 @@ public sealed class NavigationIncrementalFlowTests
     [Fact]
     public void SharedDijkstraFollowersUseRaisedThenLoweredChannelCostsAndReachTheirChangedGoal()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3 });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy([new(7, 1), new(8, 2)]);
         NavigationGrid grid = NavigationGridRegionBuilder.Schedule(TwoChannels(), profile, policy, scheduler: scheduler).Complete().Grid;
@@ -140,8 +140,8 @@ public sealed class NavigationIncrementalFlowTests
         var solver = new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler);
         ReverseDijkstraFlowState retained = solver.Schedule().Complete();
         var navigation = new NavigationSystems<Motion, MotionReader>(world);
-        var actors = new[] { world.CreateEntity(new Motion(new(1.5f, 0, 1.4f), default, 0)),
-            world.CreateEntity(new Motion(new(1.5f, 0, 1.6f), default, 0)) };
+        var actors = new[] { world.Create(new Motion(new(1.5f, 0, 1.4f), default, 0)),
+            world.Create(new Motion(new(1.5f, 0, 1.6f), default, 0)) };
         foreach (var actor in actors) navigation.AddFlowAgent(actor, flow, 2);
         Vector3 fork = new(1.5f, 0, 1.5f);
         NavigationFlowField previous = flow.Field!;
@@ -156,7 +156,7 @@ public sealed class NavigationIncrementalFlowTests
         Assert.Same(retained, solver.Schedule(0).Complete());
         Assert.Equal(NavigationFlowStatus.Searching, retained.Status);
         MoveOneFrame();
-        Assert.All(actors, actor => Assert.Equal(NavigationStatus.Searching, world.Read<NavigationProgress>(actor).Status));
+        Assert.All(actors, actor => Assert.Equal(NavigationStatus.Searching, world.ReadValue<NavigationProgress>(actor).Status));
         solver.Schedule().Complete();
         Assert.Same(flow.Costs, other.Costs);
         Assert.True(flow.Field!.SampleDirection(fork).Z > 0);
@@ -174,20 +174,20 @@ public sealed class NavigationIncrementalFlowTests
         for (int frame = 0; frame < 80; frame++)
         {
             MoveOneFrame();
-            if (actors.All(actor => world.Read<NavigationProgress>(actor).Status == NavigationStatus.Arrived)) break;
+            if (actors.All(actor => world.ReadValue<NavigationProgress>(actor).Status == NavigationStatus.Arrived)) break;
         }
-        Assert.All(actors, actor => Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status));
+        Assert.All(actors, actor => Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(actor).Status));
         Assert.Equal(flow.Input.GoalVersion, flow.Field!.Input.GoalVersion);
-        Assert.Equal(flow.Input.Version, world.Read<NavigationGuidance>(actors[0]).RequestVersion);
+        Assert.Equal(flow.Input.Version, world.ReadValue<NavigationGuidance>(actors[0]).RequestVersion);
 
         void MoveOneFrame()
         {
             navigation.Schedule(0.1f).Steering.Complete();
             foreach (var actor in actors)
             {
-                Motion motion = world.Read<Motion>(actor);
-                NavigationSteering steering = world.Read<NavigationSteering>(actor);
-                world.Replace(actor, new Motion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
+                Motion motion = world.ReadValue<Motion>(actor);
+                NavigationSteering steering = world.ReadValue<NavigationSteering>(actor);
+                world.Set(actor, new Motion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
             }
             navigation.ScheduleProgress(default).Complete();
         }

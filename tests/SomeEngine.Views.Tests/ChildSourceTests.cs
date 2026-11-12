@@ -13,18 +13,18 @@ public sealed partial class ChildSourceTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ContentDeclaration(true));
         frames.Frame();
-        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, group).ToArray();
-        Assert.Equal(new[] { "A", "B" }, children.Select(child => frames.World.Read<Branch>(child).Text));
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, children[1]));
-        frames.World.Replace(root, new ContentDeclaration(false));
+        Entity group = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] children = ElementChildren.Read(frames.World, group);
+        Assert.Equal(new[] { "A", "B" }, children.Select(child => frames.World.ReadComponentData<Branch>(child).Text));
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, children[1]));
+        frames.World.Set(root, new ContentDeclaration(false));
 
         frames.Frame();
 
-        Assert.Equal(group, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        Assert.Equal(children[0], Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group)));
-        Assert.False(frames.World.IsAlive(children[1]));
-        Assert.False(frames.World.IsAlive(leaf));
+        Assert.Equal(group, Assert.Single(ElementChildren.Read(frames.World, root)));
+        Assert.Equal(children[0], Assert.Single(ElementChildren.Read(frames.World, group)));
+        Assert.False(frames.World.IsAlive(children[1]) && frames.World.Has<ViewType>(children[1]));
+        Assert.False(frames.World.IsAlive(leaf) && frames.World.Has<ViewType>(leaf));
     }
 
     [Theory]
@@ -35,20 +35,20 @@ public sealed partial class ChildSourceTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ContainerDeclaration("first", "A", sparse));
         frames.Frame();
-        Entity container = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container));
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, child));
+        Entity container = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, container));
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, child));
         if (sparse)
-            frames.World.ReplaceSparse(container, new SparseContainer("updated"));
+            frames.World.SetSparse(container, new SparseContainer("updated"));
         else
-            frames.World.Replace(container, new Container("updated"));
+            frames.World.Set(container, new Container("updated"));
 
         frames.Frame();
 
-        Assert.Equal("updated", frames.World.Read<DisplayText>(container).Text);
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container)));
-        Assert.Equal(leaf, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, child)));
-        Assert.Equal("A", frames.World.Read<Label>(leaf).Text);
+        Assert.Equal("updated", frames.World.ReadComponentData<DisplayText>(container).Text);
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(frames.World, container)));
+        Assert.Equal(leaf, Assert.Single(ElementChildren.Read(frames.World, child)));
+        Assert.Equal("A", frames.World.ReadComponentData<Label>(leaf).Text);
     }
 
     [Theory]
@@ -59,25 +59,25 @@ public sealed partial class ChildSourceTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ContainerDeclaration("container", "A", sparse));
         frames.Frame();
-        Entity container = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container));
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, child));
-        uint parameterVersion = sparse
-            ? frames.World.SparseWriteVersion<SparseContainer>(container)
-            : frames.World.WriteVersion<Container>(container);
-        uint displayVersion = frames.World.WriteVersion<DisplayText>(container);
-        frames.World.Replace(root, new ContainerDeclaration("container", "B", sparse));
+        Entity container = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, container));
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, child));
+        ulong parameterVersion = sparse
+            ? frames.World.ComponentDataWriteVersion<SparseContainer>(container)
+            : frames.World.ComponentDataWriteVersion<Container>(container);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayText>(container);
+        frames.World.Set(root, new ContainerDeclaration("container", "B", sparse));
 
         frames.Frame();
 
-        Assert.Equal(container, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container)));
-        Assert.Equal(leaf, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, child)));
-        Assert.Equal("B", frames.World.Read<Label>(leaf).Text);
+        Assert.Equal(container, Assert.Single(ElementChildren.Read(frames.World, root)));
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(frames.World, container)));
+        Assert.Equal(leaf, Assert.Single(ElementChildren.Read(frames.World, child)));
+        Assert.Equal("B", frames.World.ReadComponentData<Label>(leaf).Text);
         Assert.Equal(parameterVersion, sparse
-            ? frames.World.SparseWriteVersion<SparseContainer>(container)
-            : frames.World.WriteVersion<Container>(container));
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayText>(container));
+            ? frames.World.ComponentDataWriteVersion<SparseContainer>(container)
+            : frames.World.ComponentDataWriteVersion<Container>(container));
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayText>(container));
     }
 
     [Theory]
@@ -88,16 +88,16 @@ public sealed partial class ChildSourceTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ContainerDeclaration("first", "A", sparse));
         frames.Frame();
-        Entity container = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container));
-        frames.World.Replace(root, new ContainerDeclaration("updated", "B", sparse));
+        Entity container = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, container));
+        frames.World.Set(root, new ContainerDeclaration("updated", "B", sparse));
 
         frames.Frame();
 
-        Assert.Equal(container, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container)));
-        Assert.Equal("updated", frames.World.Read<DisplayText>(container).Text);
-        Assert.Equal("B", frames.World.Read<Branch>(child).Text);
+        Assert.Equal(container, Assert.Single(ElementChildren.Read(frames.World, root)));
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(frames.World, container)));
+        Assert.Equal("updated", frames.World.ReadComponentData<DisplayText>(container).Text);
+        Assert.Equal("B", frames.World.ReadComponentData<Branch>(child).Text);
     }
 
     [Fact]
@@ -106,17 +106,17 @@ public sealed partial class ChildSourceTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ContentDeclaration(true));
         frames.Frame();
-        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, group).ToArray();
+        Entity group = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] children = ElementChildren.Read(frames.World, group);
         Entity[] leaves = children.Select(child =>
-            Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, child))).ToArray();
-        frames.World.Replace(root, new ContentDeclaration(false, IncludeFirst: false));
+            Assert.Single(ElementChildren.Read(frames.World, child))).ToArray();
+        frames.World.Set(root, new ContentDeclaration(false, IncludeFirst: false));
 
         frames.Frame();
 
-        Assert.Equal(group, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, group));
-        Assert.All(children.Concat(leaves), entity => Assert.False(frames.World.IsAlive(entity)));
+        Assert.Equal(group, Assert.Single(ElementChildren.Read(frames.World, root)));
+        Assert.Empty(ElementChildren.Read(frames.World, group));
+        Assert.All(children.Concat(leaves), entity => Assert.False(frames.World.IsAlive(entity) && frames.World.Has<ViewType>(entity)));
     }
 
     [Fact]
@@ -125,17 +125,17 @@ public sealed partial class ChildSourceTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new KeyedContentDeclaration([11, 22, 33]));
         frames.Frame();
-        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, group).ToArray();
+        Entity group = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] children = ElementChildren.Read(frames.World, group);
         frames.World.Add(children[1], new DisplayText("selected"));
-        frames.World.AddTag<LocalState>(children[1]);
-        frames.World.Replace(root, new KeyedContentDeclaration([33, 11, 22]));
+        frames.World.Set(children[1], default(LocalState));
+        frames.World.Set(root, new KeyedContentDeclaration([33, 11, 22]));
 
         frames.Frame();
 
         Assert.Equal(new[] { children[2], children[0], children[1] },
-            Hierarchy<ElementTree>.GetChildren(frames.World, group).ToArray());
-        Assert.Equal("selected", frames.World.Read<DisplayText>(children[1]).Text);
+            ElementChildren.Read(frames.World, group));
+        Assert.Equal("selected", frames.World.ReadComponentData<DisplayText>(children[1]).Text);
     }
 
     [Fact]
@@ -146,22 +146,22 @@ public sealed partial class ChildSourceTests
 
         frames.Frame();
 
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] children = ElementChildren.Read(frames.World, root);
         Assert.Equal(3, children.Length);
-        Assert.Equal("caller", frames.World.Read<DisplayText>(root).Text);
-        Assert.Equal("outer", frames.World.Read<DisplayText>(children[0]).Text);
-        Assert.Equal("D", frames.World.Read<Label>(children[1]).Text);
-        Assert.Equal("E", frames.World.Read<Label>(children[2]).Text);
-        Assert.Equal(99UL, frames.World.Read<ElementKey>(children[2]).Key);
-        Entity[] content = Hierarchy<ElementTree>.GetChildren(frames.World, children[0]).ToArray();
+        Assert.Equal("caller", frames.World.ReadComponentData<DisplayText>(root).Text);
+        Assert.Equal("outer", frames.World.ReadComponentData<DisplayText>(children[0]).Text);
+        Assert.Equal("D", frames.World.ReadComponentData<Label>(children[1]).Text);
+        Assert.Equal("E", frames.World.ReadComponentData<Label>(children[2]).Text);
+        Assert.Equal(99UL, frames.World.ReadComponentData<ElementKey>(children[2]).Key);
+        Entity[] content = ElementChildren.Read(frames.World, children[0]);
         Assert.Equal(3, content.Length);
-        Assert.Equal("A", frames.World.Read<Label>(content[0]).Text);
-        Assert.Equal(11UL, frames.World.Read<ElementKey>(content[0]).Key);
-        Assert.Equal("inner", frames.World.Read<DisplayText>(content[1]).Text);
-        Assert.Equal("C", frames.World.Read<Label>(content[2]).Text);
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, content[1]));
-        Assert.Equal("B", frames.World.Read<Label>(leaf).Text);
-        Assert.Equal(11UL, frames.World.Read<ElementKey>(leaf).Key);
+        Assert.Equal("A", frames.World.ReadComponentData<Label>(content[0]).Text);
+        Assert.Equal(11UL, frames.World.ReadComponentData<ElementKey>(content[0]).Key);
+        Assert.Equal("inner", frames.World.ReadComponentData<DisplayText>(content[1]).Text);
+        Assert.Equal("C", frames.World.ReadComponentData<Label>(content[2]).Text);
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, content[1]));
+        Assert.Equal("B", frames.World.ReadComponentData<Label>(leaf).Text);
+        Assert.Equal(11UL, frames.World.ReadComponentData<ElementKey>(leaf).Key);
     }
 
     [Theory]
@@ -170,87 +170,87 @@ public sealed partial class ChildSourceTests
     public void ContentReadsUpdateTheCallerChildrenWhenTheirSourceChanges(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity();
+        Entity source = frames.World.Create();
         if (sparse)
-            frames.World.AddSparse(source, new SparseText("A"));
+            frames.World.SetSparse(source, new SparseText("A"));
         else
             frames.World.Add(source, new DisplayText("A"));
         Entity root = Views.Spawn(frames.World, Entity.Null, new ReadContentDeclaration(source, sparse));
         frames.Frame();
-        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group));
-        uint groupVersion = frames.World.WriteVersion<Group>(group);
+        Entity group = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, group));
+        ulong groupVersion = frames.World.ComponentDataWriteVersion<Group>(group);
         if (sparse)
-            frames.World.ReplaceSparse(source, new SparseText("B"));
+            frames.World.SetSparse(source, new SparseText("B"));
         else
-            frames.World.Replace(source, new DisplayText("B"));
+            frames.World.Set(source, new DisplayText("B"));
 
         frames.Frame();
 
-        Assert.Equal(group, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group)));
-        Assert.Equal("B", frames.World.Read<Label>(child).Text);
-        Assert.Equal(groupVersion, frames.World.WriteVersion<Group>(group));
+        Assert.Equal(group, Assert.Single(ElementChildren.Read(frames.World, root)));
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(frames.World, group)));
+        Assert.Equal("B", frames.World.ReadComponentData<Label>(child).Text);
+        Assert.Equal(groupVersion, frames.World.ComponentDataWriteVersion<Group>(group));
     }
 
     [Fact]
     public void ContainerDependencyChangesUpdateItsDataAndPreserveCallerChildren()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new DisplayText("first"));
+        Entity source = frames.World.Create(new DisplayText("first"));
         Entity root = Views.Spawn(frames.World, Entity.Null, new ReadContainerDeclaration(source));
         frames.Frame();
-        Entity container = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container));
-        frames.World.Replace(source, new DisplayText("updated"));
+        Entity container = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, container));
+        frames.World.Set(source, new DisplayText("updated"));
 
         frames.Frame();
 
-        Assert.Equal("updated", frames.World.Read<DisplayText>(container).Text);
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container)));
-        Assert.Equal("A", frames.World.Read<Label>(child).Text);
+        Assert.Equal("updated", frames.World.ReadComponentData<DisplayText>(container).Text);
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(frames.World, container)));
+        Assert.Equal("A", frames.World.ReadComponentData<Label>(child).Text);
     }
 
     [Fact]
     public void OnceContentReadsPreserveTheFirstChildrenAfterSourceChanges()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new DisplayText("A"));
+        Entity source = frames.World.Create(new DisplayText("A"));
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceReadContentDeclaration(source));
         frames.Frame();
-        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group));
-        uint childVersion = frames.World.WriteVersion<Label>(child);
-        frames.World.Replace(source, new DisplayText("B"));
+        Entity group = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, group));
+        ulong childVersion = frames.World.ComponentDataWriteVersion<Label>(child);
+        frames.World.Set(source, new DisplayText("B"));
 
         frames.Frame();
 
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group)));
-        Assert.Equal("A", frames.World.Read<Label>(child).Text);
-        Assert.Equal(childVersion, frames.World.WriteVersion<Label>(child));
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(frames.World, group)));
+        Assert.Equal("A", frames.World.ReadComponentData<Label>(child).Text);
+        Assert.Equal(childVersion, frames.World.ComponentDataWriteVersion<Label>(child));
     }
 
     [Fact]
     public void ContentKeepsDependenciesReadBeforeAndAfterItsBlock()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity before = frames.World.CreateEntity(new DisplayText("A"));
-        Entity inside = frames.World.CreateEntity(new DisplayText("B"));
-        Entity after = frames.World.CreateEntity(new DisplayText("C"));
+        Entity before = frames.World.Create(new DisplayText("A"));
+        Entity inside = frames.World.Create(new DisplayText("B"));
+        Entity after = frames.World.Create(new DisplayText("C"));
         Entity root = Views.Spawn(frames.World, Entity.Null, new SurroundingReads(before, inside, after));
         frames.Frame();
-        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group));
-        frames.World.Replace(before, new DisplayText("D"));
+        Entity group = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, group));
+        frames.World.Set(before, new DisplayText("D"));
 
         frames.Frame();
-        Assert.Equal("DC", frames.World.Read<DisplayText>(root).Text);
-        frames.World.Replace(inside, new DisplayText("E"));
+        Assert.Equal("DC", frames.World.ReadComponentData<DisplayText>(root).Text);
+        frames.World.Set(inside, new DisplayText("E"));
         frames.Frame();
-        Assert.Equal("E", frames.World.Read<Label>(child).Text);
-        frames.World.Replace(after, new DisplayText("F"));
+        Assert.Equal("E", frames.World.ReadComponentData<Label>(child).Text);
+        frames.World.Set(after, new DisplayText("F"));
         frames.Frame();
-        Assert.Equal("DF", frames.World.Read<DisplayText>(root).Text);
+        Assert.Equal("DF", frames.World.ReadComponentData<DisplayText>(root).Text);
     }
 
 #if DEBUG
@@ -269,8 +269,8 @@ public sealed partial class ChildSourceTests
 
         frames.Frame();
 
-        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, replacement));
-        Assert.Equal(2, Hierarchy<ElementTree>.GetChildren(frames.World, group).Count);
+        Entity group = Assert.Single(ElementChildren.Read(frames.World, replacement));
+        Assert.Equal(2, ElementChildren.Read(frames.World, group).Length);
     }
 
     [Theory]
@@ -313,10 +313,10 @@ public sealed partial class ChildSourceTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new RepeatedChildren(2));
         frames.Frame();
-        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, group)[0];
-        frames.World.AddTag<LocalState>(child);
-        frames.World.Replace(root, new RepeatedChildren(1));
+        Entity group = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity child = ElementChildren.Read(frames.World, group)[0];
+        frames.World.Set(child, default(LocalState));
+        frames.World.Set(root, new RepeatedChildren(1));
 
         frames.Frame();
         var error = ReadBuildException(frames.World);
@@ -525,7 +525,7 @@ public sealed partial class ChildSourceTests
         }
     }
 
-    private readonly record struct SparseText(string Text) : ISparseComponent;
+    private readonly record struct SparseText(string Text) : ISparseComponent, ITrackedComponent;
 
     private readonly record struct ContainerDeclaration(string Name, string Text, bool Sparse) : IView, IComponent
     {
@@ -565,12 +565,12 @@ public sealed partial class ChildSourceTests
     private static void WriteDisplay(string text)
     {
         if (Scope.World.Has<DisplayText>(Scope.Entity))
-            Scope.World.Replace(Scope.Entity, new DisplayText(text));
+            Scope.World.Set(Scope.Entity, new DisplayText(text));
         else
             Scope.World.Add(Scope.Entity, new DisplayText(text));
     }
 
-    private readonly record struct DisplayText(string Text) : IComponent;
+    private readonly record struct DisplayText(string Text) : ITrackedComponent;
 
     private readonly record struct Branch(string Text) : IView, IComponent
     {

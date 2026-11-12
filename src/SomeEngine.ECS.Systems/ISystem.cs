@@ -1,7 +1,7 @@
 namespace SomeEngine.ECS.Systems;
 
 /// <summary>
-/// Authoring interface for systems bound to a concrete scheduling context.
+/// Lifecycle interface for systems bound to a concrete scheduling context.
 /// </summary>
 /// <typeparam name="TContext">The domain-specific context exposed to systems in a group.</typeparam>
 public interface ISystem<TContext>
@@ -16,4 +16,3 @@ public interface ISystem<TContext>
     /// <summary>Runs once when the owning group is disposed, if the system was created.</summary>
     void OnDestroy(ref TContext context) { }
 }
-

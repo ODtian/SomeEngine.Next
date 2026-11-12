@@ -17,9 +17,9 @@ public sealed partial class StateTests
         frames.Frame();
 
         Assert.Equal(1, state.Value);
-        Assert.Equal("0;1", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("0;1", frames.World.ReadComponentData<DisplayText>(root).Value);
         frames.Frame();
-        Assert.Equal("0;1", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("0;1", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public sealed partial class StateTests
         {
             Assert.True(started.Wait(TimeSpan.FromSeconds(30)));
             frames.Frame();
-            Assert.Equal("3;writing", frames.World.Read<DisplayText>(root).Value);
+            Assert.Equal("3;writing", frames.World.ReadComponentData<DisplayText>(root).Value);
         }
         finally
         {
@@ -51,7 +51,7 @@ public sealed partial class StateTests
 
         frames.Frame();
 
-        Assert.Equal("3;writing;7", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3;writing;7", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Fact]
@@ -65,13 +65,13 @@ public sealed partial class StateTests
 
         state.Value = 7;
         frames.Frame();
-        Assert.Same(failure, frames.World.ReadSparse<BuildError>(root).Exception);
-        Assert.Equal("3", frames.World.Read<DisplayText>(root).Value);
+        Assert.Same(failure, frames.World.ReadComponentData<BuildError>(root).Exception);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(root).Value);
         state.Value = 11;
         frames.Frame();
 
         Assert.False(frames.World.HasSparse<BuildError>(root));
-        Assert.Equal("3;11", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3;11", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Fact]
@@ -85,10 +85,10 @@ public sealed partial class StateTests
 
         untracked.Value = 7;
         frames.Frame();
-        Assert.Equal("3+5", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3+5", frames.World.ReadComponentData<DisplayText>(root).Value);
         tracked.Value = 11;
         frames.Frame();
-        Assert.Equal("3+5;11+7", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3+5;11+7", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Fact]
@@ -98,35 +98,35 @@ public sealed partial class StateTests
         var state = new State<int>(3);
         Entity root = Views.Spawn(frames.World, Entity.Null, new ContentStateDisplay(state));
         frames.Frame();
-        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group));
-        Assert.Equal("3", frames.World.Read<DisplayText>(child).Value);
+        Entity group = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, group));
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(child).Value);
 
         state.Value = 7;
         frames.Frame();
 
-        Assert.Equal("3;7", frames.World.Read<DisplayText>(child).Value);
+        Assert.Equal("3;7", frames.World.ReadComponentData<DisplayText>(child).Value);
         frames.Frame();
-        Assert.Equal("3;7", frames.World.Read<DisplayText>(child).Value);
+        Assert.Equal("3;7", frames.World.ReadComponentData<DisplayText>(child).Value);
     }
 
     [Fact]
     public void ComponentAndStateChangesBothRefreshTheCombinedDisplay()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Number(3));
+        Entity source = frames.World.Create(new Number(3));
         var state = new State<int>(5);
         Entity root = Views.Spawn(frames.World, Entity.Null, new StateAndComponentDisplay(source, state));
         frames.Frame();
 
-        frames.World.Replace(source, new Number(7));
+        frames.World.Set(source, new Number(7));
         frames.Frame();
-        Assert.Equal("3+5;7+5", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3+5;7+5", frames.World.ReadComponentData<DisplayText>(root).Value);
         state.Value = 9;
         frames.Frame();
-        Assert.Equal("3+5;7+5;7+9", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3+5;7+5;7+9", frames.World.ReadComponentData<DisplayText>(root).Value);
         frames.Frame();
-        Assert.Equal("3+5;7+5;7+9", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3+5;7+5;7+9", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Fact]
@@ -138,11 +138,11 @@ public sealed partial class StateTests
             new RepeatedStateDisplay(state, () => Task.Run(() => state.Value = 7).GetAwaiter().GetResult()));
 
         frames.Frame();
-        Assert.Equal("3+7;7+7", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3+7;7+7", frames.World.ReadComponentData<DisplayText>(root).Value);
         frames.Frame();
-        Assert.Equal("3+7;7+7", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3+7;7+7", frames.World.ReadComponentData<DisplayText>(root).Value);
         frames.Frame();
-        Assert.Equal("3+7;7+7", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3+7;7+7", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
 #if DEBUG
@@ -230,7 +230,7 @@ public sealed partial class StateTests
 
         Assert.Equal(10000, state.Value);
         frames.Frame();
-        Assert.Equal("0;10000", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("0;10000", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Theory]
@@ -254,10 +254,10 @@ public sealed partial class StateTests
         frames.Frame();
 
         Assert.Equal(version, state.Version);
-        Assert.Equal("aaa", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("aaa", frames.World.ReadComponentData<DisplayText>(root).Value);
         state.Value = "bbb";
         frames.Frame();
-        Assert.Equal("aaa;bbb", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("aaa;bbb", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Theory]
@@ -292,10 +292,10 @@ public sealed partial class StateTests
         Assert.Equal(3, state.Value);
         Assert.Equal(version, state.Version);
         frames.Frame();
-        Assert.Equal("3", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(root).Value);
         state.Update(4, static (ref int value, int amount) => value += amount);
         frames.Frame();
-        Assert.Equal("3;7", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3;7", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Fact]
@@ -321,13 +321,13 @@ public sealed partial class StateTests
         var state = new State<int>(3);
         Entity root = Views.Spawn(frames.World, Entity.Null, new StateDisplay(state));
         frames.Frame();
-        Assert.Equal("3", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(root).Value);
 
         await Task.Run(() => state.Value = 7);
-        Assert.Equal("3", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(root).Value);
 
         frames.Frame();
-        Assert.Equal("3;7", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3;7", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     private readonly record struct StateDisplay(State<int> Source) : IView, IComponent
@@ -441,8 +441,8 @@ public sealed partial class StateTests
     {
         if (Scope.World.Has<DisplayText>(Scope.Entity))
         {
-            text = $"{Scope.World.Read<DisplayText>(Scope.Entity).Value};{text}";
-            Scope.World.Replace(Scope.Entity, new DisplayText(text));
+            text = $"{Scope.World.ReadComponentData<DisplayText>(Scope.Entity).Value};{text}";
+            Scope.World.Set(Scope.Entity, new DisplayText(text));
         }
         else
         {
@@ -450,8 +450,8 @@ public sealed partial class StateTests
         }
     }
 
-    private readonly record struct DisplayText(string Value) : IComponent;
-    private readonly record struct Number(int Value) : IComponent;
+    private readonly record struct DisplayText(string Value) : ITrackedComponent;
+    private readonly record struct Number(int Value) : ITrackedComponent;
 
     private readonly record struct CheckedValue(
         long Number, long Double, long Triple, long Complement,

@@ -13,22 +13,21 @@ public sealed class ComponentWriteVersionJobTests
     public void GeneratedJobAdvancesWrittenTableAndSparseVersions(bool parallel)
     {
         using var jobs = new JobWorkers();
-        var world = WorldJobs.CreateWorld();
-        Entity entity = world.CreateEntity(new VersionedValue { Value = 1 });
-        world.AddSparse(entity, new SparseValue { Value = 2 });
-        uint tableVersion = world.WriteVersion<VersionedValue>(entity);
-        uint sparseVersion = world.SparseWriteVersion<SparseValue>(entity);
+        var world = new World(execution: new WorldJobs(JobSystem.Default));
+        Entity entity = world.Create(new VersionedValue { Value = 1 });
+        world.SetSparse(entity, new SparseValue { Value = 2 });
+        ulong tableVersion = world.ComponentDataWriteVersion<VersionedValue>(entity);
+        ulong sparseVersion = world.ComponentDataWriteVersion<SparseValue>(entity);
 
         if (parallel)
-            new IncrementValuesJob().ScheduleParallel(world,
-                new JobEntityScheduleOptions(rowsPerPacket: 1)).Complete();
+            new SystemRunner(world, rangeRows: 1).Schedule(new IncrementValuesJob(), dependency: default, parallel: true).Complete();
         else
             new IncrementValuesJob().Schedule(world).Complete();
 
-        Assert.NotEqual(tableVersion, world.WriteVersion<VersionedValue>(entity));
-        Assert.NotEqual(sparseVersion, world.SparseWriteVersion<SparseValue>(entity));
-        Assert.Equal(2, world.Read<VersionedValue>(entity).Value);
-        Assert.Equal(3, world.ReadSparse<SparseValue>(entity).Value);
+        Assert.NotEqual(tableVersion, world.ComponentDataWriteVersion<VersionedValue>(entity));
+        Assert.NotEqual(sparseVersion, world.ComponentDataWriteVersion<SparseValue>(entity));
+        Assert.Equal(2, world.ReadComponentData<VersionedValue>(entity).Value);
+        Assert.Equal(3, world.ReadComponentData<SparseValue>(entity).Value);
     }
 
     [Theory]
@@ -37,64 +36,63 @@ public sealed class ComponentWriteVersionJobTests
     public void ReadOnlyJobPreservesTableAndSparseVersions(bool parallel)
     {
         using var jobs = new JobWorkers();
-        var world = WorldJobs.CreateWorld();
-        var entity = world.CreateEntity(new VersionedValue { Value = 1 });
-        world.AddSparse(entity, new SparseValue { Value = 2 });
-        uint tableVersion = world.WriteVersion<VersionedValue>(entity);
-        uint sparseVersion = world.SparseWriteVersion<SparseValue>(entity);
+        var world = new World(execution: new WorldJobs(JobSystem.Default));
+        var entity = world.Create(new VersionedValue { Value = 1 });
+        world.SetSparse(entity, new SparseValue { Value = 2 });
+        ulong tableVersion = world.ComponentDataWriteVersion<VersionedValue>(entity);
+        ulong sparseVersion = world.ComponentDataWriteVersion<SparseValue>(entity);
 
         if (parallel)
             new ReadValuesJob().ScheduleParallel(world).Complete();
         else
             new ReadValuesJob().Schedule(world).Complete();
 
-        Assert.Equal(tableVersion, world.WriteVersion<VersionedValue>(entity));
-        Assert.Equal(sparseVersion, world.SparseWriteVersion<SparseValue>(entity));
+        Assert.Equal(tableVersion, world.ComponentDataWriteVersion<VersionedValue>(entity));
+        Assert.Equal(sparseVersion, world.ComponentDataWriteVersion<SparseValue>(entity));
     }
 
     [Fact]
     public void SparseCallbackJobAdvancesBorrowedVersions()
     {
         using var jobs = new JobWorkers();
-        var world = WorldJobs.CreateWorld();
-        var entity = world.CreateEntity();
-        world.AddSparse(entity, new SparseValue { Value = 1 });
-        uint version = world.SparseWriteVersion<SparseValue>(entity);
+        var world = new World(execution: new WorldJobs(JobSystem.Default));
+        var entity = world.Create();
+        world.SetSparse(entity, new SparseValue { Value = 1 });
+        ulong version = world.ComponentDataWriteVersion<SparseValue>(entity);
 
-        SparseJobAccess<SparseValue>.ScheduleWrite(world,
-            new IncrementSparseValuesJob(world)).Complete();
+        world.Execution!.Scheduler!.Schedule(new IncrementSparseValuesJob(world),
+            ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteSparse<SparseValue>())).Complete();
 
-        Assert.NotEqual(version, world.SparseWriteVersion<SparseValue>(entity));
-        Assert.Equal(2, world.ReadSparse<SparseValue>(entity).Value);
+        Assert.NotEqual(version, world.ComponentDataWriteVersion<SparseValue>(entity));
+        Assert.Equal(2, world.ReadComponentData<SparseValue>(entity).Value);
     }
 
     [Fact]
     public void ParallelJobPreservesEveryWriteAfterStructuralReplay()
     {
         using var jobs = new JobWorkers();
-        var world = WorldJobs.CreateWorld();
+        var world = new World(execution: new WorldJobs(JobSystem.Default));
         var entities = new Entity[256];
-        var versions = new uint[entities.Length];
+        var versions = new ulong[entities.Length];
         for (int i = 0; i < entities.Length; i++)
         {
-            entities[i] = world.CreateEntity(new VersionedValue { Value = i });
-            world.AddSparse(entities[i], new SparseValue { Value = i });
-            versions[i] = world.SparseWriteVersion<SparseValue>(entities[i]);
+            entities[i] = world.Create(new VersionedValue { Value = i });
+            world.SetSparse(entities[i], new SparseValue { Value = i });
+            versions[i] = world.ComponentDataWriteVersion<SparseValue>(entities[i]);
         }
         using (var commands = new CommandBuffer(world))
         {
-            commands.AddTag<Selected>(entities[0]);
+            commands.Add(entities[0], default(Selected));
             commands.Playback();
         }
 
-        new IncrementValuesJob().ScheduleParallel(world,
-            new JobEntityScheduleOptions(rowsPerPacket: 1)).Complete();
+        new SystemRunner(world, rangeRows: 1).Schedule(new IncrementValuesJob(), dependency: default, parallel: true).Complete();
 
         for (int i = 0; i < entities.Length; i++)
         {
-            Assert.NotEqual(versions[i], world.SparseWriteVersion<SparseValue>(entities[i]));
-            Assert.Equal(i + 1, world.Read<VersionedValue>(entities[i]).Value);
-            Assert.Equal(i + 1, world.ReadSparse<SparseValue>(entities[i]).Value);
+            Assert.NotEqual(versions[i], world.ComponentDataWriteVersion<SparseValue>(entities[i]));
+            Assert.Equal(i + 1, world.ReadComponentData<VersionedValue>(entities[i]).Value);
+            Assert.Equal(i + 1, world.ReadComponentData<SparseValue>(entities[i]).Value);
         }
     }
 
@@ -105,7 +103,7 @@ public sealed class ComponentWriteVersionJobTests
 
         internal JobWorkers()
         {
-            JobSystem.Initialize(new JobRuntimeConfig
+            JobSystem.Initialize(new JobConfiguration
             {
                 WorkerCount = 2,
                 SafetyMode = _safety,
@@ -115,7 +113,7 @@ public sealed class ComponentWriteVersionJobTests
 
         public void Dispose()
         {
-            JobSystem.Initialize(new JobRuntimeConfig
+            JobSystem.Initialize(new JobConfiguration
             {
                 SafetyMode = _safety,
                 ManagedPayloadPolicy = _payload,
@@ -125,25 +123,25 @@ public sealed class ComponentWriteVersionJobTests
 
     private readonly struct IncrementSparseValuesJob(World world) : IJob
     {
-        public void Execute() => world.ExecuteSparseWrite<SparseValue>(static (entities, values) =>
+        public void Execute()
         {
-            for (int i = 0; i < values.Length; i++)
-                values[i].Value++;
-        });
+            using var values = world.OpenSparseWrite<SparseValue>();
+            foreach (ref SparseValue value in values.Values) value.Value++;
+        }
     }
 }
 
-public struct VersionedValue : SomeEngine.ECS.IComponent
+public struct VersionedValue : SomeEngine.ECS.IComponent, ITrackedComponent
 {
     public int Value;
 }
 
-public struct SparseValue : ISparseComponent
+public struct SparseValue : ISparseComponent, ITrackedComponent
 {
     public int Value;
 }
 
-public struct Selected : ITag;
+public struct Selected : IComponent;
 
 public partial struct ReadValuesJob : IJobEntity
 {

@@ -14,9 +14,9 @@ public sealed class GameWorldLifecycleTests
         using var runtime = new JobRuntimeScope();
         using var state = new BlockingState();
         var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
-        _ = ComponentJobAccess<LocalTransform>.ScheduleRead(
-            gameWorld.World,
-            new BlockingJob(state));
+        var jobs = (WorldJobs)gameWorld.World.Execution!;
+        _ = jobs.Scheduler.Schedule(new BlockingJob(state),
+            jobs.CollectAccess(new SystemAccesses().ReadRandom<LocalTransform>()));
         Assert.True(state.Started.Wait(TimeSpan.FromSeconds(5)));
 
         Task<Exception?> disposal = StartLongRunning(gameWorld.Dispose);
@@ -278,7 +278,7 @@ public sealed class GameWorldLifecycleTests
 
         internal JobRuntimeScope()
         {
-            JobSystem.Initialize(new JobRuntimeConfig
+            JobSystem.Initialize(new JobConfiguration
             {
                 WorkerCount = 2,
                 ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
@@ -288,7 +288,7 @@ public sealed class GameWorldLifecycleTests
 
         public void Dispose()
         {
-            JobSystem.Initialize(new JobRuntimeConfig
+            JobSystem.Initialize(new JobConfiguration
             {
                 WorkerCount = 2,
                 ManagedPayloadPolicy = _payloadPolicy,

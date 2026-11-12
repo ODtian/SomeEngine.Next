@@ -1,5 +1,5 @@
 using SomeEngine.Render.Components;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Instances;
 using SomeEngine.Render.Systems;
@@ -57,24 +57,24 @@ public sealed class ClusterInstanceSystem<TProducer> :
     private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace =
         new("render", "Prepare.ClusterInstances");
     private readonly ClusterRenderResources _resources;
-    private readonly QueryDefinition _entities;
+    private readonly QueryDescription _entities;
     private readonly ClusterBatchComposer _composer;
     private readonly InstanceColumnChanges _columnChanges = new();
     private readonly RenderInstanceBatchBuilder<RenderInstanceSingleGroup> _builder;
-    private QueryHandle _entityQuery;
+    private Query _entityQuery;
     private int _publishedMeshCount;
     private bool _created;
 
     public ClusterInstanceSystem(
         ClusterRenderResources resources,
-        QueryDefinition entities,
+        QueryDescription entities,
         RenderInstancePropertyLayout exactShaderLayout,
         TProducer additional,
         int rowsPerPacket = 0)
     {
         _resources = resources ?? throw new ArgumentNullException(nameof(resources));
         _entities = (entities ?? throw new ArgumentNullException(nameof(entities)))
-            .WithOptionalRead<RenderDeformBounds>().WithOptionalRead<RenderMesh>().WithOptionalRead<RenderXray>();
+            .Optional<RenderDeformBounds>().Optional<RenderMesh>().Optional<RenderXray>();
         ArgumentNullException.ThrowIfNull(exactShaderLayout);
         var combined = new RenderInstanceProducerBundle<
             ClusterRenderResources.ClusterGeometryProducer,
@@ -88,7 +88,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
             rowsPerPacket);
     }
 
-    public QueryDefinition EntityQuery => _entities;
+    public QueryDescription EntityQuery => _entities;
 
     public RenderInstanceBatches<RenderInstanceSingleGroup>? Current => _builder.Current;
 
@@ -98,7 +98,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
         if (_created)
             throw new InvalidOperationException("The Cluster instance system is already created.");
 
-        _entityQuery = context.World.Query(_entities);
+        _entityQuery = context.World.World.Query(_entities);
         _publishedMeshCount = _resources.PublishedMeshCount;
         _created = true;
     }
@@ -136,34 +136,12 @@ public sealed class ClusterInstanceSystem<TProducer> :
         if (!_created)
             return;
 
-        List<Exception>? failures = null;
-        try
+        try { _builder.Clear(context); }
+        finally
         {
-            _builder.Clear(context);
-        }
-        catch (Exception failure)
-        {
-            failures = [failure];
-        }
-
-        try
-        {
-            context.World.ReleaseQuery(_entityQuery);
-        }
-        catch (Exception failure)
-        {
-            (failures ??= []).Add(failure);
-        }
-        _entityQuery = default;
-        _publishedMeshCount = 0;
-        _created = false;
-        if (failures is not null)
-        {
-            throw failures.Count == 1
-                ? failures[0]
-                : new AggregateException(
-                    "Cluster instance composition could not release every owned resource.",
-                    failures);
+            _entityQuery = default;
+            _publishedMeshCount = 0;
+            _created = false;
         }
     }
 
@@ -183,10 +161,10 @@ public sealed class ClusterInstanceSystem<TProducer> :
         internal const int All = CurrentTransform | PreviousTransform | Mesh | Additional | InitialValues | Xray;
         private int _fields;
         private int _partialTransformChanges;
-        internal uint LastVersion { get; private set; }
+        internal ulong LastVersion { get; private set; }
         internal int Fields => Volatile.Read(ref _fields);
         internal bool AllTransformsChanged => Volatile.Read(ref _partialTransformChanges) == 0;
-        internal void Reset(uint lastVersion)
+        internal void Reset(ulong lastVersion)
         {
             LastVersion = lastVersion;
             _fields = 0;
@@ -205,14 +183,14 @@ public sealed class ClusterInstanceSystem<TProducer> :
         IRenderInstanceBatchComposer<RenderInstanceSingleGroup>
     {
         public RenderInstanceChanges GetChanges(
-            ReadOnlyQueryPacket packet,
-            uint lastSystemVersion) =>
+            QueryChunk packet,
+            ulong lastSystemVersion) =>
             producer.GetChanges(packet, lastSystemVersion);
 
-        public RenderInstanceChanges CollectChanges(ReadOnlyQueryPacket packet, uint lastSystemVersion)
+        public RenderInstanceChanges CollectChanges(QueryChunk packet, ulong lastSystemVersion)
         {
-            if (!packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion) ||
-                !packet.AllRowsChangedSince<RenderPreviousTransform>(lastSystemVersion))
+            if (!AllRowsWritten<RenderTransform>(packet, lastSystemVersion) ||
+                !AllRowsWritten<RenderPreviousTransform>(packet, lastSystemVersion))
                 columns.RecordPartialTransformChanges();
             RenderInstanceChanges changes = GetChanges(packet, lastSystemVersion);
             if ((changes & RenderInstanceChanges.Structure) != 0)
@@ -220,8 +198,8 @@ public sealed class ClusterInstanceSystem<TProducer> :
             else if (changes != RenderInstanceChanges.None)
             {
                 int fields = 0;
-                if (packet.ChangedSince<RenderTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.CurrentTransform;
-                if (packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.PreviousTransform;
+                if (packet.WasWritten<RenderTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.CurrentTransform;
+                if (packet.WasWritten<RenderPreviousTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.PreviousTransform;
                 if (ClusterRenderResources.ClusterGeometryProducer.MeshChanged(packet, lastSystemVersion))
                     fields |= InstanceColumnChanges.Mesh;
                 if (ClusterRenderResources.ClusterGeometryProducer.XrayChanged(packet, lastSystemVersion))
@@ -234,19 +212,27 @@ public sealed class ClusterInstanceSystem<TProducer> :
         }
 
         public bool AllRowsChanged(
-            ReadOnlyQueryPacket packet,
-            uint lastSystemVersion) =>
-            columns.AllTransformsChanged || packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion)
-            || packet.AllRowsChangedSince<RenderPreviousTransform>(lastSystemVersion)
-            || packet.AllRowsChangedSince<RenderClusterGeometry>(lastSystemVersion)
-            || packet.Has<RenderMesh>() && packet.AllRowsChangedSince<RenderMesh>(lastSystemVersion)
-            || packet.Has<RenderDeformBounds>() && packet.AllRowsChangedSince<RenderDeformBounds>(lastSystemVersion)
-            || packet.Has<RenderXray>() && packet.AllRowsChangedSince<RenderXray>(lastSystemVersion);
+            QueryChunk packet,
+            ulong lastSystemVersion) =>
+            columns.AllTransformsChanged || AllRowsWritten<RenderTransform>(packet, lastSystemVersion)
+            || AllRowsWritten<RenderPreviousTransform>(packet, lastSystemVersion)
+            || AllRowsWritten<RenderClusterGeometry>(packet, lastSystemVersion)
+            || packet.Has<RenderMesh>() && AllRowsWritten<RenderMesh>(packet, lastSystemVersion)
+            || packet.Has<RenderDeformBounds>() && AllRowsWritten<RenderDeformBounds>(packet, lastSystemVersion)
+            || packet.Has<RenderXray>() && AllRowsWritten<RenderXray>(packet, lastSystemVersion);
 
-        public int CountGroups(ReadOnlyQueryPacket packet, int entityRow) => 1;
+        private static bool AllRowsWritten<T>(QueryChunk chunk, ulong since) where T : struct
+        {
+            if (!chunk.WasWritten<T>(since)) return false;
+            for (int row = 0; row < chunk.Count; row++)
+                if (!chunk.WasWritten<T>(row, since)) return false;
+            return true;
+        }
+
+        public int CountGroups(QueryChunk packet, int entityRow) => 1;
 
         public RenderInstanceSingleGroup GetGroup(
-            ReadOnlyQueryPacket packet,
+            QueryChunk packet,
             int entityRow,
             int groupIndex) =>
             groupIndex == 0
@@ -284,7 +270,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
         public void Write(
             in RenderInstanceSingleGroup group,
             int groupIndex,
-            ReadOnlyQueryPacket packet,
+            QueryChunk packet,
             int entityRow,
             RenderInstanceWriteSlice destination) =>
             WritePacket(in group, groupIndex, packet.Slice(entityRow, 1), destination);
@@ -292,17 +278,17 @@ public sealed class ClusterInstanceSystem<TProducer> :
         public void WritePacket(
             in RenderInstanceSingleGroup group,
             int groupIndex,
-            ReadOnlyQueryPacket packet,
+            QueryChunk packet,
             RenderInstanceWriteSlice destination)
         {
             if (groupIndex != 0)
                 throw new ArgumentOutOfRangeException(nameof(groupIndex));
             int fields = columns.Fields;
             bool all = (fields & InstanceColumnChanges.InitialValues) != 0;
-            uint lastVersion = columns.LastVersion;
+            ulong lastVersion = columns.LastVersion;
             producer.First.Write(destination.Restrict(producer.First.Properties), packet,
-                all || (fields & InstanceColumnChanges.CurrentTransform) != 0 && packet.ChangedSince<RenderTransform>(lastVersion),
-                all || (fields & InstanceColumnChanges.PreviousTransform) != 0 && packet.ChangedSince<RenderPreviousTransform>(lastVersion),
+                all || (fields & InstanceColumnChanges.CurrentTransform) != 0 && packet.WasWritten<RenderTransform>(lastVersion),
+                all || (fields & InstanceColumnChanges.PreviousTransform) != 0 && packet.WasWritten<RenderPreviousTransform>(lastVersion),
                 all || (fields & InstanceColumnChanges.Mesh) != 0 && ClusterRenderResources.ClusterGeometryProducer.MeshChanged(packet, lastVersion),
                 all || (fields & InstanceColumnChanges.Xray) != 0 && ClusterRenderResources.ClusterGeometryProducer.XrayChanged(packet, lastVersion));
             if (all || (fields & InstanceColumnChanges.Additional) != 0 &&

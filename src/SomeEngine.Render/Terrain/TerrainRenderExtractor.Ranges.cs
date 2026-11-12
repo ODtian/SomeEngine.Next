@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
@@ -28,11 +29,13 @@ public sealed partial class TerrainRenderExtractor : IRenderExtractionRangeSyste
         public void Reset() => Values.Clear();
         public void Dispose() => Reset();
 
-        public void Collect(ReadOnlyQueryPacket packet, uint lastSystemVersion, bool fullCollection)
+        public void Collect(QueryChunk packet, ulong lastSystemVersion, bool fullCollection)
         {
             if (!packet.TryRead<TerrainSource>(out var terrains)
-                || !fullCollection && !packet.ChangedSince<TerrainSource>(lastSystemVersion)) return;
-            for (int row = 0; row < packet.Count; row++) Values.Add((packet.Entities[row], terrains[row].Terrain));
+                || !fullCollection && !packet.WasWritten<TerrainSource>(lastSystemVersion)) return;
+            for (int row = 0; row < packet.Count; row++)
+                if (packet.Has<TerrainSource>(row) && (fullCollection || packet.WasWritten<TerrainSource>(row, lastSystemVersion)))
+                    Values.Add((packet.Entities[row], terrains[row].Terrain));
         }
     }
 }

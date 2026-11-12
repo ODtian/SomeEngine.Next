@@ -32,19 +32,19 @@ internal static partial class DialogChecks
             new DialogExample(userDialog, userTitle, userFooter, theme));
         frames.Frame();
         var parts = ReadParts(frames.World, root);
-        Surface surface = frames.World.Read<Surface>(parts.Dialog);
+        Surface surface = frames.World.ReadComponentData<Surface>(parts.Dialog);
         Require(surface.Fill == new Color(0.4f, 0.5f, 0.6f) && surface.CornerRadius == 12 &&
             surface.Shadow == new DropShadow(new Color(0, 0, 0, 0.5f), new Vector2(2, 4), 6),
             "The dialog resolves its surface from the provided theme.");
-        Require(frames.World.Read<Text>(parts.Title).Value == "Settings", "The title displays its text.");
-        TextStyle style = frames.World.Read<ShapedText>(parts.Title).Style;
+        Require(frames.World.ReadComponentData<Text>(parts.Title).Value == "Settings", "The title displays its text.");
+        TextStyle style = frames.World.ReadComponentData<ShapedText>(parts.Title).Style;
         Require(style.Size == 20 && style.Color == new Color(0.8f, 0.7f, 0.6f) &&
-            ReferenceEquals(style.Font, frames.World.Read<TextTheme>(frames.Canvas).Style.Font),
+            ReferenceEquals(style.Font, frames.World.ReadComponentData<TextTheme>(frames.Canvas).Style.Font),
             "The title resolves dialog size and color while inheriting the text font.");
-        Require(Close(frames.World.Read<LayoutRect>(parts.Dialog).Value.Height, 99.24f) &&
-            Close(frames.World.Read<LayoutRect>(parts.Body).Value.Y, 38.24f) &&
-            Close(frames.World.Read<LayoutRect>(parts.FirstAction).Value.X, 111) &&
-            Close(frames.World.Read<LayoutRect>(parts.SecondAction).Value.X, 155),
+        Require(Close(frames.World.ReadComponentData<LayoutRect>(parts.Dialog).Value.Height, 99.24f) &&
+            Close(frames.World.ReadComponentData<LayoutRect>(parts.Body).Value.Y, 38.24f) &&
+            Close(frames.World.ReadComponentData<LayoutRect>(parts.FirstAction).Value.X, 111) &&
+            Close(frames.World.ReadComponentData<LayoutRect>(parts.SecondAction).Value.X, 155),
             "Built-in and user parts share the specified vertical spacing and right-aligned actions.");
 
         theme.Fill = new Color(0.7f, 0.3f, 0.1f);
@@ -54,34 +54,34 @@ internal static partial class DialogChecks
         theme.TitleColor = new Color(0.9f, 0.8f, 0.7f);
         theme.TitleSize = 30;
         theme.ActionsGap = 12;
-        frames.World.Replace(root, new DialogExample(userDialog, userTitle, userFooter, theme));
+        frames.World.Set(root, new DialogExample(userDialog, userTitle, userFooter, theme));
         frames.Frame();
         parts = ReadParts(frames.World, root);
-        surface = frames.World.Read<Surface>(parts.Dialog);
-        style = frames.World.Read<ShapedText>(parts.Title).Style;
+        surface = frames.World.ReadComponentData<Surface>(parts.Dialog);
+        style = frames.World.ReadComponentData<ShapedText>(parts.Title).Style;
         Require(surface.Fill == new Color(0.7f, 0.3f, 0.1f) && surface.CornerRadius == 3 &&
             surface.Shadow == new DropShadow(new Color(0.2f, 0.3f, 0.4f, 0.5f), new Vector2(-3, 6), 2),
             "A theme update refreshes fill, corners, and shadow within the frame.");
         Require(style.Size == 30 && style.Color == new Color(0.9f, 0.8f, 0.7f),
             "A theme update refreshes the title's public shaped style.");
-        Require(Close(frames.World.Read<LayoutRect>(parts.Dialog).Value.Height, 120.86f) &&
-            Close(frames.World.Read<LayoutRect>(parts.Body).Value.Y, 55.86f) &&
-            Close(frames.World.Read<LayoutRect>(parts.FirstAction).Value.X, 103) &&
-            Close(frames.World.Read<LayoutRect>(parts.SecondAction).Value.X, 155),
+        Require(Close(frames.World.ReadComponentData<LayoutRect>(parts.Dialog).Value.Height, 120.86f) &&
+            Close(frames.World.ReadComponentData<LayoutRect>(parts.Body).Value.Y, 55.86f) &&
+            Close(frames.World.ReadComponentData<LayoutRect>(parts.FirstAction).Value.X, 103) &&
+            Close(frames.World.ReadComponentData<LayoutRect>(parts.SecondAction).Value.X, 155),
             "Both implementations reflow title, body, and actions from the updated theme.");
-        Require(frames.World.Read<Box>(parts.Dialog).Fixed == new Size(200, float.NaN) &&
-            frames.World.Read<Box>(parts.Dialog).Padding == new Thickness(5, 5, 5, 5),
+        Require(frames.World.ReadComponentData<Box>(parts.Dialog).Fixed == new Size(200, float.NaN) &&
+            frames.World.ReadComponentData<Box>(parts.Dialog).Padding == new Thickness(5, 5, 5, 5),
             "The caller retains its dialog dimensions and padding across theme updates.");
     }
 
     private static DialogParts ReadParts(World world, Entity root)
     {
-        Entity container = Hierarchy<ElementTree>.GetChildren(world, root).Single();
-        Entity dialog = Hierarchy<ElementTree>.GetChildren(world, container).Single();
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(world, dialog).ToArray();
+        Entity container = ElementChildren.Read(world, root).Single();
+        Entity dialog = ElementChildren.Read(world, container).Single();
+        Entity[] children = ElementChildren.Read(world, dialog);
         Require(children.Length == 3, "The caller declares title, arbitrary body, and actions in order.");
         Entity title = ButtonChecks.DescendantsWith<Text>(world, children[0]).Single();
-        Entity[] actions = Hierarchy<ElementTree>.GetChildren(world, children[2]).ToArray();
+        Entity[] actions = ElementChildren.Read(world, children[2]);
         Require(actions.Length == 2, "The footer accepts both caller-declared actions.");
         return new(dialog, title, children[1], actions[0], actions[1]);
     }

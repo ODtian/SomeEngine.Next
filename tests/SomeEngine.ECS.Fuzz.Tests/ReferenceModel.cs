@@ -165,8 +165,7 @@ internal sealed class ReferenceWorld
             case FuzzCommandKind.RemoveTag:
             {
                 ModelEntity entity = RequireAlive(command.EntityId);
-                if (!entity.HasTag)
-                    throw new ModelOperationException($"Logical entity {command.EntityId} has no Tag to remove.");
+                if (!entity.HasTag) throw new ModelOperationException($"Logical entity {command.EntityId} has no Tag to remove.");
                 SetEntity(command.EntityId, entity with { HasTag = false });
                 return;
             }
@@ -187,14 +186,13 @@ internal sealed class ReferenceWorld
                 SetOptional(
                     command,
                     static entity => entity.Enableable,
-                    (entity, value) => entity with { Enableable = value },
+                    (entity, value) => entity with { Enableable = value, EnableableEnabled = entity.Enableable is null || entity.EnableableEnabled },
                     add: false);
                 return;
             case FuzzCommandKind.RemoveEnableable:
             {
                 ModelEntity entity = RequireAlive(command.EntityId);
-                if (entity.Enableable is null)
-                    throw new ModelOperationException($"Logical entity {command.EntityId} has no Enableable to remove.");
+                if (entity.Enableable is null) throw new ModelOperationException($"Logical entity {command.EntityId} has no Enableable to remove.");
                 SetEntity(command.EntityId, entity with
                 {
                     Enableable = null,
@@ -209,8 +207,6 @@ internal sealed class ReferenceWorld
                 if (entity.Enableable is null)
                     throw new ModelOperationException($"Logical entity {command.EntityId} has no Enableable.");
                 bool enabled = command.Kind == FuzzCommandKind.Enable;
-                if (entity.EnableableEnabled == enabled)
-                    throw new ModelOperationException($"Logical entity {command.EntityId} Enableable already has requested state.");
                 SetEntity(command.EntityId, entity with { EnableableEnabled = enabled });
                 return;
             }
@@ -246,8 +242,7 @@ internal sealed class ReferenceWorld
             case FuzzCommandKind.AddBuffer:
             {
                 ModelEntity entity = RequireAlive(command.EntityId);
-                if (entity.Buffer is not null)
-                    throw new ModelOperationException($"Logical entity {command.EntityId} already has Buffer.");
+                if (entity.Buffer is not null) throw new ModelOperationException($"Logical entity {command.EntityId} already has Buffer.");
                 SetEntity(command.EntityId, entity with { Buffer = Array.Empty<int>() });
                 return;
             }
@@ -272,8 +267,7 @@ internal sealed class ReferenceWorld
             case FuzzCommandKind.RemoveBuffer:
             {
                 ModelEntity entity = RequireAlive(command.EntityId);
-                if (entity.Buffer is null)
-                    throw new ModelOperationException($"Logical entity {command.EntityId} has no Buffer to remove.");
+                if (entity.Buffer is null) throw new ModelOperationException($"Logical entity {command.EntityId} has no Buffer to remove.");
                 SetEntity(command.EntityId, entity with { Buffer = null });
                 return;
             }
@@ -293,8 +287,6 @@ internal sealed class ReferenceWorld
             case FuzzCommandKind.Detach:
             {
                 ModelEntity child = RequireAlive(command.EntityId);
-                if (child.Parent is null)
-                    throw new ModelOperationException($"Logical entity {command.EntityId} has no Parent.");
                 SetEntity(command.EntityId, child with { Parent = null });
                 return;
             }
@@ -369,7 +361,7 @@ internal sealed class ReferenceWorld
     {
         ModelEntity entity = RequireAlive(command.EntityId);
         bool present = read(entity) is not null;
-        if (present == add)
+        if (present && add || !present && command.Kind == FuzzCommandKind.ReplaceSparse)
         {
             throw new ModelOperationException(
                 $"Logical entity {command.EntityId} has invalid {command.Kind} presence.");
@@ -384,10 +376,7 @@ internal sealed class ReferenceWorld
     {
         ModelEntity entity = RequireAlive(command.EntityId);
         if (read(entity) is null)
-        {
-            throw new ModelOperationException(
-                $"Logical entity {command.EntityId} has nothing for {command.Kind}.");
-        }
+            throw new ModelOperationException($"Logical entity {command.EntityId} has nothing for {command.Kind}.");
         SetEntity(command.EntityId, remove(entity));
     }
 

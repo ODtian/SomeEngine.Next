@@ -2,9 +2,8 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Numerics;
 using SomeEngine.Core.Diagnostics;
-using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -27,9 +26,9 @@ public static partial class GpuPoseAnimation
     /// <summary>Installs or replaces a synchronous bone set and its local-pose source.</summary>
     public static void SetCpuBones(World world, Entity target, CpuBoneDemand? demand)
     {
-        GpuPoseTarget output = world.Read<GpuPoseTarget>(target);
+        GpuPoseTarget output = world.ReadComponentData<GpuPoseTarget>(target);
         output.CpuBones = demand;
-        world.Replace(target, output);
+        world.Set(target, output);
         CpuBoneDemands.For(world).Changed = true;
         CpuBoneDemands.For(world).EnsureBound();
     }
@@ -70,8 +69,8 @@ internal sealed class CpuBoneDemands(World world)
         if (!Changed)
             foreach (Work work in _work)
                 if (!world.IsAlive(work.Target) || work.BindingVersion != work.Skeleton.BindingVersion
-                    || world.Read<GpuPoseTarget>(work.Target).CpuBones != work.Demand
-                    || world.Read<GpuPoseTarget>(work.Target).Clip != work.GpuClip) { Changed = true; break; }
+                    || world.ReadComponentData<GpuPoseTarget>(work.Target).CpuBones != work.Demand
+                    || world.ReadComponentData<GpuPoseTarget>(work.Target).Clip != work.GpuClip) { Changed = true; break; }
         if (Changed) Bind();
     }
 
@@ -92,7 +91,7 @@ internal sealed class CpuBoneDemands(World world)
                 bool ready = true;
                 foreach (PoseNode parent in work.Dependencies) ready &= parent.Level <= level;
                 if (!ready) continue;
-                GpuPoseTarget input = world.Read<GpuPoseTarget>(work.Target);
+                GpuPoseTarget input = world.ReadComponentData<GpuPoseTarget>(work.Target);
                 double sampleTime;
                 ulong sourceVersion;
                 uint starts;
@@ -119,12 +118,17 @@ internal sealed class CpuBoneDemands(World world)
                 if (work.Source is { } reference)
                 {
                     var copy = (Range: reference.Range, work.Bones, work.Samples);
-                    world.ExecuteBufferRead<LocalPose, (PoseRange Range, short[] Bones, BoneTransform[] Samples)>(reference.Entity,
-                        ref copy, static (poses, ref copy) =>
+                    {
+                        using var poses = world.ReadBuffer<LocalPose>(reference.Entity);
+                        Visit(poses, ref copy);
+
+                        static void Visit(ReadOnlyBuffer<LocalPose> poses, ref (PoseRange Range, short[] Bones, BoneTransform[] Samples) copy)
                         {
                             ReadOnlySpan<BoneTransform> local = LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count));
                             for (int index = 0; index < copy.Bones.Length; index++) copy.Samples[index] = local[copy.Bones[index]];
-                        });
+
+                        }
+                    }
                 }
                 else work.Sampling!.Add((float)sampleTime, work.Samples, work.Bones, work.SampleAccess);
                 _ready.Add(work);
@@ -144,17 +148,29 @@ internal sealed class CpuBoneDemands(World world)
         foreach (Work work in _work) work.Skeleton.CpuWrittenBones = [];
         _work.Clear(); _sources.Clear(); _sampling.Clear();
         _ready.Clear(); _jobs.Clear(); _accesses.Clear();
-        QueryHandle targets = world.Query(new QueryDefinitionBuilder().Read<GpuPoseTarget>());
+        Query targets = world.Query(new QueryDescription().WithStored<GpuPoseTarget>());
         CpuBoneDemands demands = this;
-        world.ExecuteQuery(targets, ref demands, static (scoped QueryCursor rows, ref CpuBoneDemands demands) =>
         {
-            foreach (QueryRow row in rows.Rows)
+            using QueryScope read = targets.Open();
+            Visit(in read, ref demands);
+
+            static void Visit(scoped in QueryScope rows, ref CpuBoneDemands demands)
             {
-                GpuPoseTarget target = row.Read<GpuPoseTarget>();
-                demands._sources.Add(target.Skeleton, new(row.Entity, target));
+                foreach (QueryChunk chunk in rows)
+                {
+                    chunk.TryRead<GpuPoseTarget>(out var values0);
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+
+                        GpuPoseTarget target = values0[rowIndex];
+                        demands._sources.Add(target.Skeleton, new(chunk.Entities[rowIndex], target));
+
+                    }
+                }
+
             }
-        });
-        world.ReleaseQuery(targets);
+        }
+
         Dictionary<PoseResultReference, PoseNode> nodes = PoseAnimation.ReadNodes(world);
         Dictionary<SkeletonInstance, PoseResultReference> modelSources = PoseAnimation.ReadModelSources(world);
         _bindings = modelSources.Keys.Concat(_sources.Keys).Distinct()
@@ -172,7 +188,7 @@ internal sealed class CpuBoneDemands(World world)
             foreach (PoseNode node in nodes.Values)
                 if (node.ModelBones.Length != 0)
                 {
-                    SkeletonInstance skeleton = world.Read<PoseTarget>(node.Output.Entity).Skeleton;
+                    SkeletonInstance skeleton = world.ReadComponentData<PoseTarget>(node.Output.Entity).Skeleton;
                     foreach (short bone in node.ModelBones)
                         for (int ancestor = bone; ancestor >= 0; ancestor = skeleton.Skeleton.Parents[ancestor])
                             RequireParent(skeleton, ancestor);

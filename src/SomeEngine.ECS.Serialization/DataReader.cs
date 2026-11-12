@@ -1,305 +1,204 @@
+using System.Buffers;
+using System.Runtime.CompilerServices;
+using System.Text.Unicode;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Serialization;
-using System.Text;
 
 namespace SomeEngine.ECS.Serialization;
 
-/// <summary>
-/// Reads one ECS component payload directly from its bounded stream. Fixed-width values delegate
-/// to the shared <see cref="BinaryPrimitiveEncoding"/> contract; Entity/external-reference helpers,
-/// nullable framing, and <see cref="SerializationReadLimits"/> accounting remain ECS-domain policy.
-/// This adapter never materializes a component payload merely to use the span-backed binary-document
-/// reader.
-/// </summary>
 public ref struct DataReader
 {
-    private readonly BinaryReader _reader;
-    private readonly SerializationReadBudget? _budget;
+    private readonly Stream? _stream;
+    private readonly byte[]? _buffer;
+    private ReadOnlySpan<byte> _bytes;
+    private int _offset;
+    private long _committed;
+    internal readonly SerializationReadBudget Budget;
+    internal World? ValuesWorld;
+    internal ReadIdentityMap? Identities;
+    private ReadReferenceRemapper? _entityReferences;
+    internal Dictionary<int, int[]>? SharedMappings;
+    internal bool NormalizeShared;
+    private LoadedEntityMapper _currentMapper, _progressMapper;
 
-    internal DataReader(BinaryReader reader, SerializationReadBudget? budget = null)
+    public DataReader(ReadOnlySpan<byte> bytes, SerializationReadLimits? limits = null)
     {
-        _reader = reader;
-        _budget = budget;
+        _stream = null; _buffer = null; _bytes = bytes; _offset = 0; _committed = 0;
+        Budget = new(limits);
+        ValuesWorld = null;
+        Identities = null; SharedMappings = null; NormalizeShared = false;
+        _entityReferences = null;
+        _currentMapper = _progressMapper = default;
+    }
+    public DataReader(Stream stream, SerializationReadLimits? limits = null)
+    {
+        _stream = stream; _buffer = ArrayPool<byte>.Shared.Rent(4096); _bytes = default; _offset = 0; _committed = 0;
+        Budget = new(limits);
+        ValuesWorld = null;
+        Identities = null; SharedMappings = null; NormalizeShared = false;
+        _entityReferences = null;
+        _currentMapper = _progressMapper = default;
+    }
+    public long Position => _committed + _offset;
+    internal DataReader(ReadOnlySpan<byte> bytes, SerializationReadBudget budget)
+        : this(bytes) => Budget = budget;
+
+    internal bool PatchesValues => Identities is not null || NormalizeShared || _entityReferences is not null;
+
+    internal void BindEntityReferences(ReadReferenceRemapper references)
+    {
+        _entityReferences = references;
+        _currentMapper = _progressMapper = new(references);
     }
 
-    internal BinaryReader Reader => _reader;
-
-    internal SerializationReadBudget? Budget => _budget;
-
-    public bool ReadBoolean()
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private ReadOnlySpan<byte> Take(int count)
     {
-        Span<byte> bytes = stackalloc byte[sizeof(byte)];
-        ReadExactBytes(_reader, bytes, "Boolean payload");
-        return BinaryPrimitiveEncoding.ReadBoolean(bytes);
+        if (count > _bytes.Length - _offset) Next(count);
+        ReadOnlySpan<byte> bytes = _bytes.Slice(_offset, count);
+        _offset += count;
+        return bytes;
     }
-
-    public byte ReadByte()
+    private void Next(int count)
     {
-        Span<byte> bytes = stackalloc byte[sizeof(byte)];
-        ReadExactBytes(_reader, bytes, "Byte payload");
-        return BinaryPrimitiveEncoding.ReadByte(bytes);
+        if (_stream is null) throw new InvalidDataException("Truncated serialized value.");
+        int remaining = _bytes.Length - _offset;
+        _bytes[_offset..].CopyTo(_buffer);
+        _committed += _offset;
+        _offset = 0;
+        int length = _stream.CanSeek ? _buffer!.Length - remaining : count - remaining;
+        int read = _stream.ReadAtLeast(_buffer.AsSpan(remaining, length), count - remaining);
+        _bytes = _buffer.AsSpan(0, remaining + read);
     }
-
-    public sbyte ReadSByte()
-    {
-        Span<byte> bytes = stackalloc byte[sizeof(sbyte)];
-        ReadExactBytes(_reader, bytes, "SByte payload");
-        return BinaryPrimitiveEncoding.ReadSByte(bytes);
-    }
-
-    public short ReadInt16()
-    {
-        Span<byte> bytes = stackalloc byte[sizeof(short)];
-        ReadExactBytes(_reader, bytes, "Int16 payload");
-        return BinaryPrimitiveEncoding.ReadInt16(bytes);
-    }
-
-    public ushort ReadUInt16()
-    {
-        Span<byte> bytes = stackalloc byte[sizeof(ushort)];
-        ReadExactBytes(_reader, bytes, "UInt16 payload");
-        return BinaryPrimitiveEncoding.ReadUInt16(bytes);
-    }
-
-    public int ReadInt32()
-    {
-        Span<byte> bytes = stackalloc byte[sizeof(int)];
-        ReadExactBytes(_reader, bytes, "Int32 payload");
-        return BinaryPrimitiveEncoding.ReadInt32(bytes);
-    }
-
-    public uint ReadUInt32()
-    {
-        Span<byte> bytes = stackalloc byte[sizeof(uint)];
-        ReadExactBytes(_reader, bytes, "UInt32 payload");
-        return BinaryPrimitiveEncoding.ReadUInt32(bytes);
-    }
-
-    public long ReadInt64()
-    {
-        Span<byte> bytes = stackalloc byte[sizeof(long)];
-        ReadExactBytes(_reader, bytes, "Int64 payload");
-        return BinaryPrimitiveEncoding.ReadInt64(bytes);
-    }
-
-    public ulong ReadUInt64()
-    {
-        Span<byte> bytes = stackalloc byte[sizeof(ulong)];
-        ReadExactBytes(_reader, bytes, "UInt64 payload");
-        return BinaryPrimitiveEncoding.ReadUInt64(bytes);
-    }
-
-    public char ReadChar()
-    {
-        Span<byte> bytes = stackalloc byte[sizeof(char)];
-        ReadExactBytes(_reader, bytes, "Char payload");
-        return BinaryPrimitiveEncoding.ReadChar(bytes);
-    }
-
-    public float ReadSingle()
-    {
-        Span<byte> bytes = stackalloc byte[sizeof(float)];
-        ReadExactBytes(_reader, bytes, "Single payload");
-        return BinaryPrimitiveEncoding.ReadSingle(bytes);
-    }
-
-    public double ReadDouble()
-    {
-        Span<byte> bytes = stackalloc byte[sizeof(double)];
-        ReadExactBytes(_reader, bytes, "Double payload");
-        return BinaryPrimitiveEncoding.ReadDouble(bytes);
-    }
-    public Guid ReadGuid()
-    {
-        Span<byte> bytes = stackalloc byte[16];
-        ReadExactBytes(_reader, bytes, "GUID payload");
-        return BinaryPrimitiveEncoding.ReadGuid(bytes);
-    }
-
-    public string? ReadString()
-    {
-        bool hasValue = ReadBoolean();
-        return hasValue
-            ? SerializationBinary.ReadString(_reader, _budget, stableName: false)
-            : null;
-    }
-
-    public Entity ReadEntity()
-    {
-        return new Entity(ReadInt32(), ReadInt32());
-    }
-
+    public bool ReadBoolean() => BinaryPrimitiveEncoding.ReadBoolean(Take(1));
+    public byte ReadByte() => BinaryPrimitiveEncoding.ReadByte(Take(1));
+    public sbyte ReadSByte() => BinaryPrimitiveEncoding.ReadSByte(Take(1));
+    public short ReadInt16() => BinaryPrimitiveEncoding.ReadInt16(Take(2));
+    public ushort ReadUInt16() => BinaryPrimitiveEncoding.ReadUInt16(Take(2));
+    public int ReadInt32() => BinaryPrimitiveEncoding.ReadInt32(Take(4));
+    public uint ReadUInt32() => BinaryPrimitiveEncoding.ReadUInt32(Take(4));
+    public long ReadInt64() => BinaryPrimitiveEncoding.ReadInt64(Take(8));
+    public ulong ReadUInt64() => BinaryPrimitiveEncoding.ReadUInt64(Take(8));
+    public float ReadSingle() => BinaryPrimitiveEncoding.ReadSingle(Take(4));
+    public double ReadDouble() => BinaryPrimitiveEncoding.ReadDouble(Take(8));
+    public char ReadChar() => BinaryPrimitiveEncoding.ReadChar(Take(2));
+    public Guid ReadGuid() => BinaryPrimitiveEncoding.ReadGuid(Take(16));
     public ExternalReferenceKey ReadExternalReference() => new(ReadGuid());
-
-    internal void ReadRawBytes(Span<byte> destination)
+    public Entity ReadEntity() => new(ReadInt32(), ReadInt32());
+    internal Entity MapEntity(Entity entity, bool progress = false)
     {
-        ReadExactBytes(_reader, destination, "raw byte payload");
+        if (_entityReferences is { } references)
+        { references.TryMap(entity, out Entity groupEntity); return groupEntity; }
+        if (Identities is not { } map) return entity;
+        (progress ? map.Progress : map.Current).TryMap(entity, out Entity mapped);
+        return mapped;
     }
-
-    internal int ReadBufferElementCount<T>()
-        where T : struct
+    internal int MapId(int id) => Identities?.TargetId(id) ?? id;
+    internal void BindReferenceViews()
     {
-        int count = ReadInt32();
-        if (_budget is null)
-        {
-            if (count < 0)
-                throw new InvalidDataException("Negative buffer element count.");
-            return count;
-        }
-
-        return _budget.BufferElementCount<T>(count);
+        ReadReferenceRemapper current = Identities is { } map ? map.Current : PreserveReferenceRemapper.Instance;
+        ReadReferenceRemapper progress = Identities is { } history ? history.Progress : PreserveReferenceRemapper.Instance;
+        _currentMapper = new(current);
+        _progressMapper = new(progress);
     }
-
-    private static void ReadExactBytes(BinaryReader reader, Span<byte> destination, string payloadName)
+    internal void Patch<T>(ref T value, IReferencePatcher<T>? patcher, bool progress = false)
     {
-        int bytesRead = 0;
-        while (bytesRead < destination.Length)
+        if (patcher is not null && PatchesValues)
         {
-            int read = reader.Read(destination[bytesRead..]);
-            if (read == 0)
-                throw new InvalidDataException($"Truncated {payloadName}.");
-
-            bytesRead += read;
-        }
-    }
-}
-
-/// <summary>
-/// Current ECS-v4 string framing over a stream. It shares the canonical primitive representation
-/// while retaining the ECS character/byte budget and nullable marker defined by component codecs.
-/// </summary>
-internal static class SerializationBinary
-{
-    private const int Utf8BufferSize = 512;
-
-    internal static Encoding StrictUtf8 { get; } = new UTF8Encoding(
-        encoderShouldEmitUTF8Identifier: false,
-        throwOnInvalidBytes: true);
-
-    internal static string ReadString(
-        BinaryReader reader,
-        SerializationReadBudget? budget,
-        bool stableName)
-    {
-        int charCount = ReadCanonicalInt32(reader, "serialized string character count");
-        if (charCount < 0)
-            throw new InvalidDataException("Negative serialized string character count.");
-        if (budget is not null)
-            budget.StringCharacterCount(charCount, stableName);
-
-        try
-        {
-            return string.Create(
-                charCount,
-                (Reader: reader, Budget: budget, StableName: stableName),
-                static (destination, state) =>
-                    DecodeString(
-                        state.Reader,
-                        state.Budget,
-                        state.StableName,
-                        destination));
-        }
-        catch (DecoderFallbackException exception)
-        {
-            throw new InvalidDataException("Serialized string contains malformed UTF-8.", exception);
-        }
-    }
-
-    internal static void WriteString(BinaryWriter writer, string value)
-    {
-        WriteCanonicalInt32(writer, value.Length);
-
-        Encoder encoder = StrictUtf8.GetEncoder();
-        Span<byte> buffer = stackalloc byte[Utf8BufferSize];
-        int characterOffset = 0;
-        bool completed = false;
-        while (!completed)
-        {
-            encoder.Convert(
-                value.AsSpan(characterOffset),
-                buffer,
-                flush: true,
-                out int charactersUsed,
-                out int bytesUsed,
-                out completed);
-            if (charactersUsed == 0 && bytesUsed == 0 && !completed)
-                throw new InvalidOperationException("UTF-8 encoder made no progress.");
-
-            writer.Write(buffer[..bytesUsed]);
-            characterOffset += charactersUsed;
-        }
-
-        if (characterOffset != value.Length)
-            throw new InvalidOperationException("UTF-8 encoder did not consume its declared character count.");
-    }
-
-    private static void DecodeString(
-        BinaryReader reader,
-        SerializationReadBudget? budget,
-        bool stableName,
-        Span<char> destination)
-    {
-        Decoder decoder = StrictUtf8.GetDecoder();
-        Span<byte> nextByte = stackalloc byte[1];
-        int charactersWritten = 0;
-        int bytesRead = 0;
-        while (charactersWritten < destination.Length)
-        {
-            if (reader.Read(nextByte) == 0)
-                throw new InvalidDataException("Truncated serialized string payload.");
-            bytesRead = checked(bytesRead + 1);
-
-            decoder.Convert(
-                nextByte,
-                destination[charactersWritten..],
-                flush: false,
-                out int bytesUsed,
-                out int charactersUsed,
-                out _);
-            if (bytesUsed != 1)
+            if (patcher is IGeneratedReferencePatcher<T> generated)
             {
-                throw new InvalidDataException(
-                    "Serialized string character count splits a UTF-8 scalar value.");
+                ref LoadedEntityMapper mapper = ref (progress ? ref _progressMapper : ref _currentMapper);
+                EntityMap entities = EntityMap.Create(ref mapper);
+                generated.Remap(ref value, entities);
+                return;
             }
-            charactersWritten = checked(charactersWritten + charactersUsed);
+            ReadReferenceRemapper remapper = _entityReferences ?? (Identities is { } map
+                ? progress ? map.Progress : map.Current : PreserveReferenceRemapper.Instance);
+            patcher.Remap(ref value, remapper);
         }
+    }
+    public string? ReadString() => ReadBoolean() ? ReadText() : null;
 
-        decoder.Convert(
-            ReadOnlySpan<byte>.Empty,
-            Span<char>.Empty,
-            flush: true,
-            out int trailingBytes,
-            out int trailingCharacters,
-            out bool completed);
-        if (!completed || trailingBytes != 0 || trailingCharacters != 0)
+    internal string ReadText(bool stableName = false)
+    {
+        int count = Budget.StringCharacterCount(ReadInt32(), stableName);
+        if (count == 0) return string.Empty;
+        if (_offset == _bytes.Length) Next(1);
+        long start = Position;
+        StringBytes result = default;
+        string value = string.Create(count, new StringInput(_bytes[_offset..], _stream, _buffer, ref result),
+            static (destination, input) => input.Read(destination));
+        Budget.StringBytesConsumed(result.Consumed, stableName);
+        if (result.Refilled)
         {
-            throw new InvalidDataException(
-                "Serialized string character count does not match its UTF-8 payload.");
+            _bytes = _buffer.AsSpan(0, result.Length);
+            _offset = result.Offset;
+            _committed = start + result.Consumed - result.Offset;
         }
-
-        budget?.StringBytesConsumed(bytesRead, stableName);
+        else _offset += result.Consumed;
+        return value;
     }
 
-    private static int ReadCanonicalInt32(BinaryReader reader, string description)
+    private struct StringBytes { internal int Consumed, Offset, Length; internal bool Refilled; }
+    private readonly ref struct StringInput
     {
-        Span<byte> bytes = stackalloc byte[sizeof(int)];
-        int offset = 0;
-        while (offset < bytes.Length)
+        private readonly ReadOnlySpan<byte> _bytes;
+        private readonly Stream? _stream;
+        private readonly byte[]? _buffer;
+        private readonly ref StringBytes _result;
+        internal StringInput(ReadOnlySpan<byte> bytes, Stream? stream, byte[]? buffer, ref StringBytes result)
+        { _bytes = bytes; _stream = stream; _buffer = buffer; _result = ref result; }
+        internal void Read(Span<char> destination)
         {
-            int read = reader.Read(bytes[offset..]);
-            if (read == 0)
-                throw new InvalidDataException($"Truncated {description}.");
-            offset += read;
+            ReadOnlySpan<byte> input = _bytes;
+            int written = 0;
+            while (written < destination.Length)
+            {
+                OperationStatus status = Utf8.ToUtf16(input, destination[written..], out int read, out int chars,
+                    replaceInvalidSequences: false, isFinalBlock: _stream is null);
+                _result.Consumed += read;
+                written += chars;
+                if (written == destination.Length) { _result.Offset += read; return; }
+                if (_stream is null || status is OperationStatus.InvalidData or OperationStatus.DestinationTooSmall)
+                    throw new InvalidDataException("Serialized string does not match its UTF-8 character count.");
+                input = input[read..];
+                int remaining = input.Length;
+                input.CopyTo(_buffer);
+                int length = _stream.CanSeek ? _buffer!.Length - remaining : 1;
+                int added = _stream.ReadAtLeast(_buffer.AsSpan(remaining, length), 1);
+                input = _buffer.AsSpan(0, remaining + added);
+                _result.Refilled = true;
+                _result.Length = input.Length;
+                _result.Offset = 0;
+            }
         }
-
-        return BinaryPrimitiveEncoding.ReadInt32(bytes);
     }
 
-    private static void WriteCanonicalInt32(BinaryWriter writer, int value)
+    internal void ReadRawBytes(scoped Span<byte> destination)
     {
-        Span<byte> bytes = stackalloc byte[sizeof(int)];
-        BinaryPrimitiveEncoding.WriteInt32(bytes, value);
-        writer.Write(bytes);
+        if (destination.Length <= _bytes.Length - _offset)
+        {
+            Take(destination.Length).CopyTo(destination);
+            return;
+        }
+        if (_stream is null) throw new InvalidDataException("Truncated serialized column.");
+        int remaining = _bytes.Length - _offset;
+        _bytes[_offset..].CopyTo(destination);
+        _committed += _offset + destination.Length;
+        _offset = 0;
+        _bytes = default;
+        _stream.ReadExactly(destination[remaining..]);
+    }
+    internal void RequireEndOfInput()
+    {
+        if (_offset != _bytes.Length || _stream is not null && _stream.ReadByte() != -1)
+            throw new InvalidDataException("The serialized World has trailing input.");
+    }
+
+    public void Dispose()
+    {
+        if (_stream?.CanSeek == true && _offset != _bytes.Length)
+            _stream.Seek(_offset - _bytes.Length, SeekOrigin.Current);
+        if (_buffer is not null) ArrayPool<byte>.Shared.Return(_buffer);
     }
 }
-

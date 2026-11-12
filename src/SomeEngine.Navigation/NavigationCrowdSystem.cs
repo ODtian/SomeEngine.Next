@@ -1,6 +1,5 @@
 using System.Numerics;
 using SomeEngine.ECS;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -28,24 +27,23 @@ public sealed class NavigationCrowdSystem<TMotion, TReader>
 {
     private readonly World _world;
     private readonly Scheduler _scheduler;
-    private readonly QueryDefinition _actors;
+    private readonly QueryDescription _actors;
     private readonly float _densityExponent;
     private JobHandle _completion;
     private ulong _version;
     public NavigationCrowdSystem(World world, Scheduler? scheduler = null, float densityExponent = 2)
     {
         _world = world;
-        _scheduler = scheduler ?? WorldJobs.GetScheduler(world);
+        _scheduler = scheduler ?? world.Execution!.Scheduler!;
         _densityExponent = densityExponent;
-        _actors = world.QueryDefinition().All<TMotion>().Enabled<NavigationCrowdAgent>().Build();
+        _actors = new QueryDescription().WithStored<TMotion>().With<NavigationCrowdAgent>();
     }
 
     public NavigationBuild<NavigationCrowdBuildState> Schedule(NavigationGrid grid, JobHandle motionReady = default)
     {
         var state = new NavigationCrowdBuildState(grid, _densityExponent, ++_version);
         JobHandle ready = _scheduler.CombineDependencies([_completion, motionReady]);
-        JobHandle collected = new CollectNavigationCrowd<TMotion, TReader>(state.Collected).Schedule(_world,
-            [JobResourceAccess.Write(_scheduler.GetResourceToken(state.Collected))], new JobEntityScheduleOptions(filter: _actors), ready);
+        JobHandle collected = new CollectNavigationCrowd<TMotion, TReader>(state.Collected).Schedule(_world, dependency: ready, query: _world.Query(_actors));
         var accesses = new List<JobResourceAccess> { JobResourceAccess.Write(_scheduler.GetResourceToken(state.Collected)) };
         grid.AddReadAccesses(_scheduler, accesses);
         _completion = _scheduler.Schedule(new Partition(state, _scheduler), accesses.ToArray(), collected);
@@ -184,6 +182,8 @@ internal partial struct CollectNavigationCrowd<TMotion, TReader>(List<Navigation
     where TMotion : unmanaged, IComponent
     where TReader : struct, INavigationMotionReader<TMotion>
 {
+    public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(_samples);
+
     private readonly List<NavigationCrowdSample> _samples = samples;
     public void Execute(in NavigationCrowdAgent crowd, in TMotion movement)
     {

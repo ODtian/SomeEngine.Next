@@ -57,11 +57,11 @@ internal static unsafe class GraphCurves<T> where T : unmanaged
                 break;
             case CurveKind.Keyframes:
                 var keys = (Start: spec.Curve.KeyframeStart, Count: spec.Curve.KeyframeCount, Values: Array.Empty<Keyframe>());
-                world.ExecuteBufferRead<Keyframe, (int Start, int Count, Keyframe[] Values)>(target, ref keys, static (buffer, ref keys) =>
                 {
+                    using var buffer = world.ReadBuffer<Keyframe>(target);
                     int count = keys.Count == 0 ? buffer.Count - keys.Start : keys.Count;
                     keys.Values = buffer.AsSpan().Slice(keys.Start, count).ToArray();
-                });
+                }
                 AddMotion(ref builder, target, channel, value, Spec.Keyframes<TValue, TOps>(spec.Duration, keys.Values), layer, endpoints);
                 break;
         }

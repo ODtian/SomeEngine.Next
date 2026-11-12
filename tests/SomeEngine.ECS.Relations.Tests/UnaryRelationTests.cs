@@ -1,5 +1,4 @@
 using SomeEngine.ECS.Relations;
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
@@ -12,10 +11,10 @@ public sealed class UnaryRelationTests
     public void ProductCountsOriginalQueryMembers()
     {
         using var world = new World();
-        world.CreateEntity(new Score { Value = 3 });
-        world.CreateEntity(new Score { Value = 8 });
-        world.CreateEntity();
-        var members = world.Query(world.QueryDefinition().All<Score>());
+        world.Create(new Score { Value = 3 });
+        world.Create(new Score { Value = 8 });
+        world.Create();
+        var members = world.Query(new QueryDescription().WithStored<Score>());
 
         Assert.Equal(2, world.Product(members).Count());
     }
@@ -24,12 +23,12 @@ public sealed class UnaryRelationTests
     public void WhereFiltersByParameterizedComponentSemantics()
     {
         using var world = new World();
-        var low = world.CreateEntity(new Score { Value = 3 });
-        world.AddTag<Selected>(low);
-        var high = world.CreateEntity(new Score { Value = 8 });
-        world.AddTag<Selected>(high);
-        world.AddTag<Selected>(world.CreateEntity());
-        var members = world.Query(world.QueryDefinition().All<Selected>());
+        var low = world.Create(new Score { Value = 3 });
+        world.Add(low, new Selected());
+        var high = world.Create(new Score { Value = 8 });
+        world.Add(high, new Selected());
+        world.Add(world.Create(), new Selected());
+        var members = world.Query(new QueryDescription().WithStored<Selected>());
 
         Assert.Equal(1, world.Product(members).Where(new MinimumScore(5)).Count());
     }
@@ -38,13 +37,13 @@ public sealed class UnaryRelationTests
     public void ExceptKeepsMembersWithoutTheRequiredComponent()
     {
         using var world = new World();
-        var low = world.CreateEntity(new Score { Value = 3 });
-        world.AddTag<Selected>(low);
-        var high = world.CreateEntity(new Score { Value = 8 });
-        world.AddTag<Selected>(high);
-        var missing = world.CreateEntity();
-        world.AddTag<Selected>(missing);
-        var members = world.Query(world.QueryDefinition().All<Selected>());
+        var low = world.Create(new Score { Value = 3 });
+        world.Add(low, new Selected());
+        var high = world.Create(new Score { Value = 8 });
+        world.Add(high, new Selected());
+        var missing = world.Create();
+        world.Add(missing, new Selected());
+        var members = world.Query(new QueryDescription().WithStored<Selected>());
         var entities = new List<Entity>();
         var output = new EntityList(entities);
 
@@ -57,8 +56,8 @@ public sealed class UnaryRelationTests
     public void AnyReportsWhenEveryMemberIsExcluded()
     {
         using var world = new World();
-        world.CreateEntity(new Score { Value = 8 });
-        var members = world.Query(world.QueryDefinition().All<Score>());
+        world.Create(new Score { Value = 8 });
+        var members = world.Query(new QueryDescription().WithStored<Score>());
 
         Assert.False(world.Product(members).Except(new MinimumScore(5)).Any());
     }
@@ -67,10 +66,10 @@ public sealed class UnaryRelationTests
     public void CountUsesTheSuppliedComponentChangeBaseline()
     {
         using var world = new World();
-        world.CreateEntity(new Score { Value = 3 });
-        uint baseline = world.AcquireSystemTick();
-        world.CreateEntity(new Score { Value = 8 });
-        var members = world.Query(world.QueryDefinition().Changed<Score>());
+        world.Create(new Score { Value = 3 });
+        ulong baseline = world.Version;
+        world.Create(new Score { Value = 8 });
+        var members = world.Query(new QueryDescription().WithChanged<Score>(0));
 
         Assert.Equal(1, world.Product(members).Where(new MinimumScore(5)).Count(baseline));
     }
@@ -79,11 +78,11 @@ public sealed class UnaryRelationTests
     public void ChainedRulesForwardRefStructOutputAndStopState()
     {
         using var world = new World();
-        world.CreateEntity(new Score { Value = 3 });
-        var first = world.CreateEntity(new Score { Value = 8 });
-        var second = world.CreateEntity(new Score { Value = 9 });
-        world.CreateEntity(new Score { Value = 12 });
-        var members = world.Query(world.QueryDefinition().Read<Score>());
+        world.Create(new Score { Value = 3 });
+        var first = world.Create(new Score { Value = 8 });
+        var second = world.Create(new Score { Value = 9 });
+        world.Create(new Score { Value = 12 });
+        var members = world.Query(new QueryDescription().WithStored<Score>());
         Span<Entity> result = stackalloc Entity[1];
         var output = new FirstEntity(result);
 
@@ -95,18 +94,17 @@ public sealed class UnaryRelationTests
         Assert.False(completed);
         Assert.Equal(1, output.Count);
         Assert.Contains(result[0], new[] { first, second });
-        world.CreateEntity(new Score { Value = 20 });
+        world.Create(new Score { Value = 20 });
         Assert.Equal(5, world.Product(members).Count());
-        world.ReleaseQuery(members);
     }
 
     [Fact]
     public void SemanticRulesReadManagedComponentValues()
     {
         using var world = new World();
-        world.CreateEntity(new DisplayName { Value = "Iris" });
-        world.CreateEntity(new DisplayName { Value = "Rose" });
-        var members = world.Query(world.QueryDefinition().All<DisplayName>());
+        world.Create(new DisplayName { Value = "Iris" });
+        world.Create(new DisplayName { Value = "Rose" });
+        var members = world.Query(new QueryDescription().WithStored<DisplayName>());
 
         Assert.True(world.Product(members).Where(new NamePrefix("Ir")).Any());
     }
@@ -115,30 +113,28 @@ public sealed class UnaryRelationTests
     public void ReadOnlyRelationsKeepTheComponentChangeBaseline()
     {
         using var world = new World();
-        world.CreateEntity(new Score { Value = 8 });
-        uint baseline = world.AcquireSystemTick();
-        uint version = world.CurrentTick;
-        var members = world.Query(world.QueryDefinition().Read<Score>());
-        var changes = world.Query(world.QueryDefinition().Changed<Score>());
+        world.Create(new Score { Value = 8 });
+        ulong baseline = world.Version;
+        ulong version = world.Version;
+        var members = world.Query(new QueryDescription().WithStored<Score>());
+        var changes = world.Query(new QueryDescription().WithChanged<Score>(0));
 
         Assert.Equal(1, world.Product(members).Where(new MinimumScore(5)).Count());
 
-        Assert.Equal(version, world.CurrentTick);
+        Assert.Equal(version, world.Version);
         Assert.Equal(0, world.Product(changes).Count(baseline));
-        world.ReleaseQuery(members);
-        world.ReleaseQuery(changes);
     }
 
     [Fact]
     public void ChainedComponentRulesShareTheDeclaredWorldJobsScope()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
-        using var world = WorldJobs.CreateWorld(scheduler: jobs);
-        var light = world.CreateEntity(new Score { Value = 8 });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var world = new World(execution: new WorldJobs(jobs));
+        var light = world.Create(new Score { Value = 8 });
         world.Add(light, new Weight { Value = 3 });
-        var heavy = world.CreateEntity(new Score { Value = 9 });
+        var heavy = world.Create(new Score { Value = 9 });
         world.Add(heavy, new Weight { Value = 12 });
-        var members = world.Query(world.QueryDefinition().All<Score>());
+        var members = world.Query(new QueryDescription().WithStored<Score>());
 
         Assert.Equal(1, world.Product(members)
             .Where(new MinimumScore(5))
@@ -175,7 +171,7 @@ public sealed class UnaryRelationTests
     }
 }
 
-public struct Score : IComponent
+public struct Score : IAddedComponent
 {
     public int Value;
 }

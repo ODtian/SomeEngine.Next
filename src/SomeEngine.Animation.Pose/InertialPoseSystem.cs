@@ -1,7 +1,6 @@
 using System.Numerics;
-using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -9,35 +8,59 @@ namespace SomeEngine.Animation.Pose;
 
 public struct InertialPoseSystem : ISystem<PoseNodeContext>
 {
-    private QueryHandle _instances;
+    private Query _instances;
     private List<JobHandle> _jobs;
 
     public void OnCreate(ref PoseNodeContext context)
     {
         _jobs = [];
-        _instances = context.Frame.World.Query(AnimationGraph.WithTimeAccess(context.Frame.World.QueryDefinition()
-            .ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<InertialPoseInstance>()
-            .Optional<AnimationLayers>(QueryAccess.Read)
-            .OptionalBuffer<LocalPose>(QueryAccess.ReadWrite).OptionalBuffer<PoseResult>(QueryAccess.ReadWrite)));
+        _instances = context.Frame.World.Query(AnimationGraph.WithTimeAccess(new QueryDescription()
+            .WithStored<Timeline>().With<Timeline>().WithStored<Buffer<InertialPoseInstance>>()
+            .Optional<AnimationLayers>()
+            .Optional<Buffer<LocalPose>>().Optional<Buffer<PoseResult>>()));
     }
 
     public void OnUpdate(ref PoseNodeContext context)
     {
         _jobs.Clear();
         var frame = new InertialFrame(context.Frame.World, context.Level, (float)context.Frame.DeltaTime, _jobs);
-        frame.World.ExecuteQuery(_instances, ref frame, static (scoped QueryCursor rows, ref InertialFrame frame) =>
         {
-            foreach (QueryRow row in rows.Rows)
-                foreach (ref InertialPoseInstance instance in row.Buffer<InertialPoseInstance>().AsSpan())
-                    if (instance.Node.Level == frame.Level) Gather(row.Entity, ref instance, in frame);
-        });
+            using QueryScope read = _instances.Open();
+            Visit(in read, ref frame);
+
+            static void Visit(scoped in QueryScope rows, ref InertialFrame frame)
+            {
+                foreach (QueryChunk chunk in rows)
+                {
+                    var buffers0 = chunk.Has<Buffer<InertialPoseInstance>>() ? chunk.GetBuffers<InertialPoseInstance>() : default;
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+                        foreach (ref InertialPoseInstance instance in buffers0[rowIndex].AsSpan())
+                            if (instance.Node.Level == frame.Level) Gather(chunk.Entities[rowIndex], ref instance, in frame);
+                    }
+                }
+
+            }
+        }
         foreach (JobHandle job in _jobs) job.Complete();
-        frame.World.ExecuteQuery(_instances, ref frame, static (scoped QueryCursor rows, ref InertialFrame frame) =>
         {
-            foreach (QueryRow row in rows.Rows)
-                foreach (ref InertialPoseInstance instance in row.Buffer<InertialPoseInstance>().AsSpan())
-                    if (instance.Node.Level == frame.Level && instance.Active) Publish(frame.World, row.Entity, ref instance);
-        });
+            using QueryScope read = _instances.Open();
+            Visit(in read, ref frame);
+
+            static void Visit(scoped in QueryScope rows, ref InertialFrame frame)
+            {
+                foreach (QueryChunk chunk in rows)
+                {
+                    var buffers0 = chunk.Has<Buffer<InertialPoseInstance>>() ? chunk.GetBuffers<InertialPoseInstance>() : default;
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+                        foreach (ref InertialPoseInstance instance in buffers0[rowIndex].AsSpan())
+                            if (instance.Node.Level == frame.Level && instance.Active) Publish(frame.World, chunk.Entities[rowIndex], ref instance);
+                    }
+                }
+
+            }
+        }
     }
 
     private static void Gather(Entity animation, ref InertialPoseInstance instance, in InertialFrame frame)
@@ -56,16 +79,24 @@ public struct InertialPoseSystem : ISystem<PoseNodeContext>
         instance.Weight = instance.InputResult.Weight > 0 ? time.Weight : 0;
         if (world.Has<AnimationLayers>(instance.Output.Entity))
         {
-            AnimationLayers layers = world.Read<AnimationLayers>(instance.Output.Entity);
+            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(instance.Output.Entity);
             if (instance.Placement.Layer < layers.Count) instance.Weight *= layers.Items[instance.Placement.Layer].Weight;
         }
         if (instance.Weight == 0) return;
         var source = (Range: instance.Source.Range, Values: instance.Samples.Source);
-        world.ExecuteBufferRead<LocalPose, (PoseRange Range, BoneTransform[] Values)>(instance.Source.Entity, ref source,
-            static (poses, ref source) => LocalPose.Transforms(poses.AsSpan().Slice(source.Range.Start, source.Range.Count))
-                .CopyTo(source.Values));
+        {
+            using var poses = world.ReadBuffer<LocalPose>(instance.Source.Entity);
+            Visit(poses, ref source);
+
+            static void Visit(ReadOnlyBuffer<LocalPose> poses, ref (PoseRange Range, BoneTransform[] Values) source)
+            {
+                LocalPose.Transforms(poses.AsSpan().Slice(source.Range.Start, source.Range.Count))
+                                .CopyTo(source.Values);
+
+            }
+        }
         InertialPoseParameters parameters = instance.Definition.Parameters[instance.Index];
-        float delta = world.Read<Timeline>(animation).Paused ? 0 : frame.Delta;
+        float delta = world.ReadComponentData<Timeline>(animation).Paused ? 0 : frame.Delta;
         frame.Jobs.Add(PoseAnimation.GetScheduler(world).Schedule(new InertializeBones(instance.Samples, parameters.DecayRate, parameters.Tolerance,
             delta, !instance.Initialized, instance.Action != instance.PreviousAction), instance.Samples.Accesses));
         instance.Sampled = true;
@@ -76,15 +107,26 @@ public struct InertialPoseSystem : ISystem<PoseNodeContext>
         if (instance.Sampled)
         {
             var copy = (Range: instance.Output.Range, Values: instance.Samples.Output);
-            world.ExecuteBufferWrite<LocalPose, (PoseRange Range, BoneTransform[] Values)>(instance.Output.Entity, ref copy,
-                static (poses, ref copy) => copy.Values.AsSpan()
-                    .CopyTo(LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count))));
+            {
+                using var poses = world.GetBuffer<LocalPose>(instance.Output.Entity);
+                Visit(poses, ref copy);
+
+                static void Visit(DynamicBuffer<LocalPose> poses, ref (PoseRange Range, BoneTransform[] Values) copy)
+                {
+                    copy.Values.AsSpan()
+                                        .CopyTo(LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count)));
+
+                }
+            }
             instance.Initialized = true;
             instance.PreviousAction = instance.Action;
         }
         var output = (Index: instance.Output.Index, Source: instance.InputResult, Weight: instance.Weight, Sampled: instance.Sampled);
-        world.ExecuteBufferWrite<PoseResult, (int Index, PoseResult Source, float Weight, bool Sampled)>(instance.Output.Entity,
-            ref output, static (results, ref output) =>
+        {
+            using var results = world.GetBuffer<PoseResult>(instance.Output.Entity);
+            Visit(results, ref output);
+
+            static void Visit(DynamicBuffer<PoseResult> results, ref (int Index, PoseResult Source, float Weight, bool Sampled) output)
             {
                 ref PoseResult result = ref results[output.Index];
                 result.Weight = output.Weight;
@@ -94,11 +136,13 @@ public struct InertialPoseSystem : ISystem<PoseNodeContext>
                 result.Starts = output.Source.Starts;
                 result.RootMotion = new(output.Source.RootMotion.Transform * result.RootMotion.Transform);
                 result.Version++;
-            });
+
+            }
+        }
         AnimationGraph.Submit(world, animation, in instance.Placement, instance.Sampled);
     }
 
-    public void OnDestroy(ref PoseNodeContext context) => context.Frame.World.ReleaseQuery(_instances);
+    public void OnDestroy(ref PoseNodeContext context) { }
 
     private readonly record struct InertialFrame(World World, int Level, float Delta, List<JobHandle> Jobs);
 

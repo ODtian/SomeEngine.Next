@@ -17,7 +17,7 @@ public sealed partial class NavigationSaveTests : IDisposable
     [Fact]
     public async Task DurableRestoreKeepsSharedResourcesGoalsAndPassageChangesWhileActorsContinueMoving()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var manifest = new AssetManifest();
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy();
@@ -61,12 +61,12 @@ public sealed partial class NavigationSaveTests : IDisposable
         using var stream = new MemoryStream();
         Entity independent, first, second, target;
         SaveMotion savedFirst;
-        using (World world = WorldJobs.CreateWorld(scheduler: scheduler))
+        using (World world = new World(execution: new WorldJobs(scheduler)))
         {
-            target = world.CreateEntity(new SaveMotion(new(4.5f, 0, 2.5f), default, 0));
-            independent = world.CreateEntity(new SaveMotion(new(0.5f, 0, 2.5f), default, 0));
-            first = world.CreateEntity(new SaveMotion(new(0.5f, 0, 1.5f), default, 0));
-            second = world.CreateEntity(new SaveMotion(new(0.5f, 0, 0.5f), default, 0));
+            target = world.Create(new SaveMotion(new(4.5f, 0, 2.5f), default, 0));
+            independent = world.Create(new SaveMotion(new(0.5f, 0, 2.5f), default, 0));
+            first = world.Create(new SaveMotion(new(0.5f, 0, 1.5f), default, 0));
+            second = world.Create(new SaveMotion(new(0.5f, 0, 0.5f), default, 0));
             var paths = new NavigationSystems<NavigationMesh, PolyanyaNavigationSearch, PolyanyaSearchState, SaveMotion, SaveMotionReader>(world);
             var followers = new NavigationSystems<SaveMotion, SaveMotionReader>(world);
             paths.AddAgent(independent, mesh, profile, policy, new(target, 0.1f), 1);
@@ -77,7 +77,7 @@ public sealed partial class NavigationSaveTests : IDisposable
             world.Disable<NavigationCrowdAgent>(second);
             new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler).Schedule().Complete();
             for (int step = 0; step < 3; step++) Move(world, paths, followers);
-            savedFirst = world.Read<SaveMotion>(first);
+            savedFirst = world.ReadComponentData<SaveMotion>(first);
             float[] cells = costs.CellCosts.ToArray(), edges = costs.EdgeCosts.ToArray();
             cells[7] = float.PositiveInfinity;
             for (int cell = 0; cell < grid.Cells.Length; cell++)
@@ -92,32 +92,32 @@ public sealed partial class NavigationSaveTests : IDisposable
         await using (var loader = new AssetLoader(new LooseAssetStorage(_directory, manifest)))
             restored = await NavigationSave.ReadAsync(stream, registry, loader, scheduler);
         using World loaded = restored.World;
-        NavigationFlow shared = loaded.Read<FlowFollower>(first).Flow;
-        Assert.Same(shared, loaded.Read<FlowFollower>(second).Flow);
-        Assert.Same(loaded.Read<NavigationAgent>(independent).Profile, shared.Profile);
-        Assert.Same(loaded.Read<NavigationAgent>(independent).Policy, shared.Costs.Policy);
-        Assert.Equal(savedFirst, loaded.Read<SaveMotion>(first));
-        Assert.Equal(target, loaded.Read<NavigationGoal>(independent).Target);
+        NavigationFlow shared = loaded.ReadComponentData<FlowFollower>(first).Flow;
+        Assert.Same(shared, loaded.ReadComponentData<FlowFollower>(second).Flow);
+        Assert.Same(loaded.ReadComponentData<NavigationAgent>(independent).Profile, shared.Profile);
+        Assert.Same(loaded.ReadComponentData<NavigationAgent>(independent).Policy, shared.Costs.Policy);
+        Assert.Equal(savedFirst, loaded.ReadComponentData<SaveMotion>(first));
+        Assert.Equal(target, loaded.ReadComponentData<NavigationGoal>(independent).Target);
         NavigationCrowdField density = new NavigationCrowdSystem<SaveMotion, SaveMotionReader>(loaded, scheduler).Schedule(shared.Costs.Grid).Complete().Field;
-        Assert.True(density.Sample(loaded.Read<SaveMotion>(target).Position).Density > 0);
-        Assert.Equal(0, density.Sample(loaded.Read<SaveMotion>(second).Position).Density);
-        Assert.Equal(1.5f, loaded.Read<NavigationCrowdAgent>(second).Weight);
+        Assert.True(density.Sample(loaded.ReadComponentData<SaveMotion>(target).Position).Density > 0);
+        Assert.Equal(0, density.Sample(loaded.ReadComponentData<SaveMotion>(second).Position).Density);
+        Assert.Equal(1.5f, loaded.ReadComponentData<NavigationCrowdAgent>(second).Weight);
         Assert.Equal(0.15f, shared.Goals.Span[0].ArrivalRange);
         Assert.Equal(5UL, shared.Costs.Version);
         Assert.True(float.IsPositiveInfinity(shared.Costs.CellCosts.Span[7]));
         Assert.True(NavigationComponents.HasPath<NavigationMesh, PolyanyaSearchState>(loaded, independent));
         var loadedPaths = new NavigationSystems<NavigationMesh, PolyanyaNavigationSearch, PolyanyaSearchState, SaveMotion, SaveMotionReader>(loaded);
         var loadedFollowers = new NavigationSystems<SaveMotion, SaveMotionReader>(loaded);
-        for (int step = 0; step < 100 && new[] { independent, first, second }.Any(actor => loaded.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived); step++)
+        for (int step = 0; step < 100 && new[] { independent, first, second }.Any(actor => loaded.ReadComponentData<NavigationProgress>(actor).Status != NavigationStatus.Arrived); step++)
         {
             Move(loaded, loadedPaths, loadedFollowers);
             foreach (Entity actor in new[] { first, second })
             {
-                Vector3 position = loaded.Read<SaveMotion>(actor).Position;
+                Vector3 position = loaded.ReadComponentData<SaveMotion>(actor).Position;
                 Assert.True(position.X < 2 || position.X > 3 || position.Z < 1 || position.Z > 2);
             }
         }
-        Assert.All(new[] { independent, first, second }, actor => Assert.Equal(NavigationStatus.Arrived, loaded.Read<NavigationProgress>(actor).Status));
+        Assert.All(new[] { independent, first, second }, actor => Assert.Equal(NavigationStatus.Arrived, loaded.ReadComponentData<NavigationProgress>(actor).Status));
 
         void Add(AssetEntry entry) => manifest.AddAsset(entry.AssetGuid, entry.Name, Path.GetFileName(entry.Path), entry.AssetType,
             entry.SchemaFingerprint, version: entry.Version);
@@ -127,7 +127,7 @@ public sealed partial class NavigationSaveTests : IDisposable
         NavigationSystems<NavigationMesh, PolyanyaNavigationSearch, PolyanyaSearchState, SaveMotion, SaveMotionReader> paths,
         NavigationSystems<SaveMotion, SaveMotionReader> followers)
     {
-        JobHandle ready = WorldJobs.CombineDependencies(world, [paths.Schedule(0.2f, 64).Steering, followers.Schedule(0.2f).Steering]);
+        JobHandle ready = (world.Execution?.Scheduler ?? JobSystem.Current).CombineDependencies( [paths.Schedule(0.2f, 64).Steering, followers.Schedule(0.2f).Steering]);
         JobHandle moved = new ConsumeSavedSteering(0.2f).ScheduleParallel(world, ready);
         paths.ScheduleProgress(moved).Complete();
         followers.ScheduleProgress(moved).Complete();
@@ -136,7 +136,7 @@ public sealed partial class NavigationSaveTests : IDisposable
     [Fact]
     public async Task RestoredSourceGeometryRebuildsSceneAndSharedGridBeforeActorsResume()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var manifest = new AssetManifest();
         var resources = new NavigationSaveResources();
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
@@ -164,14 +164,14 @@ public sealed partial class NavigationSaveTests : IDisposable
             new(Guid.Parse("f943af78-c106-4f68-a4a7-dc05d7008dcc"), "navigation-save-motion", 1));
         using var stream = new MemoryStream();
         Entity independent, follower, obstacle;
-        using (World world = WorldJobs.CreateWorld(scheduler: scheduler))
+        using (World world = new World(execution: new WorldJobs(scheduler)))
         {
             var scene = new NavigationScene(new(default, default, default));
             var region = new NavigationRegionSources(scene, 3, new(new(0, -1, 0), new(12, 4, 6)), profile,
                 policy, new() { CellSize = 0.5f, CellHeight = 0.1f, TileSize = 8 });
-            Entity floor = world.CreateEntity(new SaveMotion(default, default, 0));
+            Entity floor = world.Create(new SaveMotion(default, default, 0));
             world.Add(floor, new NavigationSource(floorGeometry));
-            obstacle = world.CreateEntity(new SaveMotion(new(5.5f, 0, 0), default, 0));
+            obstacle = world.Create(new SaveMotion(new(5.5f, 0, 0), default, 0));
             world.Add(obstacle, new NavigationObstacle(obstacleGeometry, Version: 4));
             var collect = new NavigationSourceSystem<SaveMotion, SaveSourceReader>(world, region, scheduler);
             var grids = new NavigationGridBuildSystem(region, scheduler: scheduler);
@@ -180,8 +180,8 @@ public sealed partial class NavigationSaveTests : IDisposable
             NavigationGridUpdate updated = gridBuild.Complete();
             resources.RegisterRegion(region, grids);
             var flow = new NavigationFlow(updated.Costs, profile, [new(new(10.25f, 0, 1.25f), 0.05f)]);
-            independent = world.CreateEntity(new SaveMotion(new(1.25f, 0, 1.25f), default, 0));
-            follower = world.CreateEntity(new SaveMotion(new(1.25f, 0, 1.25f), default, 0));
+            independent = world.Create(new SaveMotion(new(1.25f, 0, 1.25f), default, 0));
+            follower = world.Create(new SaveMotion(new(1.25f, 0, 1.25f), default, 0));
             NavigationComponents.AddPath<NavigationScene, DStarLiteSearchState>(world, independent, scene, profile, policy,
                 new(new Vector3(10.25f, 0, 1.25f), 0.05f), 2);
             NavigationComponents.AddFlow(world, follower, flow, 2);
@@ -199,23 +199,23 @@ public sealed partial class NavigationSaveTests : IDisposable
             restored = await NavigationSave.ReadAsync(stream, registry, loader, scheduler,
                 new NavigationSaveOptions().UseSources<SaveMotion, SaveSourceReader>());
         using World loaded = restored.World;
-        Assert.Equal(4UL, loaded.Read<NavigationObstacle>(obstacle).Version);
-        Assert.Equal(new Vector3(5.5f, 0, 0), loaded.Read<SaveMotion>(obstacle).Position);
+        Assert.Equal(4UL, loaded.ReadComponentData<NavigationObstacle>(obstacle).Version);
+        Assert.Equal(new Vector3(5.5f, 0, 0), loaded.ReadComponentData<SaveMotion>(obstacle).Position);
         Assert.True(NavigationComponents.HasPath<NavigationScene, DStarLiteSearchState>(loaded, independent));
-        NavigationScene restoredScene = loaded.Read<PathNavigation<NavigationScene>>(independent).Space;
+        NavigationScene restoredScene = loaded.ReadComponentData<PathNavigation<NavigationScene>>(independent).Space;
         Assert.Null(restoredScene.Content.FindTile(new(5.5f, 0, 1.25f), out _));
         var paths = new NavigationSystems<NavigationScene, DStarLiteNavigationSearch, DStarLiteSearchState, SaveMotion, SaveMotionReader>(loaded);
         var followers = new NavigationSystems<SaveMotion, SaveMotionReader>(loaded);
         var positions = new List<Vector3>();
-        for (int step = 0; step < 130 && new[] { independent, follower }.Any(actor => loaded.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived); step++)
+        for (int step = 0; step < 130 && new[] { independent, follower }.Any(actor => loaded.ReadComponentData<NavigationProgress>(actor).Status != NavigationStatus.Arrived); step++)
         {
-            JobHandle ready = WorldJobs.CombineDependencies(loaded, [paths.Schedule(0.1f, 128).Steering, followers.Schedule(0.1f).Steering]);
+            JobHandle ready = (loaded.Execution?.Scheduler ?? JobSystem.Current).CombineDependencies( [paths.Schedule(0.1f, 128).Steering, followers.Schedule(0.1f).Steering]);
             JobHandle moved = new ConsumeSavedSteering(0.1f).ScheduleParallel(loaded, ready);
             paths.ScheduleProgress(moved).Complete(); followers.ScheduleProgress(moved).Complete();
-            positions.Add(loaded.Read<SaveMotion>(follower).Position);
+            positions.Add(loaded.ReadComponentData<SaveMotion>(follower).Position);
         }
         Assert.Contains(positions, position => position.X > 5 && position.X < 6 && position.Z > 2.5f);
-        Assert.All(new[] { independent, follower }, actor => Assert.Equal(NavigationStatus.Arrived, loaded.Read<NavigationProgress>(actor).Status));
+        Assert.All(new[] { independent, follower }, actor => Assert.Equal(NavigationStatus.Arrived, loaded.ReadComponentData<NavigationProgress>(actor).Status));
         using var savedAgain = new MemoryStream();
         NavigationSave.Write(savedAgain, loaded, registry, restored.Resources);
         Assert.True(savedAgain.Length > 0);

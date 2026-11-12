@@ -49,9 +49,9 @@ public sealed class ProceduralClusterRenderingTests(SceneContentFixture content)
     {
         var input = CreateGrid();
         Mesh[] meshes = new Mesh[2];
-        using (var singleThread = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 }))
+        using (var singleThread = new Scheduler(new JobConfiguration { WorkerCount = 0 }))
             singleThread.Schedule(new BuildGrid(input.Positions, input.Attributes, input.Indices, meshes, 0)).Complete();
-        using (var workers = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 }))
+        using (var workers = new Scheduler(new JobConfiguration { WorkerCount = 2 }))
             workers.Schedule(new BuildGrid(input.Positions, input.Attributes, input.Indices, meshes, 1)).Complete();
         SceneImage? reference = null, parallel = null;
         await SceneImages.RunAsync("d3d12", new SceneScript(content.DirectoryPath, 10,

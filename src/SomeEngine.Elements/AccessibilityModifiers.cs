@@ -13,7 +13,7 @@ public static class AccessibilityModifiers
             "Accessible requires a defined Role.");
         DevelopmentCheck.Require(name is not null, "Accessible requires a name string.");
         Scope.Write<AccessibleRole>(node).Value = role;
-        Scope.Write<AccessibleName>(node).Value = name;
+        Scope.Write<AccessibleName>(node).Value = name!;
         return node;
     }
 }

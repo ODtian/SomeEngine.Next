@@ -1,7 +1,6 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Core.ECS;
 
@@ -13,7 +12,7 @@ public static class WorldExtensions
         ArgumentNullException.ThrowIfNull(world);
         if (entity != EntityId.Null && world.IsAlive(entity) && world.Has<T>(entity))
         {
-            component = world.Read<T>(entity);
+            component = world.ReadComponentData<T>(entity);
             return true;
         }
 
@@ -26,7 +25,7 @@ public static class WorldExtensions
     {
         ArgumentNullException.ThrowIfNull(world);
         if (world.Has<T>(entity))
-            world.Replace(entity, component);
+            world.Set(entity, component);
         else
             world.Add(entity, component);
     }
@@ -36,30 +35,23 @@ public static class WorldExtensions
     {
         ArgumentNullException.ThrowIfNull(world);
         if (!world.Has<T>(entity))
-            world.AddTag<T>(entity);
+            world.Add(entity, default(T));
     }
 
-    public static QueryHandle AllEntities(this World world)
+    public static Query AllEntities(this World world)
     {
         ArgumentNullException.ThrowIfNull(world);
-        return world.Query(QueryDefinition.Empty);
+        return world.Query(new QueryDescription());
     }
 
-    public static void CollectEntities(this World world, QueryHandle query, List<EntityId> destination)
+    public static void CollectEntities(this World world, Query query, List<EntityId> destination)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(destination);
 
         destination.Clear();
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (QueryChunkView chunk in cursor.Chunks)
-            {
-                ReadOnlySpan<EntityId> entities = chunk.Entities;
-                for (int i = 0; i < entities.Length; i++)
-                    destination.Add(entities[i]);
-            }
-        });
+        using QueryScope scope = query.OpenRead();
+        foreach (QueryChunk chunk in scope)
+            destination.AddRange(chunk.Entities);
     }
 }
-

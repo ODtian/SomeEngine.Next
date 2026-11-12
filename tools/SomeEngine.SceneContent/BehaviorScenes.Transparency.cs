@@ -65,10 +65,10 @@ public static partial class BehaviorScenes
         project.RegisterAsset(await first.SaveAsync(Path.Combine(destination, "assets/Meshes/red-panel.mesh.asset")));
         project.RegisterAsset(await second.SaveAsync(Path.Combine(destination, "assets/Meshes/green-panel.mesh.asset")));
         using var world = new World();
-        Entity redEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity) });
-        world.Add(redEntity, new MeshSource { Mesh = first.Reference });
-        Entity greenEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity) });
-        world.Add(greenEntity, new MeshSource { Mesh = second.Reference });
+        Entity redEntity = world.Create(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity) });
+        world.Set(redEntity, new MeshSource { Mesh = first.Reference });
+        Entity greenEntity = world.Create(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity) });
+        world.Set(greenEntity, new MeshSource { Mesh = second.Reference });
         await WriteSceneAsync(project, world);
         await SceneContent.SetOutputSizeAsync(destination, 64, 64);
     }

@@ -11,4 +11,7 @@
     <Using Include="Xunit" />
     <ProjectReference Include="../../src/SomeEngine.Layout/SomeEngine.Layout.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../SomeEngine.Views.Tests/ElementChildren.cs" Link="ElementChildren.cs" />
+  </ItemGroup>
 </Project>

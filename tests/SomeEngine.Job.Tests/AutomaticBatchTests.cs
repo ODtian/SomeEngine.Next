@@ -5,11 +5,11 @@ public sealed class AutomaticBatchTests
     [Fact]
     public void AutomaticBatchesCompleteEachElementOnIndependentSchedulers()
     {
-        using var first = new Scheduler(new JobRuntimeConfig
+        using var first = new Scheduler(new JobConfiguration
         {
             WorkerCount = 0, AutoBatchTargetMicroseconds = 1, EnableCounters = false
         });
-        using var second = new Scheduler(new JobRuntimeConfig
+        using var second = new Scheduler(new JobConfiguration
         {
             WorkerCount = 0, AutoBatchTargetMicroseconds = 1, EnableCounters = false
         });
@@ -29,7 +29,7 @@ public sealed class AutomaticBatchTests
     [Fact]
     public void AutomaticBatchesCompleteEachElementAtDifferentWorkSizes()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig
+        using var scheduler = new Scheduler(new JobConfiguration
         {
             WorkerCount = 0, AutoBatchTargetMicroseconds = 1, EnableCounters = false
         });
@@ -49,7 +49,7 @@ public sealed class AutomaticBatchTests
     [Fact]
     public void SynchronousAndScheduledAutomaticBatchesCompleteEachElement()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig
+        using var scheduler = new Scheduler(new JobConfiguration
         {
             WorkerCount = 0, AutoBatchTargetMicroseconds = 1, EnableCounters = false
         });
@@ -71,11 +71,11 @@ public sealed class AutomaticBatchTests
     [InlineData(true)]
     public void SynchronousStatisticsFollowTheSchedulerSetting(bool enabled)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, EnableCounters = enabled });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0, EnableCounters = enabled });
         var data = new BatchData(8);
 
         scheduler.ExecuteParallel(new CountBatch(data, 0), 8, batchSize: 1);
-        JobRuntimeStats stats = scheduler.GetStats();
+        JobStatistics stats = scheduler.GetStats();
 
         Assert.Equal((enabled ? 1L : 0L, enabled ? 8L : 0L),
             (stats.ScheduledJobs, stats.ExecutedWorkItems));
@@ -85,7 +85,7 @@ public sealed class AutomaticBatchTests
     [Fact]
     public void CategorySubmissionsUseCategoryQueueStatistics()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 1, EnableCounters = true });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 1, EnableCounters = true });
         using var submitted = new ManualResetEventSlim();
         JobCategory category = scheduler.CreateCategory(new JobCategoryConfig { Name = "range" });
         var options = new JobScheduleOptions { Category = category };
@@ -94,7 +94,7 @@ public sealed class AutomaticBatchTests
         JobHandle work = scheduler.Schedule(new StartCategoryChild(scheduler, options, submitted, result), options);
         Assert.True(submitted.Wait(TimeSpan.FromSeconds(5)));
         work.Complete();
-        JobRuntimeStats stats = scheduler.GetStats();
+        JobStatistics stats = scheduler.GetStats();
 
         Assert.Equal((2L, 0L), (stats.QueuedWorkItems, stats.LocalQueuedWorkItems));
         Assert.Equal(1, result[0]);

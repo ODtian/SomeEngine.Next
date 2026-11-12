@@ -1,10 +1,7 @@
+using System.Collections.Concurrent;
 using SomeEngine.ECS.Commands;
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Hooks;
-using SomeEngine.ECS.Queries;
-using SomeEngine.ECS.Registry;
 using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
@@ -12,295 +9,191 @@ namespace SomeEngine.ECS.Systems.Tests;
 public sealed class HierarchyPropagationRestrictedApiTests : JobTest
 {
     [Fact]
-    public void ExplicitSuccessor_DoesNotFormARingWithDeferredPropagationPackets()
+    public void ExplicitSuccessorRunsAfterMaintenanceAndPropagation()
     {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity root = world.CreateEntity(new EscapeValue());
-            using var blockerStarted = new ManualResetEventSlim();
-            using var releaseBlocker = new ManualResetEventSlim();
-            using var successorStarted = new ManualResetEventSlim();
-            JobHandle blocker = Jobs.Schedule(
-                new BlockingJob(blockerStarted, releaseBlocker));
-            Assert.True(blockerStarted.Wait(TimeSpan.FromSeconds(3)));
-
-            HierarchyMaintenanceDependency<EscapeDomain> maintenance =
-                HierarchyMaintenanceSystem<EscapeDomain>.ScheduleDependency(world, blocker);
-            HierarchyPropagation propagation =
-                HierarchyPropagationAdapter<EscapeDomain>.Schedule(
-                    world,
-                    [root],
-                    new NoopPropagationJob(),
-                    maintenance);
-            JobHandle successor = HierarchyJobAccess<EscapeDomain>.ScheduleParentWrite(
-                world,
-                new SignalJob(successorStarted),
-                propagation.Handle);
-
-            releaseBlocker.Set();
-            Assert.True(successorStarted.Wait(TimeSpan.FromSeconds(3)));
-            successor.Complete();
-            propagation.Handle.Complete();
-        });
-    }
-
-    [Theory]
-    [InlineData(EscapeOperation.ReadOtherRoot)]
-    [InlineData(EscapeOperation.ReplaceOtherRoot)]
-    [InlineData(EscapeOperation.ExecutePrebuiltQuery)]
-    [InlineData(EscapeOperation.GetOtherRootChildren)]
-    [InlineData(EscapeOperation.GetWorldCommandBuffer)]
-    [InlineData(EscapeOperation.RecordPrebuiltCommandBuffer)]
-    [InlineData(EscapeOperation.BindPrebuiltHookView)]
-    [InlineData(EscapeOperation.AcquireSystemTick)]
-    [InlineData(EscapeOperation.AcquireSystemVersion)]
-    public void PropagationCallback_RejectsEveryOrdinaryWorldEscapeBeforeSideEffects(
-        EscapeOperation operation)
-    {
-        using var state = new CallbackData<EscapeState>(new EscapeState());
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity firstRoot = world.CreateEntity(new EscapeValue { Value = 11 });
-            Entity secondRoot = world.CreateEntity(new EscapeValue { Value = 22 });
-            QueryHandle query = world.Query(
-                world.QueryDefinition().ReadWrite<EscapeValue>());
-            var prebuiltCommands = new CommandBuffer(world);
-            ComponentHooks<EscapeValue> prebuiltHooks = world.Hooks<EscapeValue>();
-            uint tickBefore = world.CurrentTick;
-            state.Value.Configure(
-                world,
-                firstRoot,
-                secondRoot,
-                query,
-                prebuiltCommands,
-                prebuiltHooks);
-
-            HierarchyMaintenanceDependency<EscapeDomain> maintenance =
-                HierarchyMaintenanceSystem<EscapeDomain>.ScheduleDependency(world);
-            HierarchyPropagation propagation =
-                HierarchyPropagationAdapter<EscapeDomain>.Schedule(
-                    world,
-                    [firstRoot, secondRoot],
-                    new EscapingPropagationJob(operation, state),
-                    maintenance,
-                    [ComponentJobAccess<EscapeValue>.Write(world)],
-                    new HierarchyPropagationScheduleOptions(rootsPerPacket: 1));
-
-            InvalidOperationException error = Assert.Throws<InvalidOperationException>(
-                () => propagation.Handle.Complete());
-
-            Assert.Equal(11, world.Read<EscapeValue>(firstRoot).Value);
-            Assert.Equal(22, world.Read<EscapeValue>(secondRoot).Value);
-            Assert.Equal(0, prebuiltCommands.CommandCount);
-            // The rejected escape occurs before any admitted context.Write call. It must not
-            // publish a change epoch or leave any data, command, or hook side effect.
-            Assert.Equal(tickBefore, world.CurrentTick);
-
-            // A rejected prebuilt hook mutation must not have installed the callback.
-            world.Replace(secondRoot, new EscapeValue { Value = 23 });
-            Assert.Equal(0, state.Value.HookInvocations);
-            prebuiltCommands.Dispose();
-            state.Value.Clear();
-        });
-    }
-
-    private void WithJobRuntime(Action action)
-    {
-        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
-        {
-            WorkerCount = 4,
-            SafetyMode = previousSafety,
-            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-        });
+        World world = CreateJobWorld();
+        var jobs = (WorldJobs)world.Execution!;
+        Entity root = world.Create(new EscapeValue());
+        var stages = new ConcurrentQueue<string>();
+        using var blockerStarted = new ManualResetEventSlim();
+        using var releaseBlocker = new ManualResetEventSlim();
+        JobHandle blocker = Jobs.Schedule(new BlockingJob(blockerStarted, releaseBlocker, stages));
+        Assert.True(blockerStarted.Wait(TimeSpan.FromSeconds(3)));
+        JobHandle successor;
         try
         {
-            action();
+            JobHandle maintenance = Jobs.Schedule(new MaintainParents(world, stages), jobs.StructureWrite,
+                dependency: blocker);
+            JobHandle propagation = HierarchyPropagation<EscapeDomain>.Schedule(world, [root],
+                new RecordPropagation(stages), new SystemAccesses(), maintenance);
+            successor = Jobs.Schedule(new RecordSuccessor(stages), jobs.StructureWrite, dependency: propagation);
         }
-        finally
-        {
-            ConfigureJobs(new JobRuntimeConfig
-            {
-                SafetyMode = previousSafety,
-                ManagedPayloadPolicy = previousPolicy,
-            });
-        }
+        finally { releaseBlocker.Set(); }
+        successor.Complete();
+        Assert.Equal(["blocker", "maintenance", "propagation", "successor"], stages.ToArray());
     }
 
-    public enum EscapeOperation : byte
+    [Fact]
+    public void WritableRootReadRejectsAnotherPropagationRootBeforeWriting()
     {
-        ReadOtherRoot,
-        ReplaceOtherRoot,
-        ExecutePrebuiltQuery,
-        GetOtherRootChildren,
-        GetWorldCommandBuffer,
-        RecordPrebuiltCommandBuffer,
-        BindPrebuiltHookView,
-        AcquireSystemTick,
-        AcquireSystemVersion,
+        World world = CreateJobWorld();
+        Entity first = world.Create(new EscapeValue { Value = 11 });
+        Entity second = world.Create(new EscapeValue { Value = 22 });
+        ulong before = world.Version;
+        JobHandle propagation = HierarchyPropagation<EscapeDomain>.Schedule(world, [first, second],
+            new ReadOtherRoot(first, second), new SystemAccesses().WriteRandom<EscapeValue>());
+        Assert.Throws<InvalidOperationException>(propagation.Complete);
+        Assert.Equal(11, world.ReadComponentData<EscapeValue>(first).Value);
+        Assert.Equal(22, world.ReadComponentData<EscapeValue>(second).Value);
+        Assert.Equal(before, world.Version);
     }
 
-    private readonly struct EscapingPropagationJob : IHierarchyPropagationJob<EscapeDomain>
+    [Fact]
+    public void OrdinaryWorldWriteRequiresSingleWorkItemAccessDuringParallelPropagation()
     {
-        private readonly EscapeOperation _operation;
-        private readonly CallbackData<EscapeState> _state;
+        World world = CreateJobWorld();
+        Entity first = world.Create(new EscapeValue { Value = 11 });
+        Entity second = world.Create(new EscapeValue { Value = 22 });
+        ulong before = world.Version;
+        JobHandle propagation = HierarchyPropagation<EscapeDomain>.Schedule(world, [first, second],
+            new WriteOtherRoot(world, first, second), new SystemAccesses().WriteRandom<EscapeValue>());
+        Assert.Throws<JobResourceSafetyException>(propagation.Complete);
+        Assert.Equal(11, world.ReadComponentData<EscapeValue>(first).Value);
+        Assert.Equal(22, world.ReadComponentData<EscapeValue>(second).Value);
+        Assert.Equal(before, world.Version);
+    }
 
-        internal EscapingPropagationJob(EscapeOperation operation, CallbackData<EscapeState> state)
-        {
-            _operation = operation;
-            _state = state;
-        }
+    [Fact]
+    public void PrebuiltQueryRequiresItsComponentReadDeclaration()
+    {
+        World world = CreateJobWorld();
+        Entity root = world.Create(new EscapeValue { Value = 11 }, new OtherValue { Value = 22 });
+        Query query = world.Query(new QueryDescription().With<OtherValue>());
+        var result = new PropagationResult();
+        JobHandle propagation = HierarchyPropagation<EscapeDomain>.Schedule(world, [root],
+            new ReadUndeclaredQuery(query, result), new SystemAccesses().ReadRandom<EscapeValue>());
+        Assert.Throws<JobResourceSafetyException>(propagation.Complete);
+        Assert.Empty(result.Entities);
+        Assert.Equal(22, world.ReadComponentData<OtherValue>(root).Value);
+    }
 
+    [Fact]
+    public void PropagationRecordsCommandsForPlaybackAfterItsReadScopeEnds()
+    {
+        World world = CreateJobWorld();
+        Entity first = world.Create(new EscapeValue { Value = 11 });
+        Entity second = world.Create(new EscapeValue { Value = 22 });
+        using var commands = new CommandBuffer(world);
+        JobHandle propagation = HierarchyPropagation<EscapeDomain>.Schedule(world, [first, second],
+            new RecordCommands(commands, first, second), new SystemAccesses());
+        propagation.Complete();
+        Assert.Equal(22, world.ReadComponentData<EscapeValue>(second).Value);
+        Assert.Equal(1, commands.Count);
+        commands.Playback();
+        Assert.Equal(999, world.ReadComponentData<EscapeValue>(second).Value);
+    }
+
+    [Fact]
+    public void PropagationStructureReadCanReadAnotherRootsChildren()
+    {
+        World world = CreateJobWorld();
+        Entity first = world.Create(new EscapeValue { Value = 11 });
+        Entity second = world.Create(new EscapeValue { Value = 22 });
+        Entity child = world.Create(new EscapeValue { Value = 33 });
+        Hierarchy<EscapeDomain>.SetParent(world, child, second);
+        var result = new PropagationResult();
+        JobHandle propagation = HierarchyPropagation<EscapeDomain>.Schedule(world, [first],
+            new ReadChildren(world, second, result), new SystemAccesses());
+        propagation.Complete();
+        Assert.Equal([child], result.Entities);
+        Assert.Equal(second, Hierarchy<EscapeDomain>.GetParent(world, child));
+    }
+
+    private readonly struct ReadOtherRoot(Entity trigger, Entity other) : IHierarchyPropagationJob<EscapeDomain>
+    {
         public void Execute(ref HierarchyPropagationContext<EscapeDomain> context)
         {
-            if (context.Entity != _state.Value.TriggerRoot)
-                return;
-
-            switch (_operation)
-            {
-                case EscapeOperation.ReadOtherRoot:
-                    _ = _state.Value.World.Read<EscapeValue>(_state.Value.OtherRoot);
-                    break;
-                case EscapeOperation.ReplaceOtherRoot:
-                    _state.Value.World.Replace(
-                        _state.Value.OtherRoot,
-                        new EscapeValue { Value = 999 });
-                    break;
-                case EscapeOperation.ExecutePrebuiltQuery:
-                    _state.Value.World.ExecuteQuery(
-                        _state.Value.Query,
-                        static _ => throw new InvalidOperationException(
-                            "The restricted query body must never execute."));
-                    break;
-                case EscapeOperation.GetOtherRootChildren:
-                    _ = Hierarchy<EscapeDomain>.GetChildren(
-                        _state.Value.World,
-                        _state.Value.OtherRoot);
-                    break;
-                case EscapeOperation.GetWorldCommandBuffer:
-                    _state.Value.World.Commands().Replace(
-                        _state.Value.OtherRoot,
-                        new EscapeValue { Value = 999 });
-                    break;
-                case EscapeOperation.RecordPrebuiltCommandBuffer:
-                    _state.Value.Commands.Replace(
-                        _state.Value.OtherRoot,
-                        new EscapeValue { Value = 999 });
-                    break;
-                case EscapeOperation.BindPrebuiltHookView:
-                    _state.Value.Hooks.OnReplace(_state.Value.OnReplace);
-                    break;
-                case EscapeOperation.AcquireSystemTick:
-                    _ = _state.Value.World.AcquireSystemTick();
-                    break;
-                case EscapeOperation.AcquireSystemVersion:
-                    _ = _state.Value.World.AcquireSystemVersion();
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException();
-            }
+            if (context.Entity == trigger) _ = context.Read<EscapeValue>(other);
         }
     }
 
-    private readonly struct NoopPropagationJob : IHierarchyPropagationJob<EscapeDomain>
+    private readonly struct WriteOtherRoot(World world, Entity trigger, Entity other) : IHierarchyPropagationJob<EscapeDomain>
     {
         public void Execute(ref HierarchyPropagationContext<EscapeDomain> context)
         {
-            _ = context.Entity;
+            if (context.Entity == trigger) world.Set(other, new EscapeValue { Value = 999 });
         }
     }
 
-    private readonly struct BlockingJob : IJob
+    private readonly struct ReadUndeclaredQuery(Query query, PropagationResult result) : IHierarchyPropagationJob<EscapeDomain>
     {
-        private readonly ManualResetEventSlim _started;
-        private readonly ManualResetEventSlim _release;
-
-        internal BlockingJob(
-            ManualResetEventSlim started,
-            ManualResetEventSlim release)
+        public void Execute(ref HierarchyPropagationContext<EscapeDomain> context)
         {
-            _started = started;
-            _release = release;
+            using QueryScope rows = query.OpenRead();
+            foreach (QueryChunk chunk in rows) result.Entities = chunk.Entities.ToArray();
         }
+    }
 
+    private readonly struct RecordCommands(CommandBuffer commands, Entity trigger, Entity target) : IHierarchyPropagationJob<EscapeDomain>
+    {
+        public void Execute(ref HierarchyPropagationContext<EscapeDomain> context)
+        {
+            if (context.Entity == trigger) commands.Set(target, new EscapeValue { Value = 999 });
+        }
+    }
+
+    private readonly struct ReadChildren(World world, Entity parent, PropagationResult result) : IHierarchyPropagationJob<EscapeDomain>
+    {
+        public void Execute(ref HierarchyPropagationContext<EscapeDomain> context)
+        {
+            using ChildrenRead children = Hierarchy<EscapeDomain>.GetChildren(world, parent);
+            result.Entities = children.Entities.ToArray();
+        }
+    }
+
+    private readonly struct BlockingJob(ManualResetEventSlim started, ManualResetEventSlim release,
+        ConcurrentQueue<string> stages) : IJob
+    {
         public void Execute()
         {
-            _started.Set();
-            if (!_release.Wait(TimeSpan.FromSeconds(5)))
-                throw new TimeoutException("Propagation dependency release timed out.");
+            started.Set();
+            if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException();
+            stages.Enqueue("blocker");
         }
     }
 
-    private readonly struct SignalJob : IJob
+    private readonly struct MaintainParents(World world, ConcurrentQueue<string> stages) : IJob
     {
-        private readonly ManualResetEventSlim _started;
-
-        internal SignalJob(ManualResetEventSlim started)
+        public void Execute()
         {
-            _started = started;
+            Hierarchy<EscapeDomain>.Maintain(world);
+            stages.Enqueue("maintenance");
         }
-
-        public void Execute() => _started.Set();
     }
 
-    private class EscapeState
+    private readonly struct RecordPropagation(ConcurrentQueue<string> stages) : IHierarchyPropagationJob<EscapeDomain>
     {
-        internal World World { get; private set; } = null!;
-        internal Entity TriggerRoot { get; private set; }
-        internal Entity OtherRoot { get; private set; }
-        internal QueryHandle Query { get; private set; }
-        internal CommandBuffer Commands { get; private set; } = null!;
-        internal ComponentHooks<EscapeValue> Hooks { get; private set; } = null!;
-        internal int HookInvocations;
-
-        internal void Configure(
-            World world,
-            Entity triggerRoot,
-            Entity otherRoot,
-            QueryHandle query,
-            CommandBuffer commands,
-            ComponentHooks<EscapeValue> hooks)
-        {
-            World = world;
-            TriggerRoot = triggerRoot;
-            OtherRoot = otherRoot;
-            Query = query;
-            Commands = commands;
-            Hooks = hooks;
-            HookInvocations = 0;
-        }
-
-        internal void Clear()
-        {
-            World = null!;
-            TriggerRoot = default;
-            OtherRoot = default;
-            Query = default;
-            Commands = null!;
-            Hooks = null!;
-            HookInvocations = 0;
-        }
-
-        internal void OnReplace(
-            DeferredWorld world,
-            Entity entity,
-            in EscapeValue value)
-        {
-            Interlocked.Increment(ref HookInvocations);
-        }
+        public void Execute(ref HierarchyPropagationContext<EscapeDomain> context) => stages.Enqueue("propagation");
     }
 
-    private struct EscapeValue : IComponent
+    private readonly struct RecordSuccessor(ConcurrentQueue<string> stages) : IJob
+    {
+        public void Execute() => stages.Enqueue("successor");
+    }
+
+    private sealed class PropagationResult
+    {
+        internal Entity[] Entities = [];
+    }
+
+    private struct EscapeValue : ITrackedComponent
     {
         public int Value;
     }
 
-    private struct ManagedEscapeValue : IComponent
+    private struct OtherValue : IComponent
     {
-        public string? Value { get; set; }
+        public int Value;
     }
 
     private readonly struct EscapeDomain : IHierarchyDomain;

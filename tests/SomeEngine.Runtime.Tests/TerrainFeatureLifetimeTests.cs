@@ -14,7 +14,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
     [Fact]
     public async Task ReaddedGpuPlacementsBuildAfterTheirWaitingBatchWasWithdrawn()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using GpuHeightTerrainExample ground = await GpuHeightTerrainExample.CreateAsync(scheduler, content.DirectoryPath);
         var material = new UnlitMaterial();
         var input = new EditStart();
@@ -77,7 +77,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
     [Fact]
     public async Task ReloadKeepsGpuFieldValuesAndGeometryAfterCancelingAnEarlierReadback()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using GpuHeightTerrainExample ground = await GpuHeightTerrainExample.CreateAsync(scheduler, content.DirectoryPath);
         Shader voxelShader = await TerrainGpuEditingTests.LoadNeighborhoodShaderAsync("terrain_voxel_delta.slang");
         VoxelField voxels = ground.Heights.Terrain.CreateVoxelField("detail", new VoxelGrid(4), 4f);
@@ -158,7 +158,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
     [Fact]
     public async Task RemovedGpuPlacementsReturnTheirCapacityBeforeTheNextPlacementsBuild()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using GpuHeightTerrainExample ground = await GpuHeightTerrainExample.CreateAsync(scheduler, content.DirectoryPath);
         var material = new UnlitMaterial();
         var builds = new List<TerrainGpuBuild>();
@@ -208,7 +208,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
     [Fact]
     public async Task ReloadFinishesRenderedAndNextGameUpdateGeometryBatches()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using GpuHeightTerrainExample ground = await GpuHeightTerrainExample.CreateAsync(scheduler, content.DirectoryPath);
         var material = new UnlitMaterial();
         ground.AddPlacements(material, material);
@@ -252,7 +252,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
     [Fact]
     public async Task StoppingAfterACanceledFrameCancelsFieldReadsAndFinishesCpuGeometryWork()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var ground = new HeightTerrainExample(scheduler);
         Shader shader = await TerrainGpuEditingTests.LoadNeighborhoodShaderAsync("terrain_height_delta.slang");
         TerrainEdit edit = default;

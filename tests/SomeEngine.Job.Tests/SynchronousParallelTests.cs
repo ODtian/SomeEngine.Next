@@ -5,7 +5,7 @@ public sealed class SynchronousParallelTests
     [Fact]
     public void ResourceScopedExecutionReturnsAfterItsChildrenConsumeTheData()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         JobResource resource = scheduler.CreateResource();
         int[] values = new int[4];
 
@@ -19,7 +19,7 @@ public sealed class SynchronousParallelTests
     [Fact]
     public void NestedExecutionUsesTheCurrentResourcePermissions()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         JobResource resource = scheduler.CreateResource();
         JobHandle parent = scheduler.Schedule(new CallbackJob(() =>
             scheduler.ExecuteParallel(new RangeJob(_ => { }), 2, batchSize: 1,
@@ -31,7 +31,7 @@ public sealed class SynchronousParallelTests
     [Fact]
     public async Task FailureIsDeliveredAfterEveryParticipantExits()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var rangeStarted = new ManualResetEventSlim();
         using var releaseRange = new ManualResetEventSlim();
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
@@ -64,7 +64,7 @@ public sealed class SynchronousParallelTests
     [Fact]
     public void ExecuteParallelReadsPrecedingResourceWritesBeforeReturning()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         JobResource resource = scheduler.CreateResource();
         int input = 0;
         int[] values = new int[4];
@@ -79,7 +79,7 @@ public sealed class SynchronousParallelTests
     [Fact]
     public void ExecuteParallelReturnsCompleteResultsAndUsesCallingThread()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         int[] values = new int[128];
         int[] threads = new int[128];
         int caller = Environment.CurrentManagedThreadId;
@@ -102,7 +102,7 @@ public sealed class SynchronousParallelTests
     [Fact]
     public void NestedParticipantsKeepTheCurrentScopeForChildDependencies()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var parentReady = new ManualResetEventSlim();
         using var helperFinished = new ManualResetEventSlim();
         Exception? failure = null;

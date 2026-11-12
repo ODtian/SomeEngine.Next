@@ -1,6 +1,6 @@
+using SomeEngine.ECS;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 
@@ -9,7 +9,7 @@ namespace SomeEngine.Render.Systems;
 /// <summary>Transfers decal references and transforms through the shared extraction boundary.</summary>
 public sealed partial class MaterialDecalRenderExtractor : IRenderExtractionSystem
 {
-    private readonly List<(Entity Source, RenderTransform Transform, RenderMaterialDecal Decal)> _decals = [];
+    private readonly List<(Entity Source, RenderTransform? Transform, RenderMaterialDecal Decal)> _decals = [];
     private readonly HashSet<Entity> _sources = [];
     public bool CanApplyChangesDirect => true;
 
@@ -22,43 +22,44 @@ public sealed partial class MaterialDecalRenderExtractor : IRenderExtractionSyst
 
     public void Reset() { _decals.Clear(); _sources.Clear(); _transformChanges.Clear(); }
 
-    public void CollectResources(scoped QueryCursor source, RenderExtractionResources resources)
+    public void CollectResources(scoped QueryScope source, RenderExtractionResources resources)
     {
-        foreach (QueryChunkView chunk in source.Chunks)
+        foreach (QueryChunk chunk in source)
             if (chunk.TryRead<MaterialDecal>(out var decals))
-                foreach (MaterialDecal decal in decals) resources.Add(decal.Material);
+                for (int row = 0; row < chunk.Count; row++)
+                    if (chunk.Has<MaterialDecal>(row)) resources.Add(decals[row].Material);
     }
 
-    public void Collect(QueryChunkView chunk) => Collect(ReadOnlyQueryPacketJobs.Borrow(chunk));
-
-    private void Collect(ReadOnlyQueryPacket chunk)
+    public void Collect(QueryChunk chunk)
     {
         if (!chunk.TryRead<MaterialDecal>(out var decals) || !chunk.TryRead<WorldTransform>(out var transforms)) return;
         for (int row = 0; row < decals.Length; row++)
         {
+            if (!chunk.Has<MaterialDecal>(row) || !chunk.Has<WorldTransform>(row)) continue;
             Entity source = chunk.Entities[row];
             _sources.Add(source);
-            _decals.Add((source, new(transforms[row].Qvvs), new(decals[row].Material, decals[row].Order)));
+            _decals.Add((source, new RenderTransform(transforms[row].Qvvs), new(decals[row].Material, decals[row].Order)));
         }
     }
 
-    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
+    public bool CollectChanges(QueryChunk chunk, ulong since, RenderExtractionContext context)
     {
-        bool changed = CollectChanges(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion);
+        bool changed = CollectChanges(chunk, since);
         _transformChanges.Merge(context);
         return changed;
     }
 
-    private bool CollectChanges(ReadOnlyQueryPacket chunk, uint lastSystemVersion)
+    private bool CollectChanges(QueryChunk chunk, ulong lastSystemVersion)
     {
         if (!chunk.TryRead<MaterialDecal>(out var decals) || !chunk.TryRead<WorldTransform>(out var transforms)) return false;
         int before = _decals.Count;
         for (int row = 0; row < decals.Length; row++)
         {
+            if (!chunk.Has<MaterialDecal>(row) || !chunk.Has<WorldTransform>(row)) continue;
             Entity source = chunk.Entities[row];
-            if (chunk.RowChangedSince<WorldTransform>(row, lastSystemVersion))
+            if (chunk.WasWritten<WorldTransform>(row, lastSystemVersion))
                 _transformChanges.Add(source, new RenderTransform(transforms[row].Qvvs));
-            if (chunk.RowChangedSince<MaterialDecal>(row, lastSystemVersion))
+            if (chunk.WasWritten<MaterialDecal>(row, lastSystemVersion))
                 _decals.Add((source, default, new(decals[row].Material, decals[row].Order)));
         }
         return _decals.Count != before;
@@ -69,7 +70,7 @@ public sealed partial class MaterialDecalRenderExtractor : IRenderExtractionSyst
         foreach (var value in _decals)
         {
             Entity entity = context.RetainMirror(value.Source);
-            context.RetainTransform(entity, value.Transform);
+            if (value.Transform is { } transform) context.RetainTransform(entity, transform);
             context.Upsert(entity, value.Decal);
         }
         foreach (RenderMirror mirror in context.Mirrors)

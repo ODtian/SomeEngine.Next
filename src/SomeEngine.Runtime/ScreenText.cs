@@ -20,12 +20,12 @@ internal sealed class ScreenText : IDisposable
         using var bytes = new MemoryStream();
         stream.CopyTo(bytes);
         Font = Font.Load(bytes.ToArray());
-        AtlasSource = world.CreateEntity(new TextAtlas(new GlyphAtlas()));
+        AtlasSource = world.Create(new TextAtlas(new GlyphAtlas()));
     }
 
     public void Dispose()
     {
-        _world.DestroyEntity(AtlasSource);
+        _world.Destroy(AtlasSource);
         Font.Dispose();
     }
 }

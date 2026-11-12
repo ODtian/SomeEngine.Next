@@ -1,6 +1,5 @@
 using System.Numerics;
 using SomeEngine.ECS;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -23,15 +22,14 @@ public sealed class NavigationTraversalSystem<TSpace, TState, TMotion, TReader>(
     where TMotion : unmanaged, IComponent
     where TReader : struct, INavigationMotionReader<TMotion>
 {
-    private readonly QueryDefinition _actors = world.QueryDefinition().All<NavigationRequest<TSpace, TState>>()
-        .Enabled<NavigationGoal>().Build();
+    private readonly QueryDescription _actors = new QueryDescription().WithStored<NavigationRequest<TSpace, TState>>()
+        .With<NavigationGoal>();
     private JobHandle _completion;
     private readonly NavigationPassageSystem _passages = passages ?? new(world);
 
     public JobHandle Schedule(JobHandle guidanceReady)
     {
-        JobHandle ready = new NavigationTraversalJob<TSpace, TState, TMotion, TReader>().ScheduleParallel(world,
-            new JobEntityScheduleOptions(filter: _actors), WorldJobs.CombineDependencies(world, [_completion, guidanceReady]));
+        JobHandle ready = new NavigationTraversalJob<TSpace, TState, TMotion, TReader>().ScheduleParallel(world, dependency: world.Execution!.Scheduler!.CombineDependencies([_completion, guidanceReady]), query: world.Query(_actors));
         _completion = _passages.Schedule(ready);
         return _completion;
     }

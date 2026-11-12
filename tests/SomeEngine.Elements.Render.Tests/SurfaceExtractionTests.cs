@@ -4,7 +4,6 @@ using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Elements.Render;
 using SomeEngine.Graphics;
@@ -30,11 +29,11 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render,
             sharedCanvas ? new CanvasRenderExtractor() : new SurfaceRenderExtractor());
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(800, 600) });
         Entity node = AddPanel(game, canvas, new Rect(10, 20, 120, 80), new Color(1, 0, 0));
-        Surface surface = game.Read<Surface>(node);
+        Surface surface = game.ReadComponentData<Surface>(node);
         surface.Shadow = new DropShadow(new Color(0, 0, 0, 0.35f), new Vector2(0, 4), 12);
-        game.Replace(node, surface);
+        game.Set(node, surface);
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         Entity mirror = extraction.RequireMirror(canvas);
@@ -42,7 +41,7 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
             Assert.Single(ReadInstances(render, mirror)).Shadow);
 
         surface.Shadow = new DropShadow(new Color(0.2f, 0.3f, 0.4f, 0.5f), new Vector2(-3, 6), 2);
-        game.Replace(node, surface);
+        game.Set(node, surface);
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         SurfaceInstance updated = Assert.Single(ReadInstances(render, mirror));
@@ -51,7 +50,7 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         Assert.Equal(new Color(1, 0, 0), updated.Fill);
 
         surface.Shadow = default;
-        game.Replace(node, surface);
+        game.Set(node, surface);
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         Assert.Equal(default, Assert.Single(ReadInstances(render, mirror)).Shadow);
@@ -63,11 +62,11 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         using var game = new World();
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor());
-        Entity target = game.CreateEntity(new WorldTransform
+        Entity target = game.Create(new WorldTransform
         {
             Qvvs = new TransformQvvs(new Vector3(3, 4, 5), Quaternion.Identity, 2),
         });
-        Entity canvas = game.CreateEntity(new Canvas
+        Entity canvas = game.Create(new Canvas
         {
             Target = CanvasTarget.WorldSpace(target), Size = new Size(80, 40), DepthTest = true,
         });
@@ -75,20 +74,20 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         Entity mirror = extraction.RequireMirror(canvas);
-        RenderCanvas before = render.Read<RenderCanvas>(mirror);
+        RenderCanvas before = render.World.ReadComponentData<RenderCanvas>(mirror);
         Assert.Equal(new Vector3(5, 8, 5), Vector3.Transform(new Vector3(1, 2, 0), before.Transform));
         Assert.True(before.DepthTest);
 
-        game.Replace(target, new WorldTransform
+        game.Set(target, new WorldTransform
         {
             Qvvs = new TransformQvvs(new Vector3(10, 20, 30),
                 Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2), 3)
             { Stretch = new Vector3(2, 1, 1) },
         });
         extraction.Extract(game);
-        Assert.Equal(before, render.Read<RenderCanvas>(mirror));
+        Assert.Equal(before, render.World.ReadComponentData<RenderCanvas>(mirror));
         graphics.Apply(extraction, render);
-        Vector3 after = Vector3.Transform(new Vector3(1, 2, 0), render.Read<RenderCanvas>(mirror).Transform);
+        Vector3 after = Vector3.Transform(new Vector3(1, 2, 0), render.World.ReadComponentData<RenderCanvas>(mirror).Transform);
         Assert.InRange(after.X, 3.999f, 4.001f);
         Assert.InRange(after.Y, 25.999f, 26.001f);
         Assert.Equal(30, after.Z);
@@ -101,7 +100,7 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         using var game = new World();
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor());
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(800, 600) });
         Entity first = AddPanel(game, canvas, new Rect(10, 20, 120, 80), new Color(1, 0, 0));
         Entity second = AddPanel(game, canvas, new Rect(200, 30, 50, 40), new Color(0, 1, 0));
         extraction.Extract(game);
@@ -109,9 +108,9 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         Entity mirror = extraction.RequireMirror(canvas);
         SurfaceInstance[] before = ReadInstances(render, mirror);
 
-        Surface surface = game.Read<Surface>(first);
+        Surface surface = game.ReadComponentData<Surface>(first);
         surface.Fill = new Color(0, 0, 1);
-        game.Replace(first, surface);
+        game.Set(first, surface);
         extraction.Extract(game);
         Assert.Equal(before, ReadInstances(render, mirror));
         graphics.Apply(extraction, render);
@@ -136,13 +135,13 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         using var game = new World();
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor());
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(800, 600) });
         AddPanel(game, canvas, new Rect(10, 20, 120, 80), new Color(1, 0, 0));
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         Entity mirror = extraction.RequireMirror(canvas);
         SurfaceInstance[] before = ReadInstances(render, mirror);
-        uint version = render.CurrentTick;
+        ulong version = render.World.AcquireSystemVersion();
 
         for (int frame = 0; frame < 3; frame++)
         {
@@ -160,11 +159,11 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         using var game = new World();
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor());
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(800, 600) });
         Entity later = AddPanel(game, canvas, new Rect(40, 0, 20, 20), new Color(0, 0, 1));
         Entity earlier = AddPanel(game, canvas, new Rect(0, 0, 20, 20), new Color(1, 0, 0));
         Entity child = AddPanel(game, earlier, new Rect(5, 5, 10, 10), new Color(0, 1, 0));
-        Hierarchy<ElementTree>.Reorder(game, earlier, 0);
+        Hierarchy<ElementTree>.SetParent(game, earlier, canvas, 0);
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         Entity mirror = extraction.RequireMirror(canvas);
@@ -179,7 +178,7 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         Assert.Equal(later, remaining.Node);
         Assert.Equal(1, remaining.DrawOrder);
 
-        game.DestroyEntity(later);
+        game.Destroy(later);
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         Assert.Empty(ReadInstances(render, mirror));
@@ -191,7 +190,7 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         using var game = new World();
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor(), new LightRenderExtractor());
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(800, 600) });
         game.Add(canvas, new SomeEngine.Render.Components.PointLight());
         AddPanel(game, canvas, new Rect(0, 0, 20, 20), new Color(1, 0, 0));
         extraction.Extract(game);
@@ -202,10 +201,10 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         extraction.Extract(game);
         graphics.Apply(extraction, render);
 
-        Assert.True(render.IsAlive(mirror));
-        Assert.True(render.Has<SomeEngine.Render.Components.RenderPointLight>(mirror));
-        Assert.False(render.Has<RenderCanvas>(mirror));
-        Assert.False(render.HasBuffer<SurfaceInstance>(mirror));
+        Assert.True(render.World.IsAlive(mirror));
+        Assert.True(render.World.Has<SomeEngine.Render.Components.RenderPointLight>(mirror));
+        Assert.False(render.World.Has<RenderCanvas>(mirror));
+        Assert.False(render.World.Has<Buffer<SurfaceInstance>>(mirror));
     }
 
     [Fact]
@@ -214,8 +213,8 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         using var game = new World();
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor());
-        Entity firstCanvas = game.CreateEntity(new Canvas { Size = new Size(800, 600) });
-        Entity secondCanvas = game.CreateEntity(new Canvas { Size = new Size(400, 300), Scale = 2 });
+        Entity firstCanvas = game.Create(new Canvas { Size = new Size(800, 600) });
+        Entity secondCanvas = game.Create(new Canvas { Size = new Size(400, 300), Scale = 2 });
         Entity first = AddPanel(game, firstCanvas, new Rect(0, 0, 20, 20), new Color(1, 0, 0));
         Entity second = AddPanel(game, firstCanvas, new Rect(30, 0, 20, 20), new Color(0, 1, 0));
         Entity third = AddPanel(game, secondCanvas, new Rect(0, 0, 20, 20), new Color(0, 0, 1));
@@ -224,9 +223,9 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         Entity firstMirror = extraction.RequireMirror(firstCanvas);
         Entity secondMirror = extraction.RequireMirror(secondCanvas);
         SurfaceInstance thirdBefore = Assert.Single(ReadInstances(render, secondMirror));
-        uint version = render.CurrentTick;
+        ulong version = render.World.AcquireSystemVersion();
 
-        Hierarchy<ElementTree>.Reorder(game, second, 0);
+        Hierarchy<ElementTree>.SetParent(game, second, firstCanvas, 0);
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         Assert.Equal(new[] { second, first }, ReadInstances(render, firstMirror).Select(value => value.Node));
@@ -250,7 +249,7 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         using var game = new World();
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor());
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(800, 600) });
         Entity first = AddPanel(game, canvas, new Rect(0, 0, 20, 20), new Color(1, 0, 0));
         AddPanel(game, canvas, new Rect(30, 0, 20, 20), new Color(0, 1, 0));
         extraction.Extract(game);
@@ -258,7 +257,7 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         Entity mirror = extraction.RequireMirror(canvas);
         SurfaceInstance[] before = ReadInstances(render, mirror);
 
-        game.Replace(first, new LayoutRect { Value = new Rect(5, 10, 25, 30) });
+        game.Set(first, new LayoutRect { Value = new Rect(5, 10, 25, 30) });
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         SurfaceInstance[] moved = ReadInstances(render, mirror);
@@ -266,11 +265,11 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         Assert.NotEqual(before[0].Version, moved[0].Version);
         Assert.Equal(before[1], moved[1]);
 
-        game.Replace(canvas, new Canvas { Size = new Size(640, 480), Scale = 2 });
+        game.Set(canvas, new Canvas { Size = new Size(640, 480), Scale = 2 });
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         SurfaceInstance[] resized = ReadInstances(render, mirror);
-        Assert.Equal(new RenderCanvas(CanvasTarget.Screen, new Size(640, 480), 2), render.Read<RenderCanvas>(mirror));
+        Assert.Equal(new RenderCanvas(CanvasTarget.Screen, new Size(640, 480), 2), render.World.ReadComponentData<RenderCanvas>(mirror));
         Assert.Equal(new Rect(0, 0, 320, 240), resized[0].ClipRectangle);
         Assert.Equal(new Rect(0, 0, 320, 240), resized[1].ClipRectangle);
         Assert.NotEqual(moved[0].Version, resized[0].Version);
@@ -286,7 +285,7 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem());
         using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor());
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(800, 600) });
         Entity view = Views.Views.Spawn(game, canvas, new ExtractionPanel(new Color(1, 0, 0)));
         systems.Update();
         extraction.Extract(game);
@@ -296,7 +295,7 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         Assert.Equal(new Rect(0, 0, 120, 80), before.Rectangle);
         Assert.Equal(new Color(1, 0, 0), before.Fill);
         Assert.Equal(4, before.CornerRadius);
-        uint version = render.CurrentTick;
+        ulong version = render.World.AcquireSystemVersion();
 
         systems.Update();
         extraction.Extract(game);
@@ -304,7 +303,7 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         Assert.Equal(before, Assert.Single(ReadInstances(render, mirror)));
         Assert.False(BufferChanged(render, mirror, version));
 
-        game.Replace(view, new ExtractionPanel(new Color(0, 0, 1)));
+        game.Set(view, new ExtractionPanel(new Color(0, 0, 1)));
         systems.Update();
         extraction.Extract(game);
         graphics.Apply(extraction, render);
@@ -320,18 +319,18 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         using var game = new World();
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor());
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(800, 600), Scale = 2 });
+        Entity canvas = game.Create(new Canvas { Size = new Size(800, 600), Scale = 2 });
         AddPanel(game, canvas, new Rect(0, 0, 20, 20), new Color(1, 0, 0));
         extraction.Extract(game);
-        game.Replace(canvas, new Canvas { Size = new Size(800, 600), Scale = 4 });
+        game.Set(canvas, new Canvas { Size = new Size(800, 600), Scale = 4 });
         graphics.Apply(extraction, render);
         Entity mirror = extraction.RequireMirror(canvas);
-        Assert.Equal(2, render.Read<RenderCanvas>(mirror).Scale);
+        Assert.Equal(2, render.World.ReadComponentData<RenderCanvas>(mirror).Scale);
         Assert.Equal(new Rect(0, 0, 400, 300), Assert.Single(ReadInstances(render, mirror)).ClipRectangle);
 
         extraction.Extract(game);
         graphics.Apply(extraction, render);
-        Assert.Equal(4, render.Read<RenderCanvas>(mirror).Scale);
+        Assert.Equal(4, render.World.ReadComponentData<RenderCanvas>(mirror).Scale);
         Assert.Equal(new Rect(0, 0, 200, 150), Assert.Single(ReadInstances(render, mirror)).ClipRectangle);
     }
 
@@ -343,7 +342,7 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
         using var game = new World();
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor());
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(800, 600) });
         Entity panel = AddPanel(game, canvas, new Rect(0, 0, 20, 20), new Color(1, 0, 0));
         extraction.Extract(game);
         graphics.Apply(extraction, render);
@@ -378,8 +377,8 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
 
     private static Entity AddPanel(World world, Entity parent, Rect rectangle, Color fill)
     {
-        Hierarchy<ElementTree>.SetChildOrderPolicy(world, parent, ChildOrderPolicy.Ordered);
-        Entity panel = world.CreateEntity(new Surface
+        Hierarchy<ElementTree>.SetOrdered(world, parent, true);
+        Entity panel = world.Create(new Surface
         {
             Fill = fill, CornerRadius = 4, BorderColor = new Color(0.2f, 0.3f, 0.4f), BorderWidth = 2,
         });
@@ -391,25 +390,20 @@ public sealed partial class SurfaceExtractionTests(SurfaceExtractionDevice graph
     private static SurfaceInstance[] ReadInstances(RenderWorld world, Entity canvas)
     {
         SurfaceInstance[] result = [];
-        world.ExecuteBufferRead<SurfaceInstance>(canvas, buffer => result = buffer.AsSpan().ToArray());
+        using (ReadOnlyBuffer<SurfaceInstance> buffer = world.World.ReadBuffer<SurfaceInstance>(canvas))
+            result = buffer.AsSpan().ToArray();
         return result;
     }
 
-    private static bool BufferChanged(RenderWorld world, Entity canvas, uint version)
+    private static bool BufferChanged(RenderWorld world, Entity canvas, ulong version)
     {
-        QueryHandle query = world.Query(new QueryDefinitionBuilder().ReadBuffer<SurfaceInstance>());
+        Query query = world.World.Query(new QueryDescription().With<Buffer<SurfaceInstance>>());
         bool changed = false;
-        try
-        {
-            world.ExecuteQuery(query, version, rows =>
-            {
-                foreach (QueryChunkView chunk in rows.Chunks)
-                    for (int row = 0; row < chunk.Count; row++)
-                        if (chunk.Entities[row] == canvas)
-                            changed = chunk.RowBufferChangedSinceLastSystemVersion<SurfaceInstance>(row);
-            });
-        }
-        finally { world.ReleaseQuery(query); }
+        using QueryScope rows = query.OpenRead();
+        foreach (QueryChunk chunk in rows)
+            for (int row = 0; row < chunk.Count; row++)
+                if (chunk.Entities[row] == canvas)
+                    changed = chunk.WasWritten<Buffer<SurfaceInstance>>(row, version);
         return changed;
     }
 }

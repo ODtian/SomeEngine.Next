@@ -36,6 +36,7 @@ internal sealed class ChaseLevDeque<T>
 
     internal bool TryPop(out T item)
     {
+        if (IsEmpty) { item = default; return false; }
         long bottom = Volatile.Read(ref _bottom) - 1;
         Volatile.Write(ref _bottom, bottom);
         Thread.MemoryBarrier();
@@ -65,6 +66,7 @@ internal sealed class ChaseLevDeque<T>
 
     internal bool TrySteal(out T item)
     {
+        if (IsEmpty) { item = default; return false; }
         for (int attempt = 0; attempt < 4; attempt++)
         {
             long top = Volatile.Read(ref _top);

@@ -2,7 +2,6 @@ using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Layout;
 using SomeEngine.Views;
 
@@ -10,7 +9,7 @@ namespace SomeEngine.Elements;
 
 public sealed partial class HitTestSystem
 {
-    private QueryHandle _dragQuery;
+    private Query _dragQuery;
     private readonly Dictionary<Entity, Drag> _drags = new();
 
     private void BeginDragFrame(World world)
@@ -19,7 +18,7 @@ public sealed partial class HitTestSystem
         _drags.Clear();
         foreach (Entity node in _nodes)
         {
-            Drag drag = world.Read<Drag>(node);
+            Drag drag = world.ReadComponentData<Drag>(node);
             drag.Active = false;
             drag.Delta = Vector2.Zero;
             _drags.Add(node, drag);
@@ -69,10 +68,10 @@ public sealed partial class HitTestSystem
     {
         foreach (var (node, drag) in _drags)
         {
-            Drag previous = world.Read<Drag>(node);
+            Drag previous = world.ReadComponentData<Drag>(node);
             if (drag.Active != previous.Active || drag.Delta != previous.Delta ||
                 drag.Total != previous.Total || drag.Count != previous.Count)
-                world.Replace(node, drag);
+                world.Set(node, drag);
         }
     }
 }

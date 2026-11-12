@@ -1,179 +1,223 @@
-using SomeEngine.ECS.Components;
+using System.Runtime.CompilerServices;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Registry;
-using SomeEngine.Core.Diagnostics;
+using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS;
 
-public partial class World
+public sealed partial class World
 {
-    /// <summary>添加 Table 组件。已存在时抛异常。</summary>
-    public void Add<T>(Entity entity, in T value)
-        where T : struct, IComponent => AddTableComponentData(entity, in value);
-
-    private void AddTableComponentData<T>(Entity entity, in T value) where T : struct
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public Entity Create<T1, T2>(in T1 first, in T2 second)
+        where T1 : struct where T2 : struct
     {
-        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
-        PublicComponentMutationGuard.Structural<T>("World.Add");
-        _components.Add(entity, in value);
+        if (Execution is not null) return CreateWithExecution(first, second);
+        return CreateCore(first, second);
     }
 
-    /// <summary>添加 Tag。已存在时抛异常。</summary>
-    public void AddTag<T>(Entity entity)
-        where T : struct, ITag
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private Entity CreateWithExecution<T1, T2>(in T1 first, in T2 second)
+        where T1 : struct where T2 : struct
     {
-        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
-        _components.AddTag<T>(entity);
+        using WorldAccess access = OpenStructure();
+        return CreateCore(first, second);
     }
 
-    /// <summary>移除 Table 组件。不存在时抛异常。</summary>
-    public void Remove<T>(Entity entity)
-        where T : struct, IComponent
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private Entity CreateCore<T1, T2>(in T1 first, in T2 second)
+        where T1 : struct where T2 : struct
     {
-        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
-        PublicComponentMutationGuard.Structural<T>("World.Remove");
-        _components.Remove<T>(entity);
+        if (ComponentType<T1>.HasInitializerType) ComponentType<T1>.ValidateCreate(this, first);
+        if (ComponentType<T2>.HasInitializerType) ComponentType<T2>.ValidateCreate(this, second);
+        Chunk chunk = Find(TypeSet<T1, T2>.Value).WritableChunk;
+        Entity entity = CreateKnown(ref chunk);
+        using MembershipEdit membership = BeginMembershipEdit(entity, created: true);
+        int row = chunk.Count - 1;
+        WriteCreatedValue(entity, chunk, row, first);
+        WriteCreatedValue(entity, chunk, row, second);
+        if (ComponentType<T1>.IsIndexedType) IndexCreated(entity, first);
+        if (ComponentType<T2>.IsIndexedType) IndexCreated(entity, second);
+        if (ComponentType<T1>.IsGroupedType || ComponentType<T2>.IsGroupedType) ArrangeCreatedGroups(entity);
+        if (ComponentType<T1>.HasInitializerType) ComponentType<T1>.Initialize(this, entity);
+        if (ComponentType<T2>.HasInitializerType) ComponentType<T2>.Initialize(this, entity);
+        return entity;
     }
 
-    /// <summary>移除 Tag。不存在时抛异常。</summary>
-    public void RemoveTag<T>(Entity entity)
-        where T : struct, ITag
+    public void Reserve<T1, T2>(int capacity)
+        where T1 : struct where T2 : struct
+        => ReserveTypes(TypeSet<T1, T2>.Value, capacity);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public Entity Create<T1, T2, T3, T4>(in T1 first, in T2 second, in T3 third, in T4 fourth)
+        where T1 : struct where T2 : struct where T3 : struct where T4 : struct
     {
-        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
-        _components.RemoveTag<T>(entity);
+        if (Execution is not null) return CreateWithExecution(first, second, third, fourth);
+        return CreateCore(first, second, third, fourth);
     }
 
-    /// <summary>读取组件值（返回拷贝）。</summary>
-    public T Read<T>(Entity entity)
-        where T : struct, IComponent
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private Entity CreateWithExecution<T1, T2, T3, T4>(in T1 first, in T2 second, in T3 third, in T4 fourth)
+        where T1 : struct where T2 : struct where T3 : struct where T4 : struct
     {
-        using WorldJobAdmissionScope admission = EnterJobComponent<T>(WorldStorageAccess.Read);
-        return _components.Read<T>(entity);
+        using WorldAccess access = OpenStructure();
+        return CreateCore(first, second, third, fourth);
     }
 
-    /// <summary>读取实体上该表格组件最近一次写入的版本。</summary>
-    /// <remarks>
-    /// 取得写引用即记作写入。用 <c>!=</c> 比较前后版本，以支持版本回绕。
-    /// </remarks>
-    public uint WriteVersion<T>(Entity entity)
-        where T : struct, IComponent
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private Entity CreateCore<T1, T2, T3, T4>(in T1 first, in T2 second, in T3 third, in T4 fourth)
+        where T1 : struct where T2 : struct where T3 : struct where T4 : struct
     {
-        using WorldJobAdmissionScope admission = EnterJobComponent<T>(WorldStorageAccess.Read);
-        return _components.WriteVersion<T>(entity);
+        if (ComponentType<T1>.HasInitializerType) ComponentType<T1>.ValidateCreate(this, first);
+        if (ComponentType<T2>.HasInitializerType) ComponentType<T2>.ValidateCreate(this, second);
+        if (ComponentType<T3>.HasInitializerType) ComponentType<T3>.ValidateCreate(this, third);
+        if (ComponentType<T4>.HasInitializerType) ComponentType<T4>.ValidateCreate(this, fourth);
+        Chunk chunk = Find(TypeSet<T1, T2, T3, T4>.Value).WritableChunk;
+        Entity entity = CreateKnown(ref chunk);
+        using MembershipEdit membership = BeginMembershipEdit(entity, created: true);
+        int row = chunk.Count - 1;
+        WriteCreatedValue(entity, chunk, row, first);
+        WriteCreatedValue(entity, chunk, row, second);
+        WriteCreatedValue(entity, chunk, row, third);
+        WriteCreatedValue(entity, chunk, row, fourth);
+        if (ComponentType<T1>.IsIndexedType) IndexCreated(entity, first);
+        if (ComponentType<T2>.IsIndexedType) IndexCreated(entity, second);
+        if (ComponentType<T3>.IsIndexedType) IndexCreated(entity, third);
+        if (ComponentType<T4>.IsIndexedType) IndexCreated(entity, fourth);
+        if (ComponentType<T1>.IsGroupedType || ComponentType<T2>.IsGroupedType || ComponentType<T3>.IsGroupedType || ComponentType<T4>.IsGroupedType)
+            ArrangeCreatedGroups(entity);
+        if (ComponentType<T1>.HasInitializerType) ComponentType<T1>.Initialize(this, entity);
+        if (ComponentType<T2>.HasInitializerType) ComponentType<T2>.Initialize(this, entity);
+        if (ComponentType<T3>.HasInitializerType) ComponentType<T3>.Initialize(this, entity);
+        if (ComponentType<T4>.HasInitializerType) ComponentType<T4>.Initialize(this, entity);
+        return entity;
     }
 
-    /// <summary>整值替换组件（不触发迁移）。</summary>
-    public void Replace<T>(Entity entity, in T value)
-        where T : struct, IComponent => ReplaceTableComponentData(entity, in value);
+    public void Reserve<T1, T2, T3, T4>(int capacity)
+        where T1 : struct where T2 : struct where T3 : struct where T4 : struct
+        => ReserveTypes(TypeSet<T1, T2, T3, T4>.Value, capacity);
 
-    private void ReplaceTableComponentData<T>(Entity entity, in T value) where T : struct
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public Entity Create<T1, T2, T3, T4, T5>(in T1 first, in T2 second, in T3 third, in T4 fourth, in T5 fifth)
+        where T1 : struct where T2 : struct where T3 : struct where T4 : struct where T5 : struct
     {
-        int componentId = ComponentMetadata<T>.Id;
-        // OnReplace can observe the old value and OnInsert can observe the new value. Those are
-        // the only callbacks CommitReplace executes, so hooks for another component or for an
-        // irrelevant event must not upgrade this component-local write to a topology writer.
-        if (!HasValueReplaceHookCallbacks(componentId))
+        if (Execution is not null) return CreateWithExecution(first, second, third, fourth, fifth);
+        return CreateCore(first, second, third, fourth, fifth);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private Entity CreateWithExecution<T1, T2, T3, T4, T5>(in T1 first, in T2 second, in T3 third, in T4 fourth, in T5 fifth)
+        where T1 : struct where T2 : struct where T3 : struct where T4 : struct where T5 : struct
+    {
+        using WorldAccess access = OpenStructure();
+        return CreateCore(first, second, third, fourth, fifth);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private Entity CreateCore<T1, T2, T3, T4, T5>(in T1 first, in T2 second, in T3 third, in T4 fourth, in T5 fifth)
+        where T1 : struct where T2 : struct where T3 : struct where T4 : struct where T5 : struct
+    {
+        if (ComponentType<T1>.HasInitializerType) ComponentType<T1>.ValidateCreate(this, first);
+        if (ComponentType<T2>.HasInitializerType) ComponentType<T2>.ValidateCreate(this, second);
+        if (ComponentType<T3>.HasInitializerType) ComponentType<T3>.ValidateCreate(this, third);
+        if (ComponentType<T4>.HasInitializerType) ComponentType<T4>.ValidateCreate(this, fourth);
+        if (ComponentType<T5>.HasInitializerType) ComponentType<T5>.ValidateCreate(this, fifth);
+        Chunk chunk = Find(TypeSet<T1, T2, T3, T4, T5>.Value).WritableChunk;
+        Entity entity = CreateKnown(ref chunk);
+        using MembershipEdit membership = BeginMembershipEdit(entity, created: true);
+        int row = chunk.Count - 1;
+        WriteCreatedValue(entity, chunk, row, first);
+        WriteCreatedValue(entity, chunk, row, second);
+        WriteCreatedValue(entity, chunk, row, third);
+        WriteCreatedValue(entity, chunk, row, fourth);
+        WriteCreatedValue(entity, chunk, row, fifth);
+        if (ComponentType<T1>.IsIndexedType) IndexCreated(entity, first);
+        if (ComponentType<T2>.IsIndexedType) IndexCreated(entity, second);
+        if (ComponentType<T3>.IsIndexedType) IndexCreated(entity, third);
+        if (ComponentType<T4>.IsIndexedType) IndexCreated(entity, fourth);
+        if (ComponentType<T5>.IsIndexedType) IndexCreated(entity, fifth);
+        if (ComponentType<T1>.IsGroupedType || ComponentType<T2>.IsGroupedType || ComponentType<T3>.IsGroupedType || ComponentType<T4>.IsGroupedType || ComponentType<T5>.IsGroupedType)
+            ArrangeCreatedGroups(entity);
+        if (ComponentType<T1>.HasInitializerType) ComponentType<T1>.Initialize(this, entity);
+        if (ComponentType<T2>.HasInitializerType) ComponentType<T2>.Initialize(this, entity);
+        if (ComponentType<T3>.HasInitializerType) ComponentType<T3>.Initialize(this, entity);
+        if (ComponentType<T4>.HasInitializerType) ComponentType<T4>.Initialize(this, entity);
+        if (ComponentType<T5>.HasInitializerType) ComponentType<T5>.Initialize(this, entity);
+        return entity;
+    }
+
+    public void Reserve<T1, T2, T3, T4, T5>(int capacity)
+        where T1 : struct where T2 : struct where T3 : struct where T4 : struct where T5 : struct
+        => ReserveTypes(TypeSet<T1, T2, T3, T4, T5>.Value, capacity);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public Entity Create<T1, T2, T3, T4, T5, T6>(in T1 first, in T2 second, in T3 third, in T4 fourth, in T5 fifth, in T6 sixth)
+        where T1 : struct where T2 : struct where T3 : struct where T4 : struct where T5 : struct where T6 : struct
+    {
+        if (Execution is not null) return CreateWithExecution(first, second, third, fourth, fifth, sixth);
+        return CreateCore(first, second, third, fourth, fifth, sixth);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private Entity CreateWithExecution<T1, T2, T3, T4, T5, T6>(in T1 first, in T2 second, in T3 third, in T4 fourth, in T5 fifth, in T6 sixth)
+        where T1 : struct where T2 : struct where T3 : struct where T4 : struct where T5 : struct where T6 : struct
+    {
+        using WorldAccess access = OpenStructure();
+        return CreateCore(first, second, third, fourth, fifth, sixth);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private Entity CreateCore<T1, T2, T3, T4, T5, T6>(in T1 first, in T2 second, in T3 third, in T4 fourth, in T5 fifth, in T6 sixth)
+        where T1 : struct where T2 : struct where T3 : struct where T4 : struct where T5 : struct where T6 : struct
+    {
+        if (ComponentType<T1>.HasInitializerType) ComponentType<T1>.ValidateCreate(this, first);
+        if (ComponentType<T2>.HasInitializerType) ComponentType<T2>.ValidateCreate(this, second);
+        if (ComponentType<T3>.HasInitializerType) ComponentType<T3>.ValidateCreate(this, third);
+        if (ComponentType<T4>.HasInitializerType) ComponentType<T4>.ValidateCreate(this, fourth);
+        if (ComponentType<T5>.HasInitializerType) ComponentType<T5>.ValidateCreate(this, fifth);
+        if (ComponentType<T6>.HasInitializerType) ComponentType<T6>.ValidateCreate(this, sixth);
+        Chunk chunk = Find(TypeSet<T1, T2, T3, T4, T5, T6>.Value).WritableChunk;
+        Entity entity = CreateKnown(ref chunk);
+        using MembershipEdit membership = BeginMembershipEdit(entity, created: true);
+        int row = chunk.Count - 1;
+        WriteCreatedValue(entity, chunk, row, first);
+        WriteCreatedValue(entity, chunk, row, second);
+        WriteCreatedValue(entity, chunk, row, third);
+        WriteCreatedValue(entity, chunk, row, fourth);
+        WriteCreatedValue(entity, chunk, row, fifth);
+        WriteCreatedValue(entity, chunk, row, sixth);
+        if (ComponentType<T1>.IsIndexedType) IndexCreated(entity, first);
+        if (ComponentType<T2>.IsIndexedType) IndexCreated(entity, second);
+        if (ComponentType<T3>.IsIndexedType) IndexCreated(entity, third);
+        if (ComponentType<T4>.IsIndexedType) IndexCreated(entity, fourth);
+        if (ComponentType<T5>.IsIndexedType) IndexCreated(entity, fifth);
+        if (ComponentType<T6>.IsIndexedType) IndexCreated(entity, sixth);
+        if (ComponentType<T1>.IsGroupedType || ComponentType<T2>.IsGroupedType || ComponentType<T3>.IsGroupedType
+            || ComponentType<T4>.IsGroupedType || ComponentType<T5>.IsGroupedType || ComponentType<T6>.IsGroupedType)
+            ArrangeCreatedGroups(entity);
+        if (ComponentType<T1>.HasInitializerType) ComponentType<T1>.Initialize(this, entity);
+        if (ComponentType<T2>.HasInitializerType) ComponentType<T2>.Initialize(this, entity);
+        if (ComponentType<T3>.HasInitializerType) ComponentType<T3>.Initialize(this, entity);
+        if (ComponentType<T4>.HasInitializerType) ComponentType<T4>.Initialize(this, entity);
+        if (ComponentType<T5>.HasInitializerType) ComponentType<T5>.Initialize(this, entity);
+        if (ComponentType<T6>.HasInitializerType) ComponentType<T6>.Initialize(this, entity);
+        return entity;
+    }
+
+    public void Reserve<T1, T2, T3, T4, T5, T6>(int capacity)
+        where T1 : struct where T2 : struct where T3 : struct where T4 : struct where T5 : struct where T6 : struct
+        => ReserveTypes(TypeSet<T1, T2, T3, T4, T5, T6>.Value, capacity);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void WriteCreatedValue<T>(Entity entity, Chunk chunk, int row, in T value) where T : struct
+    {
+        if (ComponentType<T>.IsSharedType)
         {
-            using WorldJobAdmissionScope componentAdmission =
-                EnterJobComponent(componentId, WorldStorageAccess.Write);
-            // Hook registration is a topology writer. Rechecking after this topology-read owner
-            // is admitted closes the false-fast-path TOCTOU without charging hook-free writes for
-            // the global writer.
-            if (!HasValueReplaceHookCallbacks(componentId))
-            {
-                PublicComponentMutationGuard.Value<T>("World.Replace");
-                _components.Replace(entity, in value);
-                return;
-            }
+            var values = Shared<T>();
+            int id = values.Intern(value);
+            ColumnEntry.At<int>(ref chunk.Columns[ComponentType<T>.TypeId], row) = id;
+            values.Groups.Set(entity, -1, id, true);
         }
-
-        using WorldJobAdmissionScope topologyAdmission = EnterJobTopologyWrite();
-        PublicComponentMutationGuard.Value<T>("World.Replace");
-        _components.Replace(entity, in value);
-    }
-
-    /// <summary>检查 entity 是否拥有指定组件/tag。</summary>
-    public bool Has<T>(Entity entity)
-        where T : struct
-    {
-        using WorldJobAdmissionScope admission = EnterJobTopologyRead();
-        return _components.Has<T>(entity);
-    }
-
-    /// <summary>启用 enableable 组件。</summary>
-    public void Enable<T>(Entity entity)
-        where T : struct, IEnableableComponent
-    {
-        using WorldJobAdmissionScope admission = EnterJobComponent<T>(WorldStorageAccess.Write);
-        _components.WriteEnabled<T>(entity, true);
-    }
-
-    /// <summary>禁用 enableable 组件。</summary>
-    public void Disable<T>(Entity entity)
-        where T : struct, IEnableableComponent
-    {
-        using WorldJobAdmissionScope admission = EnterJobComponent<T>(WorldStorageAccess.Write);
-        _components.WriteEnabled<T>(entity, false);
-    }
-
-    /// <summary>读取 enableable 组件状态。</summary>
-    public bool IsEnabled<T>(Entity entity)
-        where T : struct, IEnableableComponent
-    {
-        using WorldJobAdmissionScope admission = EnterJobComponent<T>(WorldStorageAccess.Read);
-        return _components.IsEnabled<T>(entity);
-    }
-
-    internal bool IsEnabledId(Entity entity, int componentId)
-    {
-        return _components.IsEnabled(entity, componentId);
-    }
-
-    internal void WriteEnabledId(Entity entity, int componentId, bool enabled)
-    {
-        _components.WriteEnabled(entity, componentId, enabled);
-    }
-
-    public void ClearRemoved<T>(uint throughVersion)
-        where T : struct, IComponent
-    {
-        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
-        _components.ClearRemoved<T>(throughVersion);
-    }
-
-    internal void AddRelationshipComponent<T>(Entity entity, in T value)
-        where T : struct, IComponent
-    {
-        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
-        PublicComponentMutationGuard.RelationshipRole<T>(nameof(AddRelationshipComponent));
-        _components.Add(entity, in value);
-    }
-
-    internal void ReplaceRelationshipComponent<T>(Entity entity, in T value)
-        where T : struct, IComponent
-    {
-        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
-        PublicComponentMutationGuard.RelationshipRole<T>(nameof(ReplaceRelationshipComponent));
-        _components.Replace(entity, in value);
-    }
-
-    internal void ReplaceRelationshipComponent<T>(
-        Entity entity,
-        in T value,
-        uint version)
-        where T : struct, IComponent
-    {
-        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
-        PublicComponentMutationGuard.RelationshipRole<T>(nameof(ReplaceRelationshipComponent));
-        _components.Replace(entity, in value, version);
-    }
-
-    internal void RemoveRelationshipComponent<T>(Entity entity)
-        where T : struct, IComponent
-    {
-        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
-        PublicComponentMutationGuard.RelationshipRole<T>(nameof(RemoveRelationshipComponent));
-        _components.Remove<T>(entity);
+        else if (!ComponentType<T>.IsTagType)
+            ColumnEntry.At<T>(ref chunk.Columns[ComponentType<T>.TypeId], row) =
+                ComponentType<T>.HasValueOperationsType ? ComponentType<T>.CloneValue(this, value) : value;
     }
 }
-

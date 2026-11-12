@@ -12,60 +12,60 @@ public sealed partial class HasDependencyTests
     public void ComponentPresenceUpdatesTheDisplayWhileValueWritesRetainIt(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity();
+        Entity source = frames.World.Create();
         Entity root = Views.Spawn(frames.World, Entity.Null, new PresenceDisplay(source, sparse));
 
         frames.Frame();
-        Assert.Equal("absent", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("absent", frames.World.ReadComponentData<DisplayText>(root).Value);
 
         if (sparse)
-            frames.World.AddSparse(source, new SparseValue(3));
+            frames.World.SetSparse(source, new SparseValue(3));
         else
             frames.World.Add(source, new Value(3));
         frames.Frame();
-        Assert.Equal("3", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(root).Value);
 
         if (sparse)
-            frames.World.ReplaceSparse(source, new SparseValue(7));
+            frames.World.SetSparse(source, new SparseValue(7));
         else
         {
-            frames.World.Replace(source, new Value(7));
+            frames.World.Set(source, new Value(7));
             frames.World.Disable<Value>(source);
         }
-        frames.World.AddTag<Selected>(source);
+        frames.World.Set(source, default(Selected));
         frames.Frame();
-        Assert.Equal("3", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(root).Value);
 
         if (sparse)
             frames.World.RemoveSparse<SparseValue>(source);
         else
             frames.World.Remove<Value>(source);
         frames.Frame();
-        Assert.Equal("absent", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("absent", frames.World.ReadComponentData<DisplayText>(root).Value);
 
         if (sparse)
-            frames.World.AddSparse(source, new SparseValue(11));
+            frames.World.SetSparse(source, new SparseValue(11));
         else
             frames.World.Add(source, new Value(11));
         frames.Frame();
-        Assert.Equal("11", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("11", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Fact]
     public void PresenceAndValueReadsOnOneComponentBothSupplyTheDisplay()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Value(3));
+        Entity source = frames.World.Create(new Value(3));
         Entity root = Views.Spawn(frames.World, Entity.Null, new ValueDisplay(source));
 
         frames.Frame();
-        Assert.Equal("3", frames.World.Read<DisplayText>(root).Value);
-        frames.World.Replace(source, new Value(7));
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(root).Value);
+        frames.World.Set(source, new Value(7));
         frames.Frame();
-        Assert.Equal("7", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("7", frames.World.ReadComponentData<DisplayText>(root).Value);
         frames.World.Remove<Value>(source);
         frames.Frame();
-        Assert.Equal("absent", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("absent", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Theory]
@@ -74,16 +74,16 @@ public sealed partial class HasDependencyTests
     public void OncePresenceReadsRetainTheirFirstDisplay(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity();
+        Entity source = frames.World.Create();
         Entity root = Views.Spawn(frames.World, Entity.Null, new OncePresenceDisplay(source, sparse));
         frames.Frame();
 
         if (sparse)
-            frames.World.AddSparse(source, new SparseValue(3));
+            frames.World.SetSparse(source, new SparseValue(3));
         else
             frames.World.Add(source, new Value(3));
         frames.Frame();
-        Assert.Equal("absent", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("absent", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Theory]
@@ -92,23 +92,23 @@ public sealed partial class HasDependencyTests
     public void DestroyedSourceDisplaysAbsenceAfterEntityStorageIsReused(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity();
+        Entity source = frames.World.Create();
         if (sparse)
-            frames.World.AddSparse(source, new SparseValue(3));
+            frames.World.SetSparse(source, new SparseValue(3));
         else
             frames.World.Add(source, new Value(3));
         Entity root = Views.Spawn(frames.World, Entity.Null, new PresenceDisplay(source, sparse));
         frames.Frame();
-        Assert.Equal("3", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(root).Value);
 
-        frames.World.DestroyEntity(source);
-        Entity replacement = frames.World.CreateEntity();
+        frames.World.Destroy(source);
+        Entity replacement = frames.World.Create();
         if (sparse)
-            frames.World.AddSparse(replacement, new SparseValue(7));
+            frames.World.SetSparse(replacement, new SparseValue(7));
         else
             frames.World.Add(replacement, new Value(7));
         frames.Frame();
-        Assert.Equal("absent", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("absent", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
 #if DEBUG
@@ -140,7 +140,7 @@ public sealed partial class HasDependencyTests
         {
             bool present = Sparse ? Scope.Has<SparseValue>(Source) : Scope.Has<Value>(Source);
             string text = present
-                ? (Sparse ? Scope.World.ReadSparse<SparseValue>(Source).Number : Scope.World.Read<Value>(Source).Number).ToString()
+                ? (Sparse ? Scope.World.ReadComponentData<SparseValue>(Source).Number : Scope.World.ReadComponentData<Value>(Source).Number).ToString()
                 : "absent";
             WriteDisplay(text);
             return default;
@@ -150,13 +150,13 @@ public sealed partial class HasDependencyTests
     private static void WriteDisplay(string text)
     {
         if (Scope.World.Has<DisplayText>(Scope.Entity))
-            Scope.World.Replace(Scope.Entity, new DisplayText(text));
+            Scope.World.Set(Scope.Entity, new DisplayText(text));
         else
             Scope.World.Add(Scope.Entity, new DisplayText(text));
     }
 
-    private readonly record struct Value(int Number) : IComponent, IEnableableComponent;
-    private readonly record struct SparseValue(int Number) : ISparseComponent;
-    private readonly record struct DisplayText(string Value) : IComponent;
+    private readonly record struct Value(int Number) : ITrackedComponent, IEnableableComponent;
+    private readonly record struct SparseValue(int Number) : ISparseComponent, ITrackedComponent;
+    private readonly record struct DisplayText(string Value) : ITrackedComponent;
     private readonly struct Selected : ITag;
 }

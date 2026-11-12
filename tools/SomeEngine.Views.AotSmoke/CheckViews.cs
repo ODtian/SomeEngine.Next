@@ -35,19 +35,19 @@ Console.WriteLine("Synchronous resource results and changed sources passed in bo
 Console.WriteLine("Canceled awaits, asynchronous cleanup, cancellation callbacks, and child computation error recovery passed under NativeAOT.");
 Entity root = Views.Spawn(frames.World, Entity.Null, new Cards(false));
 frames.Frame();
-Entity[] first = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+Entity[] first = ElementChildren.Read(frames.World, root).ToArray();
 Require(first.Length == 3, "The first frame declares three cards.");
-Require(frames.World.ReadSparse<Card>(first[0]).Title == "same", "The named function stores the card parameters.");
-Require(frames.World.Read<ElementKey>(first[1]).Key != frames.World.Read<ElementKey>(first[2]).Key,
+Require(frames.World.ReadComponentData<Card>(first[0]).Title == "same", "The named function stores the card parameters.");
+Require(frames.World.ReadComponentData<ElementKey>(first[1]).Key != frames.World.ReadComponentData<ElementKey>(first[2]).Key,
     "Columns distinguish the two calls on one line.");
-frames.World.Replace(first[0], new Selection(9));
-frames.World.Replace(first[2], new Selection(7));
+frames.World.Set(first[0], new Selection(9));
+frames.World.Set(first[2], new Selection(7));
 frames.World.ReplaceSparse(root, new Cards(true));
 frames.Frame();
-Entity[] second = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+Entity[] second = ElementChildren.Read(frames.World, root).ToArray();
 Require(first[0] != second[0], "Switching branches gives each call its own entity.");
-Require(frames.World.Read<Selection>(second[0]).Value == 0, "The second branch starts with its own state.");
-Require(first[2] == second[2] && frames.World.Read<Selection>(second[2]).Value == 7,
+Require(frames.World.ReadComponentData<Selection>(second[0]).Value == 0, "The second branch starts with its own state.");
+Require(first[2] == second[2] && frames.World.ReadComponentData<Selection>(second[2]).Value == 7,
     "The call on the same column preserves its local state.");
 LayoutChecks.Run();
 FlexChecks.Run();
@@ -169,7 +169,7 @@ namespace SomeEngine.Views.AotSmoke
             if (!Scope.World.Has<Selection>(Scope.Entity))
             {
                 Scope.World.Add(Scope.Entity, new Selection(0));
-                Scope.World.AddTag<LocalState>(Scope.Entity);
+                Scope.World.Add(Scope.Entity, default(LocalState));
             }
         }
     }

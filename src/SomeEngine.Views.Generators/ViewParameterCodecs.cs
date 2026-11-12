@@ -17,7 +17,7 @@ internal static class ViewParameterCodecs
     {
         string typeName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         text.Append("    private struct ParameterCodec").Append(typeParameters)
-            .Append(" : global::SomeEngine.ECS.Serialization.ICanonicalComponentCodec<").Append(typeName).Append('>');
+            .Append(" : global::SomeEngine.ECS.Serialization.IDurableComponentCodec<").Append(typeName).Append('>');
         bool references = fields.Any(field => GetEncoding(field.Type) == "Entity");
         if (references)
             text.Append(", global::SomeEngine.ECS.Serialization.IReferencePatcher<").Append(typeName).Append('>');

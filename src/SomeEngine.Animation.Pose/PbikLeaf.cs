@@ -6,7 +6,6 @@ namespace SomeEngine.Animation.Pose;
 
 public readonly record struct PbikParameters(PbikRig Rig, PoseResultId Source, PoseResultId Output);
 
-[BufferCapacity(1)]
 public struct PbikInstance : IBufferElement
 {
     public AnimationLeafBatch<PbikParameters> Definition;
@@ -28,12 +27,14 @@ public readonly struct PbikLeaf : IAnimationLeaf<PbikParameters>
     public static void Install(World world, Entity animation, Entity target,
         AnimationLeafBatch<PbikParameters> definitions, int index, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<PbikInstance>(animation)) world.AddBuffer<PbikInstance>(animation);
+        if (!world.Has<Buffer<PbikInstance>>(animation)) world.AddBuffer<PbikInstance>(animation);
         PbikParameters parameters = definitions.Parameters[index];
-        SkeletonInstance skeleton = world.Read<PoseTarget>(target).Skeleton;
+        SkeletonInstance skeleton = world.ReadComponentData<PoseTarget>(target).Skeleton;
         var instance = new PbikInstance
         {
-            Definition = definitions, Index = index, Placement = placement,
+            Definition = definitions,
+            Index = index,
+            Placement = placement,
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
             Targets = new PbikTarget[parameters.Rig.Effectors.Length],
@@ -44,15 +45,27 @@ public readonly struct PbikLeaf : IAnimationLeaf<PbikParameters>
                 skeleton.Skeleton.InheritedBoneCount + parameters.Rig.Effectors[effector]).Transform.Translation);
         short[] bones = parameters.Rig.Bodies.Select(static body => (short)body.Bone).ToArray();
         instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement, bones);
-        world.ExecuteBufferWrite<PbikInstance, PbikInstance>(animation, ref instance,
-            static (instances, ref instance) => instances.Add(instance));
+        {
+            using var instances = world.GetBuffer<PbikInstance>(animation);
+            Visit(instances, ref instance);
+
+            static void Visit(DynamicBuffer<PbikInstance> instances, ref PbikInstance instance)
+            {
+                instances.Add(instance);
+
+            }
+        }
     }
 
     public static void Complete(World world, Entity animation) => PoseAnimation.CompleteNodes(world, animation);
 
     public static void Release(World world, Entity animation)
     {
-        world.ExecuteBufferWrite<PbikInstance>(animation, static instances => instances.Clear());
+        {
+            using var instances = world.GetBuffer<PbikInstance>(animation);
+            instances.Clear();
+
+        }
         PoseAnimation.ReleaseNodes(world, animation);
     }
 }

@@ -17,11 +17,11 @@ internal static partial class TextEditingChecks
         foreach (Key key in new[] { Key.Left, Key.Right, Key.Home, Key.End, Key.Backspace, Key.Delete, Key.Enter, Key.Space })
             Keyboard.Key(frames.World, key, true);
         frames.Frame();
-        EditDisplay display = frames.World.Read<EditDisplay>(root);
+        EditDisplay display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Text == "原文" && display.Caret == 2 && display.SelectionStart == 2 &&
             display.Composition == "候选" && display.CompositionCaret == 1 && display.ConsumedEdits == 1,
             "The input method's editing keys preserve both committed text and candidate presentation.");
-        Require(frames.World.Read<Clicks>(display.Node).Count == 0,
+        Require(frames.World.ReadComponentData<Clicks>(display.Node).Count == 0,
             "The editor keeps Enter and Space for text input while holding a composition.");
         Keyboard.Composition(frames.World, string.Empty, 0);
         Keyboard.Key(frames.World, Key.Backspace, true);
@@ -30,7 +30,7 @@ internal static partial class TextEditingChecks
         Keyboard.Text(frames.World, " ");
         frames.Frame();
         CheckEdit(frames, root, "原 ", 2, 2);
-        Require(frames.World.Read<Clicks>(display.Node).Count == 0,
+        Require(frames.World.ReadComponentData<Clicks>(display.Node).Count == 0,
             "After composition ends, ordinary editing resumes and keyboard text keys stay with the editor.");
     }
 
@@ -49,20 +49,20 @@ internal static partial class TextEditingChecks
 
         Keyboard.Composition(frames.World, "hao", 2);
         frames.Frame();
-        EditDisplay display = frames.World.Read<EditDisplay>(root);
+        EditDisplay display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Text == "前后" && display.Composition == "hao" && display.CompositionCaret == 2 &&
             display.PresentedText == "前hao" && display.Caret == 2 && display.SelectionStart == 1 &&
             display.ConsumedEdits == 1,
             "Preedit displays its own caret and replaces the selected presentation while retaining committed text.");
         Keyboard.Composition(frames.World, "好", 1);
         frames.Frame();
-        display = frames.World.Read<EditDisplay>(root);
+        display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Text == "前后" && display.PresentedText == "前好" && display.ConsumedEdits == 1,
             "A new candidate updates the caller's presentation while preserving committed editing batches.");
         Keyboard.Text(frames.World, "好");
         frames.Frame();
         CheckEdit(frames, root, "前好", 2, 2);
-        display = frames.World.Read<EditDisplay>(root);
+        display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Composition.Length == 0 && display.CompositionCaret == 0,
             "Confirmed text clears the composition and its caret.");
 
@@ -70,7 +70,7 @@ internal static partial class TextEditingChecks
         frames.Frame();
         Keyboard.Composition(frames.World, string.Empty, 0);
         frames.Frame();
-        display = frames.World.Read<EditDisplay>(root);
+        display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Text == "前好" && display.PresentedText == "前好" && display.Composition.Length == 0 &&
             display.ConsumedEdits == 2,
             "Ending a composition restores the committed presentation and editing batches.");

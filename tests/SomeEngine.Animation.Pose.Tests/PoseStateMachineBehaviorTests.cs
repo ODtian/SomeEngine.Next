@@ -50,7 +50,7 @@ public sealed class PoseStateMachineBehaviorTests
         Assert.Equal(1u, EventCount(world, animation, 11));
 
         inputs.Values[0] = 1;
-        world.Replace(animation, inputs);
+        world.Set(animation, inputs);
         Tick(systems, world, 0.25);
         PoseResult transition = PoseAnimation.ReadResult(world, in output);
         actor = transition.RootMotion.Transform * actor;
@@ -109,12 +109,12 @@ public sealed class PoseStateMachineBehaviorTests
         using CompiledGraph graph = builder.Compile();
         Entity firstAnimation = graph.Play(world, firstTarget);
         Entity secondAnimation = graph.Play(world, secondTarget);
-        GraphParameters firstInputs = world.Read<GraphParameters>(firstAnimation);
-        GraphParameters secondInputs = world.Read<GraphParameters>(secondAnimation);
+        GraphParameters firstInputs = world.ReadComponentData<GraphParameters>(firstAnimation);
+        GraphParameters secondInputs = world.ReadComponentData<GraphParameters>(secondAnimation);
         firstInputs.Values[0] = 1;
         firstInputs.Values[1] = secondInputs.Values[1] = 0.25f;
-        world.Replace(firstAnimation, firstInputs);
-        world.Replace(secondAnimation, secondInputs);
+        world.Set(firstAnimation, firstInputs);
+        world.Set(secondAnimation, secondInputs);
         PoseResultReference firstOutput = PoseAnimation.Resolve(world, firstTarget, new PoseResultId(3));
         PoseResultReference secondOutput = PoseAnimation.Resolve(world, secondTarget, new PoseResultId(3));
         PoseResultReference firstIdle = PoseAnimation.Resolve(world, firstTarget, new PoseResultId(0));
@@ -133,8 +133,8 @@ public sealed class PoseStateMachineBehaviorTests
 
         firstInputs.Values[2] = 1;
         secondInputs.Values[0] = 1;
-        world.Replace(firstAnimation, firstInputs);
-        world.Replace(secondAnimation, secondInputs);
+        world.Set(firstAnimation, firstInputs);
+        world.Set(secondAnimation, secondInputs);
         Tick(systems, world, 0.25);
         Assert.Equal(12.5f, first.ModelPose.Transforms[1].Translation.Y);
         Assert.Equal(0, second.ModelPose.Transforms[1].Translation.Y);
@@ -168,12 +168,17 @@ public sealed class PoseStateMachineBehaviorTests
     private static uint EventCount(World world, Entity animation, ushort id)
     {
         var count = (Id: id, Value: 0u);
-        world.ExecuteBufferRead<TimelineEvent, (ushort Id, uint Value)>(animation, ref count,
-            static (events, ref count) =>
+        {
+            using var events = world.ReadBuffer<TimelineEvent>(animation);
+            Visit(events, ref count);
+
+            static void Visit(ReadOnlyBuffer<TimelineEvent> events, ref (ushort Id, uint Value) count)
             {
                 foreach (TimelineEvent marker in events.AsSpan())
                     if (marker.Id == count.Id) count.Value = marker.Count;
-            });
+
+            }
+        }
         return count.Value;
     }
 

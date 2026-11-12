@@ -31,8 +31,9 @@ public sealed partial class Scheduler
         internal bool WorkDependencyReleaseInProgress;
         internal bool CompletionDispatchInProgress;
         internal bool MayExecuteConcurrently;
+        internal ICompletionData? JobData;
         internal List<DependencyContinuation> WorkContinuations { get; } = [];
-        internal ResourceAccessRegistration ResourceAccesses { get; set; } = ResourceAccessRegistration.Empty;
+        internal AccessBuilder<ResourceAccessRegistration> ResourceAccesses;
         internal List<ScopeOwnedResource> ScopeOwnedResources { get; } = [];
         internal List<ScopeOwnedResource> ScopeOwnedResourceDispatchBuffer { get; } = [];
 
@@ -64,8 +65,9 @@ public sealed partial class Scheduler
             WorkDependencyReleaseInProgress = false;
             CompletionDispatchInProgress = false;
             MayExecuteConcurrently = pendingWork > 1;
+            JobData = null;
             ClearIfNotEmpty(WorkContinuations);
-            ResourceAccesses = ResourceAccessRegistration.Empty;
+            ResourceAccesses.Clear();
             ClearIfNotEmpty(ScopeOwnedResources);
             ClearIfNotEmpty(ScopeOwnedResourceDispatchBuffer);
         }
@@ -91,8 +93,9 @@ public sealed partial class Scheduler
             WorkDependencyReleaseInProgress = false;
             CompletionDispatchInProgress = false;
             MayExecuteConcurrently = false;
+            JobData = null;
             ClearIfNotEmpty(WorkContinuations);
-            ResourceAccesses = ResourceAccessRegistration.Empty;
+            ResourceAccesses.Clear();
             ClearIfNotEmpty(ScopeOwnedResources);
             ClearIfNotEmpty(ScopeOwnedResourceDispatchBuffer);
         }

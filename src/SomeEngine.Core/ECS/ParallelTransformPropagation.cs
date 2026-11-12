@@ -17,27 +17,18 @@ namespace SomeEngine.Core.ECS;
 /// nodes and do not stop traversal.
 /// </remarks>
 public static class ParallelTransformPropagation<TDomain>
-    where TDomain : IHierarchyDomain
+    where TDomain : struct, IHierarchyDomain
 {
-    public static HierarchyPropagation Schedule(
+    public static JobHandle Schedule(
         World world,
         ReadOnlySpan<Entity> dirtyCandidates,
-        HierarchyMaintenanceDependency<TDomain> maintenance,
+        JobHandle maintenance,
         int rootsPerPacket = 1,
         JobScheduleOptions jobOptions = default)
     {
-        ArgumentNullException.ThrowIfNull(world);
-        Span<JobResourceAccess> accesses = stackalloc JobResourceAccess[2];
-        accesses[0] = ComponentJobAccess<LocalTransform>.Read(world);
-        accesses[1] = ComponentJobAccess<WorldTransform>.Write(world);
-        var propagationJob = new TransformPropagationJob();
-        return HierarchyPropagationAdapter<TDomain>.Schedule(
-            world,
-            dirtyCandidates,
-            in propagationJob,
-            maintenance,
-            accesses,
-            new HierarchyPropagationScheduleOptions(rootsPerPacket, jobOptions));
+        var accesses = new SystemAccesses().ReadRandom<LocalTransform>().WriteRandom<WorldTransform>();
+        return HierarchyPropagation<TDomain>.Schedule(world, dirtyCandidates, new TransformPropagationJob(),
+            accesses, maintenance, jobOptions, rootsPerRange: rootsPerPacket);
     }
 
     private readonly struct TransformPropagationJob : IHierarchyPropagationJob<TDomain>
@@ -81,10 +72,10 @@ public static class ParallelTransformPropagation<TDomain>
 /// <summary>Default hierarchy-domain facade for <see cref="ParallelTransformPropagation{TDomain}"/>.</summary>
 public static class ParallelTransformPropagation
 {
-    public static HierarchyPropagation Schedule(
+    public static JobHandle Schedule(
         World world,
         ReadOnlySpan<Entity> dirtyCandidates,
-        HierarchyMaintenanceDependency<DefaultHierarchyDomain> maintenance,
+        JobHandle maintenance,
         int rootsPerPacket = 1,
         JobScheduleOptions jobOptions = default) =>
         ParallelTransformPropagation<DefaultHierarchyDomain>.Schedule(

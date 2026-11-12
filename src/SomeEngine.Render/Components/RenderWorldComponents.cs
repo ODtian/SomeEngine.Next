@@ -1,3 +1,4 @@
+using SomeEngine.Core.ECS.Components;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
@@ -31,7 +32,7 @@ public readonly struct RenderSource : IIndexedComponent<Entity>
 /// column without a second CPU representation or conversion buffer.
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Size = SizeInBytes)]
-public readonly struct RenderTransform : IComponent, IEquatable<RenderTransform>
+public readonly struct RenderTransform : IComponent, IEquatable<RenderTransform>, ITrackedComponent
 {
     public const int SizeInBytes = 48;
 
@@ -91,7 +92,7 @@ public readonly struct RenderTransform : IComponent, IEquatable<RenderTransform>
 /// not a second instance identity or an upload cache.
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Size = RenderTransform.SizeInBytes)]
-public readonly record struct RenderPreviousTransform(RenderTransform Value) : IComponent;
+public readonly record struct RenderPreviousTransform(RenderTransform Value) : IComponent, ITrackedComponent;
 
 /// <summary>
 /// Marks a render-world entity as eligible for pipeline-specific instance batches. Extraction
@@ -107,7 +108,7 @@ public readonly record struct RenderInstance : IComponent;
 /// </summary>
 public readonly record struct RenderMesh(Mesh Mesh, float BoundsExpansion,
     SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource = null,
-    DepthCacheClass DepthCacheClass = DepthCacheClass.Auto, FirstPersonMeshData FirstPerson = default) : IComponent;
+    DepthCacheClass DepthCacheClass = DepthCacheClass.Auto, FirstPersonMeshData FirstPerson = default) : ITrackedComponent;
 
 public enum RenderViewFamily : uint
 {
@@ -147,4 +148,4 @@ public readonly record struct RenderView(
     uint StreamingPriorityCategory = 3u,
     uint PlayerId = 0,
     FirstPersonCamera? FirstPerson = null,
-    RenderViewFamily Family = RenderViewFamily.Primary) : IComponent;
+    RenderViewFamily Family = RenderViewFamily.Primary) : ITrackedComponent;

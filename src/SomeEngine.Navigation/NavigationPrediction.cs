@@ -1,15 +1,13 @@
 using System.Numerics;
 using SomeEngine.ECS;
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
 namespace SomeEngine.Navigation;
 
 /// <summary>A sample in the caller's time coordinates, beginning at actual movement feedback.</summary>
-public readonly record struct NavigationTrajectoryPoint(float Time, Vector3 Position, Vector3 Velocity, float Heading) : IBufferElement;
+public readonly record struct NavigationTrajectoryPoint(float Time, Vector3 Position, Vector3 Velocity, float Heading) : IComponent;
 
 public enum NavigationTrajectoryKind : byte { ModelPrediction, Mppi }
 public readonly record struct NavigationTrajectorySource(NavigationTrajectoryKind Kind) : IComponent;
@@ -51,9 +49,9 @@ public static partial class NavigationComponents
     internal static void SetTrajectorySource(World world, Entity entity, NavigationTrajectoryKind kind)
     {
         var source = new NavigationTrajectorySource(kind);
-        if (world.Has<NavigationTrajectorySource>(entity)) world.Replace(entity, source);
+        if (world.Has<NavigationTrajectorySource>(entity)) world.Set(entity, source);
         else world.Add(entity, source);
-        if (!world.HasBuffer<NavigationTrajectoryPoint>(entity)) world.AddBuffer<NavigationTrajectoryPoint>(entity);
+        if (!world.Has<Buffer<NavigationTrajectoryPoint>>(entity)) world.AddBuffer<NavigationTrajectoryPoint>(entity);
     }
 }
 
@@ -63,14 +61,13 @@ public sealed class NavigationPredictionSystem<TModel, TMotion, TReader>(World w
     where TMotion : unmanaged, IComponent
     where TReader : struct, INavigationMotionReader<TMotion>
 {
-    private readonly QueryDefinition _actors = world.QueryDefinition().All<NavigationPrediction<TModel>>().Build();
+    private readonly QueryDescription _actors = new QueryDescription().WithStored<NavigationPrediction<TModel>>();
     private JobHandle _completion;
 
     public JobHandle Schedule(float time, JobHandle steeringReady, JobHandle motionReady = default)
     {
-        JobHandle ready = WorldJobs.CombineDependencies(world, [_completion, steeringReady, motionReady]);
-        _completion = new NavigationPredictionJob<TModel, TMotion, TReader>(time).ScheduleParallel(world,
-            new JobEntityScheduleOptions(filter: _actors), ready);
+        JobHandle ready = world.Execution!.Scheduler!.CombineDependencies([_completion, steeringReady, motionReady]);
+        _completion = new NavigationPredictionJob<TModel, TMotion, TReader>(time).ScheduleParallel(world, dependency: ready, query: world.Query(_actors));
         return _completion;
     }
 }

@@ -12,7 +12,7 @@ public sealed class TerrainDistanceGpuTests(SceneContentFixture content)
     [Fact]
     public async Task CpuAndGpuRebuildTheSameCapturedDistanceSurface()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var cpuTerrain = new Terrain(new TerrainEditing(scheduler));
         using var gpuTerrain = new Terrain(new TerrainEditing(scheduler));
         var grid = new VoxelGrid(2, .5f);

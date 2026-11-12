@@ -13,7 +13,7 @@ public sealed class TerrainMaterialRenderingTests(SceneContentFixture content)
     [Fact]
     public async Task CpuAndGpuMaterialFieldsProduceTheSameDisplacedMaterialGroups()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using TerrainMaterialExample gpu = await TerrainMaterialExample.CreateGpuAsync(scheduler, content.DirectoryPath);
         using TerrainMaterialExample cpu = await TerrainMaterialExample.CreateCpuAsync(scheduler, content.DirectoryPath);
         SceneImage? before = null, painted = null, displaced = null;

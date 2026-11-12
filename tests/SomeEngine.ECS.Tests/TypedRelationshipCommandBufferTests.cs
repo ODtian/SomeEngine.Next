@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Serialization;
 using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -11,39 +12,34 @@ public class TypedRelationshipCommandBufferTests
     private readonly struct SceneDomain : IHierarchyDomain;
 
     [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
-    private struct CommandLink : IComponent
+    private struct CommandLink : IAddedComponent
     {
         public int Value;
     }
 
     [RelationSchema(RelationDirection.Directed, RelationCardinality.UniqueTarget)]
-    private struct CommandUniqueTarget : IComponent;
+    private struct CommandUniqueTarget : IAddedComponent;
 
     [Fact]
     public void HighFanOutImmediateCreate_CopiesNoSourceEntriesAndFreezesEachShardOnce()
     {
         const int Count = 4096;
         var world = new World();
-        Entity source = world.CreateEntity();
+        Entity source = world.Create();
         var targets = new Entity[Count];
         for (int i = 0; i < Count; i++)
-            targets[i] = world.CreateEntity();
+            targets[i] = world.Create();
 
         using (var commands = new CommandBuffer(world))
         {
-            var relations = commands.Relations<CommandLink>();
             for (int i = 0; i < Count; i++)
             {
-                _ = relations.Create(
-                    source,
-                    targets[i],
-                    new CommandLink { Value = i },
-                    RelationMaintenanceTiming.Immediate);
+                _ = commands.CreateRelation<CommandLink>(source, targets[i], new CommandLink { Value = i }, false);
             }
             commands.Playback();
         }
 
-        Assert.Equal(Count, world.GetOutgoingRelations<CommandLink>(source).Entries.Length);
+        Assert.Equal(Count, ReadOutgoing<CommandLink>(world, source).Length);
     }
 
     [Fact]
@@ -51,22 +47,21 @@ public class TypedRelationshipCommandBufferTests
     {
         const int Count = 4096;
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity extraTarget = world.CreateEntity();
+        Entity source = world.Create();
+        Entity extraTarget = world.Create();
         var oldTargets = new Entity[Count];
         var newTargets = new Entity[Count];
         var pending = new DeferredRelationEdge<CommandLink>[Count];
         for (int i = 0; i < Count; i++)
         {
-            oldTargets[i] = world.CreateEntity();
-            newTargets[i] = world.CreateEntity();
+            oldTargets[i] = world.Create();
+            newTargets[i] = world.Create();
         }
 
         using (var commands = new CommandBuffer(world))
         {
-            var relations = commands.Relations<CommandLink>();
             for (int i = 0; i < Count; i++)
-                pending[i] = relations.Create(source, oldTargets[i], new CommandLink());
+                pending[i] = commands.CreateRelation<CommandLink>(source, oldTargets[i], new CommandLink());
             commands.Playback();
         }
 
@@ -77,30 +72,21 @@ public class TypedRelationshipCommandBufferTests
         DeferredRelationEdge<CommandLink> extra;
         using (var commands = new CommandBuffer(world))
         {
-            var relations = commands.Relations<CommandLink>();
             for (int i = 0; i < Count; i++)
             {
-                relations.Retarget(
-                    edges[i],
-                    source,
-                    newTargets[i],
-                    RelationMaintenanceTiming.Deferred);
+                commands.RetargetRelation<CommandLink>(edges[i], source, newTargets[i], true);
             }
-            extra = relations.Create(
-                source,
-                extraTarget,
-                new CommandLink(),
-                RelationMaintenanceTiming.Immediate);
+            extra = commands.CreateRelation<CommandLink>(source, extraTarget, new CommandLink(), false);
             commands.Playback();
         }
 
-        Assert.Equal(Count + 1, world.GetOutgoingRelations<CommandLink>(source).Entries.Length);
-        Assert.Equal(newTargets[0], world.GetDirectedRelationEndpoints(edges[0]).Target);
+        Assert.Equal(Count + 1, ReadOutgoing<CommandLink>(world, source).Length);
+        Assert.Equal(newTargets[0], ReadEndpoints(world, edges[0]).Target);
         _ = extra.Resolve();
 
         world.MaintainRelations<CommandLink>();
         Assert.Equal(edges[0], Assert.Single(
-            world.GetIncomingRelations<CommandLink>(newTargets[0]).Entries.ToArray()).Edge);
+            ReadIncoming<CommandLink>(world, newTargets[0]).ToArray()).Edge);
     }
 
     [Fact]
@@ -113,21 +99,17 @@ public class TypedRelationshipCommandBufferTests
         var replacementTargets = new Entity[Count];
         for (int i = 0; i < Count; i++)
         {
-            sources[i] = world.CreateEntity();
-            originalTargets[i] = world.CreateEntity();
-            replacementTargets[i] = world.CreateEntity();
+            sources[i] = world.Create();
+            originalTargets[i] = world.Create();
+            replacementTargets[i] = world.Create();
         }
 
         var pending = new DeferredRelationEdge<CommandLink>[Count];
         using (var commands = new CommandBuffer(world))
         {
-            var relations = commands.Relations<CommandLink>();
             for (int i = 0; i < Count; i++)
             {
-                pending[i] = relations.Create(
-                    sources[i],
-                    originalTargets[i],
-                    new CommandLink { Value = i });
+                pending[i] = commands.CreateRelation<CommandLink>(sources[i], originalTargets[i], new CommandLink { Value = i });
             }
             commands.Playback();
         }
@@ -138,14 +120,9 @@ public class TypedRelationshipCommandBufferTests
 
         using (var commands = new CommandBuffer(world))
         {
-            var relations = commands.Relations<CommandLink>();
             for (int i = 0; i < Count; i++)
             {
-                relations.Retarget(
-                    edges[i],
-                    sources[i],
-                    replacementTargets[i],
-                    RelationMaintenanceTiming.Immediate);
+                commands.RetargetRelation<CommandLink>(edges[i], sources[i], replacementTargets[i], false);
             }
             commands.Playback();
         }
@@ -154,18 +131,20 @@ public class TypedRelationshipCommandBufferTests
         {
             Assert.Equal(
                 replacementTargets[i],
-                world.GetDirectedRelationEndpoints(edges[i]).Target);
+                ReadEndpoints(world, edges[i]).Target);
         }
 
         using (var commands = new CommandBuffer(world))
         {
-            var relations = commands.Relations<CommandLink>();
             for (int i = 0; i < Count; i++)
-                relations.Destroy(edges[i]);
+                commands.DestroyRelation<CommandLink>(edges[i]);
             commands.Playback();
         }
         for (int i = 0; i < Count; i++)
+        {
+            world.Remove<Removed<RelationEndpoints<CommandLink>>>(edges[i].Entity);
             Assert.False(world.IsAlive(edges[i].Entity));
+        }
     }
 
     [Fact]
@@ -181,42 +160,29 @@ public class TypedRelationshipCommandBufferTests
         var edges = new RelationEdge<CommandLink>[Count];
         for (int i = 0; i < Count; i++)
         {
-            sources[i] = world.CreateEntity();
-            originalTargets[i] = world.CreateEntity();
-            finalTargets[i] = world.CreateEntity();
-            createSources[i] = world.CreateEntity();
-            createTargets[i] = world.CreateEntity();
+            sources[i] = world.Create();
+            originalTargets[i] = world.Create();
+            finalTargets[i] = world.Create();
+            createSources[i] = world.Create();
+            createTargets[i] = world.Create();
             edges[i] = world.CreateRelation(sources[i], originalTargets[i], new CommandLink());
         }
 
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
         for (int i = 0; i < Count; i++)
         {
-            relations.Retarget(
-                edges[i],
-                sources[i],
-                finalTargets[i],
-                RelationMaintenanceTiming.Deferred);
+            commands.RetargetRelation<CommandLink>(edges[i], sources[i], finalTargets[i], true);
         }
         for (int i = 0; i < Count; i++)
         {
-            relations.Retarget(
-                edges[i],
-                sources[i],
-                finalTargets[i],
-                RelationMaintenanceTiming.Immediate);
-            _ = relations.Create(
-                createSources[i],
-                createTargets[i],
-                new CommandLink(),
-                RelationMaintenanceTiming.Immediate);
+            commands.RetargetRelation<CommandLink>(edges[i], sources[i], finalTargets[i], false);
+            _ = commands.CreateRelation<CommandLink>(createSources[i], createTargets[i], new CommandLink(), false);
         }
 
         commands.Playback();
 
         for (int i = 0; i < Count; i++)
-            Assert.Equal(finalTargets[i], world.GetDirectedRelationEndpoints(edges[i]).Target);
+            Assert.Equal(finalTargets[i], ReadEndpoints(world, edges[i]).Target);
     }
 
     [Fact]
@@ -224,29 +190,24 @@ public class TypedRelationshipCommandBufferTests
     {
         const int Count = 4096;
         var world = new World();
-        Entity dirtySource = world.CreateEntity();
-        Entity immediateSource = world.CreateEntity();
+        Entity dirtySource = world.Create();
+        Entity immediateSource = world.Create();
         var oldTargets = new Entity[Count];
         var newTargets = new Entity[Count];
         var immediateTargets = new Entity[Count];
         for (int i = 0; i < Count; i++)
         {
-            oldTargets[i] = world.CreateEntity();
-            newTargets[i] = world.CreateEntity();
-            immediateTargets[i] = world.CreateEntity();
+            oldTargets[i] = world.Create();
+            newTargets[i] = world.Create();
+            immediateTargets[i] = world.Create();
         }
 
         var pending = new DeferredRelationEdge<CommandLink>[Count];
         using (var seed = new CommandBuffer(world))
         {
-            var relations = seed.Relations<CommandLink>();
             for (int i = 0; i < Count; i++)
             {
-                pending[i] = relations.Create(
-                    dirtySource,
-                    oldTargets[i],
-                    new CommandLink(),
-                    RelationMaintenanceTiming.Immediate);
+                pending[i] = seed.CreateRelation<CommandLink>(dirtySource, oldTargets[i], new CommandLink(), false);
             }
             seed.Playback();
         }
@@ -257,22 +218,13 @@ public class TypedRelationshipCommandBufferTests
 
         using (var commands = new CommandBuffer(world))
         {
-            var relations = commands.Relations<CommandLink>();
             for (int i = 0; i < Count; i++)
             {
-                relations.Retarget(
-                    edges[i],
-                    dirtySource,
-                    newTargets[i],
-                    RelationMaintenanceTiming.Deferred);
+                commands.RetargetRelation<CommandLink>(edges[i], dirtySource, newTargets[i], true);
             }
             for (int i = 0; i < Count; i++)
             {
-                _ = relations.Create(
-                    immediateSource,
-                    immediateTargets[i],
-                    new CommandLink(),
-                    RelationMaintenanceTiming.Immediate);
+                _ = commands.CreateRelation<CommandLink>(immediateSource, immediateTargets[i], new CommandLink(), false);
             }
             commands.Playback();
         }
@@ -284,26 +236,21 @@ public class TypedRelationshipCommandBufferTests
     {
         const int Count = 1024;
         var world = new World();
-        Entity source = world.CreateEntity();
+        Entity source = world.Create();
         var oldTargets = new Entity[Count];
         var newTargets = new Entity[Count];
         for (int i = 0; i < Count; i++)
         {
-            oldTargets[i] = world.CreateEntity();
-            newTargets[i] = world.CreateEntity();
+            oldTargets[i] = world.Create();
+            newTargets[i] = world.Create();
         }
 
         var pending = new DeferredRelationEdge<CommandLink>[Count];
         using (var seed = new CommandBuffer(world))
         {
-            var relations = seed.Relations<CommandLink>();
             for (int i = 0; i < Count; i++)
             {
-                pending[i] = relations.Create(
-                    source,
-                    oldTargets[i],
-                    new CommandLink(),
-                    RelationMaintenanceTiming.Immediate);
+                pending[i] = seed.CreateRelation<CommandLink>(source, oldTargets[i], new CommandLink(), false);
             }
             seed.Playback();
         }
@@ -314,123 +261,96 @@ public class TypedRelationshipCommandBufferTests
 
         using (var commands = new CommandBuffer(world))
         {
-            var relations = commands.Relations<CommandLink>();
             for (int i = 0; i < Count; i++)
             {
-                relations.Retarget(
-                    edges[i],
-                    source,
-                    newTargets[i],
-                    RelationMaintenanceTiming.Deferred);
+                commands.RetargetRelation<CommandLink>(edges[i], source, newTargets[i], true);
             }
             for (int i = 0; i < Count; i++)
             {
-                relations.Retarget(
-                    edges[i],
-                    source,
-                    newTargets[i],
-                    RelationMaintenanceTiming.Immediate);
+                commands.RetargetRelation<CommandLink>(edges[i], source, newTargets[i], false);
             }
             commands.Playback();
         }
 
         for (int i = 0; i < Count; i++)
-            Assert.Equal(newTargets[i], world.GetDirectedRelationEndpoints(edges[i]).Target);
+            Assert.Equal(newTargets[i], ReadEndpoints(world, edges[i]).Target);
     }
 
     [Fact]
     public void CancelDeferredUniqueTarget_AllowsFollowingCreateToReuseProjectedTarget()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity newSource = world.CreateEntity();
-        Entity appliedTarget = world.CreateEntity();
-        Entity projectedTarget = world.CreateEntity();
+        Entity source = world.Create();
+        Entity newSource = world.Create();
+        Entity appliedTarget = world.Create();
+        Entity projectedTarget = world.Create();
         RelationEdge<CommandUniqueTarget> edge = world.CreateRelation(
             source,
             appliedTarget,
             new CommandUniqueTarget());
 
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandUniqueTarget>();
-        relations.Retarget(edge, source, projectedTarget, RelationMaintenanceTiming.Deferred);
-        relations.Retarget(edge, source, appliedTarget, RelationMaintenanceTiming.Immediate);
-        DeferredRelationEdge<CommandUniqueTarget> reused = relations.Create(
-            newSource,
-            projectedTarget,
-            new CommandUniqueTarget(),
-            RelationMaintenanceTiming.Immediate);
+        commands.RetargetRelation<CommandUniqueTarget>(edge, source, projectedTarget, true);
+        commands.RetargetRelation<CommandUniqueTarget>(edge, source, appliedTarget, false);
+        DeferredRelationEdge<CommandUniqueTarget> reused = commands.CreateRelation<CommandUniqueTarget>(newSource, projectedTarget, new CommandUniqueTarget(), false);
 
         commands.Playback();
 
-        Assert.Equal(appliedTarget, world.GetDirectedRelationEndpoints(edge).Target);
+        Assert.Equal(appliedTarget, ReadEndpoints(world, edge).Target);
         Assert.Equal(reused.Resolve(), Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(projectedTarget).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, projectedTarget).ToArray()).Edge);
     }
 
     [Fact]
     public void DestroyDeferredUniqueTarget_AllowsFollowingCreateToReuseProjectedTarget()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity newSource = world.CreateEntity();
-        Entity appliedTarget = world.CreateEntity();
-        Entity projectedTarget = world.CreateEntity();
+        Entity source = world.Create();
+        Entity newSource = world.Create();
+        Entity appliedTarget = world.Create();
+        Entity projectedTarget = world.Create();
         RelationEdge<CommandUniqueTarget> edge = world.CreateRelation(
             source,
             appliedTarget,
             new CommandUniqueTarget());
 
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandUniqueTarget>();
-        relations.Retarget(edge, source, projectedTarget, RelationMaintenanceTiming.Deferred);
-        relations.Destroy(edge);
-        DeferredRelationEdge<CommandUniqueTarget> reused = relations.Create(
-            newSource,
-            projectedTarget,
-            new CommandUniqueTarget(),
-            RelationMaintenanceTiming.Immediate);
+        commands.RetargetRelation<CommandUniqueTarget>(edge, source, projectedTarget, true);
+        commands.DestroyRelation<CommandUniqueTarget>(edge);
+        DeferredRelationEdge<CommandUniqueTarget> reused = commands.CreateRelation<CommandUniqueTarget>(newSource, projectedTarget, new CommandUniqueTarget(), false);
 
         commands.Playback();
 
+        world.Remove<Removed<RelationEndpoints<CommandUniqueTarget>>>(edge.Entity);
+
         Assert.False(world.IsAlive(edge.Entity));
         Assert.Equal(reused.Resolve(), Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(projectedTarget).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, projectedTarget).ToArray()).Edge);
     }
 
     [Fact]
     public void DirtyProjection_MirrorsOrderPolicyAndReorderBeforePlacedCreate()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity firstTarget = world.CreateEntity();
-        Entity secondTarget = world.CreateEntity();
-        Entity deferredTarget = world.CreateEntity();
-        Entity createdTarget = world.CreateEntity();
+        Entity source = world.Create();
+        Entity firstTarget = world.Create();
+        Entity secondTarget = world.Create();
+        Entity deferredTarget = world.Create();
+        Entity createdTarget = world.Create();
         RelationEdge<CommandLink> first = world.CreateRelation(source, firstTarget, new CommandLink());
         RelationEdge<CommandLink> second = world.CreateRelation(source, secondTarget, new CommandLink());
 
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
-        relations.Retarget(first, source, deferredTarget, RelationMaintenanceTiming.Deferred);
-        relations.SetAdjacencyOrder(
-            source,
-            RelationAdjacencyRole.Outgoing,
-            RelationAdjacencyOrderPolicy.Ordered);
-        relations.Reorder(source, RelationAdjacencyRole.Outgoing, second, insertIndex: 0);
-        DeferredRelationEdge<CommandLink> created = relations.Create(
-            source,
-            createdTarget,
-            new CommandLink(),
-            new DirectedRelationPlacement(OutgoingIndex: 1),
-            RelationMaintenanceTiming.Immediate);
+        commands.RetargetRelation<CommandLink>(first, source, deferredTarget, true);
+        commands.SetRelationOrder<CommandLink>(source, RelationAdjacencyRole.Outgoing, true);
+        commands.ReorderRelation<CommandLink>(source, RelationAdjacencyRole.Outgoing, second, insertAt: 0);
+        DeferredRelationEdge<CommandLink> created = commands.CreateRelation<CommandLink>(source, createdTarget, new CommandLink(), false, outgoingIndex: 1);
 
         commands.Playback();
 
         Assert.Equal(
             new[] { second, created.Resolve(), first },
-            world.GetOrderedOutgoingRelations<CommandLink>(source)
-                .Entries.ToArray().Select(static entry => entry.Edge));
+            ReadOutgoing<CommandLink>(world, source).ToArray().Select(static entry => entry.Edge));
     }
 
     [Fact]
@@ -438,13 +358,10 @@ public class TypedRelationshipCommandBufferTests
     {
         var world = new World();
         using var commands = new CommandBuffer(world);
-        DeferredEntity parent = commands.CreateEntity();
-        DeferredEntity child = commands.CreateEntity();
+        DeferredEntity parent = commands.Create();
+        DeferredEntity child = commands.Create();
 
-        commands.Hierarchy<SceneDomain>().SetParent(
-            child,
-            parent,
-            HierarchyMaintenanceTiming.Immediate);
+        commands.EditParents<SceneDomain>([new(child, parent, -1)], deferred: false);
 
         Assert.Equal(0, world.EntityCount);
         Assert.False(child.TryResolve(out _));
@@ -457,61 +374,60 @@ public class TypedRelationshipCommandBufferTests
             SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetParent(world, liveChild));
         Assert.Equal(
             new[] { liveChild },
-            SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetChildren(world, liveParent).ToArray());
+            ReadChildren<SceneDomain>(world, liveParent).ToArray());
     }
 
     [Fact]
     public void HierarchyDeferredPlayback_ChangesParentButLeavesLastAppliedChildren()
     {
         var world = new World();
-        Entity oldParent = world.CreateEntity();
-        Entity newParent = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        Entity oldParent = world.Create();
+        Entity newParent = world.Create();
+        Entity child = world.Create();
         SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.SetParent(world, child, oldParent);
 
         using var commands = new CommandBuffer(world);
-        commands.Hierarchy<SceneDomain>().SetParent(
-            child,
-            newParent,
-            HierarchyMaintenanceTiming.Deferred);
+        commands.EditParents<SceneDomain>([new(child, newParent, -1)], deferred: true);
         commands.Playback();
 
         Assert.Equal(newParent, SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetParent(world, child));
         Assert.Equal(
             new[] { child },
-            SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetChildren(world, oldParent).ToArray());
-        Assert.Empty(SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetChildren(world, newParent));
+            ReadChildren<SceneDomain>(world, oldParent).ToArray());
+        Assert.Empty(ReadChildren<SceneDomain>(world, newParent));
 
         SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.Maintain(world);
-        Assert.Empty(SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetChildren(world, oldParent));
+        Assert.Empty(ReadChildren<SceneDomain>(world, oldParent));
         Assert.Equal(
             new[] { child },
-            SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetChildren(world, newParent).ToArray());
+            ReadChildren<SceneDomain>(world, newParent).ToArray());
     }
 
     [Fact]
     public void LaterInvalidHierarchyCommand_LeavesImmediateMutationAndGenerationUnpublished()
     {
         var world = new World();
-        Entity oldParent = world.CreateEntity();
-        Entity newParent = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        Entity oldParent = world.Create();
+        Entity newParent = world.Create();
+        Entity child = world.Create();
         SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.SetParent(world, child, oldParent);
-        var oldChildren = SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetChildren(world, oldParent);
-        var newChildren = SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetChildren(world, newParent);
+        var oldChildren = ReadChildren<SceneDomain>(world, oldParent);
+        var newChildren = ReadChildren<SceneDomain>(world, newParent);
 
-        using var commands = new CommandBuffer(world);
-        var hierarchy = commands.Hierarchy<SceneDomain>();
-        hierarchy.SetParent(child, newParent, HierarchyMaintenanceTiming.Immediate);
-        hierarchy.SetParent(newParent, newParent, HierarchyMaintenanceTiming.Immediate);
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        using var commands = new CommandBuffer(candidate);
+        commands.EditParents<SceneDomain>([new(child, newParent, -1)], deferred: false);
+        commands.EditParents<SceneDomain>([new(newParent, newParent, -1)], deferred: false);
 
-        Assert.Throws<InvalidOperationException>(() => commands.Playback());
+        Assert.Throws<ArgumentException>(() => commands.Playback());
 
         Assert.Equal(oldParent, SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetParent(world, child));
-        var oldAfter = SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetChildren(world, oldParent);
-        var newAfter = SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetChildren(world, newParent);
-        Assert.Equal(oldChildren.Generation, oldAfter.Generation);
-        Assert.Equal(newChildren.Generation, newAfter.Generation);
+        var oldAfter = ReadChildren<SceneDomain>(world, oldParent);
+        var newAfter = ReadChildren<SceneDomain>(world, newParent);
+        Assert.Equal(oldChildren, oldAfter);
+        Assert.Equal(newChildren, newAfter);
         Assert.Equal(new[] { child }, oldAfter.ToArray());
         Assert.Empty(newAfter);
     }
@@ -520,30 +436,31 @@ public class TypedRelationshipCommandBufferTests
     public void HierarchyOrderCommandsAndDestroySubtree_CallTypedKernel()
     {
         var world = new World();
-        Entity root = world.CreateEntity();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
+        Entity root = world.Create();
+        Entity first = world.Create();
+        Entity second = world.Create();
 
         using (var commands = new CommandBuffer(world))
         {
-            var hierarchy = commands.Hierarchy<SceneDomain>();
-            hierarchy.SetOrderPolicy(root, ChildOrderPolicy.Ordered);
-            hierarchy.SetParent(first, root);
-            hierarchy.SetParent(second, root, insertIndex: 0);
-            hierarchy.Reorder(first, insertIndex: 0);
+            commands.SetHierarchyOrder<SceneDomain>(root, true);
+            commands.EditParents<SceneDomain>([new(first, root, -1)], deferred: false);
+            commands.EditParents<SceneDomain>([new(second, root, 0)], deferred: false);
+            commands.ReorderChild<SceneDomain>(first, insertAt: 0);
             commands.Playback();
         }
 
         Assert.Equal(
             new[] { first, second },
-            SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetChildren(world, root).ToArray());
+            ReadChildren<SceneDomain>(world, root).ToArray());
 
         using (var commands = new CommandBuffer(world))
         {
-            commands.Hierarchy<SceneDomain>().DestroySubtree(root);
+            commands.DestroySubtree<SceneDomain>(root);
             commands.Playback();
         }
 
+        world.ClearRemoved<Parent<SceneDomain>>(world.Version);
+        world.ClearRemoved<Children<SceneDomain>>(world.Version);
         Assert.False(world.IsAlive(root));
         Assert.False(world.IsAlive(first));
         Assert.False(world.IsAlive(second));
@@ -554,22 +471,14 @@ public class TypedRelationshipCommandBufferTests
     {
         var world = new World();
         using var commands = new CommandBuffer(world);
-        DeferredEntity source = commands.CreateEntity();
-        DeferredEntity originalTarget = commands.CreateEntity();
-        DeferredEntity finalTarget = commands.CreateEntity();
-        var relations = commands.Relations<CommandLink>();
+        DeferredEntity source = commands.Create();
+        DeferredEntity originalTarget = commands.Create();
+        DeferredEntity finalTarget = commands.Create();
 
-        DeferredRelationEdge<CommandLink> pending = relations.Create(
-            source,
-            originalTarget,
-            new CommandLink { Value = 42 });
-        relations.Retarget(
-            pending,
-            source,
-            finalTarget,
-            RelationMaintenanceTiming.Immediate);
+        DeferredRelationEdge<CommandLink> pending = commands.CreateRelation<CommandLink>(source, originalTarget, new CommandLink { Value = 42 });
+        commands.RetargetRelation<CommandLink>(pending, source, finalTarget, false);
 
-        Assert.False(pending.IsResolved);
+        Assert.False(pending.TryResolve(out _));
         Assert.Throws<InvalidOperationException>(() => pending.Resolve());
 
         commands.Playback();
@@ -577,10 +486,10 @@ public class TypedRelationshipCommandBufferTests
         RelationEdge<CommandLink> edge = pending.Resolve();
         Entity liveSource = source.Resolve();
         Entity liveFinalTarget = finalTarget.Resolve();
-        Assert.True(pending.IsResolved);
+        Assert.True(pending.TryResolve(out _));
         Assert.True(world.IsAlive(edge.Entity));
         Assert.Equal(42, world.Read<CommandLink>(edge.Entity).Value);
-        var endpoints = world.GetDirectedRelationEndpoints(edge);
+        var endpoints = ReadEndpoints(world, edge);
         Assert.Equal(liveSource, endpoints.Source);
         Assert.Equal(liveFinalTarget, endpoints.Target);
         Assert.Throws<InvalidOperationException>(() => commands.Playback());
@@ -591,12 +500,9 @@ public class TypedRelationshipCommandBufferTests
     {
         var world = new World();
         using var commands = new CommandBuffer(world);
-        DeferredEntity source = commands.CreateEntity();
-        DeferredEntity target = commands.CreateEntity();
-        DeferredRelationEdge<CommandLink> pending = commands.Relations<CommandLink>().Create(
-            source,
-            target,
-            new CommandLink { Value = 1 });
+        DeferredEntity source = commands.Create();
+        DeferredEntity target = commands.Create();
+        DeferredRelationEdge<CommandLink> pending = commands.CreateRelation<CommandLink>(source, target, new CommandLink { Value = 1 });
 
         commands.Clear();
 
@@ -613,23 +519,18 @@ public class TypedRelationshipCommandBufferTests
     public void MixedLiveAndDeferredEntities_AreResolvedAcrossHierarchyAndRelationCommands()
     {
         var world = new World();
-        Entity liveParent = world.CreateEntity();
-        Entity liveChild = world.CreateEntity();
-        Entity liveTarget = world.CreateEntity();
+        Entity liveParent = world.Create();
+        Entity liveChild = world.Create();
+        Entity liveTarget = world.Create();
         using var commands = new CommandBuffer(world);
-        DeferredEntity deferredParent = commands.CreateEntity();
-        DeferredEntity deferredChild = commands.CreateEntity();
+        DeferredEntity deferredParent = commands.Create();
+        DeferredEntity deferredChild = commands.Create();
 
-        var hierarchy = commands.Hierarchy<SceneDomain>();
-        hierarchy.SetParent(deferredChild, liveParent);
-        hierarchy.SetParent(liveChild, deferredParent);
+        commands.EditParents<SceneDomain>([new(deferredChild, liveParent, -1)], deferred: false);
+        commands.EditParents<SceneDomain>([new(liveChild, deferredParent, -1)], deferred: false);
 
-        var relations = commands.Relations<CommandLink>();
-        DeferredRelationEdge<CommandLink> edge = relations.Create(
-            deferredChild,
-            liveTarget,
-            new CommandLink { Value = 9 });
-        relations.Retarget(edge, liveParent, deferredParent);
+        DeferredRelationEdge<CommandLink> edge = commands.CreateRelation<CommandLink>(deferredChild, liveTarget, new CommandLink { Value = 9 });
+        commands.RetargetRelation<CommandLink>(edge, liveParent, deferredParent);
 
         commands.Playback();
 
@@ -641,7 +542,7 @@ public class TypedRelationshipCommandBufferTests
         Assert.Equal(
             resolvedParent,
             SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetParent(world, liveChild));
-        var endpoints = world.GetDirectedRelationEndpoints(edge.Resolve());
+        var endpoints = ReadEndpoints(world, edge.Resolve());
         Assert.Equal(liveParent, endpoints.Source);
         Assert.Equal(resolvedParent, endpoints.Target);
     }
@@ -650,38 +551,34 @@ public class TypedRelationshipCommandBufferTests
     public void RelationDeferredRetarget_PlaybackLeavesAppliedAdjacencyUntilMaintain()
     {
         var world = new World();
-        Entity oldSource = world.CreateEntity();
-        Entity newSource = world.CreateEntity();
-        Entity target = world.CreateEntity();
+        Entity oldSource = world.Create();
+        Entity newSource = world.Create();
+        Entity target = world.Create();
         RelationEdge<CommandLink> edge = world.CreateRelation(
             oldSource,
             target,
             new CommandLink { Value = 3 });
 
         using var commands = new CommandBuffer(world);
-        commands.Relations<CommandLink>().Retarget(
-            edge,
-            newSource,
-            target,
-            RelationMaintenanceTiming.Deferred);
+        commands.RetargetRelation<CommandLink>(edge, newSource, target, true);
         commands.Playback();
 
-        Assert.Equal(newSource, world.GetDirectedRelationEndpoints(edge).Source);
-        Assert.Equal(edge, Assert.Single(world.GetOutgoingRelations<CommandLink>(oldSource).Entries.ToArray()).Edge);
-        Assert.Empty(world.GetOutgoingRelations<CommandLink>(newSource).Entries.ToArray());
+        Assert.Equal(newSource, ReadEndpoints(world, edge).Source);
+        Assert.Equal(edge, Assert.Single(ReadOutgoing<CommandLink>(world, oldSource).ToArray()).Edge);
+        Assert.Empty(ReadOutgoing<CommandLink>(world, newSource).ToArray());
 
         world.MaintainRelations<CommandLink>();
 
-        Assert.Empty(world.GetOutgoingRelations<CommandLink>(oldSource).Entries.ToArray());
-        Assert.Equal(edge, Assert.Single(world.GetOutgoingRelations<CommandLink>(newSource).Entries.ToArray()).Edge);
+        Assert.Empty(ReadOutgoing<CommandLink>(world, oldSource).ToArray());
+        Assert.Equal(edge, Assert.Single(ReadOutgoing<CommandLink>(world, newSource).ToArray()).Edge);
     }
 
     [Fact]
     public void RelationOrderReorderDestroyAndBulkDestroy_UseEdgeIdentity()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity target = world.CreateEntity();
+        Entity source = world.Create();
+        Entity target = world.Create();
         RelationEdge<CommandLink> first = world.CreateRelation(
             source,
             target,
@@ -693,158 +590,142 @@ public class TypedRelationshipCommandBufferTests
 
         using (var commands = new CommandBuffer(world))
         {
-            var relations = commands.Relations<CommandLink>();
-            relations.SetAdjacencyOrder(
-                source,
-                RelationAdjacencyRole.Outgoing,
-                RelationAdjacencyOrderPolicy.Ordered);
-            relations.Reorder(source, RelationAdjacencyRole.Outgoing, second, insertIndex: 0);
-            relations.Destroy(first);
+            commands.SetRelationOrder<CommandLink>(source, RelationAdjacencyRole.Outgoing, true);
+            commands.ReorderRelation<CommandLink>(source, RelationAdjacencyRole.Outgoing, second, insertAt: 0);
+            commands.DestroyRelation<CommandLink>(first);
             commands.Playback();
         }
 
-        var ordered = world.GetOrderedOutgoingRelations<CommandLink>(source);
-        Assert.Equal(second, Assert.Single(ordered.Entries.ToArray()).Edge);
+        var ordered = ReadOutgoing<CommandLink>(world, source);
+        Assert.Equal(second, Assert.Single(ordered).Edge);
+        world.Remove<Removed<RelationEndpoints<CommandLink>>>(first.Entity);
         Assert.False(world.IsAlive(first.Entity));
 
         using (var commands = new CommandBuffer(world))
         {
-            commands.Relations<CommandLink>().DestroyAllBetween(source, target);
+            commands.DestroyRelationsBetween<CommandLink>(source, target);
             commands.Playback();
         }
 
+        world.Remove<Removed<RelationEndpoints<CommandLink>>>(second.Entity);
+
         Assert.False(world.IsAlive(second.Entity));
-        Assert.Empty(world.GetRelationEdgesBetween<CommandLink>(source, target).ToArray());
+        Assert.Empty(ReadPairEdges<CommandLink>(world, source, target).ToArray());
     }
 
     [Fact]
     public void CreatedDeferredEdge_CanBeDestroyedLaterInSamePlayback()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity target = world.CreateEntity();
+        Entity source = world.Create();
+        Entity target = world.Create();
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
-        DeferredRelationEdge<CommandLink> pending = relations.Create(
-            source,
-            target,
-            new CommandLink { Value = 9 });
-        relations.Destroy(pending);
+        DeferredRelationEdge<CommandLink> pending = commands.CreateRelation<CommandLink>(source, target, new CommandLink { Value = 9 });
+        commands.DestroyRelation<CommandLink>(pending);
 
         commands.Playback();
 
         RelationEdge<CommandLink> identity = pending.Resolve();
+        world.Remove<Removed<RelationEndpoints<CommandLink>>>(identity.Entity);
         Assert.False(world.IsAlive(identity.Entity));
-        Assert.Empty(world.GetRelationEdgesBetween<CommandLink>(source, target).ToArray());
+        Assert.Empty(ReadPairEdges<CommandLink>(world, source, target).ToArray());
     }
 
     [Fact]
     public void DeferredRetargetThenDestroyInSamePlayback_DoesNotValidateDeadPreimage()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity oldTarget = world.CreateEntity();
-        Entity newTarget = world.CreateEntity();
+        Entity source = world.Create();
+        Entity oldTarget = world.Create();
+        Entity newTarget = world.Create();
         var edge = world.CreateRelation(source, oldTarget, new CommandLink());
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
-        relations.Retarget(edge, source, newTarget, RelationMaintenanceTiming.Deferred);
-        relations.Destroy(edge);
+        commands.RetargetRelation<CommandLink>(edge, source, newTarget, true);
+        commands.DestroyRelation<CommandLink>(edge);
 
         commands.Playback();
 
+        world.Remove<Removed<RelationEndpoints<CommandLink>>>(edge.Entity);
+
         Assert.False(world.IsAlive(edge.Entity));
-        Assert.Empty(world.GetIncomingRelations<CommandLink>(oldTarget).Entries.ToArray());
-        Assert.Empty(world.GetIncomingRelations<CommandLink>(newTarget).Entries.ToArray());
+        Assert.Empty(ReadIncoming<CommandLink>(world, oldTarget).ToArray());
+        Assert.Empty(ReadIncoming<CommandLink>(world, newTarget).ToArray());
     }
 
     [Fact]
     public void LaterInvalidRelationCommand_RollsBackStagedEndpointsAndLeavesAdjacencyApplied()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity oldTarget = world.CreateEntity();
-        Entity newTarget = world.CreateEntity();
+        Entity source = world.Create();
+        Entity oldTarget = world.Create();
+        Entity newTarget = world.Create();
         var edge = world.CreateRelation(source, oldTarget, new CommandLink());
-        using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
-        relations.Retarget(edge, source, newTarget, RelationMaintenanceTiming.Deferred);
-        relations.SetAdjacencyOrder(
-            source,
-            RelationAdjacencyRole.Incident,
-            RelationAdjacencyOrderPolicy.Ordered);
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        using var commands = new CommandBuffer(candidate);
+        commands.RetargetRelation<CommandLink>(edge, source, newTarget, true);
+        commands.SetRelationOrder<CommandLink>(source, RelationAdjacencyRole.Incident, true);
 
-        Assert.Throws<InvalidOperationException>(() => commands.Playback());
+        Assert.Throws<ArgumentException>(() => commands.Playback());
 
-        Assert.Equal(oldTarget, world.GetDirectedRelationEndpoints(edge).Target);
+        Assert.Equal(oldTarget, ReadEndpoints(world, edge).Target);
         Assert.Equal(edge, Assert.Single(
-            world.GetIncomingRelations<CommandLink>(oldTarget).Entries.ToArray()).Edge);
-        Assert.Empty(world.GetIncomingRelations<CommandLink>(newTarget).Entries.ToArray());
+            ReadIncoming<CommandLink>(world, oldTarget).ToArray()).Edge);
+        Assert.Empty(ReadIncoming<CommandLink>(world, newTarget).ToArray());
         world.MaintainRelations<CommandLink>();
-        Assert.Equal(oldTarget, world.GetDirectedRelationEndpoints(edge).Target);
+        Assert.Equal(oldTarget, ReadEndpoints(world, edge).Target);
     }
 
     [Fact]
     public void LaterInvalidRelationCommand_LeavesImmediateRetargetUnpublished()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity oldTarget = world.CreateEntity();
-        Entity newTarget = world.CreateEntity();
+        Entity source = world.Create();
+        Entity oldTarget = world.Create();
+        Entity newTarget = world.Create();
         var edge = world.CreateRelation(source, oldTarget, new CommandLink());
-        uint oldGeneration = world.GetIncomingRelations<CommandLink>(oldTarget).Generation;
-        uint newGeneration = world.GetIncomingRelations<CommandLink>(newTarget).Generation;
-        using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
-        relations.Retarget(edge, source, newTarget, RelationMaintenanceTiming.Immediate);
-        relations.SetAdjacencyOrder(
-            source,
-            RelationAdjacencyRole.Incident,
-            RelationAdjacencyOrderPolicy.Ordered);
+        var oldGeneration = ReadIncoming<CommandLink>(world, oldTarget);
+        var newGeneration = ReadIncoming<CommandLink>(world, newTarget);
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        using var commands = new CommandBuffer(candidate);
+        commands.RetargetRelation<CommandLink>(edge, source, newTarget, false);
+        commands.SetRelationOrder<CommandLink>(source, RelationAdjacencyRole.Incident, true);
 
-        Assert.Throws<InvalidOperationException>(() => commands.Playback());
+        Assert.Throws<ArgumentException>(() => commands.Playback());
 
-        Assert.Equal(oldTarget, world.GetDirectedRelationEndpoints(edge).Target);
-        Assert.Equal(oldGeneration, world.GetIncomingRelations<CommandLink>(oldTarget).Generation);
-        Assert.Equal(newGeneration, world.GetIncomingRelations<CommandLink>(newTarget).Generation);
+        Assert.Equal(oldTarget, ReadEndpoints(world, edge).Target);
+        Assert.Equal(oldGeneration, ReadIncoming<CommandLink>(world, oldTarget));
+        Assert.Equal(newGeneration, ReadIncoming<CommandLink>(world, newTarget));
         Assert.Equal(edge, Assert.Single(
-            world.GetIncomingRelations<CommandLink>(oldTarget).Entries.ToArray()).Edge);
-        Assert.Empty(world.GetIncomingRelations<CommandLink>(newTarget).Entries.ToArray());
+            ReadIncoming<CommandLink>(world, oldTarget).ToArray()).Edge);
+        Assert.Empty(ReadIncoming<CommandLink>(world, newTarget).ToArray());
     }
 
     [Fact]
-    public void FailedPlayback_InvalidatesCreatedDeferredRelationEdge()
+    public void FailedPlaybackRetainsItsCreatedRelationPrefix()
     {
-        var world = new World();
-        Entity source = world.CreateEntity();
-        Entity target = world.CreateEntity();
+        using var world = new World();
+        Entity source = world.Create();
+        Entity target = world.Create();
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
-        DeferredRelationEdge<CommandLink> pending = relations.Create(
-            source,
-            target,
-            new CommandLink { Value = 7 },
-            RelationMaintenanceTiming.Immediate);
-        relations.SetAdjacencyOrder(
-            source,
-            RelationAdjacencyRole.Incident,
-            RelationAdjacencyOrderPolicy.Ordered);
-
-        Assert.Throws<InvalidOperationException>(() => commands.Playback());
-
-        Assert.False(pending.IsResolved);
-        Assert.False(pending.TryResolve(out _));
-        Assert.Throws<InvalidOperationException>(() => pending.Resolve());
-        Assert.Empty(world.GetRelationEdgesBetween<CommandLink>(source, target).ToArray());
+        var created = commands.CreateRelation(source, target, new CommandLink { Value = 7 });
+        commands.SetRelationOrder<CommandLink>(source, RelationAdjacencyRole.Incident, true);
+        Assert.Throws<ArgumentException>(commands.Playback);
+        Assert.True(created.TryResolve(out RelationEdge<CommandLink> edge));
+        Assert.Equal(7, world.Read<CommandLink>(edge.Entity).Value);
+        Assert.Equal(edge, Assert.Single(ReadPairEdges<CommandLink>(world, source, target)));
     }
 
     [Fact]
     public void DeferredCreateAndPlacement_PreserveLastAppliedViewsUntilMaintenance()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity targetA = world.CreateEntity();
-        Entity targetB = world.CreateEntity();
+        Entity source = world.Create();
+        Entity targetA = world.Create();
+        Entity targetB = world.Create();
         world.SetRelationAdjacencyOrder<CommandLink>(
             source,
             RelationAdjacencyRole.Outgoing,
@@ -854,185 +735,131 @@ public class TypedRelationshipCommandBufferTests
             targetA,
             new CommandLink { Value = 1 });
         using var commands = new CommandBuffer(world);
-        DeferredRelationEdge<CommandLink> pending = commands.Relations<CommandLink>().Create(
-            source,
-            targetB,
-            new CommandLink { Value = 2 },
-            new DirectedRelationPlacement(OutgoingIndex: 0),
-            RelationMaintenanceTiming.Deferred);
+        DeferredRelationEdge<CommandLink> pending = commands.CreateRelation<CommandLink>(source, targetB, new CommandLink { Value = 2 }, true, outgoingIndex: 0);
 
         commands.Playback();
 
         RelationEdge<CommandLink> created = pending.Resolve();
         Assert.Equal(
             new[] { existing },
-            world.GetOrderedOutgoingRelations<CommandLink>(source)
-                .Entries.ToArray().Select(static entry => entry.Edge));
+            ReadOutgoing<CommandLink>(world, source).ToArray().Select(static entry => entry.Edge));
 
         world.MaintainRelations<CommandLink>();
 
         Assert.Equal(
             new[] { created, existing },
-            world.GetOrderedOutgoingRelations<CommandLink>(source)
-                .Entries.ToArray().Select(static entry => entry.Edge));
+            ReadOutgoing<CommandLink>(world, source).ToArray().Select(static entry => entry.Edge));
     }
 
     [Fact]
     public void DeferredHierarchyPlacement_AppliesAtMaintenanceInRecordedOrder()
     {
         var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
-        SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.SetChildOrderPolicy(
+        Entity parent = world.Create();
+        Entity first = world.Create();
+        Entity second = world.Create();
+        SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.SetOrdered(
             world,
             parent,
-            ChildOrderPolicy.Ordered);
+            true);
         SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.SetParent(world, first, parent);
         SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.SetParent(world, second, parent);
         using var commands = new CommandBuffer(world);
 
-        commands.Hierarchy<SceneDomain>().SetParent(
-            first,
-            parent,
-            insertIndex: 1,
-            HierarchyMaintenanceTiming.Deferred);
+        commands.EditParents<SceneDomain>([new(first, parent, 1)], deferred: true);
         commands.Playback();
 
         Assert.Equal(
             new[] { first, second },
-            SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetChildren(world, parent).ToArray());
+            ReadChildren<SceneDomain>(world, parent).ToArray());
         SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.Maintain(world);
         Assert.Equal(
             new[] { second, first },
-            SomeEngine.ECS.Hierarchy.Hierarchy<SceneDomain>.GetChildren(world, parent).ToArray());
+            ReadChildren<SceneDomain>(world, parent).ToArray());
     }
 
     [Fact]
     public void DeferredUniqueTargetSwap_ValidatesOneFinalCommandImage()
     {
         var world = new World();
-        Entity sourceA = world.CreateEntity();
-        Entity sourceB = world.CreateEntity();
-        Entity targetA = world.CreateEntity();
-        Entity targetB = world.CreateEntity();
+        Entity sourceA = world.Create();
+        Entity sourceB = world.Create();
+        Entity targetA = world.Create();
+        Entity targetB = world.Create();
         var edgeA = world.CreateRelation(sourceA, targetA, new CommandUniqueTarget());
         var edgeB = world.CreateRelation(sourceB, targetB, new CommandUniqueTarget());
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandUniqueTarget>();
 
-        relations.Retarget(
-            edgeA,
-            sourceA,
-            targetB,
-            RelationMaintenanceTiming.Deferred);
-        relations.SetAdjacencyOrder(
-            sourceA,
-            RelationAdjacencyRole.Outgoing,
-            RelationAdjacencyOrderPolicy.Unordered);
-        relations.Retarget(
-            edgeB,
-            sourceB,
-            targetA,
-            RelationMaintenanceTiming.Deferred);
+        commands.EditEndpoints<CommandUniqueTarget>([new(edgeA.Entity, sourceA, targetB), new(edgeB.Entity, sourceB, targetA)], deferred: true);
+        commands.SetRelationOrder<CommandUniqueTarget>(sourceA, RelationAdjacencyRole.Outgoing, false);
         commands.Playback();
 
-        Assert.Equal(targetB, world.GetDirectedRelationEndpoints(edgeA).Target);
-        Assert.Equal(targetA, world.GetDirectedRelationEndpoints(edgeB).Target);
+        Assert.Equal(targetB, ReadEndpoints(world, edgeA).Target);
+        Assert.Equal(targetA, ReadEndpoints(world, edgeB).Target);
         world.MaintainRelations<CommandUniqueTarget>();
         Assert.Equal(edgeB, Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(targetA).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, targetA).ToArray()).Edge);
         Assert.Equal(edgeA, Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(targetB).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, targetB).ToArray()).Edge);
     }
 
     [Fact]
     public void UnrelatedImmediateCommand_DoesNotValidateHalfOfDeferredUniqueTargetSwap()
     {
         var world = new World();
-        Entity sourceA = world.CreateEntity();
-        Entity sourceB = world.CreateEntity();
-        Entity unrelatedSource = world.CreateEntity();
-        Entity targetA = world.CreateEntity();
-        Entity targetB = world.CreateEntity();
-        Entity unrelatedTarget = world.CreateEntity();
+        Entity sourceA = world.Create();
+        Entity sourceB = world.Create();
+        Entity unrelatedSource = world.Create();
+        Entity targetA = world.Create();
+        Entity targetB = world.Create();
+        Entity unrelatedTarget = world.Create();
         var edgeA = world.CreateRelation(sourceA, targetA, new CommandUniqueTarget());
         var edgeB = world.CreateRelation(sourceB, targetB, new CommandUniqueTarget());
 
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandUniqueTarget>();
-        relations.Retarget(
-            edgeA,
-            sourceA,
-            targetB,
-            RelationMaintenanceTiming.Deferred);
-        DeferredRelationEdge<CommandUniqueTarget> unrelated = relations.Create(
-            unrelatedSource,
-            unrelatedTarget,
-            new CommandUniqueTarget(),
-            RelationMaintenanceTiming.Immediate);
-        relations.Retarget(
-            edgeB,
-            sourceB,
-            targetA,
-            RelationMaintenanceTiming.Deferred);
+        commands.EditEndpoints<CommandUniqueTarget>([new(edgeA.Entity, sourceA, targetB), new(edgeB.Entity, sourceB, targetA)], deferred: true);
+        DeferredRelationEdge<CommandUniqueTarget> unrelated = commands.CreateRelation<CommandUniqueTarget>(unrelatedSource, unrelatedTarget, new CommandUniqueTarget(), false);
 
         commands.Playback();
 
         // Canonical endpoints already expose the complete deferred result, while the inverse
         // views deliberately retain the last-applied image until explicit maintenance.
-        Assert.Equal(targetB, world.GetDirectedRelationEndpoints(edgeA).Target);
-        Assert.Equal(targetA, world.GetDirectedRelationEndpoints(edgeB).Target);
+        Assert.Equal(targetB, ReadEndpoints(world, edgeA).Target);
+        Assert.Equal(targetA, ReadEndpoints(world, edgeB).Target);
         Assert.Equal(edgeA, Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(targetA).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, targetA).ToArray()).Edge);
         Assert.Equal(edgeB, Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(targetB).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, targetB).ToArray()).Edge);
         Assert.Equal(unrelated.Resolve(), Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(unrelatedTarget).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, unrelatedTarget).ToArray()).Edge);
 
         world.MaintainRelations<CommandUniqueTarget>();
 
         Assert.Equal(edgeB, Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(targetA).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, targetA).ToArray()).Edge);
         Assert.Equal(edgeA, Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(targetB).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, targetB).ToArray()).Edge);
     }
 
     [Fact]
-    public void DeferredRetarget_DoesNotFreeAppliedUniqueTargetForImmediateCreate()
+    public void DeferredRetargetReleasesItsCurrentUniqueTargetBeforeMaintenance()
     {
-        var world = new World();
-        Entity existingSource = world.CreateEntity();
-        Entity newSource = world.CreateEntity();
-        Entity appliedTarget = world.CreateEntity();
-        Entity deferredTarget = world.CreateEntity();
-        var existing = world.CreateRelation(
-            existingSource,
-            appliedTarget,
-            new CommandUniqueTarget());
-
+        using var world = new World();
+        Entity existingSource = world.Create();
+        Entity newSource = world.Create();
+        Entity appliedTarget = world.Create();
+        Entity deferredTarget = world.Create();
+        var existing = world.CreateRelation(existingSource, appliedTarget, new CommandUniqueTarget());
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandUniqueTarget>();
-        relations.Retarget(
-            existing,
-            existingSource,
-            deferredTarget,
-            RelationMaintenanceTiming.Deferred);
-        DeferredRelationEdge<CommandUniqueTarget> conflicting = relations.Create(
-            newSource,
-            appliedTarget,
-            new CommandUniqueTarget(),
-            RelationMaintenanceTiming.Immediate);
-
-        Assert.Throws<InvalidOperationException>(() => commands.Playback());
-
-        // Playback is atomic, and deferred timing never makes the old applied key available to
-        // a later immediate command. The source World therefore retains its original image.
-        Assert.False(conflicting.TryResolve(out _));
-        Assert.Equal(appliedTarget, world.GetDirectedRelationEndpoints(existing).Target);
-        Assert.Equal(existing, Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(appliedTarget).Entries.ToArray()).Edge);
-        Assert.Empty(world.GetIncomingRelations<CommandUniqueTarget>(deferredTarget).Entries.ToArray());
+        commands.RetargetRelation<CommandUniqueTarget>(existing, existingSource, deferredTarget, deferred: true);
+        var created = commands.CreateRelation(newSource, appliedTarget, new CommandUniqueTarget());
+        commands.Playback();
+        Assert.Equal(deferredTarget, ReadEndpoints(world, existing).Target);
+        Assert.Equal(appliedTarget, ReadEndpoints(world, created.Resolve()).Target);
+        Assert.Equal(2, ReadIncoming<CommandUniqueTarget>(world, appliedTarget).Length);
+        world.MaintainRelations<CommandUniqueTarget>();
+        Assert.Equal(created.Resolve(), Assert.Single(ReadIncoming<CommandUniqueTarget>(world, appliedTarget)).Edge);
+        Assert.Equal(existing, Assert.Single(ReadIncoming<CommandUniqueTarget>(world, deferredTarget)).Edge);
     }
 
     [Fact]
@@ -1040,16 +867,16 @@ public class TypedRelationshipCommandBufferTests
     {
         const int Count = 256;
         var world = new World();
-        Entity dirtySource = world.CreateEntity();
-        Entity immediateSource = world.CreateEntity();
+        Entity dirtySource = world.Create();
+        Entity immediateSource = world.Create();
         var edges = new RelationEdge<CommandLink>[Count];
         var deferredTargets = new Entity[Count];
         var immediateTargets = new Entity[Count];
         for (int i = 0; i < Count; i++)
         {
-            Entity originalTarget = world.CreateEntity();
-            deferredTargets[i] = world.CreateEntity();
-            immediateTargets[i] = world.CreateEntity();
+            Entity originalTarget = world.Create();
+            deferredTargets[i] = world.Create();
+            immediateTargets[i] = world.Create();
             edges[i] = world.CreateRelation(
                 dirtySource,
                 originalTarget,
@@ -1058,19 +885,10 @@ public class TypedRelationshipCommandBufferTests
 
         using (var commands = new CommandBuffer(world))
         {
-            var relations = commands.Relations<CommandLink>();
             for (int i = 0; i < Count; i++)
             {
-                relations.Retarget(
-                    edges[i],
-                    dirtySource,
-                    deferredTargets[i],
-                    RelationMaintenanceTiming.Deferred);
-                _ = relations.Create(
-                    immediateSource,
-                    immediateTargets[i],
-                    new CommandLink(),
-                    RelationMaintenanceTiming.Immediate);
+                commands.RetargetRelation<CommandLink>(edges[i], dirtySource, deferredTargets[i], true);
+                _ = commands.CreateRelation<CommandLink>(immediateSource, immediateTargets[i], new CommandLink(), false);
             }
             commands.Playback();
         }
@@ -1081,15 +899,15 @@ public class TypedRelationshipCommandBufferTests
     public void DeferredUniqueTargetSwap_RemainsAtomicAfterProjectionWasInitialized()
     {
         var world = new World();
-        Entity sourceA = world.CreateEntity();
-        Entity sourceB = world.CreateEntity();
-        Entity dirtySource = world.CreateEntity();
-        Entity immediateSource = world.CreateEntity();
-        Entity targetA = world.CreateEntity();
-        Entity targetB = world.CreateEntity();
-        Entity dirtyOldTarget = world.CreateEntity();
-        Entity dirtyNewTarget = world.CreateEntity();
-        Entity immediateTarget = world.CreateEntity();
+        Entity sourceA = world.Create();
+        Entity sourceB = world.Create();
+        Entity dirtySource = world.Create();
+        Entity immediateSource = world.Create();
+        Entity targetA = world.Create();
+        Entity targetB = world.Create();
+        Entity dirtyOldTarget = world.Create();
+        Entity dirtyNewTarget = world.Create();
+        Entity immediateTarget = world.Create();
         var edgeA = world.CreateRelation(sourceA, targetA, new CommandUniqueTarget());
         var edgeB = world.CreateRelation(sourceB, targetB, new CommandUniqueTarget());
         var dirtyEdge = world.CreateRelation(
@@ -1098,41 +916,31 @@ public class TypedRelationshipCommandBufferTests
             new CommandUniqueTarget());
 
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandUniqueTarget>();
-        relations.Retarget(
-            dirtyEdge,
-            dirtySource,
-            dirtyNewTarget,
-            RelationMaintenanceTiming.Deferred);
-        DeferredRelationEdge<CommandUniqueTarget> immediate = relations.Create(
-            immediateSource,
-            immediateTarget,
-            new CommandUniqueTarget(),
-            RelationMaintenanceTiming.Immediate);
-        relations.Retarget(edgeA, sourceA, targetB, RelationMaintenanceTiming.Deferred);
-        relations.Retarget(edgeB, sourceB, targetA, RelationMaintenanceTiming.Deferred);
+        commands.RetargetRelation<CommandUniqueTarget>(dirtyEdge, dirtySource, dirtyNewTarget, true);
+        DeferredRelationEdge<CommandUniqueTarget> immediate = commands.CreateRelation<CommandUniqueTarget>(immediateSource, immediateTarget, new CommandUniqueTarget(), false);
+        commands.EditEndpoints<CommandUniqueTarget>([new(edgeA.Entity, sourceA, targetB), new(edgeB.Entity, sourceB, targetA)], deferred: true);
 
         commands.Playback();
         world.MaintainRelations<CommandUniqueTarget>();
 
         Assert.Equal(edgeB, Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(targetA).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, targetA).ToArray()).Edge);
         Assert.Equal(edgeA, Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(targetB).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, targetB).ToArray()).Edge);
         Assert.Equal(dirtyEdge, Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(dirtyNewTarget).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, dirtyNewTarget).ToArray()).Edge);
         Assert.Equal(immediate.Resolve(), Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(immediateTarget).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, immediateTarget).ToArray()).Edge);
     }
 
     [Fact]
     public void PreexistingDeferredCanonicalTarget_RejectsConflictingImmediateCreate()
     {
         var world = new World();
-        Entity existingSource = world.CreateEntity();
-        Entity newSource = world.CreateEntity();
-        Entity oldTarget = world.CreateEntity();
-        Entity pendingTarget = world.CreateEntity();
+        Entity existingSource = world.Create();
+        Entity newSource = world.Create();
+        Entity oldTarget = world.Create();
+        Entity pendingTarget = world.Create();
         var existing = world.CreateRelation(
             existingSource,
             oldTarget,
@@ -1141,58 +949,50 @@ public class TypedRelationshipCommandBufferTests
 
         using var commands = new CommandBuffer(world);
         DeferredRelationEdge<CommandUniqueTarget> conflicting =
-            commands.Relations<CommandUniqueTarget>().Create(
-                newSource,
-                pendingTarget,
-                new CommandUniqueTarget(),
-                RelationMaintenanceTiming.Immediate);
+            commands.CreateRelation<CommandUniqueTarget>(newSource, pendingTarget, new CommandUniqueTarget(), false);
 
         Assert.Throws<InvalidOperationException>(() => commands.Playback());
 
         Assert.False(conflicting.TryResolve(out _));
-        Assert.Equal(pendingTarget, world.GetDirectedRelationEndpoints(existing).Target);
+        Assert.Equal(pendingTarget, ReadEndpoints(world, existing).Target);
         world.MaintainRelations<CommandUniqueTarget>();
         Assert.Equal(existing, Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(pendingTarget).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, pendingTarget).ToArray()).Edge);
     }
 
     [Fact]
     public void PreexistingDeferredCanonicalTarget_RejectsConflictingImmediateRetarget()
     {
         var world = new World();
-        Entity sourceA = world.CreateEntity();
-        Entity sourceB = world.CreateEntity();
-        Entity oldTargetA = world.CreateEntity();
-        Entity pendingTarget = world.CreateEntity();
-        Entity oldTargetB = world.CreateEntity();
+        Entity sourceA = world.Create();
+        Entity sourceB = world.Create();
+        Entity oldTargetA = world.Create();
+        Entity pendingTarget = world.Create();
+        Entity oldTargetB = world.Create();
         var pending = world.CreateRelation(sourceA, oldTargetA, new CommandUniqueTarget());
         var immediate = world.CreateRelation(sourceB, oldTargetB, new CommandUniqueTarget());
         world.RetargetRelationDeferred(pending, sourceA, pendingTarget);
 
         using var commands = new CommandBuffer(world);
-        commands.Relations<CommandUniqueTarget>().Retarget(
-            immediate,
-            sourceB,
-            pendingTarget,
-            RelationMaintenanceTiming.Immediate);
+        commands.RetargetRelation<CommandUniqueTarget>(immediate, sourceB, pendingTarget, false);
 
         Assert.Throws<InvalidOperationException>(() => commands.Playback());
 
-        Assert.Equal(oldTargetB, world.GetDirectedRelationEndpoints(immediate).Target);
+        Assert.Equal(oldTargetB, ReadEndpoints(world, immediate).Target);
         Assert.Equal(immediate, Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(oldTargetB).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, oldTargetB).ToArray()).Edge);
         world.MaintainRelations<CommandUniqueTarget>();
         Assert.Equal(pending, Assert.Single(
-            world.GetIncomingRelations<CommandUniqueTarget>(pendingTarget).Entries.ToArray()).Edge);
+            ReadIncoming<CommandUniqueTarget>(world, pendingTarget).ToArray()).Edge);
     }
 
     [Fact]
     public void DeferredPlacementThenImmediateRetarget_ConsumesPendingPlacement()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity targetA = world.CreateEntity();
-        Entity targetB = world.CreateEntity();
+        Entity source = world.Create();
+        Entity targetA = world.Create();
+        Entity targetB = world.Create();
         world.SetRelationAdjacencyOrder<CommandLink>(
             source,
             RelationAdjacencyRole.Outgoing,
@@ -1201,38 +1001,27 @@ public class TypedRelationshipCommandBufferTests
         var second = world.CreateRelation(source, targetB, new CommandLink());
 
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
-        relations.Retarget(
-            second,
-            source,
-            targetB,
-            new DirectedRelationPlacement(OutgoingIndex: 0),
-            RelationMaintenanceTiming.Deferred);
-        relations.Retarget(
-            second,
-            source,
-            targetB,
-            RelationMaintenanceTiming.Immediate);
+        commands.RetargetRelation<CommandLink>(second, source, targetB, true, outgoingIndex: 0);
+        commands.RetargetRelation<CommandLink>(second, source, targetB, false);
+        commands.ReorderRelation<CommandLink>(source, RelationAdjacencyRole.Outgoing, second, 1);
         commands.Playback();
 
         Assert.Equal(
             new[] { first, second },
-            world.GetOrderedOutgoingRelations<CommandLink>(source)
-                .Entries.ToArray().Select(static entry => entry.Edge));
+            ReadOutgoing<CommandLink>(world, source).ToArray().Select(static entry => entry.Edge));
         world.MaintainRelations<CommandLink>();
         Assert.Equal(
             new[] { first, second },
-            world.GetOrderedOutgoingRelations<CommandLink>(source)
-                .Entries.ToArray().Select(static entry => entry.Edge));
+            ReadOutgoing<CommandLink>(world, source).ToArray().Select(static entry => entry.Edge));
     }
 
     [Fact]
     public void DeferredPlacementThenDestroy_CannotReappearAtMaintenance()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity targetA = world.CreateEntity();
-        Entity targetB = world.CreateEntity();
+        Entity source = world.Create();
+        Entity targetA = world.Create();
+        Entity targetB = world.Create();
         world.SetRelationAdjacencyOrder<CommandLink>(
             source,
             RelationAdjacencyRole.Outgoing,
@@ -1241,293 +1030,227 @@ public class TypedRelationshipCommandBufferTests
         var destroyed = world.CreateRelation(source, targetB, new CommandLink());
 
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
-        relations.Retarget(
-            destroyed,
-            source,
-            targetB,
-            new DirectedRelationPlacement(OutgoingIndex: 0),
-            RelationMaintenanceTiming.Deferred);
-        relations.Destroy(destroyed);
+        commands.RetargetRelation<CommandLink>(destroyed, source, targetB, true, outgoingIndex: 0);
+        commands.DestroyRelation<CommandLink>(destroyed);
         commands.Playback();
+
+        world.Remove<Removed<RelationEndpoints<CommandLink>>>(destroyed.Entity);
 
         Assert.False(world.IsAlive(destroyed.Entity));
         world.MaintainRelations<CommandLink>();
         Assert.Equal(surviving, Assert.Single(
-            world.GetOrderedOutgoingRelations<CommandLink>(source).Entries.ToArray()).Edge);
+            ReadOutgoing<CommandLink>(world, source).ToArray()).Edge);
     }
 
     [Fact]
     public void ImmediateAndDeferredTiming_RemainPerEdgeWithinOnePayloadType()
     {
         var world = new World();
-        Entity deferredSource = world.CreateEntity();
-        Entity deferredOld = world.CreateEntity();
-        Entity deferredNew = world.CreateEntity();
-        Entity immediateSource = world.CreateEntity();
-        Entity immediateTarget = world.CreateEntity();
+        Entity deferredSource = world.Create();
+        Entity deferredOld = world.Create();
+        Entity deferredNew = world.Create();
+        Entity immediateSource = world.Create();
+        Entity immediateTarget = world.Create();
         var deferredEdge = world.CreateRelation(
             deferredSource,
             deferredOld,
             new CommandLink { Value = 1 });
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
-        relations.Retarget(
-            deferredEdge,
-            deferredSource,
-            deferredNew,
-            RelationMaintenanceTiming.Deferred);
-        DeferredRelationEdge<CommandLink> immediateEdge = relations.Create(
-            immediateSource,
-            immediateTarget,
-            new CommandLink { Value = 2 },
-            RelationMaintenanceTiming.Immediate);
+        commands.RetargetRelation<CommandLink>(deferredEdge, deferredSource, deferredNew, true);
+        DeferredRelationEdge<CommandLink> immediateEdge = commands.CreateRelation<CommandLink>(immediateSource, immediateTarget, new CommandLink { Value = 2 }, false);
 
         commands.Playback();
 
-        Assert.Equal(deferredNew, world.GetDirectedRelationEndpoints(deferredEdge).Target);
+        Assert.Equal(deferredNew, ReadEndpoints(world, deferredEdge).Target);
         Assert.Equal(deferredEdge, Assert.Single(
-            world.GetIncomingRelations<CommandLink>(deferredOld).Entries.ToArray()).Edge);
-        Assert.Empty(world.GetIncomingRelations<CommandLink>(deferredNew).Entries.ToArray());
+            ReadIncoming<CommandLink>(world, deferredOld).ToArray()).Edge);
+        Assert.Empty(ReadIncoming<CommandLink>(world, deferredNew).ToArray());
         Assert.Equal(immediateEdge.Resolve(), Assert.Single(
-            world.GetIncomingRelations<CommandLink>(immediateTarget).Entries.ToArray()).Edge);
+            ReadIncoming<CommandLink>(world, immediateTarget).ToArray()).Edge);
     }
 
     [Fact]
     public void DeferredCreateThenImmediateRetarget_AppliesTheRegisteredEdge()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity target = world.CreateEntity();
+        Entity source = world.Create();
+        Entity target = world.Create();
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
-        DeferredRelationEdge<CommandLink> pending = relations.Create(
-            source,
-            target,
-            new CommandLink(),
-            RelationMaintenanceTiming.Deferred);
-        relations.Retarget(
-            pending,
-            source,
-            target,
-            RelationMaintenanceTiming.Immediate);
+        DeferredRelationEdge<CommandLink> pending = commands.CreateRelation<CommandLink>(source, target, new CommandLink(), true);
+        commands.RetargetRelation<CommandLink>(pending, source, target, false);
 
         commands.Playback();
 
         RelationEdge<CommandLink> edge = pending.Resolve();
         Assert.Equal(edge, Assert.Single(
-            world.GetOutgoingRelations<CommandLink>(source).Entries.ToArray()).Edge);
+            ReadOutgoing<CommandLink>(world, source).ToArray()).Edge);
         Assert.Equal(edge, Assert.Single(
-            world.GetIncomingRelations<CommandLink>(target).Entries.ToArray()).Edge);
+            ReadIncoming<CommandLink>(world, target).ToArray()).Edge);
     }
 
     [Fact]
     public void ImmediateCreateThenDeferredRetarget_LeavesOriginalAppliedAdjacency()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity original = world.CreateEntity();
-        Entity final = world.CreateEntity();
+        Entity source = world.Create();
+        Entity original = world.Create();
+        Entity final = world.Create();
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
-        DeferredRelationEdge<CommandLink> pending = relations.Create(
-            source,
-            original,
-            new CommandLink(),
-            RelationMaintenanceTiming.Immediate);
-        relations.Retarget(
-            pending,
-            source,
-            final,
-            RelationMaintenanceTiming.Deferred);
+        DeferredRelationEdge<CommandLink> pending = commands.CreateRelation<CommandLink>(source, original, new CommandLink(), false);
+        commands.RetargetRelation<CommandLink>(pending, source, final, true);
 
         commands.Playback();
 
         var edge = pending.Resolve();
-        Assert.Equal(final, world.GetDirectedRelationEndpoints(edge).Target);
+        Assert.Equal(final, ReadEndpoints(world, edge).Target);
         Assert.Equal(edge, Assert.Single(
-            world.GetIncomingRelations<CommandLink>(original).Entries.ToArray()).Edge);
-        Assert.Empty(world.GetIncomingRelations<CommandLink>(final).Entries.ToArray());
+            ReadIncoming<CommandLink>(world, original).ToArray()).Edge);
+        Assert.Empty(ReadIncoming<CommandLink>(world, final).ToArray());
         world.MaintainRelations<CommandLink>();
         Assert.Equal(edge, Assert.Single(
-            world.GetIncomingRelations<CommandLink>(final).Entries.ToArray()).Edge);
+            ReadIncoming<CommandLink>(world, final).ToArray()).Edge);
     }
 
     [Fact]
     public void ImmediateRetargetThenDeferredRetarget_LeavesIntermediateAppliedAdjacency()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity first = world.CreateEntity();
-        Entity intermediate = world.CreateEntity();
-        Entity final = world.CreateEntity();
+        Entity source = world.Create();
+        Entity first = world.Create();
+        Entity intermediate = world.Create();
+        Entity final = world.Create();
         var edge = world.CreateRelation(source, first, new CommandLink());
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
-        relations.Retarget(edge, source, intermediate, RelationMaintenanceTiming.Immediate);
-        relations.Retarget(edge, source, final, RelationMaintenanceTiming.Deferred);
+        commands.RetargetRelation<CommandLink>(edge, source, intermediate, false);
+        commands.RetargetRelation<CommandLink>(edge, source, final, true);
 
         commands.Playback();
 
-        Assert.Equal(final, world.GetDirectedRelationEndpoints(edge).Target);
-        Assert.Empty(world.GetIncomingRelations<CommandLink>(first).Entries.ToArray());
+        Assert.Equal(final, ReadEndpoints(world, edge).Target);
+        Assert.Empty(ReadIncoming<CommandLink>(world, first).ToArray());
         Assert.Equal(edge, Assert.Single(
-            world.GetIncomingRelations<CommandLink>(intermediate).Entries.ToArray()).Edge);
-        Assert.Empty(world.GetIncomingRelations<CommandLink>(final).Entries.ToArray());
+            ReadIncoming<CommandLink>(world, intermediate).ToArray()).Edge);
+        Assert.Empty(ReadIncoming<CommandLink>(world, final).ToArray());
     }
 
     [Fact]
     public void CreateThenOrderAndReorder_UsesTheNewAppliedEdgeInSamePlayback()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity targetA = world.CreateEntity();
-        Entity targetB = world.CreateEntity();
+        Entity source = world.Create();
+        Entity targetA = world.Create();
+        Entity targetB = world.Create();
         var existing = world.CreateRelation(source, targetA, new CommandLink());
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
-        var created = relations.Create(
-            source,
-            targetB,
-            new CommandLink(),
-            RelationMaintenanceTiming.Immediate);
-        relations.SetAdjacencyOrder(
-            source,
-            RelationAdjacencyRole.Outgoing,
-            RelationAdjacencyOrderPolicy.Ordered);
-        relations.Reorder(
-            source,
-            RelationAdjacencyRole.Outgoing,
-            created,
-            insertIndex: 0);
+        var created = commands.CreateRelation<CommandLink>(source, targetB, new CommandLink(), false);
+        commands.SetRelationOrder<CommandLink>(source, RelationAdjacencyRole.Outgoing, true);
+        commands.ReorderRelation<CommandLink>(source, RelationAdjacencyRole.Outgoing, created, insertAt: 0);
 
         commands.Playback();
 
         Assert.Equal(
             new[] { created.Resolve(), existing },
-            world.GetOrderedOutgoingRelations<CommandLink>(source)
-                .Entries.ToArray().Select(static entry => entry.Edge));
+            ReadOutgoing<CommandLink>(world, source).ToArray().Select(static entry => entry.Edge));
     }
 
     [Fact]
     public void BulkDestroyUsesCurrentCommandImageForCreatedAndRetargetedEdges()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity oldTarget = world.CreateEntity();
-        Entity newTarget = world.CreateEntity();
+        Entity source = world.Create();
+        Entity oldTarget = world.Create();
+        Entity newTarget = world.Create();
         var moved = world.CreateRelation(source, oldTarget, new CommandLink());
         using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<CommandLink>();
-        var created = relations.Create(
-            source,
-            newTarget,
-            new CommandLink(),
-            RelationMaintenanceTiming.Deferred);
-        relations.DestroyAllBetween(source, newTarget);
-        relations.Retarget(moved, source, newTarget, RelationMaintenanceTiming.Immediate);
-        relations.DestroyAllBetween(source, oldTarget);
+        var created = commands.CreateRelation<CommandLink>(source, newTarget, new CommandLink(), true);
+        commands.DestroyRelationsBetween<CommandLink>(source, newTarget);
+        commands.RetargetRelation<CommandLink>(moved, source, newTarget, false);
+        commands.DestroyRelationsBetween<CommandLink>(source, oldTarget);
 
         commands.Playback();
 
+        world.Remove<Removed<RelationEndpoints<CommandLink>>>(created.Resolve().Entity);
+
         Assert.False(world.IsAlive(created.Resolve().Entity));
         Assert.True(world.IsAlive(moved.Entity));
-        Assert.Equal(newTarget, world.GetDirectedRelationEndpoints(moved).Target);
+        Assert.Equal(newTarget, ReadEndpoints(world, moved).Target);
     }
 
     [Fact]
     public void OrderedEmptyEndpointDestroyedInSameBatch_DropsOverlayBeforeIndexReuse()
     {
         var world = new World();
-        Entity endpoint = world.CreateEntity();
+        Entity endpoint = world.Create();
 
         using (var commands = new CommandBuffer(world))
         {
-            commands.Relations<CommandLink>().SetAdjacencyOrder(
-                endpoint,
-                RelationAdjacencyRole.Outgoing,
-                RelationAdjacencyOrderPolicy.Ordered);
-            commands.DestroyEntity(endpoint);
+            commands.SetRelationOrder<CommandLink>(endpoint, RelationAdjacencyRole.Outgoing, true);
+            commands.Destroy(endpoint);
             commands.Playback();
         }
 
         Assert.False(world.IsAlive(endpoint));
-        Entity reused = world.CreateEntity();
+        Entity reused = world.Create();
         Assert.True(world.IsAlive(reused));
         Assert.NotEqual(endpoint, reused);
 
-        Entity target = world.CreateEntity();
+        Entity target = world.Create();
         RelationEdge<CommandLink> edge = world.CreateRelation(
             reused,
             target,
             new CommandLink());
         Assert.Equal(edge, Assert.Single(
-            world.GetOutgoingRelations<CommandLink>(reused).Entries.ToArray()).Edge);
+            ReadOutgoing<CommandLink>(world, reused).ToArray()).Edge);
     }
 
     [Fact]
-    public void ImmediateVersusDeferredRetargetControlsFollowingEndpointDestroy()
+    public void EndpointDestroyUsesCurrentEndpointsAcrossMaintenanceTiming()
     {
         var immediateWorld = new World();
-        Entity immediateSource = immediateWorld.CreateEntity();
-        Entity immediateOld = immediateWorld.CreateEntity();
-        Entity immediateNew = immediateWorld.CreateEntity();
+        Entity immediateSource = immediateWorld.Create();
+        Entity immediateOld = immediateWorld.Create();
+        Entity immediateNew = immediateWorld.Create();
         var immediateEdge = immediateWorld.CreateRelation(
             immediateSource,
             immediateOld,
             new CommandLink());
         using (var commands = new CommandBuffer(immediateWorld))
         {
-            commands.Relations<CommandLink>().Retarget(
-                immediateEdge,
-                immediateSource,
-                immediateNew,
-                RelationMaintenanceTiming.Immediate);
-            commands.DestroyEntity(immediateOld);
+            commands.RetargetRelation<CommandLink>(immediateEdge, immediateSource, immediateNew, false);
+            commands.Destroy(immediateOld);
             commands.Playback();
         }
         Assert.True(immediateWorld.IsAlive(immediateEdge.Entity));
 
         var deferredWorld = new World();
-        Entity deferredSource = deferredWorld.CreateEntity();
-        Entity deferredOld = deferredWorld.CreateEntity();
-        Entity deferredNew = deferredWorld.CreateEntity();
+        Entity deferredSource = deferredWorld.Create();
+        Entity deferredOld = deferredWorld.Create();
+        Entity deferredNew = deferredWorld.Create();
         var deferredEdge = deferredWorld.CreateRelation(
             deferredSource,
             deferredOld,
             new CommandLink());
         using (var commands = new CommandBuffer(deferredWorld))
         {
-            commands.Relations<CommandLink>().Retarget(
-                deferredEdge,
-                deferredSource,
-                deferredNew,
-                RelationMaintenanceTiming.Deferred);
-            commands.DestroyEntity(deferredOld);
+            commands.RetargetRelation<CommandLink>(deferredEdge, deferredSource, deferredNew, true);
+            commands.Destroy(deferredOld);
             commands.Playback();
         }
-        Assert.False(deferredWorld.IsAlive(deferredEdge.Entity));
+        Assert.True(deferredWorld.IsAlive(deferredEdge.Entity));
+        Assert.Equal(deferredNew, ReadEndpoints(deferredWorld, deferredEdge).Target);
+        Assert.Empty(ReadIncoming<CommandLink>(deferredWorld, deferredOld));
+        Assert.Equal(deferredEdge, Assert.Single(ReadIncoming<CommandLink>(deferredWorld, deferredNew)).Edge);
     }
 
     [Fact]
-    public void InvalidMaintenanceTiming_IsRejectedBeforeRecording()
+    public void CreateResultCountIsValidatedBeforeRecordingEndpointEdits()
     {
-        var world = new World();
-        Entity source = world.CreateEntity();
-        Entity target = world.CreateEntity();
+        using var world = new World();
+        Entity source = world.Create();
+        Entity target = world.Create();
         using var commands = new CommandBuffer(world);
-
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => commands.Relations<CommandLink>().Create(
-                source,
-                target,
-                new CommandLink(),
-                (RelationMaintenanceTiming)byte.MaxValue));
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => commands.Hierarchy<SceneDomain>().SetParent(
-                source,
-                target,
-                (HierarchyMaintenanceTiming)byte.MaxValue));
-        Assert.Equal(0, commands.CommandCount);
+        Assert.Throws<ArgumentException>(() => commands.EditEndpoints<CommandLink>(
+            [EndpointCommandEdit.Create(source, target)]));
+        Assert.Equal(0, commands.Count);
     }
 }

@@ -4,7 +4,6 @@ using SomeEngine.ECS.Components;
 namespace SomeEngine.Animation;
 
 /// <summary>A normalized curve point; easing belongs to the interval starting at this point.</summary>
-[BufferCapacity(4)]
 public readonly record struct Keyframe : IBufferElement
 {
     private readonly nint _easing;

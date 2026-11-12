@@ -17,48 +17,45 @@ public sealed class ParallelTransformPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = new World(execution: new WorldJobs(JobSystem.Default));
             Entity orderedRoot = CreateTransform(world, new Vector3(10, 0, 0));
             Entity orderedChild = CreateTransform(world, new Vector3(1, 0, 0));
-            Entity organization = world.CreateEntity();
+            Entity organization = world.Create();
             Entity organizationLeaf = CreateTransform(world, new Vector3(0, 2, 0));
             Entity unorderedRoot = CreateTransform(world, new Vector3(0, 20, 0));
             Entity unorderedChild = CreateTransform(world, new Vector3(0, 3, 0));
 
-            Hierarchy.SetChildOrderPolicy(
-                world,
-                orderedRoot,
-                ChildOrderPolicy.Ordered);
-            Hierarchy.SetParent(world, orderedChild, orderedRoot, insertIndex: 0);
-            Hierarchy.SetParent(world, organization, orderedRoot, insertIndex: 1);
+            Hierarchy<DefaultHierarchyDomain>.SetOrdered(world, orderedRoot, true);
+            Hierarchy.SetParent(world, orderedChild, orderedRoot, insertAt: 0);
+            Hierarchy.SetParent(world, organization, orderedRoot, insertAt: 1);
             Hierarchy.SetParent(world, organizationLeaf, organization);
             Hierarchy.SetParent(world, unorderedChild, unorderedRoot);
 
-            HierarchyMaintenanceDependency<DefaultHierarchyDomain> maintenance =
-                HierarchyMaintenanceSystem<DefaultHierarchyDomain>.ScheduleDependency(world);
-            HierarchyPropagation propagation = ParallelTransformPropagation.Schedule(
+            Hierarchy<DefaultHierarchyDomain>.Maintain(world);
+            JobHandle maintenance = default;
+            JobHandle propagation = ParallelTransformPropagation.Schedule(
                 world,
                 [organizationLeaf, unorderedChild, unorderedRoot, orderedChild, orderedRoot],
                 maintenance,
                 rootsPerPacket: 1);
 
-            propagation.Handle.Complete();
+            propagation.Complete();
 
             Assert.Equal(
                 new Vector3(10, 0, 0),
-                world.Read<WorldTransform>(orderedRoot).Qvvs.Position);
+                world.ReadComponentData<WorldTransform>(orderedRoot).Qvvs.Position);
             Assert.Equal(
                 new Vector3(11, 0, 0),
-                world.Read<WorldTransform>(orderedChild).Qvvs.Position);
+                world.ReadComponentData<WorldTransform>(orderedChild).Qvvs.Position);
             Assert.Equal(
                 new Vector3(10, 2, 0),
-                world.Read<WorldTransform>(organizationLeaf).Qvvs.Position);
+                world.ReadComponentData<WorldTransform>(organizationLeaf).Qvvs.Position);
             Assert.Equal(
                 new Vector3(0, 20, 0),
-                world.Read<WorldTransform>(unorderedRoot).Qvvs.Position);
+                world.ReadComponentData<WorldTransform>(unorderedRoot).Qvvs.Position);
             Assert.Equal(
                 new Vector3(0, 23, 0),
-                world.Read<WorldTransform>(unorderedChild).Qvvs.Position);
+                world.ReadComponentData<WorldTransform>(unorderedChild).Qvvs.Position);
             Assert.False(world.Has<LocalTransform>(organization));
             Assert.False(world.Has<WorldTransform>(organization));
         });
@@ -69,9 +66,9 @@ public sealed class ParallelTransformPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = new World(execution: new WorldJobs(JobSystem.Default));
             Entity root = CreateTransform(world, new Vector3(10, 0, 0));
-            Entity organization = world.CreateEntity();
+            Entity organization = world.Create();
             world.Add(organization, new WorldTransform
             {
                 Qvvs = new TransformQvvs(new Vector3(100, 0, 0), Quaternion.Identity),
@@ -80,22 +77,22 @@ public sealed class ParallelTransformPropagationTests
             Hierarchy.SetParent(world, organization, root);
             Hierarchy.SetParent(world, leaf, organization);
 
-            HierarchyMaintenanceDependency<DefaultHierarchyDomain> maintenance =
-                HierarchyMaintenanceSystem<DefaultHierarchyDomain>.ScheduleDependency(world);
-            HierarchyPropagation propagation = ParallelTransformPropagation.Schedule(
+            Hierarchy<DefaultHierarchyDomain>.Maintain(world);
+            JobHandle maintenance = default;
+            JobHandle propagation = ParallelTransformPropagation.Schedule(
                 world,
                 [root],
                 maintenance);
 
-            propagation.Handle.Complete();
+            propagation.Complete();
 
             Assert.False(world.Has<LocalTransform>(organization));
             Assert.Equal(
                 new Vector3(100, 0, 0),
-                world.Read<WorldTransform>(organization).Qvvs.Position);
+                world.ReadComponentData<WorldTransform>(organization).Qvvs.Position);
             Assert.Equal(
                 new Vector3(11, 0, 0),
-                world.Read<WorldTransform>(leaf).Qvvs.Position);
+                world.ReadComponentData<WorldTransform>(leaf).Qvvs.Position);
         });
     }
 
@@ -104,33 +101,33 @@ public sealed class ParallelTransformPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = new World(execution: new WorldJobs(JobSystem.Default));
             Entity oldRoot = CreateTransform(world, new Vector3(100, 0, 0));
             Entity newRoot = CreateTransform(world, new Vector3(10, 0, 0));
-            Entity organization = world.CreateEntity();
+            Entity organization = world.Create();
             Entity child = CreateTransform(world, new Vector3(1, 0, 0));
             Hierarchy.SetParent(world, organization, newRoot);
             Hierarchy.SetParent(world, child, oldRoot);
 
-            JobHandle writer = HierarchyJobAccess<DefaultHierarchyDomain>.ScheduleParentWrite(
-                world,
-                new DeferredReparentJob(world, child, organization));
-            HierarchyMaintenanceDependency<DefaultHierarchyDomain> maintenance =
-                HierarchyMaintenanceSystem<DefaultHierarchyDomain>.ScheduleDependency(world, writer);
+            var jobs = (WorldJobs)world.Execution!;
+            JobHandle writer = jobs.Scheduler.Schedule(
+                new DeferredReparentJob(world, child, organization), jobs.StructureWrite);
+            JobHandle maintenance = jobs.Scheduler.Schedule(new MaintainHierarchy(world),
+                jobs.StructureWrite, dependency: writer);
 
-            HierarchyPropagation propagation = ParallelTransformPropagation.Schedule(
+            JobHandle propagation = ParallelTransformPropagation.Schedule(
                 world,
                 [newRoot],
                 maintenance,
                 rootsPerPacket: 1);
-            propagation.Handle.Complete();
+            propagation.Complete();
 
             Assert.Equal(organization, Hierarchy.GetParent(world, child));
-            Assert.Empty(Hierarchy.GetChildren(world, oldRoot));
-            Assert.Equal([child], Hierarchy.GetChildren(world, organization).ToArray());
+            Assert.Empty(Children(world, oldRoot));
+            Assert.Equal([child], Children(world, organization));
             Assert.Equal(
                 new Vector3(11, 0, 0),
-                world.Read<WorldTransform>(child).Qvvs.Position);
+                world.ReadComponentData<WorldTransform>(child).Qvvs.Position);
         });
     }
 
@@ -139,32 +136,32 @@ public sealed class ParallelTransformPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var world = new World(execution: new WorldJobs(JobSystem.Default));
             Entity parent = CreateTransform(world, new Vector3(10, 0, 0));
             Entity child = CreateTransform(world, new Vector3(1, 0, 0));
             Hierarchy.SetParent(world, child, parent);
-            world.Replace(parent, new WorldTransform
+            world.Set(parent, new WorldTransform
             {
                 Qvvs = new TransformQvvs(new Vector3(10, 0, 0), Quaternion.Identity),
             });
-            HierarchyMaintenanceDependency<DefaultHierarchyDomain> maintenance =
-                HierarchyMaintenanceSystem<DefaultHierarchyDomain>.ScheduleDependency(world);
+            Hierarchy<DefaultHierarchyDomain>.Maintain(world);
+            JobHandle maintenance = default;
 
-            HierarchyPropagation propagation = ParallelTransformPropagation.Schedule(
+            JobHandle propagation = ParallelTransformPropagation.Schedule(
                 world,
                 [child],
                 maintenance);
-            propagation.Handle.Complete();
+            propagation.Complete();
 
             Assert.Equal(
                 new Vector3(11, 0, 0),
-                world.Read<WorldTransform>(child).Qvvs.Position);
+                world.ReadComponentData<WorldTransform>(child).Qvvs.Position);
         });
     }
 
     private static Entity CreateTransform(World world, Vector3 localPosition)
     {
-        Entity entity = world.CreateEntity();
+        Entity entity = world.Create();
         world.Add(entity, new LocalTransform
         {
             Value = new TransformQvvs(localPosition, Quaternion.Identity),
@@ -180,7 +177,7 @@ public sealed class ParallelTransformPropagationTests
     {
         ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
+        JobSystem.Initialize(new JobConfiguration
         {
             WorkerCount = 4,
             SafetyMode = previousSafety,
@@ -192,12 +189,21 @@ public sealed class ParallelTransformPropagationTests
         }
         finally
         {
-            JobSystem.Initialize(new JobRuntimeConfig
+            JobSystem.Initialize(new JobConfiguration
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
             });
         }
+    }
+
+    private readonly struct MaintainHierarchy(World world) : IJob
+    { public void Execute() => Hierarchy<DefaultHierarchyDomain>.Maintain(world); }
+
+    private static Entity[] Children(World world, Entity parent)
+    {
+        using ChildrenRead children = Hierarchy.GetChildren(world, parent);
+        return children.Entities.ToArray();
     }
 
     private readonly struct DeferredReparentJob : IJob
@@ -215,7 +221,7 @@ public sealed class ParallelTransformPropagationTests
 
         public void Execute()
         {
-            HierarchyJobAccess<DefaultHierarchyDomain>.SetParentDeferred(
+            Hierarchy<DefaultHierarchyDomain>.SetParentDeferred(
                 _world,
                 _child,
                 _parent);

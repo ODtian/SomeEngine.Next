@@ -52,27 +52,28 @@ public static partial class Solid
         {
             IReadOnlyList<T> items = Items();
             DevelopmentCheck.Require(items is not null, "For requires an items list.");
-            var previous = Hierarchy<ElementTree>.GetChildren(Scope.World, Scope.Entity);
-            var matched = new bool[previous.Count];
+            Entity[] previous;
+            using (ChildrenRead childRead = Hierarchy<ElementTree>.GetChildren(Scope.World, Scope.Entity)) previous = childRead.Entities.ToArray();
+            var matched = new bool[previous.Length];
             ulong nextKey = 0;
             foreach (Entity child in previous)
-                nextKey = Math.Max(nextKey, unchecked(Scope.World.Read<ElementKey>(child).Key + 1));
+                nextKey = Math.Max(nextKey, unchecked(Scope.World.ReadComponentData<ElementKey>(child).Key + 1));
 
             for (int index = 0; index < items.Count; index++)
             {
                 T item = items[index];
                 ulong key = nextKey;
                 bool found = false;
-                for (int previousIndex = 0; previousIndex < previous.Count; previousIndex++)
+                for (int previousIndex = 0; previousIndex < previous.Length; previousIndex++)
                 {
                     if (matched[previousIndex])
                         continue;
                     Entity child = previous[previousIndex];
-                    T previousItem = Scope.World.Read<ItemRow<T>>(child).Item;
+                    T previousItem = Scope.World.ReadComponentData<ItemRow<T>>(child).Item;
                     if (!EqualityComparer<T>.Default.Equals(previousItem, item))
                         continue;
                     matched[previousIndex] = true;
-                    key = Scope.World.Read<ElementKey>(child).Key;
+                    key = Scope.World.ReadComponentData<ElementKey>(child).Key;
                     found = true;
                     break;
                 }

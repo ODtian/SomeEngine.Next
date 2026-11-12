@@ -1,121 +1,115 @@
-using SomeEngine.ECS.Systems;
-using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
+using SomeEngine.Job;
 
 namespace SomeEngine.Render.Systems;
 
-/// <summary>Collects independent source ranges before merging at the existing extraction boundary.</summary>
 public interface IRenderExtractionRangeSystem : IRenderExtractionSystem
 {
     IRenderExtractionCollector CreateRangeCollector();
-
     bool MergeRangeCollector(IRenderExtractionCollector collector, RenderExtractionContext context);
 }
 
-/// <summary>Holds one range's values until its extraction system merges them.</summary>
 public interface IRenderExtractionCollector : IDisposable
 {
     void Reset();
-
-    void Collect(ReadOnlyQueryPacket packet, uint lastSystemVersion, bool fullCollection);
+    void Collect(QueryChunk chunk, ulong since, bool fullCollection);
 }
 
 public sealed partial class RenderExtractionSystems
 {
-    private readonly List<RangeCollection> _rangeCollections = [];
-    private readonly HashSet<Entity> _fullCollectionSources = [];
+    private RangeCollection[] _rangeCollections = [];
 
     private sealed class RangeCollection : IDisposable
     {
         internal readonly IRenderExtractionCollector?[] Collectors;
-        internal bool Selected;
+        internal QueryChunk Chunk;
+        internal bool FullCollection;
 
         internal RangeCollection(List<IRenderExtractionSystem> systems)
         {
             Collectors = new IRenderExtractionCollector?[systems.Count];
             try
             {
-                for (int index = 0; index < systems.Count; index++)
-                    if (systems[index] is IRenderExtractionRangeSystem system)
-                        Collectors[index] = system.CreateRangeCollector();
+                for (int i = 0; i < systems.Count; i++)
+                    if (systems[i] is IRenderExtractionRangeSystem system) Collectors[i] = system.CreateRangeCollector();
             }
-            catch
-            {
-                Dispose();
-                throw;
-            }
+            catch { Dispose(); throw; }
         }
-
         internal void Reset()
         {
-            Selected = false;
+            Chunk = default; FullCollection = false;
             foreach (IRenderExtractionCollector? collector in Collectors) collector?.Reset();
         }
-
         public void Dispose()
         {
             foreach (IRenderExtractionCollector? collector in Collectors) collector?.Dispose();
         }
     }
 
-    private readonly struct CollectRangesJob(RenderExtractionSystems systems) : IReadOnlyQueryPacketJob
+    private readonly struct CollectRangesJob(RenderExtractionSystems systems) : IRangeWork<RangeCollection>
     {
-        public void Execute(in ReadOnlyQueryPacketContext context, ReadOnlyQueryPacket packet)
+        public void Execute(in RangeCollection collection)
         {
-            RangeCollection collection = systems._rangeCollections[context.PacketIndex];
-            bool full = systems._candidateFullReconciliation;
-            if (full && !systems._fullCollectionSources.Contains(packet.Entities[0])) return;
-            collection.Selected = true;
             foreach (IRenderExtractionCollector? collector in collection.Collectors)
-                collector?.Collect(packet, context.LastSystemVersion, full);
+                collector?.Collect(collection.Chunk, systems._lastSystemVersion, collection.FullCollection);
         }
     }
 
-    private void CollectRanges(scoped QueryCursor query)
+    private bool IncludesChangedSource(QueryChunk chunk)
+    {
+        if (_mainWorld is null) return true;
+        foreach (var entity in chunk.Entities)
+            if (_sourceChanges.Contains(entity)) return true;
+        return false;
+    }
+
+    private void CollectRanges(scoped QueryScope source, WorldExecution? execution)
     {
         if (!_systems.Exists(static system => system is IRenderExtractionRangeSystem))
         {
-            if (_candidateFullReconciliation) Collect(query);
-            else CollectDelta(query);
+            foreach (QueryChunk chunk in source)
+            {
+                if (_candidateFullReconciliation && IncludesChangedSource(chunk))
+                {
+                    _context.IncludeSources(chunk.Entities);
+                    foreach (IRenderExtractionSystem system in _systems) system.Collect(chunk);
+                }
+                else
+                    foreach (IRenderExtractionSystem system in _systems)
+                        if (system.CollectChanges(chunk, _lastSystemVersion, _context)) _changedSystems.Add(system);
+            }
             return;
         }
-
-        using ReadOnlyQueryPacketPlan ranges = ReadOnlyQueryPacketJobs.CreatePlan(query);
-        while (_rangeCollections.Count < ranges.PacketCount) _rangeCollections.Add(new(_systems));
-        _fullCollectionSources.Clear();
-        if (_candidateFullReconciliation)
-            foreach (QueryChunkView chunk in query.ChangedChunks(_candidateSourceChanges!))
-            {
-                _context.IncludeSources(chunk.Entities);
-                foreach (Entity source in chunk.Entities) _fullCollectionSources.Add(source);
-            }
-
+        int count = 0;
+        foreach (QueryChunk chunk in source)
+        {
+            if (count == _rangeCollections.Length) Array.Resize(ref _rangeCollections, Math.Max(4, count * 2));
+            RangeCollection collection = _rangeCollections[count] ??= new(_systems);
+            collection.Chunk = chunk;
+            collection.FullCollection = _candidateFullReconciliation && IncludesChangedSource(chunk);
+            if (collection.FullCollection) _context.IncludeSources(chunk.Entities);
+            count++;
+        }
         try
         {
-            ranges.ExecuteParallel(new CollectRangesJob(this));
-            int rangeIndex = 0;
-            foreach (QueryChunkView chunk in query.Chunks)
+            var work = new CollectRangesJob(this);
+            if (execution is not null) execution.ExecuteRanges(_rangeCollections, count, work);
+            else for (int range = 0; range < count; range++) work.Execute(in _rangeCollections[range]);
+            for (int range = 0; range < count; range++)
             {
-                if (chunk.Count == 0) continue;
-                RangeCollection collection = _rangeCollections[rangeIndex++];
-                if (!collection.Selected) continue;
-                for (int index = 0; index < _systems.Count; index++)
+                RangeCollection collection = _rangeCollections[range];
+                for (int i = 0; i < _systems.Count; i++)
                 {
-                    IRenderExtractionSystem system = _systems[index];
-                    if (system is IRenderExtractionRangeSystem rangeSystem)
+                    IRenderExtractionSystem system = _systems[i];
+                    if (system is IRenderExtractionRangeSystem ranged)
                     {
-                        if (rangeSystem.MergeRangeCollector(collection.Collectors[index]!, _context))
-                            _changedSystems.Add(system);
+                        if (ranged.MergeRangeCollector(collection.Collectors[i]!, _context)) _changedSystems.Add(system);
                     }
-                    else if (_candidateFullReconciliation) system.Collect(chunk);
-                    else if (system.CollectChanges(chunk, _context)) _changedSystems.Add(system);
+                    else if (collection.FullCollection) system.Collect(collection.Chunk);
+                    else if (system.CollectChanges(collection.Chunk, _lastSystemVersion, _context)) _changedSystems.Add(system);
                 }
             }
         }
-        finally
-        {
-            for (int index = 0; index < ranges.PacketCount; index++) _rangeCollections[index].Reset();
-            _fullCollectionSources.Clear();
-        }
+        finally { for (int range = 0; range < count; range++) _rangeCollections[range].Reset(); }
     }
 }

@@ -6,7 +6,7 @@ public sealed class CompletionStateTests
 
     public CompletionStateTests()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
     }
 
     [Fact]
@@ -34,7 +34,7 @@ public sealed class CompletionStateTests
     [Fact]
     public void RepeatedCompletionObservesTheSameFailure()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         var failure = new ApplicationException();
         JobHandle handle = scheduler.Schedule(new FailingJob(failure));
 
@@ -50,7 +50,7 @@ public sealed class CompletionStateTests
     [Fact]
     public async Task ConcurrentCompletionWaitersObserveTheSameFailure()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         using var firstEntered = new ManualResetEventSlim();
         using var secondEntered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();

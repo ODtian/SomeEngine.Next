@@ -3,7 +3,7 @@ using SomeEngine.ECS;
 namespace SomeEngine.Layout;
 
 /// <summary>Caller-written zero-based cell coordinates and positive row and column spans.</summary>
-public struct GridCell : IComponent
+public struct GridCell : IComponent, ITrackedComponent
 {
     public int Row;
     public int Column;

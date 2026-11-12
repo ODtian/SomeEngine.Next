@@ -6,12 +6,12 @@ using Xunit;
 
 namespace SomeEngine.ECS.Tests;
 
-public struct SortLow : SomeEngine.ECS.IComponent
+public struct SortLow : SomeEngine.ECS.IAddedComponent
 {
     public int Value;
 }
 
-public struct SortHigh : SomeEngine.ECS.IComponent
+public struct SortHigh : SomeEngine.ECS.IAddedComponent
 {
     public int Value;
 }
@@ -26,7 +26,7 @@ public class WorldTests
     public void CreateEntity_ReturnsAlive()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.Create();
         Assert.True(world.IsAlive(e));
     }
 
@@ -35,7 +35,7 @@ public class WorldTests
     {
         var world = new World();
         var pos = new Position { X = 1.5f, Y = 2.5f };
-        var e = world.CreateEntity(pos);
+        var e = world.Create(pos);
         Assert.True(world.Has<Position>(e));
         Assert.Equal(1.5f, world.Read<Position>(e).X);
         Assert.Equal(2.5f, world.Read<Position>(e).Y);
@@ -60,13 +60,15 @@ public class WorldTests
         using var world = new World();
         var first = world.Spawn(new SortBundle { Low = new SortLow { Value = 1 }, High = new SortHigh { Value = 2 } });
         var second = world.Spawn(new SortBundle { Low = new SortLow { Value = 4 }, High = new SortHigh { Value = 3 } });
-        var query = world.Query(world.QueryDefinition().Read<SortLow>().Read<SortHigh>());
+        var query = world.Query(new QueryDescription().WithStored<SortLow>().WithStored<SortHigh>());
         var values = new List<(int, int)>();
-        world.ExecuteQuery(query, cursor =>
         {
-            foreach (var row in cursor.Rows)
-                values.Add((row.Read<SortLow>().Value, row.Read<SortHigh>().Value));
-        });
+            using QueryScope cursor = (query).OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                values.Add((rowChunk.Read<SortLow>()[row].Value, rowChunk.Read<SortHigh>()[row].Value));
+
+        };
         Assert.Equal(new[] { (1, 2), (4, 3) }, values);
     }
 
@@ -90,8 +92,8 @@ public class WorldTests
     public void DestroyEntity_MakesNotAlive()
     {
         var world = new World();
-        var e = world.CreateEntity();
-        world.DestroyEntity(e);
+        var e = world.Create();
+        world.Destroy(e);
         Assert.False(world.IsAlive(e));
     }
 
@@ -99,9 +101,9 @@ public class WorldTests
     public void DestroyEntity_StaleEntity_Throws()
     {
         var world = new World();
-        var e = world.CreateEntity();
-        world.DestroyEntity(e);
-        Assert.Throws<InvalidOperationException>(() => world.DestroyEntity(e));
+        var e = world.Create();
+        world.Destroy(e);
+        Assert.Throws<ArgumentException>(() => world.Destroy(e));
     }
 
     [Fact]
@@ -109,10 +111,10 @@ public class WorldTests
     {
         var world = new World();
         Assert.Equal(0, world.EntityCount);
-        var e1 = world.CreateEntity();
-        var e2 = world.CreateEntity();
+        var e1 = world.Create();
+        var e2 = world.Create();
         Assert.Equal(2, world.EntityCount);
-        world.DestroyEntity(e1);
+        world.Destroy(e1);
         Assert.Equal(1, world.EntityCount);
     }
 
@@ -123,12 +125,12 @@ public class WorldTests
         var entities = new List<Entity>();
 
         for (int i = 0; i < 100; i++)
-            entities.Add(world.CreateEntity());
+            entities.Add(world.Create());
 
         Assert.Equal(100, world.EntityCount);
 
         for (int i = 0; i < 30; i++)
-            world.DestroyEntity(entities[i]);
+            world.Destroy(entities[i]);
 
         Assert.Equal(70, world.EntityCount);
     }
@@ -141,7 +143,7 @@ public class WorldTests
     public void Add_Component_HasAndGet()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.Create();
         world.Add(e, new Position { X = 5, Y = 10 });
         Assert.True(world.Has<Position>(e));
         Assert.Equal(5f, world.Read<Position>(e).X);
@@ -151,9 +153,8 @@ public class WorldTests
     public void Add_Duplicate_IsIdempotent()
     {
         var world = new World();
-        var e = world.CreateEntity(new Position { X = 1, Y = 2 });
-        Assert.Throws<InvalidOperationException>(() =>
-            world.Add(e, new Position { X = 3, Y = 4 }));
+        var e = world.Create(new Position { X = 1, Y = 2 });
+        Assert.Throws<InvalidOperationException>(() => world.Add(e, new Position { X = 3, Y = 4 }));
         Assert.Equal(1f, world.Read<Position>(e).X);
         Assert.Equal(2f, world.Read<Position>(e).Y);
     }
@@ -162,7 +163,7 @@ public class WorldTests
     public void Remove_Component_HasBecomesFalse()
     {
         var world = new World();
-        var e = world.CreateEntity(new Position { X = 1, Y = 2 });
+        var e = world.Create(new Position { X = 1, Y = 2 });
         world.Remove<Position>(e);
         Assert.False(world.Has<Position>(e));
     }
@@ -171,15 +172,17 @@ public class WorldTests
     public void Remove_NonExistent_Throws()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.Create();
         Assert.Throws<InvalidOperationException>(() => world.Remove<Position>(e));
+        Assert.False(world.Has<Position>(e));
+        Assert.True(world.IsAlive(e));
     }
 
     [Fact]
     public void Add_Remove_Add_Cycle()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.Create();
         world.Add(e, new Position { X = 1, Y = 2 });
         world.Remove<Position>(e);
         world.Add(e, new Position { X = 3, Y = 4 });
@@ -190,8 +193,8 @@ public class WorldTests
     public void AddTag_HasTag()
     {
         var world = new World();
-        var e = world.CreateEntity();
-        world.AddTag<PlayerTag>(e);
+        var e = world.Create();
+        world.Add(e, default(PlayerTag));
         Assert.True(world.Has<PlayerTag>(e));
     }
 
@@ -199,9 +202,9 @@ public class WorldTests
     public void RemoveTag_HasBecomesFalse()
     {
         var world = new World();
-        var e = world.CreateEntity();
-        world.AddTag<PlayerTag>(e);
-        world.RemoveTag<PlayerTag>(e);
+        var e = world.Create();
+        world.Add(e, default(PlayerTag));
+        world.Remove<PlayerTag>(e);
         Assert.False(world.Has<PlayerTag>(e));
     }
 
@@ -209,9 +212,9 @@ public class WorldTests
     public void AddTag_Duplicate_IsIdempotent()
     {
         var world = new World();
-        var e = world.CreateEntity();
-        world.AddTag<PlayerTag>(e);
-        Assert.Throws<InvalidOperationException>(() => world.AddTag<PlayerTag>(e));
+        var e = world.Create();
+        world.Add(e, default(PlayerTag));
+        Assert.Throws<InvalidOperationException>(() => world.Add(e, default(PlayerTag)));
         Assert.True(world.Has<PlayerTag>(e));
     }
 
@@ -223,13 +226,15 @@ public class WorldTests
     public void ExecuteQuery_WriteRef_ModifiesInPlace()
     {
         var world = new World();
-        var e = world.CreateEntity(new Position { X = 1, Y = 2 });
-        var query = world.Query(world.QueryDefinition().ReadWrite<Position>());
-        world.ExecuteQuery(query, cursor =>
+        var e = world.Create(new Position { X = 1, Y = 2 });
+        var query = world.Query(new QueryDescription().WithStored<Position>());
         {
-            foreach (var row in cursor.Rows)
-                row.ReadWrite<Position>().X = 99;
-        });
+            using QueryScope cursor = (query).Open();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                rowChunk.Write<Position>(row).X = 99;
+
+        };
         Assert.Equal(99f, world.Read<Position>(e).X);
     }
 
@@ -237,8 +242,8 @@ public class WorldTests
     public void Set_UpdatesValue()
     {
         var world = new World();
-        var e = world.CreateEntity(new Position { X = 1, Y = 2 });
-        world.Replace(e, new Position { X = 50, Y = 60 });
+        var e = world.Create(new Position { X = 1, Y = 2 });
+        world.Set(e, new Position { X = 50, Y = 60 });
         Assert.Equal(50f, world.Read<Position>(e).X);
         Assert.Equal(60f, world.Read<Position>(e).Y);
     }
@@ -247,7 +252,7 @@ public class WorldTests
     public void Read_ReturnsCopy()
     {
         var world = new World();
-        var e = world.CreateEntity(new Position { X = 1, Y = 2 });
+        var e = world.Create(new Position { X = 1, Y = 2 });
         var copy = world.Read<Position>(e);
         copy.X = 999;
         Assert.Equal(1f, world.Read<Position>(e).X); // 不受影响
@@ -257,8 +262,8 @@ public class WorldTests
     public void Read_NonExistent_Throws()
     {
         var world = new World();
-        var e = world.CreateEntity();
-        Assert.Throws<InvalidOperationException>(() => world.Read<Position>(e));
+        var e = world.Create();
+        Assert.Throws<ArgumentException>(() => world.Read<Position>(e));
     }
 
     // ════════════════════════════════════════════════
@@ -269,7 +274,7 @@ public class WorldTests
     public void AddVelocity_PositionPreserved()
     {
         var world = new World();
-        var e = world.CreateEntity(new Position { X = 42, Y = 84 });
+        var e = world.Create(new Position { X = 42, Y = 84 });
         world.Add(e, new Velocity { X = 5, Y = 6 });
         Assert.Equal(42f, world.Read<Position>(e).X);
         Assert.Equal(84f, world.Read<Position>(e).Y);
@@ -294,7 +299,7 @@ public class WorldTests
     public void ChainedAdd_AllDataPreserved()
     {
         var world = new World();
-        var e = world.CreateEntity(new Position { X = 1, Y = 2 });
+        var e = world.Create(new Position { X = 1, Y = 2 });
         world.Add(e, new Velocity { X = 3, Y = 4 });
         world.Add(e, new Health { Value = 100 });
         Assert.Equal(1f, world.Read<Position>(e).X);
@@ -306,10 +311,10 @@ public class WorldTests
     public void DestroyMiddleEntity_OtherEntitiesIntact()
     {
         var world = new World();
-        var e1 = world.CreateEntity(new Position { X = 1, Y = 1 });
-        var e2 = world.CreateEntity(new Position { X = 2, Y = 2 });
-        var e3 = world.CreateEntity(new Position { X = 3, Y = 3 });
-        world.DestroyEntity(e2);
+        var e1 = world.Create(new Position { X = 1, Y = 1 });
+        var e2 = world.Create(new Position { X = 2, Y = 2 });
+        var e3 = world.Create(new Position { X = 3, Y = 3 });
+        world.Destroy(e2);
         Assert.Equal(1f, world.Read<Position>(e1).X);
         Assert.Equal(3f, world.Read<Position>(e3).X);
     }
@@ -322,8 +327,8 @@ public class WorldTests
     public void AddTag_DoesNotAffectComponentData()
     {
         var world = new World();
-        var e = world.CreateEntity(new Position { X = 10, Y = 20 });
-        world.AddTag<PlayerTag>(e);
+        var e = world.Create(new Position { X = 10, Y = 20 });
+        world.Add(e, default(PlayerTag));
         Assert.Equal(10f, world.Read<Position>(e).X);
         Assert.True(world.Has<PlayerTag>(e));
     }
@@ -342,7 +347,7 @@ public class WorldTests
         var entities = new List<Entity>();
         for (int i = 0; i < entityCount; i++) // 需要超过 capacity
         {
-            entities.Add(world.CreateEntity(new Position { X = i, Y = i * 2 }));
+            entities.Add(world.Create(new Position { X = i, Y = i * 2 }));
         }
         Assert.Equal(entityCount, world.EntityCount);
         // 验证最后一个的数据
@@ -355,14 +360,14 @@ public class WorldTests
         var world = new World();
         var entities = new List<Entity>();
         for (int i = 0; i < 5; i++)
-            entities.Add(world.CreateEntity(new Position { X = i, Y = i }));
+            entities.Add(world.Create(new Position { X = i, Y = i }));
 
         for (int i = 0; i < 5; i++)
-            world.DestroyEntity(entities[i]);
+            world.Destroy(entities[i]);
 
         Assert.Equal(0, world.EntityCount);
         // 不崩溃，能继续创建
-        var e = world.CreateEntity(new Position { X = 99, Y = 99 });
+        var e = world.Create(new Position { X = 99, Y = 99 });
         Assert.Equal(99f, world.Read<Position>(e).X);
     }
 
@@ -372,16 +377,16 @@ public class WorldTests
         var world = new World();
         var entities = new List<Entity>();
 
-        entities.Add(world.CreateEntity(new Position { X = 0, Y = 0 }));
+        entities.Add(world.Create(new Position { X = 0, Y = 0 }));
 
         const int maxChunkCapacity = 2_049;
 
         for (int i = 1; i <= maxChunkCapacity; i++)
-            entities.Add(world.CreateEntity(new Position { X = i, Y = i * 2 }));
+            entities.Add(world.Create(new Position { X = i, Y = i * 2 }));
 
-        world.DestroyEntity(entities[maxChunkCapacity]);
+        world.Destroy(entities[maxChunkCapacity]);
 
-        var recreated = world.CreateEntity(new Position { X = 2048, Y = 4096 });
+        var recreated = world.Create(new Position { X = 2048, Y = 4096 });
         Assert.True(world.IsAlive(recreated));
         Assert.Equal(2048f, world.Read<Position>(recreated).X);
     }
@@ -394,51 +399,55 @@ public class WorldTests
     public void IterationGuard_Add_Throws()
     {
         var world = new World();
-        var e = world.CreateEntity(new Velocity());
-        var query = world.Query(world.QueryDefinition().Read<Velocity>());
-        world.ExecuteQuery(query, _ =>
+        var e = world.Create(new Velocity());
+        var query = world.Query(new QueryDescription().WithStored<Velocity>());
         {
+            using QueryScope _ = (query).OpenRead();
             Assert.Throws<InvalidOperationException>(() =>
                 world.Add(e, new Position { X = 1, Y = 2 }));
-        });
+
+        };
     }
 
     [Fact]
     public void IterationGuard_Remove_Throws()
     {
         var world = new World();
-        var e = world.CreateEntity(new Position { X = 1, Y = 2 });
-        var query = world.Query(world.QueryDefinition().Read<Position>());
-        world.ExecuteQuery(query, _ =>
+        var e = world.Create(new Position { X = 1, Y = 2 });
+        var query = world.Query(new QueryDescription().WithStored<Position>());
         {
+            using QueryScope _ = (query).OpenRead();
             Assert.Throws<InvalidOperationException>(() => world.Remove<Position>(e));
-        });
+
+        };
     }
 
     [Fact]
     public void IterationGuard_Destroy_Throws()
     {
         var world = new World();
-        var e = world.CreateEntity(new Position());
-        var query = world.Query(world.QueryDefinition().Read<Position>());
-        world.ExecuteQuery(query, _ =>
+        var e = world.Create(new Position());
+        var query = world.Query(new QueryDescription().WithStored<Position>());
         {
-            Assert.Throws<InvalidOperationException>(() => world.DestroyEntity(e));
-        });
+            using QueryScope _ = (query).OpenRead();
+            Assert.Throws<InvalidOperationException>(() => world.Destroy(e));
+
+        };
     }
 
     [Fact]
     public void IterationGuard_AfterExecuteQuery_StructuralChangesWorkAgain()
     {
         var world = new World();
-        var e = world.CreateEntity(new Velocity());
-        var query = world.Query(world.QueryDefinition().Read<Velocity>());
+        var e = world.Create(new Velocity());
+        var query = world.Query(new QueryDescription().WithStored<Velocity>());
 
-        world.ExecuteQuery(query, _ =>
         {
+            using QueryScope _ = (query).OpenRead();
             Assert.Throws<InvalidOperationException>(() =>
                 world.Add(e, new Position { X = 1, Y = 2 }));
-        });
+
+        };
 
         world.Add(e, new Position { X = 3, Y = 4 });
         Assert.True(world.Has<Position>(e));
@@ -446,7 +455,7 @@ public class WorldTests
         world.Remove<Position>(e);
         Assert.False(world.Has<Position>(e));
 
-        world.DestroyEntity(e);
+        world.Destroy(e);
         Assert.False(world.IsAlive(e));
     }
 
@@ -462,13 +471,13 @@ public class WorldTests
 
         for (int i = 0; i < 1000; i++)
         {
-            entities.Add(world.CreateEntity(new Position { X = i, Y = -i }));
+            entities.Add(world.Create(new Position { X = i, Y = -i }));
         }
 
         // 销毁偶数 entity
         for (int i = 0; i < 1000; i += 2)
         {
-            world.DestroyEntity(entities[i]);
+            world.Destroy(entities[i]);
         }
 
         Assert.Equal(500, world.EntityCount);
@@ -485,12 +494,12 @@ public class WorldTests
     public void SwapRemove_MovedEntity_StillAccessible()
     {
         var world = new World();
-        var e1 = world.CreateEntity(new Position { X = 10, Y = 20 });
-        var e2 = world.CreateEntity(new Position { X = 30, Y = 40 });
-        var e3 = world.CreateEntity(new Position { X = 50, Y = 60 });
+        var e1 = world.Create(new Position { X = 10, Y = 20 });
+        var e2 = world.Create(new Position { X = 30, Y = 40 });
+        var e3 = world.Create(new Position { X = 50, Y = 60 });
 
         // Destroy e1 → e3 被 swap 到 e1 的位置（如果在同一 chunk）
-        world.DestroyEntity(e1);
+        world.Destroy(e1);
 
         // e2 和 e3 仍然可以访问
         Assert.Equal(30f, world.Read<Position>(e2).X);
@@ -501,8 +510,8 @@ public class WorldTests
     public void Has_DeadEntity_ReturnsFalse()
     {
         var world = new World();
-        var e = world.CreateEntity(new Position { X = 1, Y = 2 });
-        world.DestroyEntity(e);
+        var e = world.Create(new Position { X = 1, Y = 2 });
+        world.Destroy(e);
         Assert.False(world.Has<Position>(e));
     }
 
@@ -531,8 +540,8 @@ public class WorldTests
     {
         var w1 = new World();
         var w2 = new World();
-        var e1 = w1.CreateEntity(new Position { X = 1, Y = 2 });
-        var e2 = w2.CreateEntity(new Position { X = 3, Y = 4 });
+        var e1 = w1.Create(new Position { X = 1, Y = 2 });
+        var e2 = w2.Create(new Position { X = 3, Y = 4 });
         Assert.Equal(1f, w1.Read<Position>(e1).X);
         Assert.Equal(3f, w2.Read<Position>(e2).X);
     }

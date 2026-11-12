@@ -2,7 +2,6 @@ using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Layout;
 using SomeEngine.Views;
@@ -22,7 +21,7 @@ public sealed partial class PointerTests
     public void PointerInputsRequireALiveCanvas(int input)
     {
         using var world = new World();
-        Entity entity = world.CreateEntity();
+        Entity entity = world.Create();
         Assert.Throws<InvalidOperationException>(() =>
         {
             switch (input)
@@ -74,44 +73,39 @@ public sealed partial class PointerTests
     public void InputStreamsStayWithinTheirCanvases(bool nested)
     {
         using var frames = new PointerFrames();
-        Entity otherCanvas = frames.World.CreateEntity(new Canvas { Size = new Size(400, 300), Scale = 2 });
+        Entity otherCanvas = frames.World.Create(new Canvas { Size = new Size(400, 300), Scale = 2 });
         if (nested)
             Hierarchy<ElementTree>.SetParent(frames.World, otherCanvas, frames.Canvas);
         Entity first = Views.Views.Spawn(frames.World, frames.Canvas, new SingleButton());
         Entity second = Views.Views.Spawn(frames.World, otherCanvas, new SingleButton());
         frames.Frame();
-        Entity firstContainer = Hierarchy<ElementTree>.GetChildren(frames.World, first)[0];
-        Entity firstButton = Hierarchy<ElementTree>.GetChildren(frames.World, firstContainer)[0];
-        Entity secondContainer = Hierarchy<ElementTree>.GetChildren(frames.World, second)[0];
-        Entity secondButton = Hierarchy<ElementTree>.GetChildren(frames.World, secondContainer)[0];
+        Entity firstContainer = ElementChildren.Read(frames.World, first)[0];
+        Entity firstButton = ElementChildren.Read(frames.World, firstContainer)[0];
+        Entity secondContainer = ElementChildren.Read(frames.World, second)[0];
+        Entity secondButton = ElementChildren.Read(frames.World, secondContainer)[0];
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 10));
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Assert.Equal(1u, frames.World.Read<Clicks>(firstButton).Count);
-        Assert.Equal(0u, frames.World.Read<Clicks>(secondButton).Count);
+        Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(firstButton).Count);
+        Assert.Equal(0u, frames.World.ReadComponentData<Clicks>(secondButton).Count);
 
         Pointer.Move(frames.World, otherCanvas, new Vector2(10, 10));
         Pointer.Press(frames.World, otherCanvas, PointerButton.Primary);
         Pointer.Release(frames.World, otherCanvas, PointerButton.Primary);
         frames.Frame();
-        Assert.Equal(1u, frames.World.Read<Clicks>(firstButton).Count);
-        Assert.Equal(1u, frames.World.Read<Clicks>(secondButton).Count);
-        QueryHandle capture = frames.World.Query(frames.World.QueryDefinition().All<InputCapture>());
+        Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(firstButton).Count);
+        Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(secondButton).Count);
+        Query capture = frames.World.Query(new QueryDescription().With<InputCapture>());
         try
         {
-            int count = 0;
-            frames.World.ExecuteQuery(capture, ref count, static (rows, ref total) =>
-            {
-                foreach (var row in rows.Rows)
-                    total++;
-            });
+            int count = capture.Count;
             Assert.Equal(1, count);
         }
         finally
         {
-            frames.World.ReleaseQuery(capture);
+
         }
     }
 
@@ -121,26 +115,26 @@ public sealed partial class PointerTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new MovingButton(0));
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity button = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        Entity button = ElementChildren.Read(frames.World, container)[0];
 
-        frames.World.Replace(root, new MovingButton(150));
+        frames.World.Set(root, new MovingButton(150));
         Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 10));
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Assert.Equal(1u, frames.World.Read<Clicks>(button).Count);
-        Assert.Equal(150, frames.World.Read<LayoutRect>(button).Value.X);
+        Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(button).Count);
+        Assert.Equal(150, frames.World.ReadComponentData<LayoutRect>(button).Value.X);
 
         frames.Frame();
-        Assert.False(frames.World.Read<Hover>(button).Hovered);
-        Assert.False(frames.World.Read<Hover>(button).Within);
+        Assert.False(frames.World.ReadComponentData<Hover>(button).Hovered);
+        Assert.False(frames.World.ReadComponentData<Hover>(button).Within);
         Pointer.Move(frames.World, frames.Canvas, new Vector2(160, 10));
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Assert.Equal(2u, frames.World.Read<Clicks>(button).Count);
-        Assert.True(frames.World.Read<Hover>(button).Within);
+        Assert.Equal(2u, frames.World.ReadComponentData<Clicks>(button).Count);
+        Assert.True(frames.World.ReadComponentData<Hover>(button).Within);
     }
 
     [Fact]
@@ -149,24 +143,24 @@ public sealed partial class PointerTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new NestedButtons());
         frames.Frame();
-        Entity parent = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        var children = Hierarchy<ElementTree>.GetChildren(frames.World, parent);
+        Entity parent = ElementChildren.Read(frames.World, root)[0];
+        var children = ElementChildren.Read(frames.World, parent);
         Entity branch = children[1];
-        Entity button = Hierarchy<ElementTree>.GetChildren(frames.World, branch)[0];
+        Entity button = ElementChildren.Read(frames.World, branch)[0];
         Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 10));
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
 
-        Assert.Equal(1u, frames.World.Read<Clicks>(button).Count);
-        Assert.Equal(1u, frames.World.Read<Clicks>(parent).Count);
-        Assert.Equal(1u, frames.World.Read<Clicks>(branch).Count);
-        Assert.Equal(0u, frames.World.Read<Clicks>(children[0]).Count);
-        Assert.True(frames.World.Read<Hover>(button).Hovered);
-        Assert.False(frames.World.Read<Hover>(parent).Hovered);
-        Assert.False(frames.World.Read<Hover>(branch).Hovered);
-        Assert.True(frames.World.Read<Hover>(parent).Within);
-        Assert.True(frames.World.Read<Hover>(branch).Within);
+        Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(button).Count);
+        Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(parent).Count);
+        Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(branch).Count);
+        Assert.Equal(0u, frames.World.ReadComponentData<Clicks>(children[0]).Count);
+        Assert.True(frames.World.ReadComponentData<Hover>(button).Hovered);
+        Assert.False(frames.World.ReadComponentData<Hover>(parent).Hovered);
+        Assert.False(frames.World.ReadComponentData<Hover>(branch).Hovered);
+        Assert.True(frames.World.ReadComponentData<Hover>(parent).Within);
+        Assert.True(frames.World.ReadComponentData<Hover>(branch).Within);
     }
 
     [Theory]
@@ -179,9 +173,9 @@ public sealed partial class PointerTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new NestedButtons());
         frames.Frame();
-        Entity parent = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity branch = Hierarchy<ElementTree>.GetChildren(frames.World, parent)[1];
-        Entity button = Hierarchy<ElementTree>.GetChildren(frames.World, branch)[0];
+        Entity parent = ElementChildren.Read(frames.World, root)[0];
+        Entity branch = ElementChildren.Read(frames.World, parent)[1];
+        Entity button = ElementChildren.Read(frames.World, branch)[0];
         Entity[] path = [button, branch, parent];
         Entity stop = path[stopIndex];
         frames.World.Add(stop, new StopsPointer());
@@ -193,9 +187,9 @@ public sealed partial class PointerTests
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
 
-        Assert.Equal(1u, frames.World.Read<Clicks>(button).Count);
-        Assert.Equal(branchClicks, frames.World.Read<Clicks>(branch).Count);
-        Assert.Equal(parentClicks, frames.World.Read<Clicks>(parent).Count);
+        Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(button).Count);
+        Assert.Equal(branchClicks, frames.World.ReadComponentData<Clicks>(branch).Count);
+        Assert.Equal(parentClicks, frames.World.ReadComponentData<Clicks>(parent).Count);
     }
 
     [Fact]
@@ -204,19 +198,19 @@ public sealed partial class PointerTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new CompositionButtonScene());
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity button = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        Entity button = ElementChildren.Read(frames.World, container)[0];
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(40, 20));
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
 
-        Assert.True(frames.World.Read<Hover>(button).Hovered);
-        Assert.Equal(1u, frames.World.Read<Clicks>(button).Count);
+        Assert.True(frames.World.ReadComponentData<Hover>(button).Hovered);
+        Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(button).Count);
         Pointer.Move(frames.World, frames.Canvas, new Vector2(300, 200));
         frames.Frame();
-        Assert.False(frames.World.Read<Hover>(button).Hovered);
+        Assert.False(frames.World.ReadComponentData<Hover>(button).Hovered);
     }
 
     [Theory]
@@ -235,31 +229,31 @@ public sealed partial class PointerTests
         using var frames = new PointerFrames();
         Entity outerRoot = Views.Views.Spawn(frames.World, frames.Canvas, new NestedButtons());
         frames.Frame();
-        Entity outerCard = Hierarchy<ElementTree>.GetChildren(frames.World, outerRoot)[0];
-        Entity outerBranch = Hierarchy<ElementTree>.GetChildren(frames.World, outerCard)[1];
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(400, 300) });
+        Entity outerCard = ElementChildren.Read(frames.World, outerRoot)[0];
+        Entity outerBranch = ElementChildren.Read(frames.World, outerCard)[1];
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(400, 300) });
         frames.World.Add(canvas, new Hover());
         Hierarchy<ElementTree>.SetParent(frames.World, canvas, outerBranch);
         Entity root = Views.Views.Spawn(frames.World, canvas, new NestedButtons());
         frames.Frame();
-        Entity card = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity branch = Hierarchy<ElementTree>.GetChildren(frames.World, card)[1];
-        Entity button = Hierarchy<ElementTree>.GetChildren(frames.World, branch)[0];
+        Entity card = ElementChildren.Read(frames.World, root)[0];
+        Entity branch = ElementChildren.Read(frames.World, card)[1];
+        Entity button = ElementChildren.Read(frames.World, branch)[0];
 
         Pointer.Move(frames.World, canvas, new Vector2(10, 10));
         Pointer.Press(frames.World, canvas, PointerButton.Primary);
         Pointer.Release(frames.World, canvas, PointerButton.Primary);
         frames.Frame();
 
-        Assert.Equal(1u, frames.World.Read<Clicks>(button).Count);
-        Assert.Equal(1u, frames.World.Read<Clicks>(branch).Count);
-        Assert.Equal(1u, frames.World.Read<Clicks>(card).Count);
-        Assert.True(frames.World.Read<Hover>(canvas).Within);
-        Assert.True(frames.World.Read<Hover>(card).Within);
-        Assert.Equal(0u, frames.World.Read<Clicks>(outerBranch).Count);
-        Assert.Equal(0u, frames.World.Read<Clicks>(outerCard).Count);
-        Assert.Equal(default, frames.World.Read<Hover>(outerBranch));
-        Assert.Equal(default, frames.World.Read<Hover>(outerCard));
+        Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(button).Count);
+        Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(branch).Count);
+        Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(card).Count);
+        Assert.True(frames.World.ReadComponentData<Hover>(canvas).Within);
+        Assert.True(frames.World.ReadComponentData<Hover>(card).Within);
+        Assert.Equal(0u, frames.World.ReadComponentData<Clicks>(outerBranch).Count);
+        Assert.Equal(0u, frames.World.ReadComponentData<Clicks>(outerCard).Count);
+        Assert.Equal(default, frames.World.ReadComponentData<Hover>(outerBranch));
+        Assert.Equal(default, frames.World.ReadComponentData<Hover>(outerCard));
     }
 
     [Theory]
@@ -271,8 +265,8 @@ public sealed partial class PointerTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new SeparatedButtons());
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        var buttons = Hierarchy<ElementTree>.GetChildren(frames.World, container);
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        var buttons = ElementChildren.Read(frames.World, container);
         Entity left = buttons[0];
         Entity right = buttons[1];
 
@@ -282,19 +276,19 @@ public sealed partial class PointerTests
         Pointer.Press(frames.World, frames.Canvas, second);
         Pointer.Press(frames.World, frames.Canvas, first);
         frames.Frame();
-        Assert.True(frames.World.Read<Hover>(left).Pressed);
-        Assert.True(frames.World.Read<Hover>(right).Pressed);
+        Assert.True(frames.World.ReadComponentData<Hover>(left).Pressed);
+        Assert.True(frames.World.ReadComponentData<Hover>(right).Pressed);
 
         Pointer.Release(frames.World, frames.Canvas, first);
         frames.Frame();
-        Assert.Equal(0u, frames.World.Read<Clicks>(right).Count);
-        Assert.True(frames.World.Read<Hover>(right).Pressed);
+        Assert.Equal(0u, frames.World.ReadComponentData<Clicks>(right).Count);
+        Assert.True(frames.World.ReadComponentData<Hover>(right).Pressed);
 
         Pointer.Release(frames.World, frames.Canvas, second);
         frames.Frame();
-        Assert.Equal(0u, frames.World.Read<Clicks>(left).Count);
-        Assert.Equal(1u, frames.World.Read<Clicks>(right).Count);
-        Assert.False(frames.World.Read<Hover>(right).Pressed);
+        Assert.Equal(0u, frames.World.ReadComponentData<Clicks>(left).Count);
+        Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(right).Count);
+        Assert.False(frames.World.ReadComponentData<Hover>(right).Pressed);
     }
 
     [Fact]
@@ -304,22 +298,22 @@ public sealed partial class PointerTests
         using var frames = new PointerFrames(game);
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new SingleButton());
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity button = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        Entity button = ElementChildren.Read(frames.World, container)[0];
         Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 10));
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Assert.True(frames.World.Read<Hover>(button).Pressed);
+        Assert.True(frames.World.ReadComponentData<Hover>(button).Pressed);
 
         frames.World.Remove<Pressable>(button);
         Pointer.Move(frames.World, frames.Canvas, new Vector2(300, 200));
         frames.Frame();
 
-        Assert.False(frames.World.Read<Hover>(button).Pressed);
-        Assert.False(frames.World.Read<GamePointer>(game.Result).Captured);
+        Assert.False(frames.World.ReadComponentData<Hover>(button).Pressed);
+        Assert.False(frames.World.ReadComponentData<GamePointer>(game.Result).Captured);
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Assert.Equal(0u, frames.World.Read<Clicks>(button).Count);
+        Assert.Equal(0u, frames.World.ReadComponentData<Clicks>(button).Count);
     }
 
     [Fact]
@@ -333,14 +327,14 @@ public sealed partial class PointerTests
         Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 10));
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Assert.True(frames.World.Read<GamePointer>(game.Result).Captured);
+        Assert.True(frames.World.ReadComponentData<GamePointer>(game.Result).Captured);
 
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
         Pointer.Move(frames.World, frames.Canvas, new Vector2(300, 200));
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Assert.False(frames.World.Read<GamePointer>(game.Result).Captured);
+        Assert.False(frames.World.ReadComponentData<GamePointer>(game.Result).Captured);
     }
 
     [Fact]
@@ -349,8 +343,8 @@ public sealed partial class PointerTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new OverlappingButtons());
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        var buttons = Hierarchy<ElementTree>.GetChildren(frames.World, container);
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        var buttons = ElementChildren.Read(frames.World, container);
         Entity lower = buttons[0];
         Entity upper = buttons[1];
 
@@ -359,35 +353,35 @@ public sealed partial class PointerTests
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
 
-        Assert.True(frames.World.Read<Hover>(upper).Hovered);
-        Assert.False(frames.World.Read<Hover>(lower).Hovered);
-        Assert.Equal(1u, frames.World.Read<Clicks>(upper).Count);
-        Assert.Equal(0u, frames.World.Read<Clicks>(lower).Count);
+        Assert.True(frames.World.ReadComponentData<Hover>(upper).Hovered);
+        Assert.False(frames.World.ReadComponentData<Hover>(lower).Hovered);
+        Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(upper).Count);
+        Assert.Equal(0u, frames.World.ReadComponentData<Clicks>(lower).Count);
     }
 
     [Fact]
     public void ClickUpdatesTheCounterOnTheNextFrameAndHoverPreservesClickDependentOutput()
     {
         using var frames = new PointerFrames();
-        Entity caption = frames.World.CreateEntity(new Caption("Count"));
+        Entity caption = frames.World.Create(new Caption("Count"));
         Entity button = Views.Views.Spawn(frames.World, frames.Canvas, new CounterButton(caption));
         frames.Frame();
-        Assert.Equal(new ButtonText("Count", 0), frames.World.Read<ButtonText>(button));
+        Assert.Equal(new ButtonText("Count", 0), frames.World.ReadComponentData<ButtonText>(button));
 
-        frames.World.Replace(caption, new Caption("Clicks"));
+        frames.World.Set(caption, new Caption("Clicks"));
         Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 10));
         frames.Frame();
-        Assert.True(frames.World.Read<Hover>(button).Hovered);
-        Assert.Equal(new ButtonText("Count", 0), frames.World.Read<ButtonText>(button));
+        Assert.True(frames.World.ReadComponentData<Hover>(button).Hovered);
+        Assert.Equal(new ButtonText("Count", 0), frames.World.ReadComponentData<ButtonText>(button));
 
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
-        Assert.Equal(new ButtonText("Count", 0), frames.World.Read<ButtonText>(button));
+        Assert.Equal(new ButtonText("Count", 0), frames.World.ReadComponentData<ButtonText>(button));
         frames.Frame();
 
-        Assert.Equal(new ButtonText("Clicks", 1), frames.World.Read<ButtonText>(button));
+        Assert.Equal(new ButtonText("Clicks", 1), frames.World.ReadComponentData<ButtonText>(button));
         frames.Frame();
-        Assert.Equal(new ButtonText("Clicks", 1), frames.World.Read<ButtonText>(button));
+        Assert.Equal(new ButtonText("Clicks", 1), frames.World.ReadComponentData<ButtonText>(button));
     }
 
     private readonly record struct CounterButton(Entity Caption) : IView, IComponent, ILayout
@@ -399,7 +393,7 @@ public sealed partial class PointerTests
             if (Scope.Entity.Clicked())
                 count.Value++;
             // The caption is deliberately sampled through an untracked application read.
-            Scope.Write<ButtonText>(Scope.Entity) = new ButtonText(Scope.World.Read<Caption>(Caption).Value, count.Value);
+            Scope.Write<ButtonText>(Scope.Entity) = new ButtonText(Scope.World.ReadComponentData<Caption>(Caption).Value, count.Value);
             return default;
         }
 
@@ -489,33 +483,31 @@ public sealed partial class PointerTests
 
     private sealed class GameInput : ISystem<ImmediateSystemContext>
     {
-        private QueryHandle _capture;
+        private Query _capture;
         public Entity Result { get; private set; }
 
         public void OnCreate(ref ImmediateSystemContext context)
         {
-            Result = context.World.CreateEntity(new GamePointer());
-            _capture = context.World.Query(context.World.QueryDefinition().Read<InputCapture>());
+            Result = context.World.Create(new GamePointer());
+            _capture = context.World.Query(new QueryDescription().WithStored<InputCapture>());
         }
 
         public void OnUpdate(ref ImmediateSystemContext context)
         {
             bool captured = false;
-            context.World.ExecuteQuery(_capture, ref captured, static (rows, ref value) =>
-            {
-                foreach (var row in rows.Rows)
-                    value |= row.Read<InputCapture>().Pointer;
-            });
-            context.World.Replace(Result, new GamePointer(captured));
+            using (QueryScope rows = _capture.OpenRead())
+                foreach (QueryChunk chunk in rows)
+                    foreach (InputCapture value in chunk.Read<InputCapture>()) captured |= value.Pointer;
+            context.World.Set(Result, new GamePointer(captured));
         }
 
-        public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_capture);
+        public void OnDestroy(ref ImmediateSystemContext context) { }
     }
 
     private readonly record struct GamePointer(bool Captured) : IComponent;
 
     private readonly record struct Caption(string Value) : IComponent;
-    private record struct Counter(int Value) : IComponent;
+    private record struct Counter(int Value) : IComponent, ITrackedComponent;
     private readonly record struct ButtonText(string Caption, int Count) : IComponent;
 }
 
@@ -528,7 +520,7 @@ internal sealed class PointerFrames : IDisposable
 
     public PointerFrames(ISystem<ImmediateSystemContext>? gameInput = null)
     {
-        Canvas = World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Canvas = World.Create(new Canvas { Size = new Size(800, 600) });
         _systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(World));
         _systems.Add(HitTest);
         if (gameInput is not null)

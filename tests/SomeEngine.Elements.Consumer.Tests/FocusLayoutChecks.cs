@@ -16,15 +16,15 @@ internal static partial class FocusChecks
         frames.Frame();
         Gamepad.Navigate(frames.World, Direction.Right);
         frames.Frame();
-        Require(frames.World.Read<TargetDisplay>(root).Index == 0, "Initial navigation selects the top-left center.");
-        frames.World.Replace(root, new MovingTargets(160));
+        Require(frames.World.ReadComponentData<TargetDisplay>(root).Index == 0, "Initial navigation selects the top-left center.");
+        frames.World.Set(root, new MovingTargets(160));
         Gamepad.Navigate(frames.World, Direction.Right);
         frames.Frame();
-        Require(frames.World.Read<TargetDisplay>(root).Index == 1,
+        Require(frames.World.ReadComponentData<TargetDisplay>(root).Index == 1,
             "The nearer diagonal center in the previous layout receives focus before layout moves it.");
         Gamepad.Navigate(frames.World, Direction.Left);
         frames.Frame();
-        Require(frames.World.Read<TargetDisplay>(root).Index == 2,
+        Require(frames.World.ReadComponentData<TargetDisplay>(root).Index == 2,
             "The following input uses the completed new layout to choose its nearest left neighbor.");
     }
 
@@ -32,14 +32,14 @@ internal static partial class FocusChecks
     {
         using var frames = new FocusFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new MovingTargets(40));
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity other = Views.Views.Spawn(frames.World, canvas, new FocusPoint(30));
         frames.Frame();
         Gamepad.Navigate(frames.World, Direction.Right);
         frames.Frame();
         Gamepad.Navigate(frames.World, Direction.Right);
         frames.Frame();
-        Require(frames.World.Read<TargetDisplay>(root).Index == 1 && !frames.World.HasSparse<Focused>(other),
+        Require(frames.World.ReadComponentData<TargetDisplay>(root).Index == 1 && !frames.World.HasSparse<Focused>(other),
             "Direction selects a neighbor in the focused canvas even when another canvas has a closer center.");
     }
 

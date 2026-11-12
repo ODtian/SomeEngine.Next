@@ -1,5 +1,4 @@
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using System.Runtime.CompilerServices;
 
@@ -8,10 +7,10 @@ namespace SomeEngine.ECS.Benchmarks.Relations.Bitmap;
 /// <summary>A fixed ordered candidate list whose endpoints belong to the participating query.</summary>
 public readonly struct FixedCandidatePairs : IQueryRelationEnumerable<(Entity, Entity)>
 {
-    private readonly QueryHandle _members;
+    private readonly Query _members;
     private readonly (Entity, Entity)[] _pairs;
 
-    public FixedCandidatePairs(World world, QueryHandle members, (Entity, Entity)[] pairs)
+    public FixedCandidatePairs(World world, Query members, (Entity, Entity)[] pairs)
     {
         World = world;
         _members = members;
@@ -21,8 +20,8 @@ public readonly struct FixedCandidatePairs : IQueryRelationEnumerable<(Entity, E
     public World World { get; }
     public int QueryCount => 1;
     public static bool ReadsFromSingleQuery => true;
-    public QueryHandle GetQuery(int position) => _members;
-    public QueryDefinition AddReads(QueryDefinition definition, int position) => definition;
+    public Query GetQuery(int position) => _members;
+    public QueryDescription AddReads(QueryDescription definition, int position) => definition;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)

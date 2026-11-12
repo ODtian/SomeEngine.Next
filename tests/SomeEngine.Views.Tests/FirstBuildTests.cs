@@ -18,13 +18,13 @@ public sealed partial class FirstBuildTests
 
         frames.Frame();
 
-        var children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
-        Assert.Equal(3, children.Count);
-        Assert.Equal("first", frames.World.Read<Label>(children[0]).Value);
-        Assert.Equal(23, frames.World.Read<Number>(children[1]).Value);
-        Assert.Equal("third", frames.World.Read<Label>(children[2]).Value);
-        Assert.Equal(frames.World.Read<ViewType>(children[0]).Id, frames.World.Read<ViewType>(children[2]).Id);
-        Assert.NotEqual(frames.World.Read<ViewType>(children[0]).Id, frames.World.Read<ViewType>(children[1]).Id);
+        var children = ElementChildren.Read(frames.World, root);
+        Assert.Equal(3, children.Length);
+        Assert.Equal("first", frames.World.ReadComponentData<Label>(children[0]).Value);
+        Assert.Equal(23, frames.World.ReadComponentData<Number>(children[1]).Value);
+        Assert.Equal("third", frames.World.ReadComponentData<Label>(children[2]).Value);
+        Assert.Equal(frames.World.ReadComponentData<ViewType>(children[0]).Id, frames.World.ReadComponentData<ViewType>(children[2]).Id);
+        Assert.NotEqual(frames.World.ReadComponentData<ViewType>(children[0]).Id, frames.World.ReadComponentData<ViewType>(children[1]).Id);
     }
 
     [Fact]
@@ -35,18 +35,18 @@ public sealed partial class FirstBuildTests
 
         frames.Frame();
 
-        var children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
-        Assert.Equal(3, children.Count);
-        Assert.Equal("group", frames.World.ReadSparse<SparseGroup>(root).Name);
-        Assert.Equal("group", frames.World.Read<DisplayValue>(root).Value);
-        Assert.Equal("branch", frames.World.Read<Branch>(children[0]).Name);
-        Assert.Equal("sparse", frames.World.ReadSparse<SparseLabel>(children[1]).Value);
-        Assert.Equal("sparse", frames.World.Read<DisplayValue>(children[1]).Value);
-        Assert.Equal(7, frames.World.Read<Number>(children[2]).Value);
-        var grandchildren = Hierarchy<ElementTree>.GetChildren(frames.World, children[0]);
+        var children = ElementChildren.Read(frames.World, root);
+        Assert.Equal(3, children.Length);
+        Assert.Equal("group", frames.World.ReadComponentData<SparseGroup>(root).Name);
+        Assert.Equal("group", frames.World.ReadComponentData<DisplayValue>(root).Value);
+        Assert.Equal("branch", frames.World.ReadComponentData<Branch>(children[0]).Name);
+        Assert.Equal("sparse", frames.World.ReadComponentData<SparseLabel>(children[1]).Value);
+        Assert.Equal("sparse", frames.World.ReadComponentData<DisplayValue>(children[1]).Value);
+        Assert.Equal(7, frames.World.ReadComponentData<Number>(children[2]).Value);
+        var grandchildren = ElementChildren.Read(frames.World, children[0]);
         Assert.Single(grandchildren);
-        Assert.Equal("leaf", frames.World.ReadSparse<SparseLabel>(grandchildren[0]).Value);
-        Assert.Equal("leaf", frames.World.Read<DisplayValue>(grandchildren[0]).Value);
+        Assert.Equal("leaf", frames.World.ReadComponentData<SparseLabel>(grandchildren[0]).Value);
+        Assert.Equal("leaf", frames.World.ReadComponentData<DisplayValue>(grandchildren[0]).Value);
     }
 
     [Fact]
@@ -57,9 +57,9 @@ public sealed partial class FirstBuildTests
 
         frames.Frame();
 
-        var children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
+        var children = ElementChildren.Read(frames.World, root);
         Assert.Single(children);
-        Assert.Equal("ready", frames.World.Read<Label>(children[0]).Value);
+        Assert.Equal("ready", frames.World.ReadComponentData<Label>(children[0]).Value);
     }
 
     [Fact]
@@ -67,27 +67,27 @@ public sealed partial class FirstBuildTests
     {
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new NamedGroup("before"));
-        Assert.Equal("before", frames.World.Read<NamedGroup>(root).Name);
-        Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        frames.World.Replace(root, new NamedGroup("after"));
+        Assert.Equal("before", frames.World.ReadComponentData<NamedGroup>(root).Name);
+        Assert.Empty(ElementChildren.Read(frames.World, root));
+        frames.World.Set(root, new NamedGroup("after"));
 
         frames.Frame();
 
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal("after", frames.World.Read<Label>(child).Value);
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal("after", frames.World.ReadComponentData<Label>(child).Value);
     }
 
     [Fact]
     public void RootsAttachToTheirParentInSpawnOrder()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity parent = frames.World.CreateEntity();
+        Entity parent = frames.World.Create();
         Entity first = Views.Spawn(frames.World, parent, new Label("first"));
         Entity second = Views.Spawn(frames.World, parent, new Number(29));
 
         frames.Frame();
 
-        Assert.Equal(new[] { first, second }, Hierarchy<ElementTree>.GetChildren(frames.World, parent).ToArray());
+        Assert.Equal(new[] { first, second }, ElementChildren.Read(frames.World, parent));
         Assert.Equal(parent, Hierarchy<ElementTree>.GetParent(frames.World, first));
         Assert.Equal(parent, Hierarchy<ElementTree>.GetParent(frames.World, second));
     }
@@ -102,14 +102,14 @@ public sealed partial class FirstBuildTests
 
         first.Frame();
 
-        Assert.Empty(Hierarchy<ElementTree>.GetChildren(second.World, secondRoot));
-        Entity firstChild = Assert.Single(Hierarchy<ElementTree>.GetChildren(first.World, firstRoot));
-        Assert.Equal("first world", first.World.Read<Label>(firstChild).Value);
+        Assert.Empty(ElementChildren.Read(second.World, secondRoot));
+        Entity firstChild = Assert.Single(ElementChildren.Read(first.World, firstRoot));
+        Assert.Equal("first world", first.World.ReadComponentData<Label>(firstChild).Value);
 
         second.Frame();
 
-        Entity secondChild = Assert.Single(Hierarchy<ElementTree>.GetChildren(second.World, secondRoot));
-        Assert.Equal("second world", second.World.Read<Label>(secondChild).Value);
+        Entity secondChild = Assert.Single(ElementChildren.Read(second.World, secondRoot));
+        Assert.Equal("second world", second.World.ReadComponentData<Label>(secondChild).Value);
     }
 
     [Fact]
@@ -119,11 +119,11 @@ public sealed partial class FirstBuildTests
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceGroup("once"));
 
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
         frames.Frame();
 
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        Assert.Equal("once", frames.World.Read<Label>(child).Value);
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(frames.World, root)));
+        Assert.Equal("once", frames.World.ReadComponentData<Label>(child).Value);
     }
 
 #if DEBUG
@@ -222,7 +222,7 @@ public sealed partial class FirstBuildTests
 
     private readonly record struct DisplayValue(string Value) : IComponent;
 
-    private readonly record struct Number(int Value) : IView, IComponent
+    private readonly record struct Number(int Value) : IView, ITrackedComponent
     {
         public BuildTask Build() => default;
     }

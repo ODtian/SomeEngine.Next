@@ -4,7 +4,6 @@ using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Layout;
 using SomeEngine.Views;
@@ -14,8 +13,8 @@ namespace SomeEngine.Elements;
 /// <summary>Processes pointer input before game input and view rebuilds using the previous layout.</summary>
 public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
 {
-    private QueryHandle _canvasesQuery;
-    private QueryHandle _hoverQuery;
+    private Query _canvasesQuery;
+    private Query _hoverQuery;
     private Entity _capture;
     private readonly List<Entity> _canvases = new();
     private readonly List<Entity> _nodes = new();
@@ -26,21 +25,21 @@ public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
     public void OnCreate(ref ImmediateSystemContext context)
     {
         World world = context.World;
-        _canvasesQuery = world.Query(world.QueryDefinition().All<Canvas>().All<PointerData>());
-        _hoverQuery = world.Query(world.QueryDefinition().All<Hover>());
-        _dragQuery = world.Query(world.QueryDefinition().All<Drag>());
-        _scrollQuery = world.Query(world.QueryDefinition().All<ScrollInput>());
-        QueryHandle captureQuery = world.Query(world.QueryDefinition().All<InputCapture>());
+        _canvasesQuery = world.Query(new QueryDescription().WithStored<Canvas>().WithStored<PointerData>());
+        _hoverQuery = world.Query(new QueryDescription().WithStored<Hover>());
+        _dragQuery = world.Query(new QueryDescription().WithStored<Drag>());
+        _scrollQuery = world.Query(new QueryDescription().WithStored<ScrollInput>());
+        Query captureQuery = world.Query(new QueryDescription().WithStored<InputCapture>());
         try
         {
             Collect(world, captureQuery, _nodes);
             DevelopmentCheck.Require(_nodes.Count <= 1, "HitTestSystem requires one InputCapture per World.");
-            _capture = _nodes.Count == 0 ? world.CreateEntity(new InputCapture()) : _nodes[0];
+            _capture = _nodes.Count == 0 ? world.Create(new InputCapture()) : _nodes[0];
             _nodes.Clear();
         }
         finally
         {
-            world.ReleaseQuery(captureQuery);
+
         }
     }
 
@@ -58,7 +57,7 @@ public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
             _targets.Clear();
             CollectTargets(world, canvas, Entity.Null, null);
             Pointer.TakeEvents(world, canvas, _events);
-            PointerData pointer = world.Read<PointerData>(canvas);
+            PointerData pointer = world.ReadComponentData<PointerData>(canvas);
             pointer.PrimaryPress = RefreshPress(pointer.PrimaryPress);
             pointer.SecondaryPress = RefreshPress(pointer.SecondaryPress);
             pointer.MiddlePress = RefreshPress(pointer.MiddlePress);
@@ -93,7 +92,7 @@ public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
                     ScrollWheel(world, hit, input.Delta);
             }
             KeepDragActive(pointer.PrimaryPress);
-            world.Replace(canvas, pointer);
+            world.Set(canvas, pointer);
             Entity hovered = pointer.HasPosition ? Hit(pointer.Position) : Entity.Null;
             capture |= hovered != Entity.Null || pointer.PrimaryPress.Node != Entity.Null ||
                 pointer.SecondaryPress.Node != Entity.Null || pointer.MiddlePress.Node != Entity.Null;
@@ -107,15 +106,15 @@ public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
         foreach (Entity node in _nodes)
         {
             Hover value = _hover.GetValueOrDefault(node);
-            Hover previous = world.Read<Hover>(node);
+            Hover previous = world.ReadComponentData<Hover>(node);
             if (value.Hovered != previous.Hovered || value.Pressed != previous.Pressed || value.Within != previous.Within)
-                world.Replace(node, value);
+                world.Set(node, value);
         }
-        InputCapture inputCapture = world.Read<InputCapture>(_capture);
+        InputCapture inputCapture = world.ReadComponentData<InputCapture>(_capture);
         if (inputCapture.Pointer != capture)
         {
             inputCapture.Pointer = capture;
-            world.Replace(_capture, inputCapture);
+            world.Set(_capture, inputCapture);
         }
     }
 
@@ -126,18 +125,19 @@ public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
             pressable = node;
             if (world.Has<LayoutRect>(node))
             {
-                AddTarget(node, world.Read<LayoutRect>(node).Value, clip);
+                AddTarget(node, world.ReadComponentData<LayoutRect>(node).Value, clip);
                 pressable = Entity.Null;
             }
         }
         else if (pressable != Entity.Null && world.Has<LayoutRect>(node))
-            AddTarget(pressable, world.Read<LayoutRect>(node).Value, clip);
+            AddTarget(pressable, world.ReadComponentData<LayoutRect>(node).Value, clip);
         if (world.Has<ScrollOffset>(node) && world.Has<LayoutRect>(node))
         {
-            Rect viewport = world.Read<LayoutRect>(node).Value;
+            Rect viewport = world.ReadComponentData<LayoutRect>(node).Value;
             clip = clip is { } bounds ? Intersect(viewport, bounds) : viewport;
         }
-        foreach (Entity child in Hierarchy<ElementTree>.GetChildren(world, node))
+        using ChildrenRead children = Hierarchy<ElementTree>.GetChildren(world, node);
+        foreach (Entity child in children)
             if (!world.Has<Canvas>(child))
                 CollectTargets(world, child, pressable, clip);
     }
@@ -159,14 +159,14 @@ public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
         {
             if (world.Has<Pressable>(node))
             {
-                Clicks clicks = world.Read<Clicks>(node);
+                Clicks clicks = world.ReadComponentData<Clicks>(node);
                 clicks.Count = unchecked(clicks.Count + 1);
-                world.Replace(node, clicks);
+                world.Set(node, clicks);
                 if (world.Has<Selected>(node))
                 {
-                    Selected selected = world.Read<Selected>(node);
+                    Selected selected = world.ReadComponentData<Selected>(node);
                     selected.Value = !selected.Value;
-                    world.Replace(node, selected);
+                    world.Set(node, selected);
                 }
             }
             if (node == canvas || world.Has<StopsPointer>(node))
@@ -226,22 +226,20 @@ public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
         _hover[node] = value;
     }
 
-    private static void Collect(World world, QueryHandle query, List<Entity> entities)
+    private static void Collect(World world, Query query, List<Entity> entities)
     {
         entities.Clear();
-        world.ExecuteQuery(query, ref entities, static (rows, ref values) =>
-        {
-            foreach (var row in rows.Rows)
-                values.Add(row.Entity);
-        });
+        using QueryScope range = query.OpenRead();
+        foreach (QueryChunk chunk in range)
+            foreach (Entity entity in chunk.Entities) entities.Add(entity);
     }
 
     public void OnDestroy(ref ImmediateSystemContext context)
     {
-        context.World.ReleaseQuery(_canvasesQuery);
-        context.World.ReleaseQuery(_hoverQuery);
-        context.World.ReleaseQuery(_dragQuery);
-        context.World.ReleaseQuery(_scrollQuery);
+
+
+
+
     }
 
     private readonly record struct HitTarget(Entity Node, Rect Rect);

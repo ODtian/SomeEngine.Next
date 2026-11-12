@@ -18,25 +18,25 @@ internal static partial class FocusChecks
         systems.Add(new FocusNavigationSystem());
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem());
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(world, canvas, new FocusButton());
         systems.Update();
         Gamepad.Navigate(world, Direction.Right);
         systems.Update();
-        Require(world.Read<ButtonDisplay>(root) == new ButtonDisplay(true, 0),
+        Require(world.ReadComponentData<ButtonDisplay>(root) == new ButtonDisplay(true, 0),
             "A composed focusable and pressable button displays its focus.");
         Pointer.Move(world, canvas, new Vector2(20, 20));
         Pointer.Press(world, canvas, PointerButton.Primary);
         Pointer.Release(world, canvas, PointerButton.Primary);
         Gamepad.Confirm(world);
         systems.Update();
-        Require(world.Read<Clicks>(root).Count == 2 && world.Read<ButtonDisplay>(root) == new ButtonDisplay(true, 1),
+        Require(world.ReadComponentData<Clicks>(root).Count == 2 && world.ReadComponentData<ButtonDisplay>(root) == new ButtonDisplay(true, 1),
             "A pointer click and focus confirmation share one count consumed by the caller.");
-        Require(world.Read<Hover>(root).Hovered && world.Read<Hover>(root).Within,
+        Require(world.ReadComponentData<Hover>(root).Hovered && world.ReadComponentData<Hover>(root).Within,
             "The same button exposes pointer hover while it holds keyboard focus.");
         Keyboard.Key(world, Key.Space, true);
         systems.Update();
-        Require(world.Read<Clicks>(root).Count == 3 && world.Read<ButtonDisplay>(root) == new ButtonDisplay(true, 2),
+        Require(world.ReadComponentData<Clicks>(root).Count == 3 && world.ReadComponentData<ButtonDisplay>(root) == new ButtonDisplay(true, 2),
             "A later keyboard confirmation continues the shared click count.");
     }
 

@@ -46,6 +46,25 @@ public sealed class TraceCaptureTests : IDisposable
     }
 
     [Fact]
+    public void DetailedAllocationFramesReportGarbageCollectionWork()
+    {
+        long before = GC.GetGCMemoryInfo().Index;
+        using (EngineTrace.Start(_path, new TraceOptions { Detail = true, Allocations = true }))
+        using (EngineTrace.BeginFrame(1)) GC.Collect();
+        TraceData data = TraceFile.Read(_path);
+        ThreadEvent frame = Assert.Single(data.Events, e => e.Event.Kind == TraceEventKind.Frame);
+        ThreadEvent[] counters = data.Events.Where(e => e.Event.Kind == TraceEventKind.Counter).ToArray();
+        var values = counters.ToDictionary(e => data.Sites.Single(s => s.Id == e.Event.Site).Name, e => e.Event.Value);
+        Assert.True(values["GC.CollectionIndex"] > before);
+        Assert.True(values["GC.FramePauseTicks"] >= 0);
+        Assert.True(values["GC.TotalPauseTicks"] >= values["GC.FramePauseTicks"]);
+        Assert.True(values["GC.HeapBytes"] > 0);
+        Assert.True(values["GC.CommittedBytesAfterCollection"] >= values["GC.HeapBytesAfterCollection"]);
+        Assert.All(counters, e => Assert.Equal(frame.Event.Id, e.Event.Parent));
+        Assert.Empty(TraceAnalyzer.Analyze(data).Issues);
+    }
+
+    [Fact]
     public void DetailFilteringDoesNotProduceOrphanEnds()
     {
         using (EngineTrace.Start(_path))
@@ -107,6 +126,24 @@ public sealed class TraceCaptureTests : IDisposable
         Assert.Equal(15000, data.Events.Count(e => e.Event.Kind == TraceEventKind.Begin));
         Assert.Equal(15000, data.Events.Where(e => e.Event.Kind == TraceEventKind.Begin).Select(e => e.Event.Id).Distinct().Count());
         Assert.All(data.Threads, t => Assert.Equal(0, t.Dropped));
+    }
+
+    [Fact]
+    public void ShortLivedThreadsKeepDistinctSpans()
+    {
+        using (EngineTrace.Start(_path, new TraceOptions { BufferMegabytes = 16 }))
+            for (int i = 0; i < 32; i++)
+            {
+                var thread = new Thread(() => { using (EngineTrace.Begin(Work)) { } });
+                thread.Start(); thread.Join();
+            }
+        TraceData data = TraceFile.Read(_path);
+        TraceEvent[] spans = data.Events.Where(e => e.Event.Kind == TraceEventKind.Begin).Select(e => e.Event).ToArray();
+        Assert.Equal(32, spans.Length);
+        Assert.Equal(32, spans.Select(e => e.Id).Distinct().Count());
+        Assert.Equal(32, data.Threads.Select(t => t.Id).Distinct().Count());
+        Assert.Empty(TraceAnalyzer.Analyze(data).Issues);
+        Assert.Equal(0, data.Misuse);
     }
 
     [Fact]

@@ -13,7 +13,7 @@ public sealed partial class NavigationSaveTests
     [Fact]
     public async Task StreamedFlowsRestoreSharedCostsAndTheClosedPassageAfterItsTileWasRemoved()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy();
         NavigationGrid original = ExampleGrid(profile);
@@ -75,9 +75,9 @@ public sealed partial class NavigationSaveTests
             firstFlow.SetGoals([new(new(4.5f, 0, 1.5f), 0.1f)]);
             solver.Schedule().Complete();
             Assert.Equal(new NavigationTileCoordinate(1, 0), Assert.Single(firstFlow.Costs.Grid.Tiles.ToArray()).Tile);
-            using World world = WorldJobs.CreateWorld(scheduler: scheduler);
-            first = world.CreateEntity(new SaveMotion(new(0.5f, 0, 1.5f), default, 0));
-            second = world.CreateEntity(new SaveMotion(new(0.5f, 0, 0.5f), default, 0));
+            using World world = new World(execution: new WorldJobs(scheduler));
+            first = world.Create(new SaveMotion(new(0.5f, 0, 1.5f), default, 0));
+            second = world.Create(new SaveMotion(new(0.5f, 0, 0.5f), default, 0));
             NavigationComponents.AddFlow(world, first, firstFlow, 2);
             NavigationComponents.AddFlow(world, second, secondFlow, 2);
             NavigationSave.Write(saved, world, registry, resources);
@@ -88,7 +88,7 @@ public sealed partial class NavigationSaveTests
         await using (var loader = new AssetLoader(new LooseAssetStorage(_directory, manifest)))
             restored = await NavigationSave.ReadAsync(saved, registry, loader, scheduler);
         using World loaded = restored.World;
-        NavigationFlow firstRestored = loaded.Read<FlowFollower>(first).Flow, secondRestored = loaded.Read<FlowFollower>(second).Flow;
+        NavigationFlow firstRestored = loaded.ReadComponentData<FlowFollower>(first).Flow, secondRestored = loaded.ReadComponentData<FlowFollower>(second).Flow;
         Assert.Equal(7ul, firstRestored.Costs.Version);
         Assert.Equal(float.PositiveInfinity, firstRestored.Costs.CellCosts.Span[firstRestored.Costs.Grid.FindCell(new(1.5f, 0, 1.5f))]);
         Assert.Equal(8, firstRestored.Costs.CellCosts.Span[firstRestored.Costs.Grid.FindCell(new(1.5f, 0, 2.5f))]);
@@ -111,13 +111,13 @@ public sealed partial class NavigationSaveTests
                 .Schedule(dependency: streaming.Applied).Complete();
             var navigation = new NavigationSystems<SaveMotion, SaveMotionReader>(loaded);
             var positions = new List<Vector3>();
-            for (int frame = 0; frame < 100 && new[] { first, second }.Any(actor => loaded.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived); frame++)
+            for (int frame = 0; frame < 100 && new[] { first, second }.Any(actor => loaded.ReadComponentData<NavigationProgress>(actor).Status != NavigationStatus.Arrived); frame++)
             {
                 navigation.ScheduleProgress(new ConsumeSavedSteering(0.1f).ScheduleParallel(loaded, navigation.Schedule(0.1f).Steering)).Complete();
-                positions.Add(loaded.Read<SaveMotion>(first).Position);
+                positions.Add(loaded.ReadComponentData<SaveMotion>(first).Position);
             }
             Assert.Contains(positions, position => position.X > 1 && position.X < 2 && position.Z < 1);
-            Assert.All(new[] { first, second }, actor => Assert.Equal(NavigationStatus.Arrived, loaded.Read<NavigationProgress>(actor).Status));
+            Assert.All(new[] { first, second }, actor => Assert.Equal(NavigationStatus.Arrived, loaded.ReadComponentData<NavigationProgress>(actor).Status));
             using var savedAgain = new MemoryStream();
             NavigationSave.Write(savedAgain, loaded, registry, restored.Resources);
             Assert.True(savedAgain.Length > 0);

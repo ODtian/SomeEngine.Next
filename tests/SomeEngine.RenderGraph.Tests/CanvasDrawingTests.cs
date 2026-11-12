@@ -40,9 +40,11 @@ public sealed partial class CanvasDrawingTests
         using SomeEngine.Graphics.Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(64 * 256, BufferUsages.CopyDestination), MemoryType.Readback);
         Entity canvas = AddCanvas(world);
-        world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer =>
+        using (SomeEngine.ECS.DynamicBuffer<SurfaceInstance> buffer = world.World.GetBuffer<SurfaceInstance>(canvas))
+        {
             buffer.Add(new(Entity.Null, new Rect(8, 8, 40, 40), new Color(1, 0, 0), 10,
-                new Color(0, 1, 0), 3, new Rect(0, 0, 40, 64), 0, 1)));
+                            new Color(0, 1, 0), 3, new Rect(0, 0, 40, 64), 0, 1));
+        }
         GraphTextureId target;
         GraphPassId copy;
         using (RenderGraphEdit edit = graph.BeginEdit())
@@ -84,21 +86,25 @@ public sealed partial class CanvasDrawingTests
         ulong structure = graph.StructureVersion;
         for (int index = 0; index < 5; index++)
         {
-            world.AcquireSystemTick();
+            world.World.AcquireSystemVersion();
             if (index == 2)
             {
-                world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer =>
-                    buffer[0] = buffer[0] with { Fill = new Color(0, 0, 1), Version = 2 });
+                using (SomeEngine.ECS.DynamicBuffer<SurfaceInstance> buffer = world.World.GetBuffer<SurfaceInstance>(canvas))
+                {
+                    buffer[0] = buffer[0] with { Fill = new Color(0, 0, 1), Version = 2 };
+                }
                 renderer.ReconcileGraph(target);
                 RenderGraphFrame cancelled = graph.BeginFrame();
                 try { renderer.UpdateFrame(ref cancelled); }
                 finally { cancelled.Dispose(); }
             }
             if (index == 3)
-                world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer =>
+                using (SomeEngine.ECS.DynamicBuffer<SurfaceInstance> buffer = world.World.GetBuffer<SurfaceInstance>(canvas))
+                {
                     buffer.Add(new(Entity.Null, new Rect(20, 20, 16, 16), new Color(1, 1, 1, 0.5f), 2,
-                        default, 0, new Rect(0, 0, 64, 64), 1, 1)));
-            if (index == 4) world.Remove<RenderCanvas>(canvas);
+                                            default, 0, new Rect(0, 0, 64, 64), 1, 1));
+                }
+            if (index == 4) world.World.Remove<RenderCanvas>(canvas);
 
             renderer.ReconcileGraph(target);
             RenderGraphFrame frame = graph.BeginFrame();
@@ -178,11 +184,13 @@ public sealed partial class CanvasDrawingTests
             Assert.Equal(firstPass, retained);
         }
 
-        world.AcquireSystemTick();
-        world.Replace(first, new RenderCanvas(CanvasTarget.Screen, new Size(64, 64), 2));
-        world.ExecuteBufferWrite<SurfaceInstance>(first, buffer =>
+        world.World.AcquireSystemVersion();
+        world.World.Set(first, new RenderCanvas(CanvasTarget.Screen, new Size(64, 64), 2));
+        using (SomeEngine.ECS.DynamicBuffer<SurfaceInstance> buffer = world.World.GetBuffer<SurfaceInstance>(first))
+        {
             buffer.Add(new(Entity.Null, new Rect(4, 4, 16, 16), new Color(1, 0, 0), 4,
-                default, 0, new Rect(0, 0, 32, 32), 0, 1)));
+                            default, 0, new Rect(0, 0, 32, 32), 0, 1));
+        }
         renderer.ReconcileGraph(target);
         RenderGraphFrame changed = graph.BeginFrame();
         try { renderer.UpdateFrame(ref changed); }
@@ -196,7 +204,7 @@ public sealed partial class CanvasDrawingTests
         Assert.True(renderer.TryGetPass(first, out GraphPassId sameFirst));
         Assert.Equal(firstPass, sameFirst);
 
-        world.Remove<RenderCanvas>(first);
+        world.World.Remove<RenderCanvas>(first);
         renderer.ReconcileGraph(target);
         Assert.Equal(unchanged + 2, graph.StructureVersion);
         Assert.False(renderer.TryGetPass(first, out _));
@@ -206,8 +214,8 @@ public sealed partial class CanvasDrawingTests
 
     private static Entity AddCanvas(RenderWorld world)
     {
-        Entity canvas = world.CreateEntity(new RenderCanvas(CanvasTarget.Screen, new Size(64, 64), 1));
-        world.AddBuffer<SurfaceInstance>(canvas);
+        Entity canvas = world.World.Create(new RenderCanvas(CanvasTarget.Screen, new Size(64, 64), 1));
+        world.World.AddBuffer<SurfaceInstance>(canvas);
         return canvas;
     }
 }

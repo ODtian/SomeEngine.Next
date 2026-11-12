@@ -68,7 +68,8 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
                 output.ReportDiagnostic(Diagnostic.Create(ViewDiagnostics.PartialContainerRequired, enclosing.Locations[0], enclosing.Name));
                 continue;
             }
-            if (!type.AllInterfaces.Any(value => value.ToDisplayString() is "SomeEngine.ECS.IComponent" or "SomeEngine.ECS.Components.ISparseComponent"))
+            if (!DeclaresStorage(type, "SomeEngine.ECS.IComponent") &&
+                !DeclaresStorage(type, "SomeEngine.ECS.Components.ISparseComponent"))
             {
                 output.ReportDiagnostic(Diagnostic.Create(ViewDiagnostics.ChooseStorage, type.Locations[0], type.Name));
                 var declaration = (TypeDeclarationSyntax)type.DeclaringSyntaxReferences[0].GetSyntax(output.CancellationToken);
@@ -224,8 +225,7 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
     private static void GenerateSerialization(StringBuilder text, INamedTypeSymbol type)
     {
         string typeName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        string register = type.AllInterfaces.Any(value => value.ToDisplayString() == "SomeEngine.ECS.IComponent")
-            ? "Register" : "RegisterSparse";
+        string register = UsesSparseStorage(type) ? "RegisterSparse" : "Register";
         bool generic = type.TypeParameters.Length > 0 || GetContainingTypes(type).Any(value => value.TypeParameters.Length > 0);
         string keyParameter = generic ? ", global::SomeEngine.ECS.Serialization.SerializationTypeKey typeKey" : "";
         if (!generic)
@@ -241,10 +241,11 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
             text.Append("    public static void RegisterSerialization").Append(GenerateTypeParameters(type.TypeParameters))
                 .Append("(global::SomeEngine.ECS.Serialization.SerializationRegistry registry").Append(keyParameter).Append(')')
                 .AppendLine(GenerateConstraints(type.TypeParameters)).AppendLine("    {").Append(key)
-                .Append("        registry.").Append(register).Append('<').Append(typeName).Append(", ").Append(codec);
+                .Append("        registry.").Append(references && register == "Register" ? "RegisterCodec" : register)
+                .Append('<').Append(typeName).Append(", ").Append(codec);
             if (references)
                 text.Append(", ").Append(codec);
-            text.AppendLine(">(typeKey);")
+            text.AppendLine(references ? ">(typeKey, default, default);" : ">(typeKey);")
                 .Append("        global::SomeEngine.Views.ViewSerialization.RegisterType<").Append(typeName).AppendLine(">(typeKey);\n    }");
         }
         string codecParameter = "TViewCodec";
@@ -273,10 +274,26 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
         string id = new Guid(hash.ComputeHash(Encoding.UTF8.GetBytes(name)).Take(16).ToArray()).ToString();
         string fields = string.Join(";", ViewParameterCodecs.GetFields(type)
             .Select(field => field.MetadataName + ":" + GetSerializedTypeName(field.Type)));
-        string storage = type.AllInterfaces.Any(value => value.ToDisplayString() == "SomeEngine.ECS.IComponent") ? "table" : "sparse";
+        string storage = UsesSparseStorage(type) ? "sparse" : "table";
         ulong schema = HashText(name + ":fields-v1:" + storage + ":" + fields);
         return "new global::SomeEngine.ECS.Serialization.SerializationTypeKey(new global::System.Guid(\"" + id + "\"), " +
             SymbolDisplay.FormatLiteral(name, true) + ", " + schema.ToString(CultureInfo.InvariantCulture) + "UL)";
+    }
+
+    private static bool UsesSparseStorage(INamedTypeSymbol type)
+        => DeclaresStorage(type, "SomeEngine.ECS.Components.ISparseComponent") ||
+            !DeclaresStorage(type, "SomeEngine.ECS.IComponent");
+
+    private static bool DeclaresStorage(INamedTypeSymbol type, string storage)
+    {
+        foreach (INamedTypeSymbol declared in type.Interfaces)
+        {
+            string name = declared.ToDisplayString();
+            if (name == storage) return true;
+            if (name == "SomeEngine.Views.IView") continue;
+            if (DeclaresStorage(declared, storage)) return true;
+        }
+        return false;
     }
 
     private static string GetSerializedTypeName(ITypeSymbol type)

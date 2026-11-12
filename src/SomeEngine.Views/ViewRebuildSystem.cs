@@ -1,7 +1,6 @@
 using SomeEngine.ECS.Systems;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.Views;
@@ -13,7 +12,7 @@ public sealed partial class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     private readonly List<ViewDepth> _changedViews = new();
     private readonly List<Computation> _computations = new();
     private readonly DependencyChanges _dependencyChanges = new();
-    private QueryHandle _viewQuery;
+    private Query _viewQuery;
     private ulong _frame;
     private int _iterationLimit = 8;
     private BuildQueue _builds = null!;
@@ -38,9 +37,9 @@ public sealed partial class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _builds = BuildQueue.For(context.World);
-        _builds.Open();
+        _builds.Open(context.World);
         _dependencyChanges.Clear();
-        _viewQuery = context.World.Query(context.World.QueryDefinition().Read<ViewType>());
+        _viewQuery = context.World.Query(new QueryDescription().WithStored<ViewType>());
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)
@@ -52,6 +51,13 @@ public sealed partial class ViewRebuildSystem : ISystem<ImmediateSystemContext>
         using var rebuild = Scope.EnterRebuild();
 #endif
         World world = context.World;
+        _builds.ReleaseDestroyed(world);
+        using (WorldStructureWriteScope structure = world.OpenStructureWrite()) Update(world);
+        _builds.ReleaseDestroyed(world);
+    }
+
+    private void Update(World world)
+    {
         _dependencyChanges.Record(world, _frame);
         _builds.CancelChanged(world, _dependencyChanges);
         _builds.Resume(world, _frame);
@@ -64,11 +70,11 @@ public sealed partial class ViewRebuildSystem : ISystem<ImmediateSystemContext>
             foreach (ViewDepth view in _changedViews)
             {
                 Entity entity = view.Entity;
-                if (!world.IsAlive(entity))
+                if (!world.IsAlive(entity) || !world.Has<ViewType>(entity))
                     continue;
                 if (world.Has<BuildRequest>(entity) || HasBuildChanges(world, entity, recheck: true))
                     ViewTypes.Build(world, entity, _frame);
-                if (world.IsAlive(entity) && world.HasSparse<Computations>(entity))
+                if (world.IsAlive(entity) && world.Has<ViewType>(entity) && world.HasSparse<Computations>(entity))
                     RebuildComputations(world, entity);
             }
         }
@@ -80,8 +86,8 @@ public sealed partial class ViewRebuildSystem : ISystem<ImmediateSystemContext>
 
     public void OnDestroy(ref ImmediateSystemContext context)
     {
+        using WorldStructureWriteScope structure = context.World.OpenStructureWrite();
         _builds.Close(context.World, _frame);
-        context.World.ReleaseQuery(_viewQuery);
     }
 
     private bool HasBuildChanges(World world, Entity entity, bool recheck = false) =>
@@ -99,7 +105,7 @@ public sealed partial class ViewRebuildSystem : ISystem<ImmediateSystemContext>
         CollectComputations(world, entity);
         foreach (Computation computation in _computations)
         {
-            if (!world.IsAlive(entity))
+            if (!world.IsAlive(entity) || !world.Has<ViewType>(entity))
                 break;
             if (!computation.Released && !computation.EvaluatesOnRead &&
                 computation.HasChanges(_dependencyChanges, recheck: true))

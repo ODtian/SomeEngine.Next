@@ -1,5 +1,4 @@
 using SomeEngine.ECS;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation.Pose;
@@ -7,15 +6,15 @@ namespace SomeEngine.Animation.Pose;
 /// <summary>Publishes the selected local-pose result after concrete producers and consumers finish.</summary>
 public struct PoseCompositionSystem : ISystem<ImmediateSystemContext>
 {
-    private QueryHandle _targets;
+    private Query _targets;
     private double _time;
     private SkeletonLevels _models;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _models = new();
-        _targets = context.World.Query(context.World.QueryDefinition().ReadWrite<PoseTarget>()
-            .ReadBuffer<LocalPose>().ReadBuffer<PoseResult>());
+        _targets = context.World.Query(new QueryDescription().WithStored<PoseTarget>()
+            .WithStored<Buffer<LocalPose>>().WithStored<Buffer<PoseResult>>());
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)
@@ -32,39 +31,57 @@ public struct PoseCompositionSystem : ISystem<ImmediateSystemContext>
 
     internal void CopyInputs(World world)
     {
-        world.ExecuteQuery(_targets, static (scoped QueryCursor rows) =>
         {
-            foreach (QueryRow row in rows.Rows)
+            using QueryScope rows = _targets.Open();
+            foreach (QueryChunk chunk in rows)
             {
-                ref PoseTarget target = ref row.ReadWrite<PoseTarget>();
-                if (target.Skeleton.CpuWrittenBones.Length != 0) continue;
-                PoseResult result = row.ReadBuffer<PoseResult>()[target.Output.Index];
-                if (target.Version == result.Version) continue;
-                PoseRange range = target.Output.Range;
-                target.Skeleton.SetLocalPose(LocalPose.Transforms(row.ReadBuffer<LocalPose>().AsSpan().Slice(range.Start, range.Count)), result.Time);
-                target.Version = result.Version;
+                var values0 = chunk.Has<PoseTarget>() ? chunk.Write<PoseTarget>() : default;
+                for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                {
+
+                    ref PoseTarget target = ref values0[rowIndex];
+                    if (target.Skeleton.CpuWrittenBones.Length != 0) continue;
+                    PoseResult result = chunk.ReadBuffer<PoseResult>(rowIndex)[target.Output.Index];
+                    if (target.Version == result.Version) continue;
+                    PoseRange range = target.Output.Range;
+                    target.Skeleton.SetLocalPose(LocalPose.Transforms(chunk.ReadBuffer<LocalPose>(rowIndex).AsSpan().Slice(range.Start, range.Count)), result.Time);
+                    target.Version = result.Version;
+
+                }
             }
-        });
+
+        }
     }
 
     internal void ComposeModels(World world, double time)
     {
         var frame = (World: world, Time: time, Models: _models);
-        world.ExecuteQuery(_targets, ref frame,
-            static (scoped QueryCursor rows, ref (World World, double Time, SkeletonLevels Models) frame) =>
+        {
+            using QueryScope read = _targets.Open();
+            Visit(in read, ref frame);
+
+            static void Visit(scoped in QueryScope rows, ref (World World, double Time, SkeletonLevels Models) frame)
             {
-                foreach (QueryRow row in rows.Rows)
+                foreach (QueryChunk chunk in rows)
                 {
-                    SkeletonInstance skeleton = row.Read<PoseTarget>().Skeleton;
-                    if (skeleton.CpuWrittenBones.Length == 0) frame.Models.Add(skeleton);
+                    chunk.TryRead<PoseTarget>(out var values0);
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+
+                        SkeletonInstance skeleton = values0[rowIndex].Skeleton;
+                        if (skeleton.CpuWrittenBones.Length == 0) frame.Models.Add(skeleton);
+
+                    }
                 }
                 frame.Models.Compose(PoseAnimation.GetScheduler(frame.World), frame.Time);
-            });
+
+            }
+        }
     }
 
     public void OnDestroy(ref ImmediateSystemContext context)
     {
-        context.World.ReleaseQuery(_targets);
+
         _models.Clear();
     }
 }

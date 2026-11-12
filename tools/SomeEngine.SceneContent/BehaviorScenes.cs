@@ -7,7 +7,6 @@ using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Render;
 using SomeEngine.Resources;
 using SomeEngine.Render.Components;
@@ -44,10 +43,10 @@ public static partial class BehaviorScenes
         using MeshAsset green = ClusterBuilder.ProcessRaw(vertices, attributes, indices, [new(material.Id)], "green Phong sphere");
         project.RegisterAsset(await green.SaveAsync(Path.Combine(destination, "assets/Meshes/green-phong.mesh.asset")));
         using var world = new World();
-        Entity redEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(-1, 0, 6), Quaternion.Identity) });
-        world.Add(redEntity, new MeshSource { Mesh = red.Reference });
-        Entity greenEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(1, 0, 6), Quaternion.Identity) });
-        world.Add(greenEntity, new MeshSource { Mesh = green.Reference, BoundsExpansion = 1.31f });
+        Entity redEntity = world.Create(new WorldTransform { Qvvs = new(new Vector3(-1, 0, 6), Quaternion.Identity) });
+        world.Set(redEntity, new MeshSource { Mesh = red.Reference });
+        Entity greenEntity = world.Create(new WorldTransform { Qvvs = new(new Vector3(1, 0, 6), Quaternion.Identity) });
+        world.Set(greenEntity, new MeshSource { Mesh = green.Reference, BoundsExpansion = 1.31f });
         await WriteSceneAsync(project, world);
         await SceneContent.SetOutputSizeAsync(destination, 128, 128);
     }
@@ -71,13 +70,13 @@ public static partial class BehaviorScenes
             int index = group * 4 + layer;
             Vector3 position = new((group % 2 - .5f) * .9f + MathF.Sin(index * .3f) * .15f,
                 (group / 2 - .5f) * .7f, 2.4f + layer * .2f);
-            Entity entity = world.CreateEntity(new WorldTransform
+            Entity entity = world.Create(new WorldTransform
             {
                 Qvvs = new(position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, index * .2f), .35f),
             });
-            world.Add(entity, new MeshSource { Mesh = curved.Reference, BoundsExpansion = .66f });
+            world.Set(entity, new MeshSource { Mesh = curved.Reference, BoundsExpansion = .66f });
         }
-        world.CreateEntity(new PointLight(new(0, 2, 0), 20, Vector3.One, 30));
+        world.Create(new PointLight(new(0, 2, 0), 20, Vector3.One, 30));
         await WriteSceneAsync(project, world);
         await SceneContent.SetOutputSizeAsync(destination, 1280, 720);
     }
@@ -102,17 +101,16 @@ public static partial class BehaviorScenes
         using var application = await ApplicationSettingsAsset.OpenAsync(loader,
             new(project.Manifest.List(ApplicationSettingsAsset.FileType).Single().AssetGuid));
         using var scene = await WorldAsset.OpenAsync(loader, application.GetBlock<ApplicationSettingsBlock>().Scene);
-        using var world = await scene.LoadAsync(SceneSerialization.CreateRegistry());
-        Entity entity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity, 3) });
-        world.Add(entity, new MeshSource { Mesh = receiver.Reference });
-        var cameras = world.Query(new QueryDefinitionBuilder().ReadWrite<SceneCamera>());
-        world.ExecuteQuery(cameras, rows =>
-        {
-            foreach (var row in rows.Rows) row.ReadWrite<SceneCamera>().VerticalFieldOfView = MathF.PI / 4;
-        });
-        world.ReleaseQuery(cameras);
-        scene.WriteWorld(world, SceneSerialization.CreateRegistry());
-        project.RegisterAsset(await scene.SaveAsync(Path.Combine(destination, project.Manifest.Assets[scene.Id].Path)));
+        using var world = new World();
+        await using WorldStream stream = await SceneContent.OpenSceneAsync(world, loader, scene.Reference);
+        Entity entity = world.Create(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity, 3) });
+        world.Set(entity, new MeshSource { Mesh = receiver.Reference });
+        Query cameras = world.Query(new QueryDescription().With<SceneCamera>());
+        using (QueryScope rows = cameras.Open())
+            foreach (QueryChunk chunk in rows)
+                foreach (ref SceneCamera camera in chunk.Write<SceneCamera>())
+                    camera.VerticalFieldOfView = MathF.PI / 4;
+        await SceneContent.SaveSceneAsync(project, scene, world);
     }
 
     public static async Task CreateStreamingSphereAsync(string source, string destination)
@@ -127,8 +125,8 @@ public static partial class BehaviorScenes
             [new(material.Id)], "streaming sphere");
         project.RegisterAsset(await mesh.SaveAsync(Path.Combine(destination, "assets/Meshes/streaming.mesh.asset")));
         using var world = new World();
-        Entity entity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity, 2) });
-        world.Add(entity, new MeshSource { Mesh = mesh.Reference });
+        Entity entity = world.Create(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity, 2) });
+        world.Set(entity, new MeshSource { Mesh = mesh.Reference });
         await WriteSceneAsync(project, world);
     }
 
@@ -145,11 +143,11 @@ public static partial class BehaviorScenes
         mesh.GetBlock<MeshMaterialsBlock>().Materials = [material.Reference];
         project.RegisterAsset(await mesh.SaveAsync(Path.Combine(destination, "assets/Meshes/receiver.mesh.asset")));
         using var world = new World();
-        Entity receiver = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(0, 0, 8), Quaternion.Identity) { Stretch = new(4, 4, .1f) } });
-        world.Add(receiver, new MeshSource { Mesh = mesh.Reference });
-        Entity caster = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity, .6f) });
-        world.Add(caster, new MeshSource { Mesh = mesh.Reference });
-        world.CreateEntity(new PointLight(new(4, 2, 3), 20, Vector3.One, 30));
+        Entity receiver = world.Create(new WorldTransform { Qvvs = new(new Vector3(0, 0, 8), Quaternion.Identity) { Stretch = new(4, 4, .1f) } });
+        world.Set(receiver, new MeshSource { Mesh = mesh.Reference });
+        Entity caster = world.Create(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity, .6f) });
+        world.Set(caster, new MeshSource { Mesh = mesh.Reference });
+        world.Create(new PointLight(new(4, 2, 3), 20, Vector3.One, 30));
         await WriteSceneAsync(project, world);
         await SceneContent.SetOutputSizeAsync(destination, 128, 128);
     }
@@ -185,10 +183,9 @@ public static partial class BehaviorScenes
         AssetEntry entry = project.Manifest.List(ApplicationSettingsAsset.FileType).Single();
         using var application = await ApplicationSettingsAsset.OpenAsync(loader, new(entry.AssetGuid));
         using var scene = await WorldAsset.OpenAsync(loader, application.GetBlock<ApplicationSettingsBlock>().Scene);
-        world.CreateEntity(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
+        world.Create(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
             VerticalFieldOfView = MathF.PI / 3, NearPlane = .1f, FarPlane = 100 });
-        scene.WriteWorld(world, SceneSerialization.CreateRegistry());
-        project.RegisterAsset(await scene.SaveAsync(Path.Combine(project.RootPath, project.Manifest.Assets[scene.Id].Path)));
+        await SceneContent.SaveSceneAsync(project, scene, world);
     }
 
     private static void CopyContent(string source, string destination)

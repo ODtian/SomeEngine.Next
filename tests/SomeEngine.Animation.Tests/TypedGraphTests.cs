@@ -14,7 +14,7 @@ public class TypedGraphTests
     public void RemovingOneCompiledOutputKeepsTheOtherOutputRunning()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new GraphValue());
+        Entity target = world.Create(new GraphValue());
         var spec = Spec.Tween<float, FloatOps, Linear>(1);
         using var builder = new AnimationBuilder(world);
         builder.To(target, Value, 10, spec);
@@ -25,23 +25,29 @@ public class TypedGraphTests
         var frame = new ImmediateSystemContext(world, 0, 0, 0.25);
         systems.Update(ref frame);
         uint output = 0;
-        world.ExecuteBufferRead<PropertySource<float>, uint>(target, ref output, static (sources, ref output) =>
         {
-            foreach (PropertySource<float> source in sources.AsSpan())
-                if (source.Channel == Value) output = (uint)source.Track;
-        });
+            using var sources = world.ReadBuffer<PropertySource<float>>(target);
+            Visit(sources, ref output);
+
+            static void Visit(ReadOnlyBuffer<PropertySource<float>> sources, ref uint output)
+            {
+                foreach (PropertySource<float> source in sources.AsSpan())
+                    if (source.Channel == Value) output = (uint)source.Track;
+
+            }
+        }
         PropertyAnimation.RemoveSource<float>(world, target, animation, output);
 
         systems.Update(ref frame);
 
-        Assert.Equal((2.5f, 10), (world.Read<GraphValue>(target).Value, world.Read<GraphValue>(target).Other));
+        Assert.Equal((2.5f, 10), (world.ReadComponentData<GraphValue>(target).Value, world.ReadComponentData<GraphValue>(target).Other));
     }
 
     [Fact]
     public void SequenceCapturesThePreviousTypedLeafEndpointAcrossAlgorithms()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new GraphValue());
+        Entity target = world.Create(new GraphValue());
         var next = Spec.Tween<float, FloatOps, SquareEasing>(0.5f);
         using var builder = new AnimationBuilder(world);
         using (builder.Sequence())
@@ -57,14 +63,14 @@ public class TypedGraphTests
 
         systems.Update(ref frame);
 
-        Assert.Equal(12.5f, world.Read<GraphValue>(target).Value);
+        Assert.Equal(12.5f, world.ReadComponentData<GraphValue>(target).Value);
     }
 
     [Fact]
     public void ConsumerSettlementStartsTheFollowingFixedInterval()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new GraphValue());
+        Entity target = world.Create(new GraphValue());
         var settled = Spec.Create<float, FloatOps, StepsParameters, StepsState, StepsMotion>(new(2, "settle"));
         using var builder = new AnimationBuilder(world);
         using (builder.Sequence())
@@ -83,39 +89,39 @@ public class TypedGraphTests
 
         systems.Update(ref following);
 
-        Assert.Equal(6, world.Read<GraphValue>(target).Value);
+        Assert.Equal(6, world.ReadComponentData<GraphValue>(target).Value);
     }
 
     [Fact]
     public void SharedDefinitionKeepsTheTwoInstanceClocksIndependent()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new GraphValue());
-        Entity second = world.CreateEntity(new GraphValue());
+        Entity first = world.Create(new GraphValue());
+        Entity second = world.Create(new GraphValue());
         var spec = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(1, 1, "shared"));
         using var builder = new AnimationBuilder(world);
         builder.To(first, Value, 10, spec);
         using CompiledGraph graph = builder.Compile();
         Entity animation = graph.Play(world, first);
         graph.Play(world, second);
-        Timeline timeline = world.Read<Timeline>(animation);
+        Timeline timeline = world.ReadComponentData<Timeline>(animation);
         timeline.Speed = 2;
-        world.Replace(animation, timeline);
+        world.Set(animation, timeline);
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         AnimationSystems.Add(systems, spec);
         var frame = new ImmediateSystemContext(world, 0, 0, 0.25);
 
         systems.Update(ref frame);
 
-        Assert.Equal((5, 2.5f), (world.Read<GraphValue>(first).Value, world.Read<GraphValue>(second).Value));
+        Assert.Equal((5, 2.5f), (world.ReadComponentData<GraphValue>(first).Value, world.ReadComponentData<GraphValue>(second).Value));
     }
 
     [Fact]
     public void FormulaParametersChangeOnlyTheSelectedSharedInstance()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new GraphValue());
-        Entity second = world.CreateEntity(new GraphValue());
+        Entity first = world.Create(new GraphValue());
+        Entity second = world.Create(new GraphValue());
         var spec = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(1, 1, "shared"));
         using var builder = new AnimationBuilder(world);
         builder.To(first, Value, 10, spec);
@@ -131,15 +137,15 @@ public class TypedGraphTests
 
         systems.Update(ref frame);
 
-        Assert.Equal((10, 5), (world.Read<GraphValue>(first).Value, world.Read<GraphValue>(second).Value));
+        Assert.Equal((10, 5), (world.ReadComponentData<GraphValue>(first).Value, world.ReadComponentData<GraphValue>(second).Value));
     }
 
     [Fact]
     public void RetargetingOneSharedInstanceKeepsTheCompiledDeadline()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new GraphValue());
-        Entity second = world.CreateEntity(new GraphValue());
+        Entity first = world.Create(new GraphValue());
+        Entity second = world.Create(new GraphValue());
         var spec = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(1, 1, "retarget"));
         using var builder = new AnimationBuilder(world);
         builder.To(first, Value, 10, spec);
@@ -154,14 +160,14 @@ public class TypedGraphTests
 
         systems.Update(ref half);
 
-        Assert.Equal((20, 10), (world.Read<GraphValue>(first).Value, world.Read<GraphValue>(second).Value));
+        Assert.Equal((20, 10), (world.ReadComponentData<GraphValue>(first).Value, world.ReadComponentData<GraphValue>(second).Value));
     }
 
     [Fact]
     public void PublicLeafIsReleasedOnceWhenItsEntityIsStoppedAndReused()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new MarkerValue());
+        Entity target = world.Create(new MarkerValue());
         using var builder = new AnimationBuilder(world);
         builder.Leaf<TimedMarkerParameters, TimedMarkerLeaf>(target, new(1, 7));
         using CompiledGraph graph = builder.Compile();
@@ -170,15 +176,15 @@ public class TypedGraphTests
         PropertyAnimation.Stop(world, animation);
         graph.Play(world, target);
 
-        Assert.Equal(1, world.Read<MarkerReleases>(animation).Count);
+        Assert.Equal(1, world.ReadComponentData<MarkerReleases>(animation).Count);
     }
 
     [Fact]
     public void ConsumerConditionTransitionsOnlyTheMatchingInstance()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new GraphValue());
-        Entity second = world.CreateEntity(new GraphValue());
+        Entity first = world.Create(new GraphValue());
+        Entity second = world.Create(new GraphValue());
         var inputs = new GraphParameters();
         using var builder = new AnimationBuilder(world);
         using (var machine = builder.StateMachine(ref inputs))
@@ -191,7 +197,7 @@ public class TypedGraphTests
         Entity animation = graph.Play(world, first);
         graph.Play(world, second);
         inputs.Values[0] = 1;
-        world.Replace(animation, inputs);
+        world.Set(animation, inputs);
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         AnimationSystems.AddDefaults(systems);
         var frame = new ImmediateSystemContext(world, 0, 0, 0);
@@ -199,7 +205,7 @@ public class TypedGraphTests
 
         systems.Update(ref frame);
 
-        Assert.Equal((10, 0), (world.Read<GraphValue>(first).Value, world.Read<GraphValue>(second).Value));
+        Assert.Equal((10, 0), (world.ReadComponentData<GraphValue>(first).Value, world.ReadComponentData<GraphValue>(second).Value));
     }
 
     private struct GraphValue : IComponent { public float Value, Other; }

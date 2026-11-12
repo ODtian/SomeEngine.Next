@@ -40,6 +40,7 @@ public sealed partial class LaunchTests
         Assert.Equal("edited", Text(frames, root));
         Assert.False(cancel.IsCancellationRequested);
         Hierarchy<ElementTree>.DestroySubtree(frames.World, root);
+        frames.Frame();
         Assert.True(cancel.IsCancellationRequested);
         Assert.True(SpinWait.SpinUntil(() =>
         {
@@ -78,7 +79,7 @@ public sealed partial class LaunchTests
     }
 
     private static string Text(HeadlessFrameDriver frames, Entity root) =>
-        frames.World.Read<Label>(Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root))).Value;
+        frames.World.ReadComponentData<Label>(Assert.Single(ElementChildren.Read(frames.World, root))).Value;
 
     private sealed class Work
     {
@@ -103,7 +104,7 @@ public sealed partial class LaunchTests
         }
     }
 
-    private readonly record struct Content(State<int> Key, Work Work) : IView, IComponent
+    private readonly record struct Content(State<int> Key, Work Work) : IView, ITrackedComponent
     {
         public BuildTask Build()
         {

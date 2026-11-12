@@ -1,128 +1,128 @@
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Components;
-using SomeEngine.ECS.Registry;
+using SomeEngine.ECS.Sparse;
+using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS;
 
-public partial class World
+public sealed partial class World
 {
-    internal bool HasComponentData<T>(Entity entity) where T : struct
-    {
-        if (default(T) is ISparseComponent)
-            return HasSparseComponentData<T>(entity);
+    public bool HasComponentData<T>(Entity entity) where T : struct
+        => ComponentType<T>.IsSparseType ? HasSparse<T>(entity) : Has<T>(entity);
 
-        using WorldJobAdmissionScope access = EnterJobTopologyRead();
-        return _components.Has<T>(entity);
+    public bool HasComponentData(Entity entity, int component)
+        => ComponentDataWriteVersion(entity, component).HasValue;
+
+    public T ReadComponentData<T>(Entity entity) where T : struct
+    {
+        using WorldAccess access = OpenValues([new(ComponentType<T>.TypeId,
+            ComponentType<T>.IsSparseType ? WorldValueKind.Sparse : WorldValueKind.Table, false, false,
+            !ComponentType<T>.IsSparseType && ComponentType<T>.Value.UsesStructureWrites)]);
+        if (ComponentType<T>.IsTagType) return default;
+        return ComponentType<T>.IsSparseType ? ReadSparse<T>(entity) : Read<T>(entity);
     }
 
-    internal bool HasComponentData(Entity entity, ushort component)
+    public ref readonly T ReadComponentReference<T>(Entity entity) where T : struct
     {
-        if (ComponentRegistry.Get(component).Storage == StoragePath.Sparse)
-        {
-            using WorldJobAdmissionScope sparseAccess = EnterJobAdmission(WorldJobAdmissionRequest.ForStorage(
-                WorldStorageKind.Sparse, component, WorldStorageAccess.Read));
-            return _entities.Alive(entity) && _sparse.HasValue(component, entity);
-        }
-
-        using WorldJobAdmissionScope access = EnterJobTopologyRead();
-        return _components.Has(entity, component);
+        using WorldAccess access = OpenValues([new(ComponentType<T>.TypeId,
+            ComponentType<T>.IsSparseType ? WorldValueKind.Sparse : WorldValueKind.Table, false, false,
+            !ComponentType<T>.IsSparseType && ComponentType<T>.Value.UsesStructureWrites)]);
+        if (ComponentType<T>.IsSparseType) return ref ReadSparse<T>(entity);
+        return ref Read<T>(entity);
     }
 
-    internal void AddComponentData<T>(Entity entity, in T value) where T : struct
+    public void AddComponentData<T>(Entity entity, in T value) where T : struct
     {
-        if (default(T) is ISparseComponent)
-            AddSparseComponentData(entity, in value);
+        if (ComponentType<T>.IsSparseType) AddSparse(entity, value);
+        else Add(entity, value);
+    }
+
+    public void ReplaceComponentData<T>(Entity entity, in T value) where T : struct
+    {
+        if (ComponentType<T>.IsSparseType) ReplaceSparse(entity, value);
+        else Set(entity, value);
+    }
+
+    /// <summary>Stores an equal value while preserving its observation version.</summary>
+    public void OverwriteComponentData<T>(Entity entity, in T value) where T : struct
+    {
+        using WorldAccess access = OpenValues([new(ComponentType<T>.TypeId,
+            ComponentType<T>.IsSparseType ? WorldValueKind.Sparse : WorldValueKind.Table, true, false)]);
+        if (ComponentType<T>.IsTagType || ComponentType<T>.IsSharedType) return;
+        if (ComponentType<T>.IsSparseType) Sparse<T>().Get(entity) = value;
         else
-            AddTableComponentData(entity, in value);
-    }
-
-    internal T ReadComponentData<T>(Entity entity) where T : struct
-    {
-        if (default(T) is ISparseComponent)
         {
-            using WorldJobAdmissionScope sparseAccess = EnterJobSparse<T>(WorldStorageAccess.Read);
-            return _sparse.Read<T>(entity);
+            ref EntityRecord record = ref Resolve(entity);
+            ColumnEntry.At<T>(ref record.Chunk!.Columns[ComponentType<T>.TypeId], record.Row) = value;
         }
-
-        using WorldJobAdmissionScope access =
-            EnterJobComponent(ComponentMetadata<T>.Id, WorldStorageAccess.Read);
-        return _components.Read<T>(entity);
     }
 
     /// <summary>Discards data introduced by a build that is restoring its previous result.</summary>
-    internal void DiscardComponentData<T>(Entity entity) where T : struct
+    public void DiscardComponentData<T>(Entity entity) where T : struct
     {
-        if (default(T) is ISparseComponent)
+        if (ComponentType<T>.IsSparseType) { RemoveSparse<T>(entity); return; }
+        using WorldAccess access = OpenStructure();
+        RequireStructure();
+        using MembershipEdit membership = BeginMembershipEdit(entity);
+        ref EntityRecord record = ref Resolve(entity);
+        Chunk chunk = record.Chunk!;
+        int type = ComponentType<T>.TypeId;
+        if (ComponentType<T>.TracksWritesType)
         {
-            using WorldJobAdmissionScope sparseAccess = EnterJobSparse<T>(WorldStorageAccess.Write);
-            _sparse.Remove<T>(entity);
-            return;
+            ref ComponentChanges changes = ref chunk.Changes![chunk.Columns[type].ColumnPlusOne - 1];
+            changes.LastWrite = Math.Max(changes.LastWrite, NextVersion());
         }
-
-        using WorldJobAdmissionScope access = EnterJobTopologyWrite();
-        PublicComponentMutationGuard.Structural<T>(nameof(DiscardComponentData));
-        _components.Discard<T>(entity);
-    }
-
-    internal ref readonly T ReadComponentReference<T>(Entity entity) where T : struct
-    {
-        if (default(T) is ISparseComponent)
+        if (ComponentType<T>.IsIndexedType) ActiveIndex<T>()?.Remove(entity.Id);
+        if (ComponentType<T>.IsSharedType) RemoveSharedMember(entity, chunk, type, record.Row);
+        else if (ComponentType<T>.HasValueOperationsType) ComponentType<T>.ReleaseValue(this,
+            ref ColumnEntry.At<T>(ref chunk.Columns[type], record.Row));
+        if (_retainRemovedColumns)
         {
-            using WorldJobAdmissionScope sparseAccess = EnterJobSparse<T>(WorldStorageAccess.Read);
-            return ref _sparse.ReadRef<T>(entity);
+            EnsurePresence(chunk, type)[record.Row >> 6] &= ~(1UL << (record.Row & 63));
+            chunk.RemoveEnabled(type, record.Row);
+            if (!ComponentType<T>.IsTagType && !ComponentType<T>.IsSharedType)
+                ColumnEntry.At<T>(ref chunk.Columns[type], record.Row) = default;
+            if ((uint)type < (uint)_cachedByType.Length) _cachedByType[type]?.Remove(entity);
         }
-
-        using WorldJobAdmissionScope access =
-            EnterJobComponent(ComponentMetadata<T>.Id, WorldStorageAccess.Read);
-        return ref _components.ReadRef<T>(entity);
+        else MoveKnown(entity, ref record, chunk, GetTransition(chunk, type, false, record.Row));
     }
 
-    internal uint ComponentDataWriteVersion<T>(Entity entity) where T : struct
+    public ulong ComponentDataWriteVersion<T>(Entity entity) where T : struct
+        => ComponentDataWriteVersion(entity, ComponentType<T>.TypeId) ?? 0;
+
+    public ulong? ComponentDataWriteVersion(Entity entity, int component)
     {
-        if (default(T) is ISparseComponent)
+        ComponentType type = ComponentTypes.Get(component);
+        using WorldAccess access = OpenValues([new(component,
+            type.IsSparse ? WorldValueKind.Sparse : WorldValueKind.Table, false, type.TracksWrites)]);
+        if (!IsAliveCore(entity)) return null;
+        if (type.IsSparse)
         {
-            using WorldJobAdmissionScope sparseAccess = EnterJobSparse<T>(WorldStorageAccess.Read);
-            return _sparse.WriteVersion<T>(entity);
+            SparseStore? store = _sparse is { } sparse && (uint)component < (uint)sparse.Types.Length
+                ? sparse.Types[component] : null;
+            if (store?.Has(entity) != true) return null;
+            return type.TracksWrites ? store.Changes![0].WrittenAt(store.Find(entity.Id).RowPlusOne - 1, type.TracksAdded) : 0;
         }
-
-        using WorldJobAdmissionScope access =
-            EnterJobComponent(ComponentMetadata<T>.Id, WorldStorageAccess.Read);
-        return _components.WriteVersion<T>(entity);
+        ref EntityRecord record = ref Records[entity.Id];
+        Chunk chunk = record.Chunk!;
+        if ((uint)component >= (uint)chunk.Columns.Length || !chunk.Columns[component].Has(record.Row)) return null;
+        return type.TracksWrites
+            ? chunk.Changes![chunk.Columns[component].ColumnPlusOne - 1].WrittenAt(record.Row, type.TracksAdded) : 0;
     }
 
-    internal uint? ComponentDataWriteVersion(Entity entity, ushort component)
+    public ulong ComponentWriteVersion(int component)
     {
-        bool sparse = ComponentRegistry.Get(component).Storage == StoragePath.Sparse;
-        using WorldJobAdmissionScope access = EnterJobAdmission(WorldJobAdmissionRequest.ForStorage(
-            sparse ? WorldStorageKind.Sparse : WorldStorageKind.Table, component, WorldStorageAccess.Read));
-        if (sparse)
-            return _entities.Alive(entity) && _sparse.HasValue(component, entity)
-                ? _sparse.WriteVersion(entity, component)
-                : null;
-        return _components.Has(entity, component) ? _components.WriteVersion(entity, component) : null;
-    }
-
-    /// <summary>Stores an equal value while preserving component write versions.</summary>
-    internal void OverwriteComponentData<T>(Entity entity, in T value) where T : struct
-    {
-        if (default(T) is ISparseComponent)
-        {
-            using WorldJobAdmissionScope sparseAccess = EnterJobSparse<T>(WorldStorageAccess.Write);
-            _sparse.Overwrite(entity, in value);
-            return;
-        }
-
-        using WorldJobAdmissionScope access =
-            EnterJobComponent(ComponentMetadata<T>.Id, WorldStorageAccess.Write);
-        PublicComponentMutationGuard.Value<T>(nameof(OverwriteComponentData));
-        _components.Overwrite(entity, in value);
-    }
-
-    internal void ReplaceComponentData<T>(Entity entity, in T value) where T : struct
-    {
-        if (default(T) is ISparseComponent)
-            ReplaceSparseComponentData(entity, in value);
-        else
-            ReplaceTableComponentData(entity, in value);
+        ComponentType type = ComponentTypes.Get(component);
+        using WorldAccess access = OpenValues([new(component,
+            type.IsSparse ? WorldValueKind.Sparse : WorldValueKind.Table, false, type.TracksWrites)]);
+        if (!type.TracksWrites) return 0;
+        if (type.IsSparse)
+            return _sparse is { } sparse && (uint)component < (uint)sparse.Types.Length
+                ? sparse.Types[component]?.Changes?[0].LastWrite ?? 0 : 0;
+        ulong version = 0;
+        for (int index = 0; index < ArchetypeCount; index++)
+            foreach (Chunk chunk in Archetypes[index].AllChunks)
+                if ((uint)component < (uint)chunk.Columns.Length && chunk.Columns[component].ColumnPlusOne != 0)
+                    version = Math.Max(version, chunk.Changes![chunk.Columns[component].ColumnPlusOne - 1].LastWrite);
+        return version;
     }
 }

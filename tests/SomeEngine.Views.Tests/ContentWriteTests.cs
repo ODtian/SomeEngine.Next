@@ -13,9 +13,9 @@ public sealed partial class ContentWriteTests
     public void ContentSharesTheCallingCalculationsCopyUntilTheBuildCompletes(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity();
+        Entity source = frames.World.Create();
         if (sparse)
-            frames.World.AddSparse(source, new SparseNumber(3));
+            frames.World.SetSparse(source, new SparseNumber(3));
         else
             frames.World.Add(source, new Number(3));
         Entity root = Views.Spawn(frames.World, Entity.Null, new ContentNumberGroup(source, sparse));
@@ -23,72 +23,72 @@ public sealed partial class ContentWriteTests
         frames.Frame();
 
         Assert.Equal(11, sparse
-            ? frames.World.ReadSparse<SparseNumber>(source).Value
-            : frames.World.Read<Number>(source).Value);
-        Assert.Equal(new CopyValues(3, 9), frames.World.Read<CopyValues>(root));
-        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity nested = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group));
-        Entity label = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, nested));
-        Assert.Equal(9, frames.World.Read<NumberLabel>(label).Value);
+            ? frames.World.ReadComponentData<SparseNumber>(source).Value
+            : frames.World.ReadComponentData<Number>(source).Value);
+        Assert.Equal(new CopyValues(3, 9), frames.World.ReadComponentData<CopyValues>(root));
+        Entity group = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity nested = Assert.Single(ElementChildren.Read(frames.World, group));
+        Entity label = Assert.Single(ElementChildren.Read(frames.World, nested));
+        Assert.Equal(9, frames.World.ReadComponentData<NumberLabel>(label).Value);
     }
 
     [Fact]
     public void CallerBuildCommitsItsOwnDataAndRetainsTheDeclaredChildren()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Number(3));
+        Entity source = frames.World.Create(new Number(3));
         Entity root = Views.Spawn(frames.World, Entity.Null, new CallerNumberGroup(source));
         frames.Frame();
-        Entity container = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity label = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container));
-        Assert.Equal(3, frames.World.Read<Number>(container).Value);
-        frames.World.Replace(source, new Number(7));
+        Entity container = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity label = Assert.Single(ElementChildren.Read(frames.World, container));
+        Assert.Equal(3, frames.World.ReadComponentData<Number>(container).Value);
+        frames.World.Set(source, new Number(7));
 
         frames.Frame();
 
-        Assert.Equal(7, frames.World.Read<Number>(container).Value);
-        Assert.Equal(label, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container)));
-        Assert.Equal(31, frames.World.Read<NumberLabel>(label).Value);
+        Assert.Equal(7, frames.World.ReadComponentData<Number>(container).Value);
+        Assert.Equal(label, Assert.Single(ElementChildren.Read(frames.World, container)));
+        Assert.Equal(31, frames.World.ReadComponentData<NumberLabel>(label).Value);
     }
 
     [Fact]
     public void UntrackedReadWriteInsideContentPreservesTheFirstDisplayAfterSourceChanges()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Number(3));
+        Entity source = frames.World.Create(new Number(3));
         Entity root = Views.Spawn(frames.World, Entity.Null, new UntrackedContentNumber(source));
         frames.Frame();
-        Assert.Equal(7, frames.World.Read<Number>(source).Value);
-        Assert.Equal(new CopyValues(3, 3), frames.World.Read<CopyValues>(root));
-        frames.World.Replace(source, new Number(11));
+        Assert.Equal(7, frames.World.ReadComponentData<Number>(source).Value);
+        Assert.Equal(new CopyValues(3, 3), frames.World.ReadComponentData<CopyValues>(root));
+        frames.World.Set(source, new Number(11));
 
         frames.Frame();
 
-        Assert.Equal(11, frames.World.Read<Number>(source).Value);
-        Assert.Equal(new CopyValues(3, 3), frames.World.Read<CopyValues>(root));
+        Assert.Equal(11, frames.World.ReadComponentData<Number>(source).Value);
+        Assert.Equal(new CopyValues(3, 3), frames.World.ReadComponentData<CopyValues>(root));
     }
 
     [Fact]
     public void FailedContentPreservesStoredDataAndAllowsALaterSuccessfulBuild()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Number(3));
+        Entity source = frames.World.Create(new Number(3));
         Entity root = Views.Spawn(frames.World, Entity.Null, new FailingContentNumber(source, true));
-        uint version = frames.World.WriteVersion<Number>(source);
+        ulong version = frames.World.ComponentDataWriteVersion<Number>(source);
 
         frames.Frame();
 
-        Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
-        Assert.Equal(3, frames.World.Read<Number>(source).Value);
-        Assert.Equal(version, frames.World.WriteVersion<Number>(source));
-        Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        frames.World.Replace(root, new FailingContentNumber(source, false));
+        Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(root).Exception);
+        Assert.Equal(3, frames.World.ReadComponentData<Number>(source).Value);
+        Assert.Equal(version, frames.World.ComponentDataWriteVersion<Number>(source));
+        Assert.Empty(ElementChildren.Read(frames.World, root));
+        frames.World.Set(root, new FailingContentNumber(source, false));
 
         frames.Frame();
 
-        Assert.Equal(7, frames.World.Read<Number>(source).Value);
+        Assert.Equal(7, frames.World.ReadComponentData<Number>(source).Value);
         Assert.False(frames.World.HasSparse<BuildError>(root));
-        Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Assert.Single(ElementChildren.Read(frames.World, root));
     }
 
     private readonly record struct FailingContentNumber(Entity Source, bool Throw) : IView, IComponent
@@ -128,7 +128,7 @@ public sealed partial class ContentWriteTests
                 number = new SparseNumber(7);
                 DeclareContent();
                 Scope.Write<CopyValues>(Scope.Entity) = new CopyValues(
-                    Scope.World.ReadSparse<SparseNumber>(Source).Value, number.Value);
+                    Scope.World.ReadComponentData<SparseNumber>(Source).Value, number.Value);
                 number = new SparseNumber(number.Value + 2);
             }
             else
@@ -137,7 +137,7 @@ public sealed partial class ContentWriteTests
                 number = new Number(7);
                 DeclareContent();
                 Scope.Write<CopyValues>(Scope.Entity) = new CopyValues(
-                    Scope.World.Read<Number>(Source).Value, number.Value);
+                    Scope.World.ReadComponentData<Number>(Source).Value, number.Value);
                 number = new Number(number.Value + 2);
             }
             return default;
@@ -191,12 +191,12 @@ public sealed partial class ContentWriteTests
         }
     }
 
-    private readonly record struct NumberLabel(int Value) : IView, IComponent
+    private readonly record struct NumberLabel(int Value) : IView, ITrackedComponent
     {
         public BuildTask Build() => default;
     }
 
     private readonly record struct CopyValues(int StoredValue, int CopyValue) : IComponent;
-    private readonly record struct Number(int Value) : IComponent;
-    private readonly record struct SparseNumber(int Value) : ISparseComponent;
+    private readonly record struct Number(int Value) : ITrackedComponent;
+    private readonly record struct SparseNumber(int Value) : ISparseComponent, ITrackedComponent;
 }

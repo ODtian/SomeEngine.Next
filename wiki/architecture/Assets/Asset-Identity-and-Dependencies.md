@@ -10,6 +10,8 @@
 
 Block 的持久类型 ID 用来在一个 Asset 内索引某一种内容，不是独立资产 ID。源文件的 SourceGuid 及持久子元素映射用于保持多输出身份；来源路径、内容摘要和临时遍历下标不能替代这些事实。
 
+glTF 导入和内容重建共用 `GltfSourceImporter.GetElementKey(settings, kind, index, source)`。调用方通过 `SourceMeta.GetSettings` 读取已保存的 `GltfImporterSettings`；`kind` 指明 mesh、material、entities 等输出类别，`index` 是来源元素序号，`source` 提供 glTF extras。该函数按设置中的持久标识属性和序号策略计算子资产 key，`ImportContext.GetAssetId(key)` 再沿同一 `SourceMeta.ElementIds` 取得资产 ID。来源元数据持有身份映射，导入器和重建工具复用这份规则。
+
 ## 内容版本与条目
 
 | 信息 | 含义 |
@@ -42,6 +44,8 @@ using var mesh = new MeshAsset { Name = "geometry" };
 AssetEntry written = await mesh.SaveAsync(path);
 project.RegisterAsset(written);
 ```
+
+`RegisterAsset` 将条目中的 `SourceGuid` 和 `SubAssetKey` 一并写入目录。场景重建保存返回值补入原来源信息后，目录继续支持按来源路径和子资产 key 查找同一身份。
 
 目录查询不触发扫描或编译。保存返回值与登记事实必须一致；遇到另一个有效资产占用目标路径应明确失败，不能通过路径悄悄更换身份。来源重命名、复制及伴随文件规则见 [导入流程](Asset-Import-and-Storage.md)。
 

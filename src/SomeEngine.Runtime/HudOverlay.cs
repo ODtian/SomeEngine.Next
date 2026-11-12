@@ -35,29 +35,29 @@ public sealed partial class HudOverlay : IDisposable
     {
         _world = world;
         _text = text;
-        _frame = world.CreateEntity(new HudFrame());
-        Canvas = world.CreateEntity(new Canvas { Size = new Size(width, height) });
+        _frame = world.Create(new HudFrame());
+        Canvas = world.Create(new Canvas { Size = new Size(width, height) });
         _view = Views.Views.Spawn(world, Canvas, new OverlayView(width, height, text.Font, _frame));
     }
 
-    public void Update(int frameNumber) => _world.Replace(_frame, new HudFrame(frameNumber));
+    public void Update(int frameNumber) => _world.Set(_frame, new HudFrame(frameNumber));
 
     public void Resize(int width, int height)
     {
         Size size = new(width, height);
-        if (_world.Read<Canvas>(Canvas).Size == size) return;
-        _world.Replace(Canvas, new Canvas { Size = size });
-        _world.Replace(_view, new OverlayView(width, height, _text.Font, _frame));
+        if (_world.ReadComponentData<Canvas>(Canvas).Size == size) return;
+        _world.Set(Canvas, new Canvas { Size = size });
+        _world.Set(_view, new OverlayView(width, height, _text.Font, _frame));
     }
 
     public void Dispose()
     {
         Hierarchy<ElementTree>.DestroySubtree(_world, Canvas);
-        _world.DestroyEntity(_frame);
+        _world.Destroy(_frame);
         if (_disposeText) _text.Dispose();
     }
 
-    private readonly record struct HudFrame(int Number = 0) : IComponent;
+    private readonly record struct HudFrame(int Number = 0) : ITrackedComponent;
 
     private readonly record struct OverlayView(int Width, int Height, Font Font, Entity Frame) : IView, IComponent
     {

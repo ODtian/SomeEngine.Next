@@ -60,7 +60,7 @@ internal static partial class FocusChecks
     internal static void RunInputOrder()
     {
         using var frames = new FocusFrames();
-        Entity capture = frames.World.CreateEntity(new InputCapture { Pointer = true });
+        Entity capture = frames.World.Create(new InputCapture { Pointer = true });
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new FocusGrid());
         frames.Frame();
         Gamepad.Confirm(frames.World);
@@ -74,20 +74,21 @@ internal static partial class FocusChecks
         Keyboard.Key(frames.World, Key.Enter, true);
         frames.Frame();
         CheckDisplay(frames.World, root, 4, 2);
-        Require(frames.World.Read<InputCapture>(capture).Pointer && frames.World.Read<InputCapture>(capture).Keyboard,
+        Require(frames.World.ReadComponentData<InputCapture>(capture).Pointer && frames.World.ReadComponentData<InputCapture>(capture).Keyboard,
             "Focus consumes keyboard input alongside the pointer's existing consumption.");
-        Entity grid = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        var cells = Hierarchy<ElementTree>.GetChildren(frames.World, grid);
-        Require(frames.World.Read<Clicks>(cells[1]).Count == 1 && frames.World.Read<Clicks>(cells[4]).Count == 1,
+        Entity grid = ElementChildren.Read(frames.World, root)[0];
+        var cells = ElementChildren.Read(frames.World, grid);
+        Require(frames.World.ReadComponentData<Clicks>(cells[1]).Count == 1 && frames.World.ReadComponentData<Clicks>(cells[4]).Count == 1,
             "Each confirmation reaches the focus selected before it.");
         Keyboard.Key(frames.World, Key.Space, true);
         Gamepad.Confirm(frames.World);
         frames.Frame();
         CheckDisplay(frames.World, root, 4, 3);
-        Require(frames.World.Read<Clicks>(cells[4]).Count == 3,
+        Require(frames.World.ReadComponentData<Clicks>(cells[4]).Count == 3,
             "Multiple confirmations advance the click count and one read consumes them together.");
-        frames.World.DestroyEntity(cells[4]);
-        Require(frames.World.Read<InputCapture>(capture).Pointer && !frames.World.Read<InputCapture>(capture).Keyboard,
+        frames.World.Destroy(cells[4]);
+        frames.Frame();
+        Require(frames.World.ReadComponentData<InputCapture>(capture).Pointer && !frames.World.ReadComponentData<InputCapture>(capture).Keyboard,
             "Releasing the focused leaf clears keyboard consumption and preserves pointer consumption.");
     }
 
@@ -115,11 +116,11 @@ internal static partial class FocusChecks
 
     private static void CheckDisplay(World world, Entity root, int index, int confirmations)
     {
-        Require(world.Read<FocusDisplay>(root) == new FocusDisplay(index, confirmations),
+        Require(world.ReadComponentData<FocusDisplay>(root) == new FocusDisplay(index, confirmations),
             $"The grid displays focus {index} and {confirmations} confirmations.");
-        Entity grid = Hierarchy<ElementTree>.GetChildren(world, root)[0];
-        var cells = Hierarchy<ElementTree>.GetChildren(world, grid);
-        for (int cell = 0; cell < cells.Count; cell++)
+        Entity grid = ElementChildren.Read(world, root)[0];
+        var cells = ElementChildren.Read(world, grid);
+        for (int cell = 0; cell < cells.Length; cell++)
             Require(world.HasSparse<Focused>(cells[cell]) == (cell == index),
                 "The displayed cell is the only focused node.");
     }
@@ -157,7 +158,7 @@ internal static partial class FocusChecks
         }
     }
 
-    private record struct ConfirmationCount(int Value) : IComponent;
+    private record struct ConfirmationCount(int Value) : IComponent, ITrackedComponent;
     private readonly record struct FocusDisplay(int Index, int Confirmations) : IComponent;
 }
 
@@ -169,7 +170,7 @@ internal sealed class FocusFrames : IDisposable
 
     public FocusFrames(ISystem<ImmediateSystemContext>? navigation = null)
     {
-        Canvas = World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Canvas = World.Create(new Canvas { Size = new Size(800, 600) });
         _systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(World));
         int focusSystem = _systems.Add(new FocusNavigationSystem());
         if (navigation is not null)

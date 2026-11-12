@@ -1,15 +1,9 @@
-using System.ComponentModel;
-using SomeEngine.ECS.Relations;
+using SomeEngine.ECS.Registry;
 
-namespace SomeEngine.ECS.Registry;
+namespace SomeEngine.ECS;
 
-/// <summary>Receives the type data emitted by the ECS source generator.</summary>
-[EditorBrowsable(EditorBrowsableState.Never)]
 public static class GeneratedEcsTypes
 {
-    public static void RegisterJobStorage<T>(bool isAliasFree) where T : struct =>
-        JobStorageTypeMetadata<T>.Register(isAliasFree);
-
-    public static void RegisterRelationSchema<T>(RelationSchema schema) where T : struct, IComponent =>
-        RelationSchemaCache<T>.Register(schema);
+    public static void RegisterJobStorage<T>(bool isAliasFree) where T : struct
+        => JobStorageTypeMetadata<T>.Register(isAliasFree);
 }

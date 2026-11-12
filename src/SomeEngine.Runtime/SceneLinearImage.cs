@@ -1,3 +1,4 @@
+using SomeEngine.Core.ECS.Components;
 using System.Buffers.Binary;
 using System.Numerics;
 using System.Text.Json;
@@ -17,7 +18,7 @@ public sealed record SceneFrame
     public int Width { get; init; }
     public int Height { get; init; }
     public Vector3 CameraPosition { get; init; }
-    public SomeEngine.Render.Components.WorldOrigin WorldOrigin { get; init; }
+    public SomeEngine.Core.ECS.Components.WorldOrigin WorldOrigin { get; init; }
     public Matrix4x4 View { get; init; }
     public Matrix4x4 Projection { get; init; }
     public Matrix4x4 UnjitteredProjection { get; init; }

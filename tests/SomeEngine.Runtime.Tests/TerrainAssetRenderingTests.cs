@@ -20,7 +20,7 @@ public sealed class TerrainAssetRenderingTests(SceneContentFixture content)
         Terrain? restored = null;
         try
         {
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
             using var materialAsset = await MaterialAsset.OpenAsync(Path.Combine(content.DirectoryPath, "assets/Materials/sphere-0.material.asset"));
             var original = new BlendTerrainExample(scheduler);
             original.RaiseDetail(2f);

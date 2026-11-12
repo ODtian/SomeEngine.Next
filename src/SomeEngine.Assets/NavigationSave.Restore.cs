@@ -14,8 +14,8 @@ public static partial class NavigationSave
         AssetLoader loader, Scheduler? scheduler = null, NavigationSaveOptions? options = null, CancellationToken cancellationToken = default)
     {
         scheduler ??= JobSystem.Default;
-        NavigationSavedTable table = WorldSerializer.ReadDurableComponent<NavigationSavedTable>(stream, TableRegistry);
-        World world = WorldSerializer.ReadDurableWorld(stream, gameRegistry, new(Execution: new WorldJobs(scheduler)));
+        NavigationSavedTable table = WorldSerializer.ReadComponent<NavigationSavedTable>(stream, TableRegistry, new SerializationReadOptions(RequiredPurpose: SavePurpose.DurableSave));
+        World world = WorldSerializer.ReadWorld(stream, gameRegistry, new(RequiredPurpose: SavePurpose.DurableSave, Execution: new WorldJobs(scheduler)));
         try
         {
             var resources = new NavigationSaveResources();

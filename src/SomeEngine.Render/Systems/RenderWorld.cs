@@ -1,14 +1,15 @@
+using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Serialization;
 using System.Collections.Immutable;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Components;
 using SomeEngine.Render.Components;
 using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Systems;
 
-internal readonly record struct RenderTextureVersions(ImmutableDictionary<Texture, TextureVersions> Textures) : IComponent;
+internal readonly record struct RenderTextureVersions(ImmutableDictionary<Texture, TextureVersions> Textures) : IComponent, ITrackedComponent;
 
 internal readonly record struct RenderMaterialEntry(Entity Entity, int ReferenceCount);
 internal readonly record struct RenderMaterialIndex(ImmutableDictionary<long, RenderMaterialEntry> Entries) : IComponent;
@@ -18,19 +19,23 @@ internal readonly record struct RenderMaterialIndex(ImmutableDictionary<long, Re
 /// pipeline-owned components. Extraction and pipeline scheduling are deliberately owned by
 /// separate system groups; this type is only their ECS storage.
 /// </summary>
-public sealed class RenderWorld : World
+public sealed class RenderWorld : IDisposable
 {
     private readonly Entity _materialIndexEntity;
     private readonly Entity _textureVersionsEntity;
-    private readonly QueryHandle _worldOriginQuery;
+    private readonly Query _worldOriginQuery;
+    public World World { get; }
 
     public RenderWorld(int initialEntityCapacity = 256, WorldExecution? execution = null)
-        : base(initialEntityCapacity, execution)
     {
-        _worldOriginQuery = Query(new QueryDefinitionBuilder().Read<RenderWorldOrigin>());
-        _materialIndexEntity = CreateEntity(new RenderMaterialIndex(ImmutableDictionary<long, RenderMaterialEntry>.Empty));
-        _textureVersionsEntity = CreateEntity(new RenderTextureVersions(ImmutableDictionary<Texture, TextureVersions>.Empty));
+        World = new World(initialEntityCapacity, execution: execution);
+        _worldOriginQuery = World.Query(new QueryDescription().With<RenderWorldOrigin>());
+        _materialIndexEntity = World.Create(new RenderMaterialIndex(ImmutableDictionary<long, RenderMaterialEntry>.Empty));
+        _textureVersionsEntity = World.Create(new RenderTextureVersions(ImmutableDictionary<Texture, TextureVersions>.Empty));
     }
+
+    internal static bool IsRenderingWorld(World world) =>
+        world.Query<RenderMaterialIndex>().Count != 0 && world.Query<RenderTextureVersions>().Count != 0;
 
     /// <summary>The shared origin extracted for this world; coordinates use engine world units.</summary>
     public WorldOrigin WorldOrigin
@@ -39,129 +44,128 @@ public sealed class RenderWorld : World
         {
             WorldOrigin origin = default;
             int count = 0;
-            ExecuteQuery(_worldOriginQuery, query =>
-            {
-                foreach (QueryChunkView chunk in query.Chunks)
-                    foreach (RenderWorldOrigin value in chunk.Read<RenderWorldOrigin>())
-                    {
-                        SomeEngine.Core.Diagnostics.DevelopmentCheck.Require(++count == 1,
-                            "A render world has one shared coordinate origin.");
-                        origin = value.Value;
-                    }
-            });
+            using QueryScope query = _worldOriginQuery.OpenRead();
+            foreach (QueryChunk chunk in query)
+                foreach (RenderWorldOrigin value in chunk.Read<RenderWorldOrigin>())
+                {
+                    SomeEngine.Core.Diagnostics.DevelopmentCheck.Require(++count == 1,
+                        "A render world has one shared coordinate origin.");
+                    origin = value.Value;
+                }
             return origin;
         }
     }
 
     /// <summary>Reads the shared material referenced through this world's extraction boundary.</summary>
     public Material ReadMaterial(long materialId) =>
-        Read<RenderMaterialReference>(Read<RenderMaterialIndex>(_materialIndexEntity).Entries[materialId].Entity).Material;
+        World.ReadComponentData<RenderMaterialReference>(World.ReadComponentData<RenderMaterialIndex>(_materialIndexEntity).Entries[materialId].Entity).Material;
 
     public ulong ReadMaterialRevision(long materialId) => ReadMaterialReference(materialId).Revision;
     internal RenderMaterialReference ReadMaterialReference(long materialId) =>
-        Read<RenderMaterialReference>(Read<RenderMaterialIndex>(_materialIndexEntity).Entries[materialId].Entity);
+        World.ReadComponentData<RenderMaterialReference>(World.ReadComponentData<RenderMaterialIndex>(_materialIndexEntity).Entries[materialId].Entity);
     public TextureVersions ReadTextureVersions(Texture texture) => TextureVersions[texture];
     internal ImmutableDictionary<Texture, TextureVersions> TextureVersions =>
-        Read<RenderTextureVersions>(_textureVersionsEntity).Textures;
-    internal void UpdateTextureVersions(ImmutableDictionary<Texture, TextureVersions> textures) =>
-        Replace(_textureVersionsEntity, new RenderTextureVersions(textures));
-    internal void UpdateMaterials(IEnumerable<RenderMaterialReference> references)
+        World.ReadComponentData<RenderTextureVersions>(_textureVersionsEntity).Textures;
+    internal void UpdateTextureVersions(ImmutableDictionary<Texture, TextureVersions> textures) => UpdateTextureVersions(World, textures);
+    internal void UpdateTextureVersions(World target, ImmutableDictionary<Texture, TextureVersions> textures) =>
+        target.Set(_textureVersionsEntity, new RenderTextureVersions(textures));
+    internal void UpdateMaterials(IEnumerable<RenderMaterialReference> references) => UpdateMaterials(World, references);
+    internal void UpdateMaterials(World target, IEnumerable<RenderMaterialReference> references)
     {
-        var entries = Read<RenderMaterialIndex>(_materialIndexEntity).Entries;
+        var entries = target.ReadComponentData<RenderMaterialIndex>(_materialIndexEntity).Entries;
         foreach (RenderMaterialReference reference in references)
             if (entries.TryGetValue(reference.Material.MaterialId, out RenderMaterialEntry entry) &&
-                Read<RenderMaterialReference>(entry.Entity) != reference)
-                Replace(entry.Entity, reference);
+                target.ReadComponentData<RenderMaterialReference>(entry.Entity) != reference)
+                target.Set(entry.Entity, reference);
     }
 
     internal bool TryReadMaterial(long materialId, out Material? data)
     {
-        if (Read<RenderMaterialIndex>(_materialIndexEntity).Entries.TryGetValue(materialId, out RenderMaterialEntry entry))
+        if (World.ReadComponentData<RenderMaterialIndex>(_materialIndexEntity).Entries.TryGetValue(materialId, out RenderMaterialEntry entry))
         {
-            data = Read<RenderMaterialReference>(entry.Entity).Material;
+            data = World.ReadComponentData<RenderMaterialReference>(entry.Entity).Material;
             return true;
         }
         data = null;
         return false;
     }
 
-    internal void SetMaterials(Entity entity, ReadOnlySpan<Material> materials,
+    internal void SetMaterials(World target, Entity entity, ReadOnlySpan<Material> materials,
         IReadOnlyDictionary<long, RenderMaterialReference> references)
     {
+        using WorldStructureWriteScope structure = target.OpenStructureWrite();
         long[] previous = [];
-        if (HasBuffer<RenderMaterialBinding>(entity))
-            ExecuteBufferRead<RenderMaterialBinding, long[]>(entity, ref previous,
-                static (BufferView<RenderMaterialBinding> values, ref long[] result) =>
-                {
-                    ReadOnlySpan<RenderMaterialBinding> bindings = values.AsSpan();
-                    result = new long[bindings.Length];
-                    for (int index = 0; index < result.Length; index++) result[index] = bindings[index].MaterialId;
-                });
-        else AddBuffer<RenderMaterialBinding>(entity);
+        if (target.Has<Buffer<RenderMaterialBinding>>(entity))
+        {
+            using ReadOnlyBuffer<RenderMaterialBinding> values = target.ReadBuffer<RenderMaterialBinding>(entity);
+            ReadOnlySpan<RenderMaterialBinding> priorBindings = values.AsSpan();
+            previous = new long[priorBindings.Length];
+            for (int index = 0; index < previous.Length; index++) previous[index] = priorBindings[index].MaterialId;
+        }
+        else target.AddBuffer<RenderMaterialBinding>(entity);
         bool changed = previous.Length != materials.Length;
-        for (int index = 0; !changed && index < previous.Length; index++)
-            changed = previous[index] != materials[index].MaterialId;
+        for (int index = 0; !changed && index < previous.Length; index++) changed = previous[index] != materials[index].MaterialId;
         if (!changed) return;
-
-        var entries = Read<RenderMaterialIndex>(_materialIndexEntity).Entries;
-        foreach (long id in previous)
-            entries = entries.SetItem(id, entries[id] with { ReferenceCount = entries[id].ReferenceCount - 1 });
+        var entries = target.ReadComponentData<RenderMaterialIndex>(_materialIndexEntity).Entries;
+        foreach (long id in previous) entries = entries.SetItem(id, entries[id] with { ReferenceCount = entries[id].ReferenceCount - 1 });
         var ids = new long[materials.Length];
         for (int index = 0; index < materials.Length; index++)
         {
-            Material material = materials[index];
-            long id = ids[index] = material.MaterialId;
-            if (!entries.TryGetValue(id, out RenderMaterialEntry entry))
-                entry = new(CreateEntity(references[id]), 0);
+            long id = ids[index] = materials[index].MaterialId;
+            if (!entries.TryGetValue(id, out RenderMaterialEntry entry)) entry = new(target.Create(references[id]), 0);
             entries = entries.SetItem(id, entry with { ReferenceCount = entry.ReferenceCount + 1 });
         }
         foreach (long id in previous)
             if (entries.TryGetValue(id, out RenderMaterialEntry entry) && entry.ReferenceCount == 0)
             {
-                DestroyEntity(entry.Entity);
+                target.Destroy(entry.Entity);
                 entries = entries.Remove(id);
             }
-        Replace(_materialIndexEntity, new RenderMaterialIndex(entries));
-        ExecuteBufferWrite<RenderMaterialBinding, long[]>(entity, ref ids,
-            static (DynamicBuffer<RenderMaterialBinding> values, ref long[] data) =>
-            {
-                values.Clear();
-                values.EnsureCapacity(data.Length);
-                foreach (long id in data) values.Add(new(id));
-            });
+        target.Set(_materialIndexEntity, new RenderMaterialIndex(entries));
+        using DynamicBuffer<RenderMaterialBinding> bindings = target.GetBuffer<RenderMaterialBinding>(entity);
+        bindings.Clear(); bindings.EnsureCapacity(ids.Length);
+        foreach (long id in ids) bindings.Add(new(id));
     }
 
-    internal void RemoveMaterials(Entity entity)
+    internal void SetMaterials(Entity entity, ReadOnlySpan<Material> materials,
+        IReadOnlyDictionary<long, RenderMaterialReference> references) => SetMaterials(World, entity, materials, references);
+
+    internal void RemoveMaterials(World target, Entity entity)
     {
-        if (!HasBuffer<RenderMaterialBinding>(entity)) return;
-        SetMaterials(entity, [], ImmutableDictionary<long, RenderMaterialReference>.Empty);
-        RemoveBuffer<RenderMaterialBinding>(entity);
+        if (!target.Has<Buffer<RenderMaterialBinding>>(entity)) return;
+        SetMaterials(target, entity, [], ImmutableDictionary<long, RenderMaterialReference>.Empty);
+        target.RemoveBuffer<RenderMaterialBinding>(entity);
     }
 
-    internal void ApplyExtraction(RenderExtractionSystems extraction)
+    internal void RemoveMaterials(Entity entity) => RemoveMaterials(World, entity);
+
+    internal void ApplyExtraction(RenderExtractionSystems extraction) => ApplyCandidate(extraction, complete: true);
+    internal void ApplyExtractionChanges(RenderExtractionSystems extraction) => ApplyCandidate(extraction, complete: false);
+
+    private void ApplyCandidate(RenderExtractionSystems extraction, bool complete)
     {
-        ExecuteStructuralTransaction(
-            extraction,
-            static systems => systems.ApplyCandidate());
+        using var checkpoint = new WorldCheckpoint();
+        checkpoint.Capture(World, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        extraction.SelectTarget(candidate);
+        try
+        {
+            using (WorldStructureWriteScope structure = candidate.OpenStructureWrite())
+                if (complete) extraction.ApplyCandidate();
+                else extraction.ApplyChangesCandidate();
+            checkpoint.Capture(candidate, CheckpointProgress.Preserve);
+            checkpoint.Restore(World);
+        }
+        finally { extraction.SelectTarget(World); }
     }
 
-    internal void ApplyExtractionChanges(RenderExtractionSystems extraction)
+    internal bool TryApplyExtractionChangesDirect(RenderExtractionSystems extraction)
     {
-        ExecuteStructuralTransaction(
-            extraction,
-            static systems => systems.ApplyChangesCandidate());
+        using WorldStructureWriteScope structure = World.OpenStructureWrite();
+        using QueryScope values = World.Query(extraction.DestinationAccess).Open();
+        return extraction.TryApplyChangesDirect();
     }
 
-    internal bool TryApplyExtractionChangesDirect(RenderExtractionSystems extraction) =>
-        ExecuteValueMutation(
-            extraction.DestinationAccess,
-            extraction,
-            static systems => systems.TryApplyChangesDirect());
-
-    internal bool HasExtractionValueHooks(ReadOnlySpan<int> components)
-    {
-        foreach (int component in components)
-            if (HasValueReplaceHookCallbacks(component)) return true;
-        return false;
-    }
+    public void Dispose() => World.Dispose();
 }

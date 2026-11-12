@@ -58,7 +58,7 @@ public sealed partial class AssetProject
                 string fullPath = RequireProjectPath(_projectRoot, entry.Path);
                 if (Resolve(entry.Path) is Guid registered && registered != entry.AssetGuid)
                     throw new InvalidOperationException($"Asset '{entry.Path}' is already registered with a different ID.");
-                RegisterAssetFile(fullPath, entry);
+                RegisterAssetFile(fullPath, entry, entry.SourceGuid, entry.SubAssetKey);
                 return entry.AssetGuid;
             }
         }

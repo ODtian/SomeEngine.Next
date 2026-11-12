@@ -75,7 +75,7 @@ public sealed partial class Scheduler
     private JobScheduleOptions ResolveCategoryOptions(JobScheduleOptions options)
     {
         JobCategory? category = options.Category;
-        if (category is null && ReferenceEquals(s_executing, this) && JobExecutionContext.IsActive)
+        if (category is null && ReferenceEquals(s_executing, this) && JobThreads.IsActive)
             category = s_currentCategory;
         if (category is not null && !ReferenceEquals(category.Scheduler, this))
             throw new ArgumentException("The work category must belong to this scheduler.", nameof(options));
@@ -111,7 +111,7 @@ public sealed partial class Scheduler
     internal void CategoryExecutionFinished() => _workQueue.CategoryExecutionFinished();
 
     internal bool IsExecutingCategory(JobCategory category) =>
-        ReferenceEquals(s_executing, this) && JobExecutionContext.IsActive &&
+        ReferenceEquals(s_executing, this) && JobThreads.IsActive &&
         ReferenceEquals(s_currentCategory, category);
 
     private CategoryRequest EnterSynchronousCategoryRequest(JobCategory? category)

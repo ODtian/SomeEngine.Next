@@ -1,29 +1,34 @@
-# WorldAsset、ECS 编码与语义引用
+# 世界目录与实体资产
 
-2026-09-16。WorldAsset 提供场景身份，WorldBlock 包含已有 ECS 格式编码的实体、组件、缓冲区与拓扑。它不建立固定 SceneData 或另一种 World；ECS 本身不反向依赖资产设施。
+`WorldAsset` 提供世界目录身份；`WorldBlock.Contents` 保存 `ImmutableArray<WorldContent>`。每条 `WorldContent` 引用一个 `AssetId<Asset>`，并以六个 double 构成的 `WorldBounds` 记录绝对世界覆盖范围。
+
+`EntityAsset` 的 `EntityBlock` 保存一组实体的组件、缓冲区、拓扑与外部资产引用。调用方选择成员及本次 codec，沿 ECS 实体集合格式编码：
 
 ```csharp
-using var asset = new WorldAsset { Name = "level" };
-asset.WriteWorld(world, registry);
-AssetEntry written = await asset.SaveAsync(path);
-using var opened = await WorldAsset.OpenAsync(written.Path);
-using World loaded = await opened.LoadAsync(registry);
+using var entities = new EntityAsset(Guid.NewGuid()) { Name = "district" };
+entities.GetBlock<EntityBlock>().WriteEntities(world, members, new(Codecs: codecs));
+AssetEntry entityFile = await entities.SaveAsync(entityPath);
+
+using var directory = new WorldAsset(Guid.NewGuid()) { Name = "level" };
+directory.GetBlock<WorldBlock>().Contents =
+[
+    new(new(entityFile.AssetGuid), bounds),
+];
+AssetEntry worldFile = await directory.SaveAsync(worldPath);
 ```
 
-`world`、组件与拓扑的 `registry` 由调用方提供。WriteWorld 显式编码当前状态，不保存磁盘，也不持续监听后续修改。保存写出已编码的 Block；加载完成必要读取与 ECS 解码后返回独立 World。
+保存写出当前 Block 数据。`EntityBlock.ExternalReferences` 保存 codec 写出的直接资产引用；世界目录的依赖来自各内容条目。资产 ID 描述内容来源，目录索引描述一次 WorldStream 中的条目。
 
-## 完整内容成本
+## 实体集合追加
 
-编码使用现有 ECS 序列化器和 MemoryStream，产生独立的完整托管数组。显式写入仍需要容纳完整编码内容；这不是常数空间的任意增量存档承诺。未重新编码的保存可以复制原内容块。
+`WorldSerializer.ReadEntities` 接收字节或 Stream、目标 World 与 `SerializationReadOptions`，返回该次追加的原生 `Entity[]`。类型绑定、最终列分配、整组实体映射、列解码、引用修补与拓扑维护全部完成后，调用方取得可用成员。组外实体引用按 `MissingReferenceMode` 处理。
 
-加载明确取得存档内容并交给既有 ECS 解码器。在返回后，使用 World 不再通过 Asset 异步取得组件。分支共享不可变存档数据，读取结果使用普通 GC 生命周期，失败清理和取消遵循实际工作完成边界，不用序列化往返代替通用 Duplicate。
+同一 EntityAsset 可以被多条目录项引用，每次装入得到独立成员。目标 World 保留原有业务数据；卸载使用本次返回的成员集合。完整 World 保存与独立恢复继续由 ECS 序列化器承担，见 [World 编码](../ECS/World-Encoding.md)。
 
-## 引用与同一个世界
+## 资产流送与使用对象
 
-codec 写入外部引用时收集直接资产依赖，覆盖组件、缓冲区和拓扑的相关编码。任意 GUID 不自动成为资产引用。Scene 中的几何引用是 MeshAsset，材质引用是 MaterialAsset，不绑定 Cluster 或其他管线 Block。
+[WorldStream](World-Streaming.md) 从目录推进请求、字节读取、实体组提交与卸载。应用在同一个 Game World 的实体上解析 Mesh、Material 等引用，再通过既有提取进入 Rendering World，见 [项目启动与渲染接入](Asset-Application-and-Rendering.md)。
 
-项目加载后在同一个 Game world、同一批实体上解析这些语义引用，按具体系统取得 Block 并创建 Mesh、Material 等使用对象。来源组件与业务状态经明确步骤接入已有提取流程，最终进入 Rendering world；不重新搭建一套资产场景图。
+SceneSerialization.Codecs 是第一方场景的调用级 codec 集合。用户的组件默认描述与调用级 ComponentCodec 沿同一 ECS 编码入口绑定。
 
-SceneSerialization 的示例 codec 集合不是所有用户 World 的限制。外部项目可注册自己的组件和拓扑，继续使用既有 ECS 格式及类型注册。
-
-验证覆盖身份、变换、缓冲区、材质和 Mesh 引用、相机、运动、灯光、分支和失败行为，以及独立模板的 1,024 个实例实际绘制。见 [本次验收](Asset-Verification-2026-09-16.md)。实现：[WorldAsset](../../../src/SomeEngine.Assets/WorldAsset.cs)、[WorldBlock](../../../src/SomeEngine.Assets/WorldBlock.cs)、[ECS 编码](../../../src/SomeEngine.ECS.Serialization/)、[场景集成](../../../src/SomeEngine.Render/SceneSerialization.cs)。
+实现：[WorldAsset](../../../src/SomeEngine.Assets/WorldAsset.cs)、[WorldBlock](../../../src/SomeEngine.Assets/WorldBlock.cs)、[EntityAsset](../../../src/SomeEngine.Assets/EntityAsset.cs)、[EntityBlock](../../../src/SomeEngine.Assets/EntityBlock.cs)。公开行为：[WorldStreamTests](../../../tests/SomeEngine.Assets.Tests/WorldStreamTests.cs)、[实体组往返](../../../tests/SomeEngine.ECS.Serialization.Tests/EntityGroupSerializationTests.cs)、[第一方场景往返](../../../tests/SomeEngine.Runtime.Tests/WorldAssetTests.cs)。

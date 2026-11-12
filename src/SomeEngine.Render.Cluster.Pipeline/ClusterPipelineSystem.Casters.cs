@@ -1,5 +1,5 @@
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Instances;
 using SomeEngine.Render.Systems;
@@ -12,7 +12,7 @@ public sealed partial class ClusterPipelineSystem
 {
     private DepthCacheClass[] _casterCacheClasses = [];
     private RenderInstanceBatches<RenderInstanceSingleGroup>? _casterInputInstances;
-    private uint _casterInputVersion;
+    private ulong _casterInputVersion;
     private bool _hasFirstPersonWorldMeshes;
 
     /// <summary>Reports world-space first-person representations in the current render entities.</summary>
@@ -26,22 +26,22 @@ public sealed partial class ClusterPipelineSystem
     {
         RenderInstanceBatches<RenderInstanceSingleGroup> instances = _instances.Current!;
         bool membershipChanged = !ReferenceEquals(instances, _casterInputInstances);
-        if (!membershipChanged && _casterInputVersion == _resources.World.CurrentTick) return;
+        if (!membershipChanged && _casterInputVersion == _resources.World.World.Version) return;
         var inputs = new CasterInputChanges(this, instances, membershipChanged);
-        _resources.World.ExecuteQuery(_sceneQuery, _casterInputVersion, ref inputs,
-            static (QueryCursor query, ref CasterInputChanges data) => data.Collect(query));
+        using QueryScope query = _sceneQuery.OpenRead();
+        inputs.Collect(query, _casterInputVersion);
     }
 
     private readonly struct CasterInputChanges(ClusterPipelineSystem pipeline,
         RenderInstanceBatches<RenderInstanceSingleGroup> instances, bool membershipChanged)
     {
-        internal void Collect(scoped QueryCursor query)
+        internal void Collect(scoped QueryScope query, ulong since)
         {
             bool meshChanged = membershipChanged;
             if (!meshChanged)
-                foreach (QueryChunkView chunk in query.Chunks)
-                    if (chunk.HasChangedSinceLastSystemVersion<RenderClusterGeometry>() ||
-                        (chunk.Has<RenderMesh>() && chunk.HasChangedSinceLastSystemVersion<RenderMesh>()))
+                foreach (QueryChunk chunk in query)
+                    if (chunk.WasWritten<RenderClusterGeometry>(since) ||
+                        (chunk.Has<RenderMesh>() && chunk.WasWritten<RenderMesh>(since)))
                     {
                         meshChanged = true;
                         break;
@@ -52,21 +52,22 @@ public sealed partial class ClusterPipelineSystem
                     pipeline._casterCacheClasses = new DepthCacheClass[instances.AddressCount];
                 bool firstPerson = false;
                 int entityIndex = 0;
-                foreach (QueryChunkView chunk in query.Chunks)
+                foreach (QueryChunk chunk in query)
                 {
                     bool hasMesh = chunk.TryRead<RenderMesh>(out ReadOnlySpan<RenderMesh> meshes);
                     for (int row = 0; row < chunk.Count; row++)
                     {
-                        RenderMesh mesh = hasMesh ? meshes[row] : default;
-                        firstPerson |= hasMesh && mesh.FirstPerson.Kind == FirstPersonMeshKind.WorldRepresentation;
+                        bool present = hasMesh && chunk.Has<RenderMesh>(row);
+                        RenderMesh mesh = present ? meshes[row] : default;
+                        firstPerson |= present && mesh.FirstPerson.Kind == FirstPersonMeshKind.WorldRepresentation;
                         foreach (var address in instances.RowsForEntity(entityIndex++))
-                            pipeline._casterCacheClasses[address.Row] = hasMesh ? mesh.DepthCacheClass : DepthCacheClass.Auto;
+                            pipeline._casterCacheClasses[address.Row] = present ? mesh.DepthCacheClass : DepthCacheClass.Auto;
                     }
                 }
                 pipeline._hasFirstPersonWorldMeshes = firstPerson;
                 pipeline._casterInputInstances = instances;
             }
-            pipeline._casterInputVersion = query.CurrentSystemVersion;
+            pipeline._casterInputVersion = pipeline._resources.World.World.Version;
         }
     }
 
@@ -150,8 +151,8 @@ public sealed partial class ClusterPipelineSystem
             all |= change.All;
         }
         var changed = new ChangedCasters(_instances.Current!, meshes, entities, rows, streamingRows, all);
-        _resources.World.ExecuteQuery(_sceneQuery, ref changed,
-            static (QueryCursor query, ref ChangedCasters data) => data.Collect(query));
+        using QueryScope query = _sceneQuery.OpenRead();
+        changed.Collect(query);
         return true;
     }
 
@@ -159,16 +160,20 @@ public sealed partial class ClusterPipelineSystem
         HashSet<Mesh> meshes, HashSet<Entity> entities, List<uint> rows, List<uint> streamingRows, bool all)
     {
         private int _entityIndex;
-        internal void Collect(scoped QueryCursor query)
+        internal void Collect(scoped QueryScope query)
         {
-            foreach (QueryRow row in query.Rows)
+            foreach (QueryChunk chunk in query)
             {
-                bool materialChanged = entities.Contains(row.Entity);
-                bool geometryChanged = row.TryRead<RenderMesh>(out var mesh) && meshes.Contains(mesh.Mesh);
-                if (materialChanged || geometryChanged || all)
-                    foreach (var address in batches.RowsForEntity(_entityIndex))
-                        (materialChanged || geometryChanged ? rows : streamingRows).Add(checked((uint)address.Row));
-                _entityIndex++;
+                chunk.TryRead<RenderMesh>(out ReadOnlySpan<RenderMesh> values);
+                for (int row = 0; row < chunk.Count; row++)
+                {
+                    bool materialChanged = entities.Contains(chunk.Entities[row]);
+                    bool geometryChanged = !values.IsEmpty && chunk.Has<RenderMesh>(row) && meshes.Contains(values[row].Mesh);
+                    if (materialChanged || geometryChanged || all)
+                        foreach (var address in batches.RowsForEntity(_entityIndex))
+                            (materialChanged || geometryChanged ? rows : streamingRows).Add(checked((uint)address.Row));
+                    _entityIndex++;
+                }
             }
         }
     }
@@ -178,7 +183,7 @@ public sealed partial class ClusterPipelineSystem
         CollectCasterCacheInputs(lodBounds, out _);
 
     /// <summary>Reads cache choices and the render-world version observed with them.</summary>
-    public ReadOnlySpan<DepthCacheClass> CollectCasterCacheInputs(List<Vector4> lodBounds, out uint version)
+    public ReadOnlySpan<DepthCacheClass> CollectCasterCacheInputs(List<Vector4> lodBounds, out ulong version)
     {
         RefreshCasterInputs();
         version = _casterInputVersion;
@@ -186,18 +191,18 @@ public sealed partial class ClusterPipelineSystem
         if (!changes.IsEmpty)
         {
             var inputs = new CasterLodBounds(_instances.Current!, changes.Span, lodBounds);
-            _resources.World.ExecuteQuery(_sceneQuery, ref inputs,
-                static (scoped QueryCursor query, ref CasterLodBounds data) => data.Collect(query));
+            using QueryScope query = _sceneQuery.OpenRead();
+            inputs.Collect(query);
         }
         return _casterCacheClasses;
     }
 
     /// <summary>Maps rebuilt caster rows to entities and reports actual transform or mesh writes.</summary>
-    public void CollectCasterEntities(Span<Entity> entities, uint afterVersion, List<uint> changedRows)
+    public void CollectCasterEntities(Span<Entity> entities, ulong afterVersion, List<uint> changedRows)
     {
         var inputs = new CasterEntities(_instances.Current!, entities, changedRows);
-        _resources.World.ExecuteQuery(_sceneQuery, afterVersion, ref inputs,
-            static (scoped QueryCursor query, ref CasterEntities data) => data.Collect(query));
+        using QueryScope query = _sceneQuery.OpenRead();
+        inputs.Collect(query, afterVersion);
     }
 
     /// <summary>Appends rows whose model bounds changed after the caller's completed source revision.</summary>
@@ -206,18 +211,18 @@ public sealed partial class ClusterPipelineSystem
         ulong revision = _deformBounds?.Revision ?? 0;
         if (revision == afterRevision) return revision;
         var changes = new DeformedCasters(_instances.Current!, _deformBounds!, afterRevision, rows);
-        _resources.World.ExecuteQuery(_sceneQuery, ref changes,
-            static (scoped QueryCursor query, ref DeformedCasters data) => data.Collect(query));
+        using QueryScope query = _sceneQuery.OpenRead();
+        changes.Collect(query);
         return revision;
     }
 
     private readonly struct DeformedCasters(RenderInstanceBatches<RenderInstanceSingleGroup> batches,
         IClusterBoundsSource source, ulong afterRevision, List<uint> rows)
     {
-        internal void Collect(scoped QueryCursor query)
+        internal void Collect(scoped QueryScope query)
         {
             int entityIndex = 0;
-            foreach (QueryChunkView chunk in query.Chunks)
+            foreach (QueryChunk chunk in query)
                 foreach (Entity entity in chunk.Entities)
                 {
                     if (source.HasChangedSince(entity, afterRevision))
@@ -231,18 +236,18 @@ public sealed partial class ClusterPipelineSystem
         Span<Entity> entities, List<uint> changedRows)
     {
         private readonly Span<Entity> _entities = entities;
-        internal void Collect(scoped QueryCursor query)
+        internal void Collect(scoped QueryScope query, ulong since)
         {
             int entityIndex = 0;
-            foreach (QueryChunkView chunk in query.Chunks)
+            foreach (QueryChunk chunk in query)
                 for (int row = 0; row < chunk.Count; row++)
                 {
-                    bool changed = chunk.RowChangedSinceLastSystemVersion<RenderTransform>(row) ||
-                        chunk.RowChangedSinceLastSystemVersion<RenderClusterGeometry>(row) ||
-                        (chunk.Has<RenderMesh>() && chunk.RowChangedSinceLastSystemVersion<RenderMesh>(row));
+                    bool changed = chunk.WasWritten<RenderTransform>(row, since) ||
+                        chunk.WasWritten<RenderClusterGeometry>(row, since) ||
+                        (chunk.Has<RenderMesh>() && chunk.WasWritten<RenderMesh>(row, since));
                     foreach (var address in batches.RowsForEntity(entityIndex++))
                     {
-                        _entities[address.Row] = chunk.GetEntity(row);
+                        _entities[address.Row] = chunk.Entities[row];
                         if (changed) changedRows.Add(checked((uint)address.Row));
                     }
                 }
@@ -254,9 +259,9 @@ public sealed partial class ClusterPipelineSystem
     {
         private readonly ReadOnlySpan<ClusterLodChange> _changes = changes;
         private int _entityIndex;
-        internal void Collect(scoped QueryCursor query)
+        internal void Collect(scoped QueryScope query)
         {
-            foreach (QueryChunkView chunk in query.Chunks)
+            foreach (QueryChunk chunk in query)
             {
                 ReadOnlySpan<RenderClusterGeometry> geometries = chunk.Read<RenderClusterGeometry>();
                 ReadOnlySpan<RenderTransform> transforms = chunk.Read<RenderTransform>();

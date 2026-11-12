@@ -16,9 +16,9 @@ public sealed class CallbackDispatchTests
         Entity root = Views.Spawn(frames.World, Entity.Null, new GenericCallbackScreens<string>.Display_View<int>(3,
             (text, number) => selected.Value = text + " " + number + " before", number => "before " + number));
         frames.Frame();
-        var callbacks = frames.World.ReadSparse<CallbackPair<string, int>>(root);
+        var callbacks = frames.World.ReadComponentData<CallbackPair<string, int>>(root);
 
-        frames.World.ReplaceSparse(root, new GenericCallbackScreens<string>.Display_View<int>(3,
+        frames.World.SetSparse(root, new GenericCallbackScreens<string>.Display_View<int>(3,
             (text, number) => selected.Value = text + " " + number + " after", number => "after " + number));
         frames.Frame();
 
@@ -34,18 +34,18 @@ public sealed class CallbackDispatchTests
         var clicked = new State<int>(-1);
         Entity root = Views.Spawn(frames.World, Entity.Null, new CallbackRecoveryScreens.Screen_View(0, false, clicked));
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        var callbacks = frames.World.ReadSparse<ToggleCallbacks>(child);
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        var callbacks = frames.World.ReadComponentData<ToggleCallbacks>(child);
 
-        frames.World.ReplaceSparse(root, new CallbackRecoveryScreens.Screen_View(1, true, clicked));
+        frames.World.SetSparse(root, new CallbackRecoveryScreens.Screen_View(1, true, clicked));
         frames.Frame();
 
-        Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
+        Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(root).Exception);
         Assert.Equal("tick 0", callbacks.Tooltip());
         callbacks.Change(true);
         Assert.Equal(0, clicked.Value);
 
-        frames.World.ReplaceSparse(root, new CallbackRecoveryScreens.Screen_View(2, false, clicked));
+        frames.World.SetSparse(root, new CallbackRecoveryScreens.Screen_View(2, false, clicked));
         frames.Frame();
 
         Assert.Equal("tick 2", callbacks.Tooltip());

@@ -19,36 +19,36 @@ public static partial class StackGridChecks
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem());
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(400, 300) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(400, 300) });
         Entity root = Views.Spawn(world, canvas, new NamedLayouts());
         systems.Update();
         Entity stack = Child(world, root);
         Entity grid = Child(world, stack);
-        var cells = Hierarchy<ElementTree>.GetChildren(world, grid);
+        var cells = ElementChildren.Read(world, grid);
         Entity overlay = Child(world, cells[0]);
-        Entity[] rowItems = Hierarchy<ElementTree>.GetChildren(world, cells[1]).ToArray();
-        Require(world.Read<LayoutRect>(grid).Value == new Rect(10, 10, 380, 280), "Grid uses the Stack content area.");
-        Require(world.Read<LayoutRect>(overlay).Value == new Rect(50, 40, 20, 10), "Stack aligns its overlaid child to the cell end.");
-        Require(world.Read<LayoutRect>(rowItems[0]).Value == new Rect(80, 60, 150, 20), "Grid assigns the remaining column width to its Row.");
-        Require(world.Read<LayoutRect>(rowItems[1]).Value == new Rect(240, 60, 150, 20), "Row distributes the Grid cell width and preserves Gap.");
+        Entity[] rowItems = ElementChildren.Read(world, cells[1]);
+        Require(world.ReadComponentData<LayoutRect>(grid).Value == new Rect(10, 10, 380, 280), "Grid uses the Stack content area.");
+        Require(world.ReadComponentData<LayoutRect>(overlay).Value == new Rect(50, 40, 20, 10), "Stack aligns its overlaid child to the cell end.");
+        Require(world.ReadComponentData<LayoutRect>(rowItems[0]).Value == new Rect(80, 60, 150, 20), "Grid assigns the remaining column width to its Row.");
+        Require(world.ReadComponentData<LayoutRect>(rowItems[1]).Value == new Rect(240, 60, 150, 20), "Row distributes the Grid cell width and preserves Gap.");
 
-        world.Replace(canvas, new Canvas { Size = new Size(500, 400) });
+        world.Set(canvas, new Canvas { Size = new Size(500, 400) });
         systems.Update();
-        Require(world.Read<LayoutRect>(grid).Value == new Rect(10, 10, 480, 380), "Canvas resizing changes the Grid tracks.");
-        Require(world.Read<LayoutRect>(rowItems[0]).Value == new Rect(80, 60, 200, 20), "Nested Flex receives the resized cell width.");
-        Require(world.Read<LayoutRect>(rowItems[1]).Value == new Rect(290, 60, 200, 20), "The second item follows the resized first item.");
+        Require(world.ReadComponentData<LayoutRect>(grid).Value == new Rect(10, 10, 480, 380), "Canvas resizing changes the Grid tracks.");
+        Require(world.ReadComponentData<LayoutRect>(rowItems[0]).Value == new Rect(80, 60, 200, 20), "Nested Flex receives the resized cell width.");
+        Require(world.ReadComponentData<LayoutRect>(rowItems[1]).Value == new Rect(290, 60, 200, 20), "The second item follows the resized first item.");
 
         Entity defaults = Views.Spawn(world, canvas, new DefaultStack());
         systems.Update();
         Entity defaultStack = Child(world, defaults);
         Entity defaultChild = Child(world, defaultStack);
-        Require(world.Read<LayoutRect>(defaultChild).Value == new Rect(0, 0, 20, 10), "The parameterless Stack uses Start on both axes.");
+        Require(world.ReadComponentData<LayoutRect>(defaultChild).Value == new Rect(0, 0, 20, 10), "The parameterless Stack uses Start on both axes.");
     }
 
     private static Entity Child(World world, Entity parent)
     {
-        var children = Hierarchy<ElementTree>.GetChildren(world, parent);
-        Require(children.Count == 1, "This branch declares one child.");
+        var children = ElementChildren.Read(world, parent);
+        Require(children.Length == 1, "This branch declares one child.");
         return children[0];
     }
 

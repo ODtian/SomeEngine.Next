@@ -56,7 +56,7 @@ internal static partial class TextEditingChecks
 
     private static void CheckEdit(FocusFrames frames, Entity root, string text, int caret, int consumedEdits)
     {
-        EditDisplay display = frames.World.Read<EditDisplay>(root);
+        EditDisplay display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Text == text && display.EditedText == text && display.Caret == caret &&
             display.SelectionStart == caret && display.ConsumedEdits == consumedEdits,
             $"The caller displays '{text}', caret {caret}, and {consumedEdits} consumed editing batches.");

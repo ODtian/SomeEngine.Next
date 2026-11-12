@@ -14,10 +14,10 @@ public sealed class RenderLightSetTests(RenderTestDevice graphics) : IClassFixtu
         using var world = new RenderWorld();
         var first = new RenderPointLight(Vector3.Zero, 10, Vector3.One, 1, uint.MaxValue);
         var second = first with { Position = Vector3.UnitX };
-        var one = world.CreateEntity(first);
-        var two = world.CreateEntity(second);
+        var one = world.World.Create(first);
+        var two = world.World.Create(second);
         var cookie = new RenderLightCookie(null!, 0.7f, Vector4.One, Matrix4x4.Identity);
-        world.Add(two, cookie);
+        world.World.Add(two, cookie);
         var lights = new RenderLightSetSystem();
         using var extraction = new RenderExtractionSystems(world);
         using var systems = new RenderPrepareSystems(world, extraction);
@@ -31,13 +31,13 @@ public sealed class RenderLightSetTests(RenderTestDevice graphics) : IClassFixtu
             Assert.Contains(first, values.Points);
             Assert.Contains(second, values.Points);
             ulong revision = values.Revision;
-            var unrelated = world.CreateEntity(new UnrelatedValue(1));
+            var unrelated = world.World.Create(new UnrelatedValue(1));
             Update();
             Assert.Equal(revision, values.Revision);
 
             second = second with { Intensity = 3 };
-            world.AcquireSystemVersion();
-            world.Replace(two, second);
+            world.World.AcquireSystemVersion();
+            world.World.Set(two, second);
             Update();
             Assert.Equal(revision + 1, values.Revision);
             Assert.Contains(first, values.Points);
@@ -45,17 +45,17 @@ public sealed class RenderLightSetTests(RenderTestDevice graphics) : IClassFixtu
             Assert.True(secondIndex >= 0);
             Assert.Equal(cookie, values.PointCookies[secondIndex]);
 
-            world.Remove<RenderLightCookie>(two);
-            world.DestroyEntity(one);
-            world.Replace(unrelated, new UnrelatedValue(2));
+            world.World.Remove<RenderLightCookie>(two);
+            world.World.Destroy(one);
+            world.World.Set(unrelated, new UnrelatedValue(2));
             Update();
             Assert.Equal(second, Assert.Single(values.Points));
             Assert.Null(Assert.Single(values.PointCookies));
 
-            world.Remove<RenderPointLight>(two);
+            world.World.Remove<RenderPointLight>(two);
             var spot = new RenderSpotLight(Vector3.Zero, 20, -Vector3.UnitZ, 0.9f, 0.7f,
                 Vector3.One, 2, uint.MaxValue);
-            world.Add(two, spot);
+            world.World.Add(two, spot);
             Update();
             Assert.Empty(values.Points);
             Assert.Equal(spot, Assert.Single(values.Spots));

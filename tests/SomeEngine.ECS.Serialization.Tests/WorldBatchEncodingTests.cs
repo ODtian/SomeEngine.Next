@@ -15,20 +15,20 @@ public sealed class WorldBatchEncodingTests
     [Fact]
     public void GeneratedRowsRetainBytesEntityReferencesAndHierarchyAfterWorldRestore()
     {
-        var registry = new SerializationRegistry().RegisterHierarchyDomain<DefaultHierarchyDomain>();
+        var registry = new SerializationRegistry().RegisterHierarchy<DefaultHierarchyDomain>(SaveTypes.Key<DefaultHierarchyDomain>());
         GameSerializationModule.RegisterAll(registry);
         using var world = new World();
-        Entity root = world.CreateEntity();
+        Entity root = world.Create();
         var entities = new Entity[1200];
         for (int index = 0; index < entities.Length; index++)
         {
-            entities[index] = world.CreateEntity(new SavedRow { Value = index, Target = root });
+            entities[index] = world.Create(new SavedRow { Value = index, Target = root });
             Hierarchy<DefaultHierarchyDomain>.SetParent(world, entities[index], root);
         }
         using var first = new MemoryStream();
         using var second = new MemoryStream();
-        WorldSerializer.WriteWorld(first, world, registry);
-        WorldSerializer.WriteWorld(second, world, registry);
+        new WorldSerializer(registry).Save(world, first);
+        new WorldSerializer(registry).Save(world, second);
         Assert.Equal(first.ToArray(), second.ToArray());
         first.Position = 0;
         using World restored = WorldSerializer.ReadWorld(first, registry);
@@ -39,7 +39,7 @@ public sealed class WorldBatchEncodingTests
             Assert.Equal(root, row.Target);
             Assert.Equal(root, Hierarchy<DefaultHierarchyDomain>.GetParent(restored, entities[index]));
         }
-        Assert.Equal(entities.Length, Hierarchy<DefaultHierarchyDomain>.GetChildren(restored, root).Count);
+        Assert.Equal(entities.Length, TopologyValues.Children<DefaultHierarchyDomain>(restored, root).Length);
     }
 
     [Fact]
@@ -54,12 +54,12 @@ public sealed class WorldBatchEncodingTests
         for (int index = 0; index < entities.Length; index++)
         {
             var reference = new ExternalReferenceKey(new Guid(index % 8 + 1, 0, 0, new byte[8]));
-            entities[index] = world.CreateEntity(new CountedRow { Value = index, Asset = reference });
+            entities[index] = world.Create(new CountedRow { Value = index, Asset = reference });
             expectedReferences.Add(reference);
         }
         var references = new HashSet<ExternalReferenceKey>();
         using var stream = new MemoryStream();
-        WorldSerializer.WriteWorld(stream, world, registry, new(ExternalReferences: references));
+        new WorldSerializer(registry).Save(world, stream, new SerializeOptions(ExternalReferences: references));
         Assert.True(references.SetEquals(expectedReferences));
         stream.Position = 0;
         using World restored = WorldSerializer.ReadWorld(stream, registry);

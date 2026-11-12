@@ -21,11 +21,11 @@ public sealed class BoneAttachmentBehaviorTests
         var storage = new PoseStorage();
         using SkeletonInstance instance = storage.CreateInstance(skeleton);
         Entity poseTarget = PoseAnimation.CreateTarget(world, instance);
-        Entity actor = world.CreateEntity();
+        Entity actor = world.Create();
         world.Add(actor, new LocalTransform { Value = new(new(10, 0, 0), Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2), 2) });
         world.Add(actor, new WorldTransform { Qvvs = TransformQvvs.Identity });
-        Entity weapon = world.CreateEntity();
-        Entity ornament = world.CreateEntity();
+        Entity weapon = world.Create();
+        Entity ornament = world.Create();
         var offset = new TransformQvvs(Vector3.UnitX, Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2), .5f);
         BoneAttachments.Bind(world, weapon, actor, instance, bone: 1, offset);
         BoneAttachments.Bind(world, ornament, actor, instance, bone: 1, TransformQvvs.Identity);
@@ -46,33 +46,33 @@ public sealed class BoneAttachmentBehaviorTests
         game.Update(.5);
         Matrix4x4 first = Matrix4x4.CreateRotationZ(5 * MathF.PI / 4)
             * Matrix4x4.CreateTranslation(4.5857863f, 3.4142137f, 0);
-        Near(first, world.Read<WorldTransform>(weapon).Qvvs.ToMatrix());
+        Near(first, world.ReadComponentData<WorldTransform>(weapon).Qvvs.ToMatrix());
         Assert.Equal(actor, Hierarchy.GetParent(world, weapon));
 
         BoneAttachments.SelectBone(world, weapon, bone: 0);
-        world.Replace(actor, new LocalTransform { Value = new(new(20, 5, 0), Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI), 2) });
+        world.Set(actor, new LocalTransform { Value = new(new(20, 5, 0), Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI), 2) });
         game.Update(.25);
         Matrix4x4 switched = Matrix4x4.CreateRotationZ(3 * MathF.PI / 2) * Matrix4x4.CreateTranslation(15, 5, 0);
-        Near(switched, world.Read<WorldTransform>(weapon).Qvvs.ToMatrix());
+        Near(switched, world.ReadComponentData<WorldTransform>(weapon).Qvvs.ToMatrix());
 
-        world.DestroyEntity(weapon);
+        world.Destroy(weapon);
         game.Update(.25);
-        Assert.False(world.IsAlive(weapon));
+        Assert.False(world.Has<BoneAttachment>(weapon));
         Assert.False(instance.IsDisposed);
         Matrix4x4 held = Matrix4x4.CreateScale(2) * Matrix4x4.CreateRotationZ(3 * MathF.PI / 2)
             * Matrix4x4.CreateTranslation(16, 1, 0);
-        Near(held, world.Read<WorldTransform>(ornament).Qvvs.ToMatrix());
+        Near(held, world.ReadComponentData<WorldTransform>(ornament).Qvvs.ToMatrix());
 
         PropertyAnimation.Stop(world, animation);
-        world.DestroyEntity(poseTarget);
+        world.Destroy(poseTarget);
         instance.Dispose();
-        world.Replace(actor, new LocalTransform { Value = new(new(100, 5, 0), Quaternion.Identity, 2) });
+        world.Set(actor, new LocalTransform { Value = new(new(100, 5, 0), Quaternion.Identity, 2) });
         game.Update(0);
         Assert.True(world.IsAlive(ornament));
         Assert.False(world.Has<BoneAttachment>(ornament));
         Assert.Equal(Entity.Null, Hierarchy.GetParent(world, ornament));
-        Near(held, world.Read<LocalTransform>(ornament).Value.ToMatrix());
-        Near(held, world.Read<WorldTransform>(ornament).Qvvs.ToMatrix());
+        Near(held, world.ReadComponentData<LocalTransform>(ornament).Value.ToMatrix());
+        Near(held, world.ReadComponentData<WorldTransform>(ornament).Qvvs.ToMatrix());
     }
 
     private static void Near(Matrix4x4 expected, Matrix4x4 actual)

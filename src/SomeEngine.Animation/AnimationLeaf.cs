@@ -93,12 +93,12 @@ internal static class GraphLeafLayers
     internal static void Apply(World world, Entity target, byte layer, AnimationLayer definition)
     {
         bool exists = world.Has<AnimationLayers>(target);
-        AnimationLayers layers = exists ? world.Read<AnimationLayers>(target) : default;
+        AnimationLayers layers = exists ? world.ReadComponentData<AnimationLayers>(target) : default;
         while (layers.Count <= layer)
             layers.Items[layers.Count++] = new AnimationLayer { Weight = 1 };
         layers.Items[layer] = definition;
         if (exists)
-            world.Replace(target, layers);
+            world.Set(target, layers);
         else
             world.Add(target, layers);
     }

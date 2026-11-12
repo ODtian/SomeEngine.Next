@@ -13,7 +13,7 @@ public abstract class JobTest : IDisposable
         get
         {
             if (_jobs is null)
-                ConfigureJobs(new JobRuntimeConfig
+                ConfigureJobs(new JobConfiguration
                 {
                     WorkerCount = 4,
                     SafetyMode = JobSafetyMode.Checked,
@@ -23,7 +23,7 @@ public abstract class JobTest : IDisposable
         }
     }
 
-    protected void ConfigureJobs(JobRuntimeConfig config)
+    protected void ConfigureJobs(JobConfiguration config)
     {
         _jobs = new Scheduler(config);
         _schedulers.Add(_jobs);
@@ -31,7 +31,7 @@ public abstract class JobTest : IDisposable
 
     protected World CreateJobWorld(int initialEntityCapacity = 256, Scheduler? scheduler = null)
     {
-        var world = WorldJobs.CreateWorld(initialEntityCapacity, scheduler ?? Jobs);
+        var world = new World(initialEntityCapacity, execution: new WorldJobs(scheduler ?? Jobs));
         _worlds.Add(world);
         return world;
     }

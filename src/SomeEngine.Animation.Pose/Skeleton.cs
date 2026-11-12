@@ -32,7 +32,8 @@ public sealed class Skeleton
     public Skeleton(Skeleton parent, ReadOnlySpan<short> parents, ReadOnlySpan<BoneTransform> referencePose,
         ReadOnlySpan<uint> nameHashes, ReadOnlySpan<short> inheritedParents, ReadOnlySpan<short> jointBones = default)
         : this(parent, parents.ToArray(), referencePose.ToArray(), nameHashes.ToArray(),
-            jointBones.ToArray(), inheritedParents.ToArray()) { }
+            jointBones.ToArray(), inheritedParents.ToArray())
+    { }
 
     internal Skeleton(short[] parents, BoneTransform[] referencePose, uint[] nameHashes, short[] jointBones)
         : this(null, parents, referencePose, nameHashes, jointBones, CreateRootLinks(parents.Length)) { }

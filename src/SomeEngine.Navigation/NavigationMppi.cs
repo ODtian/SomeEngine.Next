@@ -100,7 +100,7 @@ public static partial class NavigationComponents
         where TSpace : class, INavigationSpace<TSpace>
         where TModel : struct, INavigationMppiModel<TSpace>
     {
-        if (world.Has<AvoidanceAgent>(entity)) world.Replace(entity, avoidance);
+        if (world.Has<AvoidanceAgent>(entity)) world.Set(entity, avoidance);
         else world.Add(entity, avoidance);
         if (world.Has<NavigationAvoidanceWork>(entity)) world.Remove<NavigationAvoidanceWork>(entity);
         world.Add(entity, new NavigationMppi<TSpace, TModel>(space, settings));

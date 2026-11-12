@@ -58,7 +58,7 @@ public sealed partial class SkinningRenderingTests
                 GpuPoseAnimation.SetEvaluation(frame.World, parentTarget, new GpuPoseEvaluation(10, [0]));
                 GpuPoseAnimation.SetEvaluation(frame.World, childTarget, new GpuPoseEvaluation(0, []));
                 foreach (Entity mesh in frame.Scene.MeshEntities)
-                    frame.World.Add(mesh, new MeshSkin(body, new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [2, 3])));
+                    frame.World.Set(mesh, new MeshSkin(body, new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [2, 3])));
             },
             UpdateFrame = frame =>
             {
@@ -126,10 +126,8 @@ public sealed partial class SkinningRenderingTests
             systems.Update(ref update);
             GpuPoseExamples.Near(PoseAnimation.ReadResult(referenceWorld, PoseAnimation.Resolve(referenceWorld, source, new(0))).RootMotion.Transform,
                 signals.Motion);
-            referenceWorld.ExecuteBufferRead<TimelineEvent>(sourceAnimation, events =>
-            {
-                foreach (TimelineEvent marker in events.AsSpan()) Assert.Equal(marker.Count, signals.Events[marker.Id]);
-            });
+            using ReadOnlyBuffer<TimelineEvent> events = referenceWorld.ReadBuffer<TimelineEvent>(sourceAnimation);
+            foreach (TimelineEvent marker in events.AsSpan()) Assert.Equal(marker.Count, signals.Events[marker.Id]);
         }
         var referenceApplication = new ApplicationScene(content.Project.RootPath)
         {
@@ -137,7 +135,7 @@ public sealed partial class SkinningRenderingTests
             {
                 referenceBody.Update(Reference(0), .25);
                 foreach (Entity mesh in frame.Scene.MeshEntities)
-                    frame.World.Add(mesh, new MeshSkin(referenceBody, new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [2, 3])));
+                    frame.World.Set(mesh, new MeshSkin(referenceBody, new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [2, 3])));
             },
             UpdateFrame = frame => referenceBody.Update(Reference(frame.Index), (frame.Index + 1) * .25),
         };
@@ -194,13 +192,11 @@ public sealed partial class SkinningRenderingTests
         internal readonly List<(Matrix4x4 Root, double Time, double SampleTime)> Critical = [];
         public void OnUpdate(ref ImmediateSystemContext context)
         {
-            Motion = context.World.Read<GpuPoseTarget>(Target).RootMotion.Transform * Motion;
+            Motion = context.World.ReadComponentData<GpuPoseTarget>(Target).RootMotion.Transform * Motion;
             BonePose critical = body.ModelPose.GetBone(1);
             Critical.Add((body.ModelPose.GetBone(0).Transform, critical.Time, critical.SampleTime));
-            context.World.ExecuteBufferRead<TimelineEvent>(Animation, values =>
-            {
-                foreach (TimelineEvent marker in values.AsSpan()) Events[marker.Id] = marker.Count;
-            });
+            using ReadOnlyBuffer<TimelineEvent> values = context.World.ReadBuffer<TimelineEvent>(Animation);
+            foreach (TimelineEvent marker in values.AsSpan()) Events[marker.Id] = marker.Count;
         }
     }
 }

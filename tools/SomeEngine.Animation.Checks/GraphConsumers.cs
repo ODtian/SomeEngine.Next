@@ -1,8 +1,7 @@
 using SomeEngine.Animation;
-using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation.Consumers;
@@ -43,7 +42,6 @@ public readonly record struct TimedMarkerParameters(float Duration, int Value);
 public struct MarkerValue : IComponent { public int Value; }
 public struct MarkerReleases : IComponent { public int Count; }
 
-[BufferCapacity(1)]
 public struct MarkerState : IBufferElement
 {
     public AnimationLeafBatch<TimedMarkerParameters> Definition;
@@ -60,54 +58,65 @@ public readonly struct TimedMarkerLeaf : IAnimationLeaf<TimedMarkerParameters>
 
     public static void Release(World world, Entity animation)
     {
-        MarkerReleases releases = world.Has<MarkerReleases>(animation) ? world.Read<MarkerReleases>(animation) : default;
+        MarkerReleases releases = world.Has<MarkerReleases>(animation) ? world.ReadComponentData<MarkerReleases>(animation) : default;
         releases.Count++;
-        if (world.Has<MarkerReleases>(animation)) world.Replace(animation, releases);
+        if (world.Has<MarkerReleases>(animation)) world.Set(animation, releases);
         else world.Add(animation, releases);
-        world.ExecuteBufferWrite<MarkerState>(animation, static states => states.Clear());
+        {
+            using var states = world.GetBuffer<MarkerState>(animation);
+states.Clear();
+
+        }
     }
 
     public static void Install(World world, Entity animation, Entity target, AnimationLeafBatch<TimedMarkerParameters> definitions,
         int index, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<MarkerState>(animation))
+        if (!world.Has<Buffer<MarkerState>>(animation))
             world.AddBuffer<MarkerState>(animation);
         var state = new MarkerState { Definition = definitions, Index = index, Target = target, Placement = placement };
-        world.ExecuteBufferWrite<MarkerState, MarkerState>(animation, ref state, static (states, ref state) =>
         {
-            if (states.Count > 0 && states.Read(0).Placement.Starts != state.Placement.Starts)
+            using var states = world.GetBuffer<MarkerState>(animation);
+            Visit(states, ref state);
+
+            static void Visit(DynamicBuffer<MarkerState> states, ref MarkerState state)
+            {
+            if (states.Count > 0 && states[0].Placement.Starts != state.Placement.Starts)
                 states.Clear();
             states.Add(state);
-        });
+
+            }
+        }
     }
 }
 
 public struct MarkerSystem : ISystem<ImmediateSystemContext>
 {
-    private QueryHandle _markers;
+    private Query _markers;
     public void OnCreate(ref ImmediateSystemContext context) =>
-        _markers = context.World.Query(AnimationGraph.WithTimeAccess(context.World.QueryDefinition()
-            .ReadWrite<Timeline>().Enabled<Timeline>().ReadBuffer<MarkerState>().Optional<MarkerValue>(QueryAccess.ReadWrite)));
+        _markers = context.World.Query(AnimationGraph.WithTimeAccess(new QueryDescription()
+            .WithStored<Timeline>().With<Timeline>().WithStored<Buffer<MarkerState>>().Optional<MarkerValue>()));
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
-        world.ExecuteQuery(_markers, ref world, static (QueryCursor rows, ref World world) =>
+        using QueryScope rows = _markers.Open();
+        foreach (QueryChunk chunk in rows)
         {
-            foreach (QueryRow row in rows.Rows)
-                foreach (MarkerState marker in row.ReadBuffer<MarkerState>().AsSpan())
+            var times = AnimationGraph.ReadTimeColumn(chunk);
+            Span<Timeline> timelines = chunk.Write<Timeline>();
+            for (int row = 0; row < chunk.Count; row++)
+                foreach (MarkerState marker in chunk.ReadBuffer<MarkerState>(row).AsSpan())
                 {
-                    AnimationLeafTime time = AnimationGraph.ReadTime(world, row.Entity, in marker.Placement);
-                    if (!time.Active)
-                        continue;
+                    AnimationLeafTime time = times.Read(row, in timelines[row], in marker.Placement);
+                    if (!time.Active) continue;
                     TimedMarkerParameters parameters = marker.Definition.Parameters[marker.Index];
                     bool finished = time.Time.Time >= parameters.Duration;
-                    if (finished)
-                        world.Replace(marker.Target, new MarkerValue { Value = parameters.Value });
-                    AnimationGraph.Submit(world, row.Entity, in marker.Placement, !finished);
+                    if (finished) world.Set(marker.Target, new MarkerValue { Value = parameters.Value });
+                    times.Submit(row, ref timelines[row], in marker.Placement, !finished);
                 }
-        });
+        }
     }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_markers);
+    public void OnDestroy(ref ImmediateSystemContext context) { }
 }

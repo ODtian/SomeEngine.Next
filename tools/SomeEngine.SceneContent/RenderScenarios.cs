@@ -1,7 +1,6 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Components;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Render;
 using SomeEngine.Render.Components;
@@ -207,25 +206,25 @@ public static class RenderScenarios
         Guid sceneId = application.GetBlock<ApplicationSettingsBlock>().Scene.Value;
         if (!storage.TryFind(sceneId, out AssetEntry entry)) throw new InvalidOperationException();
         using var sceneFile = await WorldAsset.OpenAsync(loader, new AssetId<WorldAsset>(sceneId));
-        var worldTypes = SceneSerialization.CreateRegistry();
-        using World scene = await sceneFile.GetBlock<WorldBlock>().LoadAsync(worldTypes);
+        using var scene = new World();
+        await using WorldStream stream = await SceneContent.OpenSceneAsync(scene, loader, sceneFile.Reference);
         sceneFile.Name = mode + " rendering scenario";
-        Entity[] allInstances = Entities(scene, new QueryDefinitionBuilder().Read<MeshSource>().Read<WorldTransform>());
+        Entity[] allInstances = Entities(scene, new QueryDescription().With<MeshSource>().With<WorldTransform>());
         Entity[] instances = allInstances.Take(mode == "phong" ? 1 : mode == "wpo-alpha" ? 8 : mode == "sparse-motion" ? 128 : 4).ToArray();
-        using MeshAsset sourceMesh = await MeshAsset.OpenAsync(loader, scene.Read<MeshSource>(instances[0]).Mesh);
+        using MeshAsset sourceMesh = await MeshAsset.OpenAsync(loader, scene.ReadComponentData<MeshSource>(instances[0]).Mesh);
         AssetId<MaterialAsset> baseMaterial = sourceMesh.GetBlock<MeshMaterialsBlock>().Materials[0];
         var materialIds = new AssetId<MaterialAsset>[instances.Length];
-        foreach (Entity entity in allInstances.Skip(instances.Length)) scene.DestroyEntity(entity);
+        foreach (Entity entity in allInstances.Skip(instances.Length)) scene.Destroy(entity);
         for (int index = 0; index < instances.Length; index++)
         {
             Entity entity = instances[index];
-            WorldTransform transform = scene.Read<WorldTransform>(entity);
+            WorldTransform transform = scene.ReadComponentData<WorldTransform>(entity);
             transform.Qvvs.Position = new(0, 0, 12);
             transform.Qvvs.Stretch = new(0.8f);
-            scene.Replace(entity, transform);
-            MeshSource mesh = scene.Read<MeshSource>(entity);
+            scene.Set(entity, transform);
+            MeshSource mesh = scene.ReadComponentData<MeshSource>(entity);
             mesh.BoundsExpansion = mode == "wpo-alpha" ? .31f : 1;
-            scene.Replace(entity, mesh);
+            scene.Set(entity, mesh);
         }
         if (mode == "materials")
         {
@@ -263,21 +262,21 @@ public static class RenderScenarios
                 using MeshAsset mesh = ClusterBuilder.ProcessRaw(vertices, attributes, indices,
                     [new MeshMaterialSlot((mode == "materials" ? materialIds[index] : baseMaterial).Value)], $"Tessellation factor geometry {index}");
                 project.RegisterAsset(await mesh.SaveAsync(Path.Combine(project.RootPath, $"assets/Meshes/factor-{index}.mesh.asset")));
-                MeshSource meshSource = scene.Read<MeshSource>(entity);
+                MeshSource meshSource = scene.ReadComponentData<MeshSource>(entity);
                 meshSource.Mesh = mesh.Reference;
-                scene.Replace(entity, meshSource);
-                WorldTransform transform = scene.Read<WorldTransform>(entity);
+                scene.Set(entity, meshSource);
+                WorldTransform transform = scene.ReadComponentData<WorldTransform>(entity);
                 transform.Qvvs.Position = new(index % 2 == 0 ? -1.5f : 1.5f, index / 2 == 0 ? -1.5f : 1.5f, 12);
                 if (mode == "wpo-alpha" && index >= 4) transform.Qvvs.Position = new(index % 2 == 0 ? -8 : 8, (index - 4) / 2 == 0 ? -4 : 4, 65);
-                scene.Replace(entity, transform);
+                scene.Set(entity, transform);
             }
         }
         if (mode is "wpo-alpha" or "displacement" or "materials")
         {
             for (int index = 0; index < instances.Length; index++)
-                scene.Replace(instances[index], new MeshMotion { Amplitude = new(.2f, .1f, .15f), Seed = (uint)index + 1 });
-            foreach (Entity entity in Entities(scene, new QueryDefinitionBuilder().Read<PointLight>())) scene.DestroyEntity(entity);
-            scene.CreateEntity(new PointLight(new(3, 2, 7), 40, new(1, .6f, .2f), 4));
+                scene.Set(instances[index], new MeshMotion { Amplitude = new(.2f, .1f, .15f), Seed = (uint)index + 1 });
+            foreach (Entity entity in Entities(scene, new QueryDescription().With<PointLight>())) scene.Destroy(entity);
+            scene.Create(new PointLight(new(3, 2, 7), 40, new(1, .6f, .2f), 4));
         }
         if (mode == "displacement")
         {
@@ -304,33 +303,27 @@ public static class RenderScenarios
             for (int index = 0; index < instances.Length; index++)
             {
                 Entity entity = instances[index];
-                WorldTransform transform = scene.Read<WorldTransform>(entity);
+                WorldTransform transform = scene.ReadComponentData<WorldTransform>(entity);
                 transform.Qvvs.Position = new((index % 16 - 7.5f) * 1.2f, (index / 16 - 3.5f) * 1.2f, 25);
                 transform.Qvvs.Stretch = new(.4f);
-                scene.Replace(entity, transform);
-                scene.Replace(entity, new MeshMotion { Amplitude = new(index == 0 ? .5f : 0, 0, 0), Seed = 1 });
-                MeshSource mesh = scene.Read<MeshSource>(entity);
+                scene.Set(entity, transform);
+                scene.Set(entity, new MeshMotion { Amplitude = new(index == 0 ? .5f : 0, 0, 0), Seed = 1 });
+                MeshSource mesh = scene.ReadComponentData<MeshSource>(entity);
                 mesh.BoundsExpansion = 0;
-                scene.Replace(entity, mesh);
+                scene.Set(entity, mesh);
             }
         }
-        sceneFile.GetBlock<WorldBlock>().WriteWorld(scene, worldTypes);
-        project.RegisterAsset(await sceneFile.SaveAsync(Path.Combine(project.RootPath, entry.Path)));
+        await SceneContent.SaveSceneAsync(project, sceneFile, scene);
 
     }
 
-    static Entity[] Entities(World world, QueryDefinitionBuilder definition)
+    static Entity[] Entities(World world, QueryDescription definition)
     {
-        QueryHandle query = world.Query(definition);
+        Query query = world.Query(definition);
         var entities = new List<Entity>();
-        try
-        {
-        world.ExecuteQuery(query, ref entities, static (scoped QueryCursor rows, ref List<Entity> values) =>
-            {
-                foreach (var row in rows.Rows) values.Add(row.Entity);
-            });
-            return [.. entities];
-        }
-        finally { world.ReleaseQuery(query); }
+        using QueryScope source = query.OpenRead();
+        foreach (QueryChunk chunk in source)
+            foreach (Entity entity in chunk.Entities) entities.Add(entity);
+        return [.. entities];
     }
 }

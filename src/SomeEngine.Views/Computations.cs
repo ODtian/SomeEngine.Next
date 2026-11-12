@@ -4,7 +4,7 @@ using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.Views;
 
-internal readonly record struct Computations(ComputationList List) : ISparseComponent;
+internal readonly record struct Computations(ComputationList List) : ISparseComponent, ICleanupComponent;
 
 /// <summary>The view's calculations in creation order, with their creating calculation.</summary>
 internal sealed class ComputationList
@@ -132,7 +132,7 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
         if (failed is null)
             World.RemoveSparse<BuildError>(Entity);
         else
-            World.ReplaceSparse(Entity, new BuildError { Exception = failed.Error!, Frame = failed.Frame });
+            World.SetSparse(Entity, new BuildError { Exception = failed.Error!, Frame = failed.Frame });
     }
 
     internal void Rebuild(ulong frame)

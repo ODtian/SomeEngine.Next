@@ -10,32 +10,40 @@ public static partial class PropertyAnimation
     /// <summary>Sets the caller's reference value for an animated field.</summary>
     public static void SetBase<T>(World world, Entity target, Channel<T> channel, T value) where T : unmanaged
     {
-        if (!world.HasBuffer<BaseValue<T>>(target))
+        if (!world.Has<Buffer<BaseValue<T>>>(target))
             world.AddBuffer<BaseValue<T>>(target);
         var basis = (Value: new BaseValue<T> { Channel = channel, Value = value }, Added: false);
-        world.ExecuteBufferWrite<BaseValue<T>, (BaseValue<T> Value, bool Added)>(target, ref basis,
-            static (DynamicBuffer<BaseValue<T>> values, ref (BaseValue<T> Value, bool Added) basis) =>
+        {
+            using var values = world.GetBuffer<BaseValue<T>>(target);
+            Visit(values, ref basis);
+
+            static void Visit(DynamicBuffer<BaseValue<T>> values, ref (BaseValue<T> Value, bool Added) basis)
             {
                 for (int i = 0; i < values.Count; i++)
                 {
-                    if (values.Read(i).Channel != basis.Value.Channel)
+                    if (values[i].Channel != basis.Value.Channel)
                         continue;
                     values[i] = basis.Value;
                     return;
                 }
                 values.Add(basis.Value);
                 basis.Added = true;
-            });
+
+            }
+        }
         if (basis.Added) RefreshSources<T>(world, target);
     }
 
     internal static bool ReadBase<T>(World world, Entity target, Channel<T> channel, ref T value) where T : unmanaged
     {
-        if (!world.HasBuffer<BaseValue<T>>(target))
+        if (!world.Has<Buffer<BaseValue<T>>>(target))
             return false;
         var field = (Channel: channel, Value: value, Found: false);
-        world.ExecuteBufferRead<BaseValue<T>, (Channel<T> Channel, T Value, bool Found)>(target, ref field,
-            static (BufferView<BaseValue<T>> values, ref (Channel<T> Channel, T Value, bool Found) field) =>
+        {
+            using var values = world.ReadBuffer<BaseValue<T>>(target);
+            Visit(values, ref field);
+
+            static void Visit(ReadOnlyBuffer<BaseValue<T>> values, ref (Channel<T> Channel, T Value, bool Found) field)
             {
                 for (int i = 0; i < values.Count; i++)
                 {
@@ -46,7 +54,9 @@ public static partial class PropertyAnimation
                     field.Found = true;
                     return;
                 }
-            });
+
+            }
+        }
         value = field.Value;
         return field.Found;
     }
@@ -62,7 +72,7 @@ public static partial class PropertyAnimation
     {
         if (channel.Component != ComponentId<AnimationLayers>.Value && world.Has<AnimationLayers>(target))
         {
-            AnimationLayers layers = world.Read<AnimationLayers>(target);
+            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(target);
             DevelopmentCheck.Require(layers.Count <= 8 && layerIndex < layers.Count,
                 "A property track requires a defined animation layer.");
             AnimationLayer layer = layers.Items[layerIndex];
@@ -82,10 +92,13 @@ public static partial class PropertyAnimation
     {
         if (mask.AllChannels)
             return true;
-        DevelopmentCheck.Require(world.HasBuffer<LayerChannel>(target), "A channel mask requires a LayerChannel buffer on its target.");
+        DevelopmentCheck.Require(world.Has<Buffer<LayerChannel>>(target), "A channel mask requires a LayerChannel buffer on its target.");
         var selection = (Channel: channel, Mask: mask, Found: false);
-        world.ExecuteBufferRead<LayerChannel, (Channel<T> Channel, LayerMask Mask, bool Found)>(target, ref selection,
-            static (BufferView<LayerChannel> channels, ref (Channel<T> Channel, LayerMask Mask, bool Found) selection) =>
+        {
+            using var channels = world.ReadBuffer<LayerChannel>(target);
+            Visit(channels, ref selection);
+
+            static void Visit(ReadOnlyBuffer<LayerChannel> channels, ref (Channel<T> Channel, LayerMask Mask, bool Found) selection)
             {
                 LayerMask mask = selection.Mask;
                 DevelopmentCheck.Require(mask.Start <= channels.Count && mask.Count <= channels.Count - mask.Start,
@@ -99,7 +112,9 @@ public static partial class PropertyAnimation
                         return;
                     }
                 }
-            });
+
+            }
+        }
         return selection.Found;
     }
 

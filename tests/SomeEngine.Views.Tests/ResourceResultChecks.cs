@@ -11,14 +11,14 @@ public static partial class ResourceResultChecks
         using var frames = new HeadlessFrameDriver(new World(execution:
             jobWorld ? new WorldJobs(SomeEngine.Job.JobSystem.Default) : null));
         var source = new State<int>(1);
-        Entity target = frames.World.CreateEntity(new Number());
+        Entity target = frames.World.Create(new Number());
         Entity root = Views.Spawn(frames.World, Entity.Null, new ResourceContent(source, target));
         frames.Frame();
-        Require(frames.World.Read<Number>(target).Value == 10,
+        Require(frames.World.ReadComponentData<Number>(target).Value == 10,
             "The synchronous resource commits its first result through the component copy.");
         source.Value = 2;
         frames.Frame();
-        Require(frames.World.Read<Number>(target).Value == 20,
+        Require(frames.World.ReadComponentData<Number>(target).Value == 20,
             "The retained resource commits the new source result through the same calculation.");
         Require(!frames.World.HasSparse<BuildError>(root), "The current resource completes successfully.");
     }
@@ -41,7 +41,7 @@ public static partial class ResourceResultChecks
         }
     }
 
-    private readonly record struct Number(int Value) : IComponent;
+    private readonly record struct Number(int Value) : ITrackedComponent;
 
     private static void Require(bool value, string message)
     {

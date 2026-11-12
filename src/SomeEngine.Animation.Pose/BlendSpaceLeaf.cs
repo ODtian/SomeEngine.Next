@@ -7,7 +7,6 @@ namespace SomeEngine.Animation.Pose;
 
 public readonly record struct BlendSpaceParameters(BlendSpace Space, PoseResultId Output, byte ParameterX, byte ParameterY = 0);
 
-[BufferCapacity(1)]
 public struct BlendSpaceInstance : IBufferElement
 {
     public AnimationLeafBatch<BlendSpaceParameters> Definition;
@@ -49,21 +48,36 @@ public readonly struct BlendSpaceLeaf : IAnimationLeaf<BlendSpaceParameters>
     public static void Install(World world, Entity animation, Entity target,
         AnimationLeafBatch<BlendSpaceParameters> definitions, int index, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<BlendSpaceInstance>(animation)) world.AddBuffer<BlendSpaceInstance>(animation);
+        if (!world.Has<Buffer<BlendSpaceInstance>>(animation)) world.AddBuffer<BlendSpaceInstance>(animation);
         if (!world.Has<GraphParameters>(animation)) world.Add(animation, new GraphParameters());
         BlendSpaceParameters parameters = definitions.Parameters[index];
         PoseResultReference output = PoseAnimation.Resolve(world, target, parameters.Output);
         var instance = new BlendSpaceInstance
         {
-            Definition = definitions, Index = index, Placement = placement, Output = output,
+            Definition = definitions,
+            Index = index,
+            Placement = placement,
+            Output = output,
             Samples = new BlendSpaceSamples(PoseAnimation.GetScheduler(world), parameters.Space, output.Range.Count),
         };
-        world.ExecuteBufferWrite<BlendSpaceInstance, BlendSpaceInstance>(animation, ref instance,
-            static (instances, ref instance) => instances.Add(instance));
+        {
+            using var instances = world.GetBuffer<BlendSpaceInstance>(animation);
+            Visit(instances, ref instance);
+
+            static void Visit(DynamicBuffer<BlendSpaceInstance> instances, ref BlendSpaceInstance instance)
+            {
+                instances.Add(instance);
+
+            }
+        }
     }
 
-    public static void Release(World world, Entity animation) =>
-        world.ExecuteBufferWrite<BlendSpaceInstance>(animation, static instances => instances.Clear());
+    public static void Release(World world, Entity animation)
+    {
+        using var instances = world.GetBuffer<BlendSpaceInstance>(animation);
+        instances.Clear();
+
+    }
 }
 
 public static partial class PoseGraphExtensions

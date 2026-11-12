@@ -39,8 +39,16 @@ public sealed class CriticalBoneBehaviorTests
         }
         Entity animation = childBuilder.Play();
         var goal = new Vector3(1.5f, 1, 0);
-        world.ExecuteBufferWrite<FabrikInstance, Vector3>(animation, ref goal,
-            static (chains, ref goal) => chains[0].Target = goal);
+        {
+            using var chains = world.GetBuffer<FabrikInstance>(animation);
+            Visit(chains, ref goal);
+
+            static void Visit(DynamicBuffer<FabrikInstance> chains, ref Vector3 goal)
+            {
+                chains[0].Target = goal;
+
+            }
+        }
         GpuPoseAnimation.SetCpuBones(world, childTarget, new CpuBoneDemand(PoseAnimation.Resolve(world, childSource, new(1)), [2]));
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         PoseAnimation.AddSystems(systems, nodes: static nodes =>
@@ -58,8 +66,16 @@ public sealed class CriticalBoneBehaviorTests
         Assert.Equal(.25, child.ModelPose.GetBone(3).SampleTime);
         Assert.Equal(0, child.ModelPose.GetBone(4).Time);
         goal = new(2, 1, 0);
-        world.ExecuteBufferWrite<FabrikInstance, Vector3>(animation, ref goal,
-            static (chains, ref goal) => chains[0].Target = goal);
+        {
+            using var chains = world.GetBuffer<FabrikInstance>(animation);
+            Visit(chains, ref goal);
+
+            static void Visit(DynamicBuffer<FabrikInstance> chains, ref Vector3 goal)
+            {
+                chains[0].Target = goal;
+
+            }
+        }
         systems.Update(ref frame);
         Near(goal, child.ModelPose.GetBone(3).Transform.Translation);
         Assert.Equal(.5, parent.ModelPose.GetBone(0).Time);
@@ -131,7 +147,9 @@ public sealed class CriticalBoneBehaviorTests
         new(skeleton, 1, ClipSampler.Create<RawClipData, RawClipSampler>(new RawClipData(1, [.. curves])));
     private static BoneTransform At(float x, float y, float z) => new()
     {
-        Translation = new(x, y, z), Rotation = Quaternion.Identity, Scale = Vector3.One,
+        Translation = new(x, y, z),
+        Rotation = Quaternion.Identity,
+        Scale = Vector3.One,
     };
     private static void Near(Vector3 expected, Vector3 actual) => Assert.InRange(Vector3.Distance(expected, actual), 0, .001f);
     private sealed class ObserveBone(BonePose bone, List<(Vector3, double, double)> observations) : ISystem<ImmediateSystemContext>

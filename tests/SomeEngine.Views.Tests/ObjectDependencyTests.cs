@@ -16,9 +16,9 @@ public sealed partial class ObjectDependencyTests
 
         frames.Frame();
 
-        Assert.Equal("3;7", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3;7", frames.World.ReadComponentData<DisplayText>(root).Value);
         frames.Frame();
-        Assert.Equal("3;7", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3;7", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Fact]
@@ -66,15 +66,15 @@ public sealed partial class ObjectDependencyTests
         source.Version = 1;
         source.Number = 7;
         frames.Frame();
-        Assert.EndsWith(";7", frames.World.Read<DisplayText>(root).Value);
+        Assert.EndsWith(";7", frames.World.ReadComponentData<DisplayText>(root).Value);
         source.Number = 9;
         frames.Frame();
 
-        Assert.EndsWith(";9", frames.World.Read<DisplayText>(root).Value);
+        Assert.EndsWith(";9", frames.World.ReadComponentData<DisplayText>(root).Value);
         source.Number = 11;
         source.Version = 2;
         frames.Frame();
-        Assert.EndsWith(";11", frames.World.Read<DisplayText>(root).Value);
+        Assert.EndsWith(";11", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Fact]
@@ -89,15 +89,15 @@ public sealed partial class ObjectDependencyTests
 
         selection.Value = false;
         frames.Frame();
-        Assert.Equal("3;5", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3;5", frames.World.ReadComponentData<DisplayText>(root).Value);
         first.Number = 7;
         first.Advance();
         frames.Frame();
-        Assert.Equal("3;5", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3;5", frames.World.ReadComponentData<DisplayText>(root).Value);
         second.Number = 11;
         second.Advance();
         frames.Frame();
-        Assert.Equal("3;5;11", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3;5;11", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Fact]
@@ -108,18 +108,18 @@ public sealed partial class ObjectDependencyTests
         var childSource = new NumberData(5);
         Entity root = Views.Spawn(frames.World, Entity.Null, new NumberGroup(parentSource, childSource));
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
 
         childSource.Number = 7;
         childSource.AdvanceShared();
         frames.Frame();
-        Assert.Equal("3", frames.World.Read<DisplayText>(root).Value);
-        Assert.Equal("5;7", frames.World.Read<DisplayText>(child).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(root).Value);
+        Assert.Equal("5;7", frames.World.ReadComponentData<DisplayText>(child).Value);
         parentSource.Number = 11;
         parentSource.Advance();
         frames.Frame();
-        Assert.Equal("3;11", frames.World.Read<DisplayText>(root).Value);
-        Assert.Equal("5;7", frames.World.Read<DisplayText>(child).Value);
+        Assert.Equal("3;11", frames.World.ReadComponentData<DisplayText>(root).Value);
+        Assert.Equal("5;7", frames.World.ReadComponentData<DisplayText>(child).Value);
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public sealed partial class ObjectDependencyTests
         frames.Frame();
         frames.Frame();
 
-        Assert.Equal("3", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Fact]
@@ -145,17 +145,17 @@ public sealed partial class ObjectDependencyTests
         NumberData[] sources = Enumerable.Range(1, 32).Select(value => new NumberData(value)).ToArray();
         Entity root = Views.Spawn(frames.World, Entity.Null, new TotalDisplay(sources));
         frames.Frame();
-        Assert.Equal("528", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("528", frames.World.ReadComponentData<DisplayText>(root).Value);
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
 
         sources[31].Number = 37;
         sources[31].Advance();
         frames.Frame();
-        Assert.Equal("528;533", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("528;533", frames.World.ReadComponentData<DisplayText>(root).Value);
         sources[0].Number = 7;
         sources[0].AdvanceShared();
         frames.Frame();
-        Assert.Equal("528;533;539", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("528;533;539", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     [Fact]
@@ -165,16 +165,16 @@ public sealed partial class ObjectDependencyTests
         var source = new NumberData(3);
         Entity root = Views.Spawn(frames.World, Entity.Null, new NumberDisplay(source));
         frames.Frame();
-        Assert.Equal("3", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(root).Value);
 
         source.Number = 7;
         source.Advance();
-        Assert.Equal("3", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<DisplayText>(root).Value);
 
         frames.Frame();
-        Assert.Equal("3;7", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3;7", frames.World.ReadComponentData<DisplayText>(root).Value);
         frames.Frame();
-        Assert.Equal("3;7", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("3;7", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
     private sealed class NumberData(int number) : VersionCell
@@ -258,8 +258,8 @@ public sealed partial class ObjectDependencyTests
     {
         if (Scope.World.Has<DisplayText>(Scope.Entity))
         {
-            text = $"{Scope.World.Read<DisplayText>(Scope.Entity).Value};{text}";
-            Scope.World.Replace(Scope.Entity, new DisplayText(text));
+            text = $"{Scope.World.ReadComponentData<DisplayText>(Scope.Entity).Value};{text}";
+            Scope.World.Set(Scope.Entity, new DisplayText(text));
         }
         else
         {
@@ -267,5 +267,5 @@ public sealed partial class ObjectDependencyTests
         }
     }
 
-    private readonly record struct DisplayText(string Value) : IComponent;
+    private readonly record struct DisplayText(string Value) : ITrackedComponent;
 }

@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Systems;
 
@@ -8,7 +9,7 @@ internal sealed partial class TerrainGeometryExtractor : IRenderExtractionRangeS
     public IRenderExtractionCollector CreateRangeCollector() => new TerrainGeometryExtractor(scene);
     public void Dispose() => Reset();
 
-    void IRenderExtractionCollector.Collect(ReadOnlyQueryPacket packet, uint lastSystemVersion, bool fullCollection)
+    void IRenderExtractionCollector.Collect(QueryChunk packet, ulong lastSystemVersion, bool fullCollection)
     {
         if (fullCollection) Collect(packet);
         else CollectChanges(packet, lastSystemVersion);

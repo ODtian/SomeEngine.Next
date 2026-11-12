@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using System.Numerics;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Components;
@@ -15,7 +16,7 @@ public readonly record struct SurfaceInstance(
     float BorderWidth,
     Rect ClipRectangle,
     int DrawOrder,
-    uint Version) : IBufferElement
+    uint Version) : IBufferElement, ITrackedComponent
 {
     public DropShadow Shadow { get; init; }
     /// <summary>Transforms canvas-coordinate rectangle points by the caller transform and presentation offset.</summary>

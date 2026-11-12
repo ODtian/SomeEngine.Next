@@ -8,16 +8,16 @@ public sealed class StoredRelationFactTests
     public void PersistentMultiEntityFactsKeepStoredPositionRolesAndEntityLifetime()
     {
         using var world = new World();
-        var source = world.CreateEntity(new Score { Value = 3 });
-        var carrier = world.CreateEntity(new Weight { Value = 8 });
-        var destination = world.CreateEntity(new Score { Value = 6 });
-        var lightDestination = world.CreateEntity(new Score { Value = 1 });
-        world.CreateEntity(new TransferFact { Source = source, Carrier = carrier, Destination = destination });
-        var selectedFact = world.CreateEntity(new TransferFact
+        var source = world.Create(new Score { Value = 3 });
+        var carrier = world.Create(new Weight { Value = 8 });
+        var destination = world.Create(new Score { Value = 6 });
+        var lightDestination = world.Create(new Score { Value = 1 });
+        world.Create(new TransferFact { Source = source, Carrier = carrier, Destination = destination });
+        var selectedFact = world.Create(new TransferFact
         {
             Source = destination, Carrier = carrier, Destination = lightDestination,
         });
-        var facts = world.Query(world.QueryDefinition().All<TransferFact>());
+        var facts = world.Query(new QueryDescription().WithStored<TransferFact>());
         var selected = world.Transfers(facts).Where(new TransferFits());
         var rows = new List<(Entity, Entity, Entity)>();
         var output = new TransferList(rows);
@@ -27,10 +27,9 @@ public sealed class StoredRelationFactTests
         Assert.Equal(new[] { (destination, carrier, lightDestination) }, rows);
         Assert.Equal(1, selected.Count());
 
-        world.DestroyEntity(selectedFact);
+        world.Destroy(selectedFact);
 
         Assert.Equal(0, selected.Count());
-        world.ReleaseQuery(facts);
     }
 
     private struct TransferList(List<(Entity, Entity, Entity)> rows) : IRelationOutput<(Entity, Entity, Entity)>

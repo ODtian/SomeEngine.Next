@@ -3,7 +3,6 @@ using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Layout;
 using SomeEngine.Render.Systems;
@@ -31,6 +30,7 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
 
     /// <summary>Computes detached glyph instances with chunk jobs.</summary>
     public bool Parallel { get; set; } = true;
+    public bool CanApplyChangesDirect => true;
 
     public void DeclareReads(RenderExtractionQuery query)
     {
@@ -58,15 +58,15 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
         _glyphs.Clear();
     }
 
-    public void Collect(QueryChunkView chunk)
+    public void Collect(QueryChunk chunk)
     {
-        _changes.Collect(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion, fullCollection: true);
+        _changes.Collect(chunk, 0, fullCollection: true);
         _canvasEntities.UnionWith(_changes.Canvases);
     }
 
-    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
+    public bool CollectChanges(QueryChunk chunk, ulong since, RenderExtractionContext context)
     {
-        _changes.Collect(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion, fullCollection: false);
+        _changes.Collect(chunk, since, fullCollection: false);
         _canvasEntities.UnionWith(_changes.Canvases);
         return false;
     }
@@ -94,7 +94,7 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
             CanvasNode entry = new CanvasTree(sourceWorld, canvas).ReadNode(node);
             ReadGlyphs(sourceWorld, canvas, node, entry.Clip, entry.DrawOrder);
         }
-        _atlas.Bake(CollectionsMarshal.AsSpan(_glyphs));
+        _atlas!.Bake(CollectionsMarshal.AsSpan(_glyphs));
         foreach (TextDrawing drawing in _drawings) drawing.ResolveGlyphLocations(_atlas);
         _glyphs.Clear();
         ChunkJobs.Run(new GlyphJob(_drawings), _drawings.Count, Parallel);
@@ -116,7 +116,7 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
         // Keep the detached pixels available when an extraction transaction is retried.
         _atlasChanged |= !context.World.IsAlive(_atlasMirror) ||
             !context.World.Has<RenderGlyphAtlas>(_atlasMirror) ||
-            context.World.Read<RenderGlyphAtlas>(_atlasMirror) != _pixels;
+            context.World.ReadComponentData<RenderGlyphAtlas>(_atlasMirror) != _pixels;
         return _atlasChanged;
     }
 
@@ -205,7 +205,7 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
         }
     }
 
-    private readonly struct GlyphJob(List<TextDrawing> drawings) : IJobChunk
+    private readonly struct GlyphJob(List<TextDrawing> drawings) : SomeEngine.Job.IJobChunk
     {
         public void Execute(JobChunk chunk)
         {
@@ -221,15 +221,29 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
         {
             Entity canvas = context.RetainMirror(source);
             context.Upsert(canvas, new CanvasGlyphAtlas(_atlasMirror));
-            if (!context.World.HasBuffer<GlyphInstance>(canvas)) context.World.AddBuffer<GlyphInstance>(canvas);
+            if (!context.World.Has<Buffer<GlyphInstance>>(canvas)) context.World.AddBuffer<GlyphInstance>(canvas);
             UpdateInstances(context.World, canvas, values);
         }
         foreach (RenderMirror mirror in context.Mirrors)
         {
             if (_canvasGlyphs.ContainsKey(mirror.Source)) continue;
             context.RemoveIfExists<CanvasGlyphAtlas>(mirror.RenderEntity);
-            if (context.World.HasBuffer<GlyphInstance>(mirror.RenderEntity))
+            if (context.World.Has<Buffer<GlyphInstance>>(mirror.RenderEntity))
                 context.World.RemoveBuffer<GlyphInstance>(mirror.RenderEntity);
+        }
+    }
+
+    public void ValidateChanges(RenderExtractionContext context)
+    {
+        if (_atlasChanged)
+            _ = context.World.Read<RenderGlyphAtlas>(context.RequireMirror(atlasSource));
+        foreach (Entity source in _canvasGlyphs.Keys)
+        {
+            using ReadOnlyBuffer<GlyphInstance> glyphs = context.World.ReadBuffer<GlyphInstance>(context.RequireMirror(source));
+        }
+        foreach (Entity source in _textGlyphs.Keys)
+        {
+            using ReadOnlyBuffer<GlyphInstance> glyphs = context.World.ReadBuffer<GlyphInstance>(context.RequireMirror(source));
         }
     }
 
@@ -242,11 +256,11 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
         {
             Entity canvas = context.RequireMirror(source);
             var values = new List<GlyphInstance>();
-            context.World.ExecuteBufferRead<GlyphInstance>(canvas, buffer =>
             {
+            using ReadOnlyBuffer<GlyphInstance> buffer = context.World.ReadBuffer<GlyphInstance>(canvas);
                 foreach (GlyphInstance before in buffer.AsSpan())
                     if (!texts.ContainsKey(before.Node)) values.Add(before);
-            });
+                    }
             foreach (List<GlyphInstance> text in texts.Values) values.AddRange(text);
             values.Sort(static (left, right) => left.DrawOrder != right.DrawOrder
                 ? left.DrawOrder.CompareTo(right.DrawOrder) : left.GlyphIndex.CompareTo(right.GlyphIndex));
@@ -254,13 +268,13 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
         }
     }
 
-    private static void UpdateInstances(RenderWorld world, Entity canvas, List<GlyphInstance> values)
+    private static void UpdateInstances(World world, Entity canvas, List<GlyphInstance> values)
     {
         var previous = new Dictionary<(Entity, int), GlyphInstance>();
-        world.ExecuteBufferRead<GlyphInstance>(canvas, buffer =>
         {
+            using ReadOnlyBuffer<GlyphInstance> buffer = world.ReadBuffer<GlyphInstance>(canvas);
             foreach (GlyphInstance glyph in buffer.AsSpan()) previous.Add((glyph.Node, glyph.GlyphIndex), glyph);
-        });
+                }
         for (int index = 0; index < values.Count; index++)
         {
             GlyphInstance value = values[index];
@@ -272,12 +286,12 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
             else value = value with { Version = 1 };
             values[index] = value;
         }
-        world.ExecuteBufferWrite<GlyphInstance>(canvas, buffer =>
         {
+            using DynamicBuffer<GlyphInstance> buffer = world.GetBuffer<GlyphInstance>(canvas);
             for (int index = 0; index < values.Count; index++)
                 if (index >= buffer.Count) buffer.Add(values[index]);
-                else if (buffer.Read(index) != values[index]) buffer[index] = values[index];
-            while (buffer.Count > values.Count) buffer.SwapRemoveAt(buffer.Count - 1);
-        });
+                else if (buffer[index] != values[index]) buffer[index] = values[index];
+            while (buffer.Count > values.Count) buffer.RemoveAtSwapBack(buffer.Count - 1);
+                }
     }
 }

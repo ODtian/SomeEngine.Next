@@ -23,6 +23,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\SomeEngine.ECS\SomeEngine.ECS.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.ECS.Relationships/SomeEngine.ECS.Relationships.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.ECS.Serialization/SomeEngine.ECS.Serialization.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.ECS.Systems\SomeEngine.ECS.Systems.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Job\SomeEngine.Job.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.ECS.SourceGen\SomeEngine.ECS.SourceGen.csproj"

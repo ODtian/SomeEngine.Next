@@ -7,32 +7,32 @@ Unmanaged component data can be read and written by component number. The compon
 ```csharp
 public static class ComponentId<T> where T : struct
 {
-    public static ushort Value { get; }
+    public static int Value { get; }
 }
 
-public partial class World
+public sealed partial class World
 {
-    public ref readonly byte ReadBytes(Entity entity, ushort component);
-    public ref readonly byte ReadBytes(Entity entity, ushort component, int offset, int length);
-    public ref byte WriteBytes(Entity entity, ushort component);
-    public ref byte WriteBytes(Entity entity, ushort component, int offset, int length);
+    public ref readonly byte ReadBytes(Entity entity, int component);
+    public ref readonly byte ReadBytes(Entity entity, int component, int offset, int length);
+    public ref byte WriteBytes(Entity entity, int component);
+    public ref byte WriteBytes(Entity entity, int component, int offset, int length);
 }
 
-public readonly ref partial struct QueryChunkView
+public readonly partial struct QueryChunk
 {
-    public Span<byte> WriteColumn(ushort component, out int stride);
+    public Span<T> Write<T>() where T : struct;
 }
 ```
 
 ## Invariants
 
-- `ComponentId<T>.Value` uses the ECS component type number. Its value remains constant across Worlds throughout one process. Values are assigned at first type use, occupy the range `1..65535` for the byte API, and are checked when first converted to `ushort`. Persistent data identifies component types through the serialization APIs.
+- `ComponentId<T>.Value` uses the ECS component type number. Its value remains constant across Worlds throughout one process. Values are assigned at first type use and use the native `int` component identifier. Persistent data identifies component types through the serialization APIs.
 - `World.WriteBytes` supports table and sparse components. Taking the reference advances that entity's component write version, including writes through the region overload. The whole-component overload returns its first byte; the region overload returns the byte at `offset`.
 - `World.ReadBytes` supports the same table and sparse data and returns a read-only reference. Reads preserve the entity and component type write versions and select read access at the existing World access boundary. The whole-component and region overloads return the first component byte and the byte at `offset`, respectively.
 - Both region overloads accept nonnegative offsets and lengths whose sum fits within the component's size. `DevelopmentCheck` reports invalid ranges in development builds, including overflowing input values. Callers use a region's declared length when reading or writing through its reference.
 - References are used before a structural change, sparse array growth, or another operation replaces the backing storage. The existing World access boundary selects table or sparse read/write access for the requested operation before returning the reference.
-- `QueryChunkView.WriteColumn` requires a query that declares write access to the requested table component and selects whole chunks. The returned span covers `Count * stride` bytes, and `stride` is the component size. Obtaining it publishes the query's `CurrentSystemVersion` for every row in the column; `Changed<T>` observes these writes within its usual version window.
-- Component byte access requires unmanaged data. Dynamic buffer storage uses the buffer APIs, and direct entity byte writes respect public component value-write permissions. Column writes retain the query's relationship write boundary and its hierarchy, relation and index maintenance.
+- `QueryChunk.Write<T>()` returns the typed column for the current matching range inside `Query.Open()`. For an unmanaged component, `MemoryMarshal.AsBytes(chunk.Write<T>())` exposes that range as bytes. Taking the write span records the range write version; `Changed<T>` observes the same writes.
+- Component byte access requires unmanaged data. Dynamic buffer storage uses the buffer APIs, and direct entity byte writes respect public component value-write permissions. Protected topology, shared and indexed values use their typed mutation entries; ordinary byte writes address directly mutable values.
 - API usage checks call `SomeEngine.Core.Diagnostics.DevelopmentCheck`; their calls and argument evaluation disappear in Release callers. Component storage and write-version data remain in the existing ECS stores.
 
 ## Field writes
@@ -57,3 +57,5 @@ Closed generic buffer element types such as `Track<float>` and `Track<Vector2>` 
 ## Relations
 
 [[architecture/ECS/Change-Tracking|Change Tracking]] · [[architecture/animation/Property-Animation|Property Animation]] · [[architecture/validation/Development-Checks|Development Checks]]
+
+Source: [World field and byte access](../../../src/SomeEngine.ECS/World.Fields.cs), [native chunk columns](../../../src/SomeEngine.ECS/Queries/Query.cs).

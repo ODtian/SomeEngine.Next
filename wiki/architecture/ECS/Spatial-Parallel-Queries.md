@@ -1,60 +1,58 @@
 # 空间关系分区执行
 
-`FillPairs(buffer)` 和 `FillPairsParallel(buffer)` 在一次关系查询读取范围中完成分区、计数、前缀与填充。两者接收同一个具体来源和筛选类型，输出由 `CollisionPairBuffer.Count/Pairs` 表示。带 `lastSystemVersion` 的重载将该基线交给原有成员条件，计数和填充使用同一个版本窗口。
+[ISpatialPartitionEnumerable<TPartition>](../../../src/SomeEngine.ECS.Relationships/Spatial/BoundsPartitions.cs) 在普通配对来源上增加 `Prepare(RelationQueryViews)`、`CreatePartitions(Span<TPartition>)` 和从指定分区枚举的入口。通用接口、BVH、均匀网格及输出缓冲均位于 Relationships 的 `SomeEngine.ECS.Spatial`。碰撞表面和预测等具体组织由 Physics 继续持有。
 
-## 来源与配对分区
+## 分区算法
 
-`ICollisionPartitionEnumerable` 在 `IQueryRelationEnumerable<(Entity,Entity)>` 上增加 Tree、Prepare 和从 `CollisionNodePair` 开始的具体枚举。该空间族使用一个成员查询，QueryCount 为 1。`CollisionCandidates` 与 `SpatialCandidates` 实现这个接口，查询描述继续采用普通 struct。Prepare 在终端读取范围中运行一次：自动来源构建树及具体摘要，调用方持树的来源读取已维护的数据。
+树来源的 `TPartition` 为 `BoundsNodePair`。[BoundsTree.CreatePartitions](../../../src/SomeEngine.ECS.Relationships/Spatial/BoundsPartitions.cs) 从根自配对开始，选择配对数量最大的区域细分。同一分支展开为左/左、左/右、右/右；不同节点对沿较高分支二分。各分区覆盖互不交叠的无序实体对。拆分后按原顺序压缩确定为空的单叶自配对和范围分离节点对，`PartitionCount` 保存实际工作数量。
 
-`CollisionTree.CreatePartitions` 从根自配对开始，优先细分成员配对数最大的工作。相同分支展开为左/左、左/右和右/右；不同节点对沿较高分支二分。各分区覆盖互不交叠的实体对，分区容量决定本次工作的数量上限。每个分区的正反逐条件证明从 Unknown 开始，再按原有范围相交、组证明、成员检查和叶子语义遍历。
+网格来源的 `TPartition` 为 `GridPairRange`，按成员区间划分。具体 `WithinSpatialPairing`、`BetweenSpatialPairing`、`ProductSpatialPairing` 保留原输入角色、自身组合和去重规则。两个后端通过同一泛型输出缓冲执行。
 
-拆分结束后，在同一分区跨度内按原顺序压缩：单叶自配对与范围分离的不同节点对具有确定的空结果，直接在这里剔除。返回数量用于提交计数任务，`CollisionPairBuffer.PartitionCount` 保存该实际数量。关系来源与手写来源共享这份分区逻辑；剩余工作保持原遍历区域及唯一实体对输出。普通组件谓词的组结论固定为 Unknown，具体判断交给叶子；键和bitmap继续持有各自的摘要结论。
+## 同一读取范围内的三个阶段
 
-## 一次读取中的阶段
+[SpatialPairBuffer<TPartition>](../../../src/SomeEngine.ECS.Relationships/Spatial/SpatialPairBuffer.cs) 的 `FillPairs`、`FillPairsParallel` 共用来源、条件和输出过程；对应 `ulong lastSystemVersion` 重载传入同一成员观察窗口。
 
-`PairFill` 转发具体空间来源的查询和读取声明，由 `RelationQuery` 进入对应范围。单集合只读来源以一次查询回调同时提供 Access 和 First；通用路径先进入 Access，再进入原参与集合，具体句柄生命周期见[关系查询](Relation-Queries.md#语义关系查询)。两类范围均持续覆盖以下全部阶段：
+1. `Prepare` 构建自动来源的索引和摘要，或读取调用方已维护的索引，然后产生分区。
+2. 对每个分区执行具体计数输出，写入该分区的 count。
+3. 全部计数返回后，协调者构造连续 offsets，保存真实总数，扩展实体对数组，并记录有输出的分区编号。
+4. 对每个有输出的分区重放同一来源和筛选，写入 `[offset,count]` 的独立 Span。
+5. 全部填充返回后退出本次关系查询读取范围。
 
-1. 为每个分区执行具体计数输出，保存实际结果数量。
-2. 计数完成后，父执行建立连续 offsets，保存真实总数，并按需要扩展实体对数组。
-3. 为每个有输出的分区取得其 offsets 区间，重新执行相同来源和筛选，写入对应实体对范围。
-4. 等待全部填充作业完成，再退出本次查询读取回调。
+并行阶段以 `IRangeWork<int>` 和分区编号数组进入 `Scheduler.ExecuteRanges`。调用方连接 `WorldJobs`，外层原生 `QueryScope` 提供当前结构与组件 grant；每个参与执行者在这个 grant 内打开自己的原生查询范围。计数与填充共用受保护的输入，协调者在同步 join 后读取 count、构建前缀，再进入填充。普通串行入口在同一线程执行相同的具体 work。
 
-`ReadOnlyQueryPairJobs` 是 Systems 提供的共同借用接点。`IReadOnlyQueryPairJob.Execute(index,first,second)` 以 `scoped QueryCursor` 在实际子任务中借用两份查询数据。一次并行调用的 `PairJobData<TJob>` 集中持有两份只读 `QueryData` 和原作业描述，各分区任务只保存该数据引用与分区编号。`QueryData` 保存当前 World、QueryState 和 Last/CurrentSystemVersion；实际分区执行取得自己的 `TJob local` 值，并就地借用两份查询描述。调用方在外层查询回调中持有原组件和 topology 读取。helper 在 finally 中合并并 Complete 已成功提交的全部工作，随后归还工作句柄数组。计数 helper 返回后，父执行读取已完成的 counts 并计算 offsets，再启动填充分区。
+```mermaid
+flowchart LR
+    Q[QueryScope 与当前 grant] --> P[Prepare 与分区]
+    P --> C[ExecuteRanges 计数]
+    C --> O[协调者 offsets 与容量]
+    O --> W[ExecuteRanges 独立输出区间]
+    W --> R[Count 与 Pairs]
+```
 
-因此每个分区访问原有组件存储，计数和填充共用同一有效输入。第三方具体来源及手写遍历也通过该接口进入相同读取和任务生命周期。
+## 数据与资源
 
-## 输出数据与资源区间
+缓冲持有分区、counts、offsets、分区编号、有输出的分区编号和实体对数组。Scheduler 创建的一份 `_pairsResource` 保护整次填充及后续消费；counts 和 offsets 是该缓冲在这次调用内使用的数据。分区 work 的写入独立性来自 count/prefix 得到的真实数组区间。
 
-`CollisionPairBuffer` 持有节点对分区、counts、offsets、有输出的分区编号及实体对数组。buffer 创建的资源 token 属于传入的实际 Scheduler。外层调度通过 `FillAccess` 写入完整 pair 资源，保护同一缓冲的多阶段调用；消费者通过 `ReadAccess` 读取该资源。子填充使用 buffer 私有的实体对区间资源声明互不交叠的写入：
-
-| 阶段 | 读取声明 | 写入声明 |
+| 阶段 | 实际读取 | 实际写入与授权 |
 | --- | --- | --- |
-| 外层填充调用 | 实际来源的组件、成员及树 | 完整 pair token |
-| 计数 | 外层借用的组件、成员及树 | count token 的 `[partition,1]` |
-| 父执行计算前缀 | 已完成的 counts | 外层 pair 资源保护下的 offsets、Count 和实体对容量 |
-| 填充 | 外层借用的组件、成员及树，offset token 的 `[partition,2]` | 私有 pair 区间 token 的 `[offset,count]` |
-| 接触消费 | 组件读取及 pair token | 业务接触累计数据 token |
+| 外层填充 | 来源组件、成员、树或网格 | `pairs.FillAccess` 覆盖本次输出 |
+| 并行计数 | 共享当前查询 grant | 各分区自己的 count 元素 |
+| 协调者前缀 | 完成后的 counts | offsets、Count、容量 |
+| 并行填充 | 同一输入与已完成 offsets | 各分区的 `[offset,count]` |
+| 消费 | `pairs.ReadAccess` 与业务组件 | 调用方声明的累计数据 |
 
-每个计数或填充分区是独立 Scheduler job，每个填充作业取得自己的实际输出范围。Count/Pairs 只公开当前总数对应的输出。后续作业声明 `buffer.ReadAccess` 并显式依赖填充结果；下一帧组件写入依赖上一帧消费完成。
-
-## 实际业务调用与手写对照
-
-以下 Body/Hair 与接触累计属于业务例子，完整调用位于 `benchmarks/SomeEngine.ECS.Benchmarks/Relations/SpatialParallelFrames.cs`：
+`Pairs` 只公开 `Count` 对应的范围，`FilledPartitionCount` 表达有结果的实际分区数。消费者声明 `ReadAccess` 并显式依赖填充完成；下一次填充通过同一输出资源与消费建立排序。
 
 ```csharp
-using var pairs = new CollisionPairBuffer(scheduler, partitionCapacity: 16);
-using var contacts = new SpatialContactTotals(scheduler, entityCapacity);
-JobHandle updated = maintenance.Schedule(componentWriter);
-JobHandle filled = SpatialCollisionFrames.SchedulePairsParallel(maintenance, pairs, updated);
-JobHandle consumed = SpatialCollisionFrames.ScheduleConsume(maintenance, pairs, contacts, filled);
+using var pairs = new SpatialPairBuffer<BoundsNodePair>(scheduler, partitionCapacity: 16);
+JobHandle maintained = maintenance.Schedule(componentWriter);
+JobHandle filled = maintenance.ScheduleRead(fillPairsJob, [pairs.FillAccess], maintained);
+JobHandle consumed = maintenance.ScheduleRead(consumePairsJob,
+    [pairs.ReadAccess, contacts.WriteAccess], filled);
 consumed.Complete();
 ReadOnlySpan<(Entity, Entity)> rows = pairs.Pairs;
 ```
 
-`SchedulePairs` 进入单线程 count/prefix/fill；`SchedulePairsParallel` 提交并行分区；`ScheduleParallel` 连接并行填充与消费。业务累计数据保存每个实体的接触次数和穿透深度。两种执行使用同一具体几何消费。
+`fillPairsJob` 与 `consumePairsJob` 是业务的普通 struct `IJob`：前者调用 `maintenance.Query.FillPairsParallel(pairs)`，后者从实体对和实际组件计算接触累计。两者保持通用交付数据与业务状态各自的持有者。
 
-`HandwrittenSpatialPartitions` 通过相同接口调用独立的手写组遍历。手写维护对象公开具体 Query，帧夹具为它提供同名调度重载。两侧各持树、摘要、buffer 和累计数据，使用相同节点布局、分区、Scheduler、阶段资源区间和消费格式。持续帧两侧按相同成员和版本更新自己的索引。
-
-`SpatialParallelTests` 的公开结果依据包括四个指定接触对、连续帧从五对到三对的四条执行链及接触累计，以及计数开始后排队组件写入的同步检查。最后一项先观察原三对结果，再维护写入后的树取得一个结果；带 Changed 成员条件和显式版本基线的填充取得对应成员窗口。
-
-索引维护及其资源生命周期见 [碰撞树维护](Spatial-Maintenance.md)，组证明见 [空间筛选](Spatial-Filtering.md)。
+公开检查位于 [SpatialParallelTests](../../../tests/SomeEngine.Physics.Tests/SpatialParallelTests.cs)，覆盖字面实体对、串行与并行一致性、持续帧结果及显式写入依赖。维护进度见 [空间维护](Spatial-Maintenance.md)，逐方向组证明见 [空间筛选](Spatial-Filtering.md)。

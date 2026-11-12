@@ -75,4 +75,4 @@ internal sealed class TerrainGeometryRequest(long sequence, JobHandle dependency
 
 internal readonly record struct TerrainGpuChunkBuild(int GeometryId, TerrainChunkBounds Bounds);
 internal readonly record struct TerrainGpuSource(object Scene) : IComponent;
-internal readonly record struct TerrainGpuSelection(object Scene, int[] GeometryIds) : IComponent;
+internal readonly record struct TerrainGpuSelection(object Scene, int[] GeometryIds) : ITrackedComponent;

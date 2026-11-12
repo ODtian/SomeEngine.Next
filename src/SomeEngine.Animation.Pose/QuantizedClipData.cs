@@ -59,24 +59,24 @@ public sealed class QuantizedClipData
         }
         var words = new uint[count * bones * 5];
         for (int sample = 0; sample < count; sample++)
-        for (int bone = 0; bone < bones; bone++)
-        {
-            BoneTransform value = poses[sample * bones + bone];
-            QuantizedBoneRange range = ranges[bone];
-            Quaternion rotation = Quaternion.Normalize(value.Rotation);
-            uint tx = Encode(value.Translation.X, range.TranslationMinimum.X, range.TranslationExtent.X);
-            uint ty = Encode(value.Translation.Y, range.TranslationMinimum.Y, range.TranslationExtent.Y);
-            uint tz = Encode(value.Translation.Z, range.TranslationMinimum.Z, range.TranslationExtent.Z);
-            uint sx = Encode(value.Scale.X, range.ScaleMinimum.X, range.ScaleExtent.X);
-            uint sy = Encode(value.Scale.Y, range.ScaleMinimum.Y, range.ScaleExtent.Y);
-            uint sz = Encode(value.Scale.Z, range.ScaleMinimum.Z, range.ScaleExtent.Z);
-            int index = (sample * bones + bone) * 5;
-            words[index] = tx | ty << 16;
-            words[index + 1] = tz | Encode(rotation.X, -1, 2) << 16;
-            words[index + 2] = Encode(rotation.Y, -1, 2) | Encode(rotation.Z, -1, 2) << 16;
-            words[index + 3] = Encode(rotation.W, -1, 2) | sx << 16;
-            words[index + 4] = sy | sz << 16;
-        }
+            for (int bone = 0; bone < bones; bone++)
+            {
+                BoneTransform value = poses[sample * bones + bone];
+                QuantizedBoneRange range = ranges[bone];
+                Quaternion rotation = Quaternion.Normalize(value.Rotation);
+                uint tx = Encode(value.Translation.X, range.TranslationMinimum.X, range.TranslationExtent.X);
+                uint ty = Encode(value.Translation.Y, range.TranslationMinimum.Y, range.TranslationExtent.Y);
+                uint tz = Encode(value.Translation.Z, range.TranslationMinimum.Z, range.TranslationExtent.Z);
+                uint sx = Encode(value.Scale.X, range.ScaleMinimum.X, range.ScaleExtent.X);
+                uint sy = Encode(value.Scale.Y, range.ScaleMinimum.Y, range.ScaleExtent.Y);
+                uint sz = Encode(value.Scale.Z, range.ScaleMinimum.Z, range.ScaleExtent.Z);
+                int index = (sample * bones + bone) * 5;
+                words[index] = tx | ty << 16;
+                words[index + 1] = tz | Encode(rotation.X, -1, 2) << 16;
+                words[index + 2] = Encode(rotation.Y, -1, 2) | Encode(rotation.Z, -1, 2) << 16;
+                words[index + 3] = Encode(rotation.W, -1, 2) | sx << 16;
+                words[index + 4] = sy | sz << 16;
+            }
         return new(clip.Duration, count, ranges, words, [.. clip.Events], clip.RootMotionBone);
     }
 

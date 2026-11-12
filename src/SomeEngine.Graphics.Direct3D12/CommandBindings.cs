@@ -518,7 +518,6 @@ internal sealed unsafe partial class D3D12Backend
         internal ulong Capacity { get; }
         internal ulong GpuAddress { get; }
         internal NativeResource* Resource => _resource;
-        internal ulong Used => _used;
 
         internal static D3D12OrdinaryDataChunk Create(
             D3D12Device device,
@@ -1552,27 +1551,8 @@ internal sealed unsafe partial class D3D12Backend
 
         internal void ResetOrdinaryDataArena()
         {
-            if (_ordinaryDataChunks.Count > 1)
-            {
-                ulong required = 0;
-                foreach (D3D12OrdinaryDataChunk chunk in _ordinaryDataChunks)
-                    required = checked(required + chunk.Used);
-                ulong capacity = 64UL * 1024UL;
-                while (capacity < required)
-                    capacity = checked(capacity * 2);
-                D3D12OrdinaryDataChunk consolidated = D3D12OrdinaryDataChunk.Create(
-                    _context.NativeDevice,
-                    _context.NativeNodeMask,
-                    capacity);
-                foreach (D3D12OrdinaryDataChunk chunk in _ordinaryDataChunks)
-                    chunk.Release();
-                _ordinaryDataChunks.Clear();
-                _ordinaryDataChunks.Add(consolidated);
-            }
-            else if (_ordinaryDataChunks.Count == 1)
-            {
-                _ordinaryDataChunks[0].Reset();
-            }
+            foreach (D3D12OrdinaryDataChunk chunk in _ordinaryDataChunks)
+                chunk.Reset();
             _ordinaryDataCursor = 0;
             _ordinaryDataCurrent = _ordinaryDataChunks.Count == 0
                 ? null

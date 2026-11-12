@@ -13,7 +13,7 @@ public sealed class TerrainGpuVoxelGeometryTests(SceneContentFixture content)
     [Fact]
     public async Task GpuVoxelGeometryKeepsTheCurrentBatchUntilTheChangedSurfaceIsReady()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using GpuVoxelTerrainExample gpu = await GpuVoxelTerrainExample.CreateAsync(scheduler, content.DirectoryPath);
         var cpu = new VoxelTerrainExample(scheduler);
         await gpu.Field.ReadCpuAsync(gpu.SampleRegion);

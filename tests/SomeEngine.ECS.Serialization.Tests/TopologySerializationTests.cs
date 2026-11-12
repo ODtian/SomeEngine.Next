@@ -24,19 +24,19 @@ public sealed class TopologySerializationTests
             0x22222222A5A5A5A5ul);
         var writeRegistry = new SerializationRegistry()
             .Register<TopologyLabel>()
-            .RegisterHierarchyDomain<DefaultHierarchyDomain>(oldKey);
+            .RegisterHierarchy<DefaultHierarchyDomain>(oldKey);
         var source = new World();
-        Entity parent = source.CreateEntity(new TopologyLabel { Value = 1 });
-        Entity child = source.CreateEntity(new TopologyLabel { Value = 2 });
+        Entity parent = source.Create(new TopologyLabel { Value = 1 });
+        Entity child = source.Create(new TopologyLabel { Value = 2 });
         Hierarchy<DefaultHierarchyDomain>.SetParent(source, child, parent);
 
         using var stream = new MemoryStream();
-        WorldSerializer.WriteWorld(stream, source, writeRegistry);
+        new WorldSerializer(writeRegistry).Save(source, stream);
         byte[] bytes = stream.ToArray();
 
         var rejectRegistry = new SerializationRegistry()
             .Register<TopologyLabel>()
-            .RegisterHierarchyDomain<DefaultHierarchyDomain>(newKey);
+            .RegisterHierarchy<DefaultHierarchyDomain>(newKey);
         using var rejected = new MemoryStream(bytes, writable: false);
         InvalidDataException mismatch = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadWorld(rejected, rejectRegistry));
@@ -48,17 +48,17 @@ public sealed class TopologySerializationTests
     {
         var writeRegistry = new SerializationRegistry()
             .Register<TopologyLabel>()
-            .RegisterHierarchyDomain<DefaultHierarchyDomain>();
+            .RegisterHierarchy<DefaultHierarchyDomain>(SaveTypes.Key<DefaultHierarchyDomain>());
         var source = new World();
-        Entity parent = source.CreateEntity(new TopologyLabel { Value = 1 });
-        Entity child = source.CreateEntity(new TopologyLabel { Value = 2 });
+        Entity parent = source.Create(new TopologyLabel { Value = 1 });
+        Entity child = source.Create(new TopologyLabel { Value = 2 });
         Hierarchy<DefaultHierarchyDomain>.SetParent(source, child, parent);
         using var stream = new MemoryStream();
-        WorldSerializer.WriteWorld(stream, source, writeRegistry);
+        new WorldSerializer(writeRegistry).Save(source, stream);
 
         var readRegistry = new SerializationRegistry()
             .Register<TopologyLabel>()
-            .RegisterHierarchyDomain<UiDomain>();
+            .RegisterHierarchy<UiDomain>(SaveTypes.Key<UiDomain>());
         stream.Position = 0;
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadWorld(stream, readRegistry));
@@ -70,12 +70,12 @@ public sealed class TopologySerializationTests
     {
         SerializationRegistry registry = CreateRegistry();
         var source = new World();
-        Entity parent = source.CreateEntity(new TopologyLabel { Value = 1 });
-        Entity child = source.CreateEntity(new TopologyLabel { Value = 2 });
+        Entity parent = source.Create(new TopologyLabel { Value = 1 });
+        Entity child = source.Create(new TopologyLabel { Value = 2 });
         Hierarchy<DefaultHierarchyDomain>.SetParent(source, child, parent);
 
         using var stream = new MemoryStream();
-        WorldSerializer.WriteWorld(stream, source, registry);
+        new WorldSerializer(registry).Save(source, stream);
         stream.Position = 0;
 
         var limits = SerializationReadLimits.Default with
@@ -93,16 +93,16 @@ public sealed class TopologySerializationTests
     [Fact]
     public void RegisterRelationTopology_CustomKeyRequiresOrdinaryTablePayload()
     {
-        var registry = new SerializationRegistry().RegisterSparse<NonTableRelationPayload>();
+        var registry = new SerializationRegistry().RegisterSparse<NonTableRelationPayload>(SaveTypes.Key<NonTableRelationPayload>());
         var topologyKey = new SerializationTypeKey(
             Guid.Parse("1B129490-A7B3-40CC-99ED-C6229FE8F9F5"),
             "non-table-relation-topology",
             1);
 
         InvalidOperationException defaultError = Assert.Throws<InvalidOperationException>(
-            () => registry.RegisterRelationTopology<NonTableRelationPayload>());
+            () => registry.RegisterRelation<NonTableRelationPayload>());
         InvalidOperationException customError = Assert.Throws<InvalidOperationException>(
-            () => registry.RegisterRelationTopology<NonTableRelationPayload>(topologyKey));
+            () => registry.RegisterRelation<NonTableRelationPayload>(topologyKey));
 
         Assert.Equal(defaultError.GetType(), customError.GetType());
     }
@@ -113,18 +113,18 @@ public sealed class TopologySerializationTests
         SerializationRegistry registry = CreateRegistry();
         var source = new World();
 
-        Entity root = source.CreateEntity(new TopologyLabel { Value = 1 });
-        Entity childA = source.CreateEntity(new TopologyLabel { Value = 2 });
-        Entity childB = source.CreateEntity(new TopologyLabel { Value = 3 });
-        Entity uiRoot = source.CreateEntity(new TopologyLabel { Value = 4 });
-        Hierarchy<DefaultHierarchyDomain>.SetChildOrderPolicy(source, root, ChildOrderPolicy.Ordered);
+        Entity root = source.Create(new TopologyLabel { Value = 1 });
+        Entity childA = source.Create(new TopologyLabel { Value = 2 });
+        Entity childB = source.Create(new TopologyLabel { Value = 3 });
+        Entity uiRoot = source.Create(new TopologyLabel { Value = 4 });
+        Hierarchy<DefaultHierarchyDomain>.SetOrdered(source, root, true);
         Hierarchy<DefaultHierarchyDomain>.SetParent(source, childB, root);
-        Hierarchy<DefaultHierarchyDomain>.SetParent(source, childA, root, insertIndex: 0);
-        Hierarchy<UiDomain>.SetChildOrderPolicy(source, uiRoot, ChildOrderPolicy.Ordered);
+        Hierarchy<DefaultHierarchyDomain>.SetParent(source, childA, root, insertAt: 0);
+        Hierarchy<UiDomain>.SetOrdered(source, uiRoot, true);
         Hierarchy<UiDomain>.SetParent(source, childA, uiRoot);
 
-        Entity relationSource = source.CreateEntity(new TopologyLabel { Value = 10 });
-        Entity relationTarget = source.CreateEntity(new TopologyLabel { Value = 11 });
+        Entity relationSource = source.Create(new TopologyLabel { Value = 10 });
+        Entity relationTarget = source.Create(new TopologyLabel { Value = 11 });
         source.SetRelationAdjacencyOrder<SerializedLink>(
             relationSource,
             RelationAdjacencyRole.Outgoing,
@@ -158,8 +158,8 @@ public sealed class TopologySerializationTests
 
         using var first = new MemoryStream();
         using var second = new MemoryStream();
-        WorldSerializer.WriteWorld(first, source, registry);
-        WorldSerializer.WriteWorld(second, source, registry);
+        new WorldSerializer(registry).Save(source, first, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(source, second, progress: CheckpointProgress.Preserve);
 
         Assert.Equal(first.ToArray(), second.ToArray());
 
@@ -170,31 +170,29 @@ public sealed class TopologySerializationTests
         Assert.Equal(root, Hierarchy<DefaultHierarchyDomain>.GetParent(loaded, childB));
         Assert.Equal(
             new[] { childA, childB },
-            Hierarchy<DefaultHierarchyDomain>.GetChildren(loaded, root).ToArray());
-        Assert.Equal(ChildOrderPolicy.Ordered,
-            Hierarchy<DefaultHierarchyDomain>.GetChildOrderPolicy(loaded, root));
+            TopologyValues.Children<DefaultHierarchyDomain>(loaded, root));
+        Assert.True(
+            Hierarchy<DefaultHierarchyDomain>.IsOrdered(loaded, root));
         Assert.Equal(uiRoot, Hierarchy<UiDomain>.GetParent(loaded, childA));
-        Assert.Equal(new[] { childA }, Hierarchy<UiDomain>.GetChildren(loaded, uiRoot).ToArray());
+        Assert.Equal(new[] { childA }, TopologyValues.Children<UiDomain>(loaded, uiRoot));
 
         Assert.Equal(
             new[] { edgeC, edgeA, edgeB },
-            loaded.GetOrderedOutgoingRelations<SerializedLink>(relationSource)
-                .Entries.ToArray().Select(static entry => entry.Edge));
+            TopologyValues.Outgoing<SerializedLink>(loaded, relationSource));
         Assert.Equal(
             new[] { edgeB, edgeA, edgeC },
-            loaded.GetOrderedIncomingRelations<SerializedLink>(relationTarget)
-                .Entries.ToArray().Select(static entry => entry.Edge));
+            TopologyValues.Incoming<SerializedLink>(loaded, relationTarget));
         Assert.Equal(10, loaded.Read<SerializedLink>(edgeA.Entity).Weight);
         Assert.Equal(20, loaded.Read<SerializedLink>(edgeB.Entity).Weight);
         Assert.Equal(30, loaded.Read<SerializedLink>(edgeC.Entity).Weight);
         Assert.Equal(
-            new[] { edgeA, edgeB, edgeC }.OrderBy(static edge => edge.Entity.Index),
-            loaded.GetRelationEdgesBetween<SerializedLink>(relationSource, relationTarget)
+            new[] { edgeA, edgeB, edgeC }.OrderBy(static edge => edge.Entity.Id),
+            TopologyValues.Between<SerializedLink>(loaded, relationSource, relationTarget)
                 .ToArray()
-                .OrderBy(static edge => edge.Entity.Index));
+                .OrderBy(static edge => edge.Entity.Id));
 
         using var rewritten = new MemoryStream();
-        WorldSerializer.WriteWorld(rewritten, loaded, registry);
+        new WorldSerializer(registry).Save(loaded, rewritten, progress: CheckpointProgress.Preserve);
         Assert.Equal(second.ToArray(), rewritten.ToArray());
     }
 
@@ -203,8 +201,8 @@ public sealed class TopologySerializationTests
     {
         SerializationRegistry registry = CreateRegistry();
         var source = new World();
-        Entity endpointA = source.CreateEntity(new TopologyLabel { Value = 20 });
-        Entity endpointB = source.CreateEntity(new TopologyLabel { Value = 21 });
+        Entity endpointA = source.Create(new TopologyLabel { Value = 20 });
+        Entity endpointB = source.Create(new TopologyLabel { Value = 21 });
         source.SetRelationAdjacencyOrder<SerializedBond>(
             endpointA,
             RelationAdjacencyRole.Incident,
@@ -224,130 +222,84 @@ public sealed class TopologySerializationTests
             insertIndex: 0);
 
         using var stream = new MemoryStream();
-        WorldSerializer.WriteWorld(stream, source, registry);
+        new WorldSerializer(registry).Save(source, stream);
         stream.Position = 0;
         World loaded = WorldSerializer.ReadWorld(stream, registry);
 
-        UndirectedRelationEndpoints<SerializedBond> endpoints =
-            loaded.GetUndirectedRelationEndpoints(firstEdge);
-        Assert.Equal(endpointA, endpoints.EndpointA);
-        Assert.Equal(endpointB, endpoints.EndpointB);
+        RelationEndpoints<SerializedBond> endpoints =
+            loaded.Read<RelationEndpoints<SerializedBond>>(firstEdge.Entity);
+        Assert.Equal(endpointA, endpoints.Source);
+        Assert.Equal(endpointB, endpoints.Target);
         Assert.Equal(1, loaded.Read<SerializedBond>(firstEdge.Entity).AnchorA);
         Assert.Equal(2, loaded.Read<SerializedBond>(firstEdge.Entity).AnchorB);
         Assert.Equal(
             new[] { selfEdge, firstEdge },
-            loaded.GetOrderedIncidentRelations<SerializedBond>(endpointA)
-                .Entries.ToArray().Select(static entry => entry.Edge));
-        Assert.Single(
-            loaded.GetIncidentRelations<SerializedBond>(endpointA).Entries.ToArray(),
-            entry => entry.Edge == selfEdge);
+            TopologyValues.Incident<SerializedBond>(loaded, endpointA));
+        Assert.Single(TopologyValues.Incident<SerializedBond>(loaded, endpointA), edge => edge == selfEdge);
     }
 
     [Fact]
-    public void DeferredRelationState_FailsClosedBeforeSerializationOutput()
+    public void DeferredRelationState_PreserveRestoresValuesAndAppliedOrder()
     {
         SerializationRegistry registry = CreateRegistry();
-        var source = new World();
-        Entity oldSource = source.CreateEntity(new TopologyLabel { Value = 30 });
-        Entity newSource = source.CreateEntity(new TopologyLabel { Value = 31 });
-        Entity targetA = source.CreateEntity(new TopologyLabel { Value = 32 });
-        Entity targetB = source.CreateEntity(new TopologyLabel { Value = 33 });
-        source.SetRelationAdjacencyOrder<SerializedLink>(
-            newSource,
-            RelationAdjacencyRole.Outgoing,
-            RelationAdjacencyOrderPolicy.Ordered);
-        RelationEdge<SerializedLink> moved = source.CreateRelation(
-            oldSource,
-            targetA,
-            new SerializedLink { Weight = 40 });
-        RelationEdge<SerializedLink> resident = source.CreateRelation(
-            newSource,
-            targetB,
-            new SerializedLink { Weight = 41 });
-
-        source.RetargetRelationDeferred(
-            moved,
-            newSource,
-            targetA,
-            new DirectedRelationPlacement(OutgoingIndex: 0));
-        RelationAdjacencySnapshot<SerializedLink> oldBefore =
-            source.GetOutgoingRelations<SerializedLink>(oldSource);
-        RelationAdjacencySnapshot<SerializedLink> newBefore =
-            source.GetOutgoingRelations<SerializedLink>(newSource);
+        using var source = new World();
+        Entity oldSource = source.Create(new TopologyLabel { Value = 30 });
+        Entity newSource = source.Create(new TopologyLabel { Value = 31 });
+        Entity targetA = source.Create(new TopologyLabel { Value = 32 });
+        Entity targetB = source.Create(new TopologyLabel { Value = 33 });
+        Relations<SerializedLink>.SetOrdered(source, newSource, RelationAdjacencyRole.Outgoing, true);
+        RelationEdge<SerializedLink> moved = source.CreateRelation(oldSource, targetA, new SerializedLink { Weight = 40 });
+        RelationEdge<SerializedLink> resident = source.CreateRelation(newSource, targetB, new SerializedLink { Weight = 41 });
+        source.RetargetRelationDeferred(moved, newSource, targetA);
+        RelationEdge<SerializedLink>[] oldBefore = TopologyValues.Outgoing<SerializedLink>(source, oldSource);
+        RelationEdge<SerializedLink>[] newBefore = TopologyValues.Outgoing<SerializedLink>(source, newSource);
 
         using var stream = new MemoryStream();
-        Assert.Throws<InvalidOperationException>(() =>
-            WorldSerializer.WriteWorld(stream, source, registry));
-
-        Assert.Equal(0, stream.Length);
-
-        RelationAdjacencySnapshot<SerializedLink> oldAfter =
-            source.GetOutgoingRelations<SerializedLink>(oldSource);
-        RelationAdjacencySnapshot<SerializedLink> newAfter =
-            source.GetOutgoingRelations<SerializedLink>(newSource);
-        Assert.Equal(oldBefore.Generation, oldAfter.Generation);
-        Assert.Equal(newBefore.Generation, newAfter.Generation);
-        Assert.Equal(
-            oldBefore.Entries.ToArray(),
-            oldAfter.Entries.ToArray());
-        Assert.Equal(
-            newBefore.Entries.ToArray(),
-            newAfter.Entries.ToArray());
-        Assert.Equal(
-            moved,
-            Assert.Single(oldAfter.Entries.ToArray()).Edge);
-        Assert.Equal(
-            resident,
-            Assert.Single(newAfter.Entries.ToArray()).Edge);
+        new WorldSerializer(registry).Save(source, stream, progress: CheckpointProgress.Preserve);
+        Assert.Equal(oldBefore, TopologyValues.Outgoing<SerializedLink>(source, oldSource));
+        Assert.Equal(newBefore, TopologyValues.Outgoing<SerializedLink>(source, newSource));
+        stream.Position = 0;
+        using World loaded = WorldSerializer.ReadWorld(stream, registry);
+        Assert.Equal(newSource, loaded.Read<RelationEndpoints<SerializedLink>>(moved.Entity).Source);
+        Assert.Equal(new[] { moved }, TopologyValues.Outgoing<SerializedLink>(loaded, oldSource));
+        Assert.Equal(new[] { resident }, TopologyValues.Outgoing<SerializedLink>(loaded, newSource));
+        loaded.MaintainRelations<SerializedLink>();
+        loaded.ReorderRelationAdjacency(newSource, RelationAdjacencyRole.Outgoing, moved, insertIndex: 0);
+        Assert.Empty(TopologyValues.Outgoing<SerializedLink>(loaded, oldSource));
+        Assert.Equal(new[] { moved, resident }, TopologyValues.Outgoing<SerializedLink>(loaded, newSource));
+        Assert.Equal(40, loaded.Read<SerializedLink>(moved.Entity).Weight);
+        Assert.Equal(41, loaded.Read<SerializedLink>(resident.Entity).Weight);
     }
 
     [Fact]
-    public void DeferredHierarchyState_FailsClosedBeforeSerializationOutput()
+    public void DeferredHierarchyState_PreserveRestoresValuesAndAppliedOrder()
     {
         SerializationRegistry registry = CreateRegistry();
-        var source = new World();
-        Entity oldParent = source.CreateEntity(new TopologyLabel { Value = 50 });
-        Entity newParent = source.CreateEntity(new TopologyLabel { Value = 51 });
-        Entity moved = source.CreateEntity(new TopologyLabel { Value = 52 });
-        Entity resident = source.CreateEntity(new TopologyLabel { Value = 53 });
-        Hierarchy<DefaultHierarchyDomain>.SetChildOrderPolicy(
-            source,
-            oldParent,
-            ChildOrderPolicy.Ordered);
-        Hierarchy<DefaultHierarchyDomain>.SetChildOrderPolicy(
-            source,
-            newParent,
-            ChildOrderPolicy.Ordered);
+        using var source = new World();
+        Entity oldParent = source.Create(new TopologyLabel { Value = 50 });
+        Entity newParent = source.Create(new TopologyLabel { Value = 51 });
+        Entity moved = source.Create(new TopologyLabel { Value = 52 });
+        Entity resident = source.Create(new TopologyLabel { Value = 53 });
+        Hierarchy<DefaultHierarchyDomain>.SetOrdered(source, oldParent, true);
+        Hierarchy<DefaultHierarchyDomain>.SetOrdered(source, newParent, true);
         Hierarchy<DefaultHierarchyDomain>.SetParent(source, moved, oldParent);
         Hierarchy<DefaultHierarchyDomain>.SetParent(source, resident, newParent);
-
-        Hierarchy<DefaultHierarchyDomain>.SetParentDeferred(
-            source,
-            moved,
-            newParent,
-            insertIndex: 0);
-        HierarchyChildrenSnapshot<DefaultHierarchyDomain> oldBefore =
-            Hierarchy<DefaultHierarchyDomain>.GetChildren(source, oldParent);
-        HierarchyChildrenSnapshot<DefaultHierarchyDomain> newBefore =
-            Hierarchy<DefaultHierarchyDomain>.GetChildren(source, newParent);
+        Hierarchy<DefaultHierarchyDomain>.SetParentDeferred(source, moved, newParent, insertAt: 0);
+        Entity[] oldBefore = TopologyValues.Children<DefaultHierarchyDomain>(source, oldParent);
+        Entity[] newBefore = TopologyValues.Children<DefaultHierarchyDomain>(source, newParent);
 
         using var stream = new MemoryStream();
-        Assert.Throws<InvalidOperationException>(() =>
-            WorldSerializer.WriteWorld(stream, source, registry));
-
-        Assert.Equal(0, stream.Length);
-
-        HierarchyChildrenSnapshot<DefaultHierarchyDomain> oldAfter =
-            Hierarchy<DefaultHierarchyDomain>.GetChildren(source, oldParent);
-        HierarchyChildrenSnapshot<DefaultHierarchyDomain> newAfter =
-            Hierarchy<DefaultHierarchyDomain>.GetChildren(source, newParent);
-        Assert.Equal(oldBefore.Generation, oldAfter.Generation);
-        Assert.Equal(newBefore.Generation, newAfter.Generation);
-        Assert.Equal(oldBefore.ToArray(), oldAfter.ToArray());
-        Assert.Equal(newBefore.ToArray(), newAfter.ToArray());
-        Assert.Equal(newParent, Hierarchy<DefaultHierarchyDomain>.GetParent(source, moved));
-        Assert.Equal(new[] { moved }, oldAfter.ToArray());
-        Assert.Equal(new[] { resident }, newAfter.ToArray());
+        new WorldSerializer(registry).Save(source, stream, progress: CheckpointProgress.Preserve);
+        Assert.Equal(oldBefore, TopologyValues.Children<DefaultHierarchyDomain>(source, oldParent));
+        Assert.Equal(newBefore, TopologyValues.Children<DefaultHierarchyDomain>(source, newParent));
+        stream.Position = 0;
+        using World loaded = WorldSerializer.ReadWorld(stream, registry);
+        Assert.Equal(newParent, Hierarchy<DefaultHierarchyDomain>.GetParent(loaded, moved));
+        Assert.Equal(new[] { moved }, TopologyValues.Children<DefaultHierarchyDomain>(loaded, oldParent));
+        Assert.Equal(new[] { resident }, TopologyValues.Children<DefaultHierarchyDomain>(loaded, newParent));
+        Hierarchy<DefaultHierarchyDomain>.Maintain(loaded);
+        Assert.Empty(TopologyValues.Children<DefaultHierarchyDomain>(loaded, oldParent));
+        Assert.Equal(new[] { moved, resident }, TopologyValues.Children<DefaultHierarchyDomain>(loaded, newParent));
     }
 
     private static SerializationRegistry CreateRegistry() =>
@@ -355,10 +307,10 @@ public sealed class TopologySerializationTests
             .Register<TopologyLabel>()
             .Register<SerializedLink>()
             .Register<SerializedBond>()
-            .RegisterHierarchyDomain<DefaultHierarchyDomain>()
-            .RegisterHierarchyDomain<UiDomain>()
-            .RegisterRelationTopology<SerializedLink>()
-            .RegisterRelationTopology<SerializedBond>();
+            .RegisterHierarchy<DefaultHierarchyDomain>(SaveTypes.Key<DefaultHierarchyDomain>())
+            .RegisterHierarchy<UiDomain>(SaveTypes.Key<UiDomain>())
+            .RegisterRelation<SerializedLink>()
+            .RegisterRelation<SerializedBond>();
 
     private readonly struct UiDomain : IHierarchyDomain { }
 

@@ -22,6 +22,16 @@ pwsh -NoProfile -File tools/Invoke-Benchmark.ps1 --timeout 120 <executable> <arg
 
 ## 基线与限额
 
+普通性能运行使用正常工作负载的目标或公开参考实现作为门槛。队列通过 `--sample-pattern` 选择实际 stdout/stderr 中的数值，正则的命名组 `value` 表达采样；`--sample-max` 给出耗时等上限，`--sample-min` 给出吞吐等下限，数值单位与输出保持一致。每个有效采样都检查门槛，首次失标立即终止本机整棵进程树或远程 systemd 单元。
+
+```powershell
+pwsh -NoProfile -File tools/Invoke-Benchmark.ps1 --cpu --sample-pattern 'step_ms=(?<value>[0-9.]+)' --sample-max 16.67 <executable> <arguments>
+pwsh -NoProfile -File tools/Invoke-Benchmark.ps1 --cpu --sample-pattern 'entities_per_second=(?<value>[0-9.]+)' --sample-min 1000000 <executable> <arguments>
+pwsh -NoProfile -File tools/Invoke-Benchmark.ps1 --cpu --diagnostic '成员日志，前四步，开启阶段计时' <executable> <arguments>
+```
+
+`--diagnostic` 记录本次诊断的明确范围，关闭队列的采样目标终止，并通过 `SOMEENGINE_BENCHMARK_DIAGNOSTIC_SCOPE` 传给应用。诊断结果沿独立配置解释。`result.json` 保存 `SampleLimit`、`DiagnosticScope`、`FirstSample`、`FailedSample` 和 `StopReason`；目标失败使用退出码 1、`SampleTargetExceeded=true` 与 `StopReason=SampleTarget`。应用自身已有的场景预算检查继续沿相同目标执行。
+
 | 项目 | 默认行为 |
 | --- | --- |
 | CPU | 固定 4 个物理核，包含其硬件线程；远程从同一 L3 缓存域选择空闲核心 |

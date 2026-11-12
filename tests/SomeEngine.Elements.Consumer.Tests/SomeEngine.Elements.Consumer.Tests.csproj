@@ -21,4 +21,7 @@
     <Content Include="../SomeEngine.Typography.Tests/Fonts/*.ttf;../SomeEngine.Typography.Tests/Fonts/*.otf"
              Link="Fonts/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../SomeEngine.Views.Tests/ElementChildren.cs" Link="ElementChildren.cs" />
+  </ItemGroup>
 </Project>

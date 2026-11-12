@@ -14,7 +14,6 @@ public readonly record struct PoseResultId(int Value);
 public readonly record struct PoseResultReference(Entity Entity, int Index, PoseRange Range);
 
 /// <summary>One bone transform in an instance's continuous node-result buffer.</summary>
-[BufferCapacity(1)]
 public struct LocalPose : IBufferElement
 {
     public BoneTransform Transform;
@@ -27,7 +26,6 @@ public struct LocalPose : IBufferElement
 }
 
 /// <summary>The bone section, sample time, cumulative cycle phase and graph weight produced by one node result.</summary>
-[BufferCapacity(4)]
 public struct PoseResult : IBufferElement
 {
     public PoseRange Range;
@@ -40,7 +38,7 @@ public struct PoseResult : IBufferElement
 }
 
 /// <summary>A skeleton instance and the resolved result selected for its final local pose.</summary>
-public struct PoseTarget : IComponent
+public struct PoseTarget : ITrackedComponent
 {
     public SkeletonInstance Skeleton;
     public PoseResultReference Output;
@@ -56,20 +54,28 @@ public static partial class PoseAnimation
     public static Entity CreateTarget(World world, SkeletonInstance skeleton, int resultCount = 1,
         PoseResultId output = default)
     {
-        Entity target = world.CreateEntity();
+        Entity target = world.Create();
         world.AddBuffer<LocalPose>(target);
         world.AddBuffer<PoseResult>(target);
         var initial = (Skeleton: skeleton.Skeleton, Count: resultCount);
-        world.ExecuteBufferWrite<LocalPose, (Skeleton Skeleton, int Count)>(target, ref initial,
-            static (values, ref initial) =>
+        {
+            using var values = world.GetBuffer<LocalPose>(target);
+            Visit(values, ref initial);
+
+            static void Visit(DynamicBuffer<LocalPose> values, ref (Skeleton Skeleton, int Count) initial)
             {
                 values.EnsureCapacity(initial.Skeleton.BoneCount * initial.Count);
                 for (int result = 0; result < initial.Count; result++)
                     foreach (BoneTransform bone in initial.Skeleton.ReferencePose)
                         values.Add(new LocalPose { Transform = bone });
-            });
-        world.ExecuteBufferWrite<PoseResult, (Skeleton Skeleton, int Count)>(target, ref initial,
-            static (results, ref initial) =>
+
+            }
+        }
+        {
+            using var results = world.GetBuffer<PoseResult>(target);
+            Visit(results, ref initial);
+
+            static void Visit(DynamicBuffer<PoseResult> results, ref (Skeleton Skeleton, int Count) initial)
             {
                 results.EnsureCapacity(initial.Count);
                 for (int result = 0; result < initial.Count; result++)
@@ -79,7 +85,9 @@ public static partial class PoseAnimation
                         Weight = 1,
                         RootMotion = RootMotionDelta.Identity,
                     });
-            });
+
+            }
+        }
         world.Add(target, new PoseTarget { Skeleton = skeleton, Output = Resolve(world, target, output) });
         CpuBoneDemands.For(world).Changed = true;
         return target;
@@ -89,8 +97,16 @@ public static partial class PoseAnimation
     public static PoseResultReference Resolve(World world, Entity target, PoseResultId result)
     {
         var binding = (Index: result.Value, Range: default(PoseRange));
-        world.ExecuteBufferRead<PoseResult, (int Index, PoseRange Range)>(target, ref binding,
-            static (results, ref binding) => binding.Range = results[binding.Index].Range);
+        {
+            using var results = world.ReadBuffer<PoseResult>(target);
+            Visit(results, ref binding);
+
+            static void Visit(ReadOnlyBuffer<PoseResult> results, ref (int Index, PoseRange Range) binding)
+            {
+                binding.Range = results[binding.Index].Range;
+
+            }
+        }
         return new(target, result.Value, binding.Range);
     }
 
@@ -98,8 +114,16 @@ public static partial class PoseAnimation
     public static PoseResult ReadResult(World world, in PoseResultReference result)
     {
         var read = (Index: result.Index, Result: default(PoseResult));
-        world.ExecuteBufferRead<PoseResult, (int Index, PoseResult Result)>(result.Entity, ref read,
-            static (results, ref read) => read.Result = results[read.Index]);
+        {
+            using var results = world.ReadBuffer<PoseResult>(result.Entity);
+            Visit(results, ref read);
+
+            static void Visit(ReadOnlyBuffer<PoseResult> results, ref (int Index, PoseResult Result) read)
+            {
+                read.Result = results[read.Index];
+
+            }
+        }
         return read.Result;
     }
 }

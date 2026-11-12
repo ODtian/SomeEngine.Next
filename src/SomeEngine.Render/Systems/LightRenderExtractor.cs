@@ -1,8 +1,8 @@
+using SomeEngine.ECS;
 using SomeEngine.Resources;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 
@@ -44,9 +44,7 @@ public sealed partial class LightRenderExtractor : IRenderExtractionSystem
         _cookieSources.Clear();
     }
 
-    public void Collect(QueryChunkView chunk) => Collect(ReadOnlyQueryPacketJobs.Borrow(chunk));
-
-    private void Collect(ReadOnlyQueryPacket chunk)
+    public void Collect(QueryChunk chunk)
     {
         ReadOnlySpan<Entity> entities = chunk.Entities;
         bool hasDirectional = chunk.TryRead<DirectionalLight>(
@@ -58,50 +56,54 @@ public sealed partial class LightRenderExtractor : IRenderExtractionSystem
         for (int row = 0; row < entities.Length; row++)
         {
             Entity source = entities[row];
-            RenderLightCookie cookie = hasCookies && (hasDirectional || hasPoints || hasSpots)
+            bool directionalRow = hasDirectional && chunk.Has<DirectionalLight>(row);
+            bool pointRow = hasPoints && chunk.Has<PointLight>(row);
+            bool spotRow = hasSpots && chunk.Has<SpotLight>(row);
+            bool cookieRow = hasCookies && chunk.Has<LightCookie>(row);
+            RenderLightCookie cookie = cookieRow && (directionalRow || pointRow || spotRow)
                 ? ExtractCookie(cookies[row]) : default;
-            if (hasDirectional)
+            if (directionalRow)
             {
                 _directional.Add(new DirectionalSnapshot(
                     source,
                     ExtractDirectional(directional[row]),
-                    hasCookies,
+                    cookieRow,
                     cookie,
                     LightChanged: true,
                     CookieChanged: true));
                 _directionalSources.Add(source);
             }
-            if (hasPoints)
+            if (pointRow)
             {
                 _points.Add(new PointSnapshot(
                     source,
                     ExtractPoint(points[row]),
-                    hasCookies,
+                    cookieRow,
                     cookie,
                     LightChanged: true,
                     CookieChanged: true));
                 _pointSources.Add(source);
             }
-            if (hasSpots)
+            if (spotRow)
             {
                 _spots.Add(new SpotSnapshot(
                     source,
                     ExtractSpot(spots[row]),
-                    hasCookies,
+                    cookieRow,
                     cookie,
                     LightChanged: true,
                     CookieChanged: true));
                 _spotSources.Add(source);
             }
-            if (hasCookies && (hasDirectional || hasPoints || hasSpots))
+            if (cookieRow && (directionalRow || pointRow || spotRow))
                 _cookieSources.Add(source);
         }
     }
 
-    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context) =>
-        CollectChanges(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion);
+    public bool CollectChanges(QueryChunk chunk, ulong since, RenderExtractionContext context) =>
+        CollectChanges(chunk, since);
 
-    private bool CollectChanges(ReadOnlyQueryPacket chunk, uint lastSystemVersion)
+    private bool CollectChanges(QueryChunk chunk, ulong lastSystemVersion)
     {
         bool hasDirectional = chunk.TryRead<DirectionalLight>(
             out ReadOnlySpan<DirectionalLight> directional);
@@ -110,16 +112,16 @@ public sealed partial class LightRenderExtractor : IRenderExtractionSystem
         bool hasCookies = chunk.TryRead<LightCookie>(out ReadOnlySpan<LightCookie> cookies);
         bool directionalChunkChanged =
             hasDirectional &&
-            chunk.ChangedSince<DirectionalLight>(lastSystemVersion);
+            chunk.WasWritten<DirectionalLight>(lastSystemVersion);
         bool pointChunkChanged =
             hasPoints &&
-            chunk.ChangedSince<PointLight>(lastSystemVersion);
+            chunk.WasWritten<PointLight>(lastSystemVersion);
         bool spotChunkChanged =
             hasSpots &&
-            chunk.ChangedSince<SpotLight>(lastSystemVersion);
+            chunk.WasWritten<SpotLight>(lastSystemVersion);
         bool cookieChunkChanged =
             hasCookies &&
-            chunk.ChangedSince<LightCookie>(lastSystemVersion);
+            chunk.WasWritten<LightCookie>(lastSystemVersion);
         if (!directionalChunkChanged &&
             !pointChunkChanged &&
             !spotChunkChanged &&
@@ -133,18 +135,21 @@ public sealed partial class LightRenderExtractor : IRenderExtractionSystem
         for (int row = 0; row < entities.Length; row++)
         {
             Entity source = entities[row];
+            bool directionalRow = hasDirectional && chunk.Has<DirectionalLight>(row);
+            bool pointRow = hasPoints && chunk.Has<PointLight>(row);
+            bool spotRow = hasSpots && chunk.Has<SpotLight>(row);
             bool directionalChanged =
                 directionalChunkChanged &&
-                chunk.RowChangedSince<DirectionalLight>(row, lastSystemVersion);
+                chunk.WasWritten<DirectionalLight>(row, lastSystemVersion);
             bool pointChanged =
                 pointChunkChanged &&
-                chunk.RowChangedSince<PointLight>(row, lastSystemVersion);
+                chunk.WasWritten<PointLight>(row, lastSystemVersion);
             bool spotChanged =
                 spotChunkChanged &&
-                chunk.RowChangedSince<SpotLight>(row, lastSystemVersion);
+                chunk.WasWritten<SpotLight>(row, lastSystemVersion);
             bool cookieChanged =
                 cookieChunkChanged &&
-                chunk.RowChangedSince<LightCookie>(row, lastSystemVersion);
+                chunk.WasWritten<LightCookie>(row, lastSystemVersion);
 
             if (directionalChanged)
             {
@@ -176,11 +181,11 @@ public sealed partial class LightRenderExtractor : IRenderExtractionSystem
                     LightChanged: true,
                     CookieChanged: false));
             }
-            if (!cookieChanged || (!hasDirectional && !hasPoints && !hasSpots))
+            if (!cookieChanged || (!directionalRow && !pointRow && !spotRow))
                 continue;
 
             RenderLightCookie cookie = ExtractCookie(cookies[row]);
-            if (hasDirectional)
+            if (directionalRow)
             {
                 _directional.Add(new DirectionalSnapshot(
                     source,
@@ -190,7 +195,7 @@ public sealed partial class LightRenderExtractor : IRenderExtractionSystem
                     LightChanged: false,
                     CookieChanged: true));
             }
-            else if (hasPoints)
+            else if (pointRow)
             {
                 _points.Add(new PointSnapshot(
                     source,
@@ -221,7 +226,7 @@ public sealed partial class LightRenderExtractor : IRenderExtractionSystem
         {
             DirectionalSnapshot snapshot = _directional[index];
             Entity entity = context.RetainMirror(snapshot.Source);
-            context.Upsert(entity, snapshot.Light);
+            if (snapshot.LightChanged) context.Upsert(entity, snapshot.Light);
             if (snapshot.HasCookie)
                 context.Upsert(entity, snapshot.Cookie);
         }
@@ -229,7 +234,7 @@ public sealed partial class LightRenderExtractor : IRenderExtractionSystem
         {
             PointSnapshot snapshot = _points[index];
             Entity entity = context.RetainMirror(snapshot.Source);
-            context.Upsert(entity, snapshot.Light);
+            if (snapshot.LightChanged) context.Upsert(entity, snapshot.Light);
             if (snapshot.HasCookie)
                 context.Upsert(entity, snapshot.Cookie);
         }
@@ -237,7 +242,7 @@ public sealed partial class LightRenderExtractor : IRenderExtractionSystem
         {
             SpotSnapshot snapshot = _spots[index];
             Entity entity = context.RetainMirror(snapshot.Source);
-            context.Upsert(entity, snapshot.Light);
+            if (snapshot.LightChanged) context.Upsert(entity, snapshot.Light);
             if (snapshot.HasCookie)
                 context.Upsert(entity, snapshot.Cookie);
         }

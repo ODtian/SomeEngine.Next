@@ -1,1108 +1,504 @@
-using ManualResetEventSlim = SomeEngine.Testing.TestSignal;
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Hooks;
-using SomeEngine.ECS.Queries;
-using SomeEngine.ECS.Relations;
+using SomeEngine.ECS.Serialization;
 using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
 public sealed class WorldJobAdmissionTests : JobTest
 {
+    [Fact]
+    public void HelpingJobRequiresItsOwnStructureWriteDeclaration()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 0, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        World world = CreateJobWorld();
+        JobHandle work = Jobs.Schedule(new CreateEntity(world));
+        using WorldStructureWriteScope structure = world.OpenStructureWrite();
+        Assert.Throws<JobResourceSafetyException>(work.Complete);
+        Assert.Equal(0, world.EntityCount);
+    }
+
+    [Fact]
+    public void HelpingJobRequiresItsOwnComponentWriteDeclaration()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 0, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        World world = CreateJobWorld();
+        Entity entity = world.Create(new ProbeValue(7));
+        JobHandle work = Jobs.Schedule(new SetValue(world, entity, 19));
+        using WorldStructureWriteScope structure = world.OpenStructureWrite();
+        Assert.Throws<JobResourceSafetyException>(work.Complete);
+        Assert.Equal(7, world.ReadComponentData<ProbeValue>(entity).Value);
+    }
+
+    [Fact]
+    public void HelpingJobRequiresItsOwnComponentReadDeclaration()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 0, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        World world = CreateJobWorld();
+        Entity entity = world.Create(new ProbeValue(7));
+        JobHandle work = Jobs.Schedule(new ReadValue(world, entity));
+        using WorldStructureWriteScope structure = world.OpenStructureWrite();
+        Assert.Throws<JobResourceSafetyException>(work.Complete);
+        Assert.Equal(7, world.ReadComponentData<ProbeValue>(entity).Value);
+    }
+
+    [Fact]
+    public void HelpingJobRequiresItsOwnStructureReadDeclaration()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 0, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        World world = CreateJobWorld();
+        Entity entity = world.Create(new ProbeValue(7));
+        JobHandle work = Jobs.Schedule(new ReadLife(world, entity));
+        using QueryScope rows = world.Query<ProbeValue>().OpenRead();
+        Assert.Throws<JobResourceSafetyException>(work.Complete);
+        Assert.Equal(1, world.EntityCount);
+    }
 
     [Fact]
     public void FreshWorldRemainsUsableBySynchronousCallersWithoutTypedAccessBinding()
     {
-        EnsureAmbientAdmissionInstalled();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-
-        Entity entity = world.CreateEntity(new AdmissionProbe { Value = 3 });
-        world.Replace(entity, new AdmissionProbe { Value = 5 });
-        Entity destination = world.CreateEntity();
+        World world = CreateJobWorld();
+        Entity entity = world.Create(new ProbeValue(3)), destination = world.Create();
+        world.Set(entity, new ProbeValue(5));
         using var commands = new CommandBuffer(world);
-        commands.Add(destination, new AdmissionProbe { Value = 7 });
+        commands.Add(destination, new ProbeValue(7));
         commands.Playback();
-
-        Assert.Equal(5, world.Read<AdmissionProbe>(entity).Value);
-        Assert.Equal(7, world.Read<AdmissionProbe>(destination).Value);
+        Assert.Equal(5, world.ReadComponentData<ProbeValue>(entity).Value);
+        Assert.Equal(7, world.ReadComponentData<ProbeValue>(destination).Value);
     }
 
     [Fact]
-    public void FreshWorldManagedPayloadEscapeCannotReplaceWithoutDeclaredAccess()
+    public void CapturedWorldRequiresDeclaredAccessBeforeReplacingAValue()
     {
-        EnsureAmbientAdmissionInstalled();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity entity = world.CreateEntity(new AdmissionProbe { Value = 11 });
-        int entityCount = world.EntityCount;
-
-        JobHandle writer = Jobs.Schedule(
-            new UndeclaredWorldReplaceJob(world, entity, value: 29));
-
-        Assert.Throws<JobResourceSafetyException>(() => writer.Complete());
-        Assert.Equal(entityCount, world.EntityCount);
-        Assert.Equal(11, world.Read<AdmissionProbe>(entity).Value);
+        World world = CreateJobWorld();
+        Entity entity = world.Create(new ProbeValue(11));
+        Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(new SetValue(world, entity, 29)).Complete());
+        Assert.Equal(1, world.EntityCount);
+        Assert.Equal(11, world.ReadComponentData<ProbeValue>(entity).Value);
     }
 
     [Fact]
     public void CapturedWorldCreateRequiresDeclaredAccess()
     {
-        EnsureAmbientAdmissionInstalled();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        int entityCount = world.EntityCount;
-        try
-        {
-            JobHandle writer = Jobs.Schedule(new UndeclaredWorldCreateJob(world));
-
-            Assert.Throws<JobResourceSafetyException>(() => writer.Complete());
-            Assert.Equal(entityCount, world.EntityCount);
-        }
-        finally
-        {
-        }
+        World world = CreateJobWorld();
+        Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(new CreateEntity(world)).Complete());
+        Assert.Equal(0, world.EntityCount);
     }
 
     [Fact]
-    public void FreshWorldPrebuiltCommandBufferCannotRecordFromJob()
+    public void AnIndependentProducerBufferRecordsBeforeItsWorldChanges()
     {
-        EnsureAmbientAdmissionInstalled();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity entity = world.CreateEntity();
+        World world = CreateJobWorld();
+        Entity entity = world.Create();
         using var commands = new CommandBuffer(world);
-
-        JobHandle recorder = Jobs.Schedule(
-            new RecordCommandJob(commands, entity));
-
-        InvalidOperationException error =
-            Assert.Throws<InvalidOperationException>(() => recorder.Complete());
-
-        Assert.Equal(0, commands.CommandCount);
-        Assert.False(world.Has<AdmissionProbe>(entity));
+        Jobs.Schedule(new RecordValue(commands, entity, 17), JobResourceAccess.Write(Jobs.GetResourceToken(commands))).Complete();
+        Assert.Equal(1, commands.Count);
+        Assert.False(world.Has<ProbeValue>(entity));
+        commands.Playback();
+        Assert.Equal(17, world.ReadComponentData<ProbeValue>(entity).Value);
     }
 
     [Fact]
-    public async Task SynchronousWorldRejectsSchedulingDuringAndAfterAQuery()
+    public async Task SynchronousWorldRejectsGeneratedSchedulingDuringAndAfterAQuery()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var world = new World();
+        Entity entity = world.Create(new ProbeValue(1));
+        Query query = world.Query<ProbeValue>();
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
-        using var world = new World();
-        Entity entity = world.CreateEntity(new AdmissionProbe { Value = 1 });
-        QueryHandle query = world.Query(world.QueryDefinition().Read<AdmissionProbe>());
-        Task reading = Task.Run(() => world.ExecuteQuery(query, _ =>
+        Task reading = Task.Run(() =>
         {
+            using QueryScope rows = query.OpenRead();
             entered.Set();
-            if (!release.Wait(TimeSpan.FromSeconds(5)))
-                throw new TimeoutException("Query was not released.");
-        }));
+            Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+        });
         try
         {
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
-            Assert.Throws<InvalidOperationException>(() => ComponentJobAccess<AdmissionProbe>.Write(world));
+            Assert.Throws<InvalidOperationException>(() => new SystemRunner(world));
         }
-        finally
-        {
-            release.Set();
-            await reading.WaitAsync(TimeSpan.FromSeconds(5));
-        }
-        Assert.Throws<InvalidOperationException>(() => ComponentJobAccess<AdmissionProbe>.Write(world));
-        world.Replace(entity, new AdmissionProbe { Value = 2 });
-        Assert.Equal(2, world.Read<AdmissionProbe>(entity).Value);
+        finally { release.Set(); await reading.WaitAsync(TimeSpan.FromSeconds(10)); }
+        Assert.Throws<InvalidOperationException>(() => new SystemRunner(world));
+        world.Set(entity, new ProbeValue(2));
+        Assert.Equal(2, world.ReadComponentData<ProbeValue>(entity).Value);
     }
 
     [Fact]
-    public void SynchronousQueryCannotMakeRawJobsUseItsWorld()
+    public void SynchronousQueryDoesNotGiveRawJobsAccessToItsWorld()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var world = new World();
-        world.CreateEntity(new AdmissionProbe { Value = 1 });
-        QueryHandle query = world.Query(world.QueryDefinition().Read<AdmissionProbe>());
-        world.ExecuteQuery(query, _ =>
-        {
-            JobHandle task = Jobs.Schedule(new ReadEntityCountJob(world));
-            Assert.Throws<InvalidOperationException>(task.Complete);
-        });
+        world.Create(new ProbeValue(1));
+        using (QueryScope rows = world.Query<ProbeValue>().OpenRead())
+            Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(new ReadCount(world)).Complete());
         Assert.Equal(1, world.EntityCount);
     }
 
     [Fact]
-    public void SynchronousQueryCannotChangeItsWorldExecutionMode()
+    public void SynchronousQueryKeepsItsWorldConstructionMode()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var world = new World();
-        Entity entity = world.CreateEntity(new AdmissionProbe { Value = 1 });
-        QueryHandle query = world.Query(world.QueryDefinition().Read<AdmissionProbe>());
-        Assert.Throws<InvalidOperationException>(() => world.ExecuteQuery(query, cursor =>
-            _ = ComponentJobAccess<AdmissionProbe>.Read(world)));
-        Assert.Equal(1, world.Read<AdmissionProbe>(entity).Value);
-        Assert.Throws<InvalidOperationException>(() => ComponentJobAccess<AdmissionProbe>.Read(world));
+        Entity entity = world.Create(new ProbeValue(1));
+        using (QueryScope rows = world.Query<ProbeValue>().OpenRead())
+        {
+            Assert.Null(world.Execution);
+            Assert.Throws<InvalidOperationException>(() => new SystemRunner(world));
+        }
+        Assert.Null(world.Execution);
+        world.Set(entity, new ProbeValue(2));
+        Assert.Equal(2, world.ReadComponentData<ProbeValue>(entity).Value);
     }
 
     [Fact]
-    public void JobCommandBufferRejectionDoesNotConsumePendingCommandWave()
+    public void RejectedPlaybackKeepsItsRecordedCommands()
     {
-        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
-        {
-            WorkerCount = 2,
-            SafetyMode = previousSafety,
-            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-        });
-        try
-        {
-            var world = CreateJobWorld();
-            Entity entity = world.CreateEntity();
-            var commands = world.Commands();
-            commands.Add(entity, new AdmissionProbe { Value = 17 });
-
-            JobResourceAccess topologyWrite = RelationshipJobAccess.TopologyWrite(world);
-            JobHandle topologyWriter = Jobs.Schedule(
-                new FlushWorldJob(world),
-                topologyWrite);
-
-            InvalidOperationException error =
-                Assert.Throws<InvalidOperationException>(() => topologyWriter.Complete());
-
-            Assert.Equal(1, commands.CommandCount);
-            Assert.False(world.Has<AdmissionProbe>(entity));
-
-            world.Flush();
-            Assert.Equal(17, world.Read<AdmissionProbe>(entity).Value);
-        }
-        finally
-        {
-            ConfigureJobs(new JobRuntimeConfig
-            {
-                SafetyMode = previousSafety,
-                ManagedPayloadPolicy = previousPolicy,
-            });
-        }
+        World world = CreateJobWorld();
+        Entity entity = world.Create();
+        using var commands = new CommandBuffer(world);
+        commands.Add(entity, new ProbeValue(17));
+        Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(new Playback(commands)).Complete());
+        Assert.Equal(1, commands.Count);
+        Assert.False(world.Has<ProbeValue>(entity));
+        commands.Playback();
+        Assert.Equal(17, world.ReadComponentData<ProbeValue>(entity).Value);
     }
 
     [Fact]
-    public void JobCommandBufferRejectionDoesNotPoisonDirectPlayback()
+    public void AnotherWorldsStructurePermissionKeepsPlaybackUnchanged()
     {
-        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
-        {
-            WorkerCount = 2,
-            SafetyMode = previousSafety,
-            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-        });
-        try
-        {
-            var world = CreateJobWorld();
-            Entity entity = world.CreateEntity();
-            var commands = new CommandBuffer(world);
-            commands.Add(entity, new AdmissionProbe { Value = 29 });
-
-            JobResourceAccess topologyWrite = RelationshipJobAccess.TopologyWrite(world);
-            JobHandle topologyWriter = Jobs.Schedule(
-                new PlaybackCommandJob(commands),
-                topologyWrite);
-
-            InvalidOperationException error =
-                Assert.Throws<InvalidOperationException>(() => topologyWriter.Complete());
-
-            Assert.Equal(1, commands.CommandCount);
-            Assert.False(world.Has<AdmissionProbe>(entity));
-
-            commands.Playback();
-            Assert.Equal(29, world.Read<AdmissionProbe>(entity).Value);
-            commands.Dispose();
-        }
-        finally
-        {
-            ConfigureJobs(new JobRuntimeConfig
-            {
-                SafetyMode = previousSafety,
-                ManagedPayloadPolicy = previousPolicy,
-            });
-        }
+        World world = CreateJobWorld(), other = CreateJobWorld();
+        Entity entity = world.Create();
+        using var commands = new CommandBuffer(world);
+        commands.Add(entity, new ProbeValue(19));
+        Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(new Playback(commands), other.Execution!.StructureWrite).Complete());
+        Assert.Equal(1, commands.Count);
+        Assert.False(world.Has<ProbeValue>(entity));
+        Jobs.Schedule(new Playback(commands), world.Execution!.StructureWrite).Complete();
+        Assert.Equal(19, world.ReadComponentData<ProbeValue>(entity).Value);
     }
 
     [Fact]
-    public void OrdinaryJobCannotRecordIntoPrebuiltCommandBuffer()
+    public void ACompletedProducerSequenceRejectsFurtherJobRecording()
     {
-        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
-        {
-            WorkerCount = 2,
-            SafetyMode = previousSafety,
-            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-        });
-        try
-        {
-            var world = CreateJobWorld();
-            Entity entity = world.CreateEntity();
-            var commands = world.Commands();
-
-            _ = RelationshipJobAccess.TopologyWrite(world);
-            JobHandle recorder = Jobs.Schedule(
-                new RecordCommandJob(commands, entity));
-
-            InvalidOperationException error =
-                Assert.Throws<InvalidOperationException>(() => recorder.Complete());
-
-            Assert.Equal(0, commands.CommandCount);
-            Assert.False(world.Has<AdmissionProbe>(entity));
-        }
-        finally
-        {
-            ConfigureJobs(new JobRuntimeConfig
-            {
-                SafetyMode = previousSafety,
-                ManagedPayloadPolicy = previousPolicy,
-            });
-        }
+        World world = CreateJobWorld();
+        Entity entity = world.Create();
+        using var commands = new CommandBuffer(world);
+        commands.Add(entity, new ProbeValue(3));
+        commands.Playback();
+        Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(new RecordValue(commands, entity, 4)).Complete());
+        Assert.Equal(3, world.ReadComponentData<ProbeValue>(entity).Value);
     }
 
     [Fact]
-    public void MultiWorkItemOwnerCannotUseOrdinaryTopologyWriteApis()
+    public void MultiWorkItemJobsRequireSeparateStructureWriters()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        int entityCount = world.EntityCount;
-
-        JobHandle writer = Jobs.ScheduleParallel(
-            new ParallelCreateEntityJob(world),
-            length: 2,
-            batchSize: 1,
-            RelationshipJobAccess.TopologyWrite(world));
-
-        Assert.Throws<JobResourceSafetyException>(() => writer.Complete());
-        Assert.Equal(entityCount, world.EntityCount);
+        World world = CreateJobWorld();
+        JobHandle work = Jobs.ScheduleParallel(new ParallelCreate(world), 2, 1, world.Execution!.StructureWrite);
+        Assert.Throws<JobResourceSafetyException>(work.Complete);
+        Assert.Equal(0, world.EntityCount);
     }
 
     [Fact]
-    public void MultiWorkItemOwnerCannotUseOrdinaryComponentWriteApis()
+    public void MultiWorkItemJobsRequireSeparateComponentWriteRanges()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity entity = world.CreateEntity(new AdmissionProbe { Value = 3 });
-        JobResourceAccess[] accesses =
-        [
-            RelationshipJobAccess.TopologyRead(world),
-            ComponentJobAccess<AdmissionProbe>.Write(world),
-        ];
-
-        JobHandle writer = Jobs.ScheduleParallel(
-            new ParallelReplaceJob(world, entity, value: 41),
-            length: 2,
-            batchSize: 1,
-            accesses);
-
-        Assert.Throws<JobResourceSafetyException>(() => writer.Complete());
-        Assert.Equal(3, world.Read<AdmissionProbe>(entity).Value);
+        World world = CreateJobWorld();
+        Entity entity = world.Create(new ProbeValue(3));
+        JobHandle work = Jobs.ScheduleParallel(new ParallelSet(world, entity), 2, 1,
+            ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ProbeValue>()));
+        Assert.Throws<JobResourceSafetyException>(work.Complete);
+        Assert.Equal(3, world.ReadComponentData<ProbeValue>(entity).Value);
     }
 
     [Fact]
     public void MultiWorkItemReadOnlyWorldAccessRemainsAvailable()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity entity = world.CreateEntity(new AdmissionProbe { Value = 13 });
-        var values = new int[4];
-        JobResourceAccess[] accesses =
-        [
-            RelationshipJobAccess.TopologyRead(world),
-            ComponentJobAccess<AdmissionProbe>.Read(world),
-        ];
-
-        Jobs.ScheduleParallel(
-            new ParallelReadJob(world, entity, values),
-            values.Length,
-            batchSize: 1,
-            accesses).Complete();
-
+        World world = CreateJobWorld();
+        Entity entity = world.Create(new ProbeValue(13));
+        int[] values = new int[4];
+        JobResourceAccess[] accesses = [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<ProbeValue>()];
+        Jobs.ScheduleParallel(new ParallelRead(world, entity, values), values.Length, 1, accesses).Complete();
         Assert.Equal([13, 13, 13, 13], values);
     }
 
     [Fact]
-    public void SingleWorkItemParallelOwnerCanUseOrdinaryTopologyWriteApis()
+    public void OneWorkItemParallelJobCanUseItsStructureWritePermission()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-
-        Jobs.ScheduleParallel(
-            new ParallelCreateEntityJob(world),
-            length: 1,
-            batchSize: 8,
-            RelationshipJobAccess.TopologyWrite(world)).Complete();
-
+        World world = CreateJobWorld();
+        Jobs.ScheduleParallel(new ParallelCreate(world), 1, 8, world.Execution!.StructureWrite).Complete();
         Assert.Equal(1, world.EntityCount);
     }
 
     [Fact]
-    public void SerialTopologyWriteJobCanRecordNextWaveFromImmediateHook()
+    public void AConcreteStageRecordsTheNextSequenceForExplicitPlayback()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity trigger = world.CreateEntity();
-        Entity destination = world.CreateEntity();
-        world.Hooks<AdmissionProbe>().OnAdd(
-            (DeferredWorld hookWorld, Entity _, in AdmissionProbe value) =>
-            {
-                hookWorld.Commands().Add(
-                    destination,
-                    new HookResult { Value = value.Value + 1 });
-            });
-
-        Jobs.Schedule(
-            new AddProbeJob(world, trigger, value: 17),
-            RelationshipJobAccess.TopologyWrite(world)).Complete();
-
-        Assert.Equal(17, world.Read<AdmissionProbe>(trigger).Value);
-        Assert.False(world.Has<HookResult>(destination));
-
-        world.Flush();
-        Assert.Equal(18, world.Read<HookResult>(destination).Value);
+        World world = CreateJobWorld();
+        Entity trigger = world.Create(), destination = world.Create();
+        using var next = new CommandBuffer(world);
+        Jobs.Schedule(new RecordNext(world, trigger, destination, next), world.Execution!.StructureWrite).Complete();
+        Assert.Equal(17, world.ReadComponentData<ProbeValue>(trigger).Value);
+        Assert.False(world.Has<ResultValue>(destination));
+        next.Playback();
+        Assert.Equal(18, world.ReadComponentData<ResultValue>(destination).Value);
     }
 
     [Fact]
-    public void ImmediateHookCannotEscapeThroughCapturedWorldCommands()
+    public void AFollowingStageRequiresItsOwnWriteDeclaration()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity trigger = world.CreateEntity();
-        Entity destination = world.CreateEntity();
-        CommandBuffer exactWorldBuffer = world.Commands();
-        world.Hooks<AdmissionProbe>().OnAdd(
-            (DeferredWorld _, Entity _, in AdmissionProbe _) =>
-                exactWorldBuffer.Add(destination, new HookResult { Value = 1 }));
-
-        JobHandle writer = Jobs.Schedule(
-            new AddProbeJob(world, trigger, value: 17),
-            RelationshipJobAccess.TopologyWrite(world));
-
-        InvalidOperationException error =
-            Assert.Throws<InvalidOperationException>(() => writer.Complete());
-
-        // Direct World mutation commits before its immediate notification hook runs.
-        Assert.True(world.Has<AdmissionProbe>(trigger));
-        Assert.False(world.Has<HookResult>(destination));
-        Assert.Equal(0, exactWorldBuffer.CommandCount);
+        World world = CreateJobWorld();
+        Entity trigger = world.Create(), destination = world.Create();
+        JobHandle first = Jobs.Schedule(new AddProbe(world, trigger, 17), world.Execution!.StructureWrite);
+        JobHandle second = Jobs.Schedule(new AddResult(world, destination), world.Execution.StructureRead, first);
+        Assert.Throws<JobResourceSafetyException>(second.Complete);
+        Assert.Equal(17, world.ReadComponentData<ProbeValue>(trigger).Value);
+        Assert.False(world.Has<ResultValue>(destination));
     }
 
     [Fact]
-    public void ImmediateHookCannotRecordIntoAnotherPrebuiltCommandBuffer()
+    public void AClosedFollowingBufferRejectsRecordingAfterTheFirstStageCommits()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity trigger = world.CreateEntity();
-        Entity destination = world.CreateEntity();
-        using var other = new CommandBuffer(world);
-        world.Hooks<AdmissionProbe>().OnAdd(
-            (DeferredWorld _, Entity _, in AdmissionProbe _) =>
-                other.Add(destination, new HookResult { Value = 1 }));
-
-        JobHandle writer = Jobs.Schedule(
-            new AddProbeJob(world, trigger, value: 17),
-            RelationshipJobAccess.TopologyWrite(world));
-
-        InvalidOperationException error =
-            Assert.Throws<InvalidOperationException>(() => writer.Complete());
-
-        Assert.Equal(0, other.CommandCount);
-        Assert.True(world.Has<AdmissionProbe>(trigger));
+        World world = CreateJobWorld();
+        Entity trigger = world.Create(), destination = world.Create();
+        using var next = new CommandBuffer(world);
+        next.Playback();
+        JobHandle first = Jobs.Schedule(new AddProbe(world, trigger, 17), world.Execution!.StructureWrite);
+        JobHandle second = Jobs.Schedule(new RecordValue(next, destination, 1), dependency: first);
+        Assert.Throws<InvalidOperationException>(second.Complete);
+        Assert.True(world.Has<ProbeValue>(trigger));
+        Assert.False(world.Has<ProbeValue>(destination));
     }
 
     [Fact]
-    public void LeakedDeferredWorldCannotMintACommandWriterAfterItsHookReturns()
+    public void CapturingAWorldDoesNotRetainACompletedJobsPermission()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity trigger = world.CreateEntity();
-        Entity destination = world.CreateEntity();
-        var capture = new DeferredWorldCapture();
-        world.Hooks<AdmissionProbe>().OnAdd(
-            (DeferredWorld hookWorld, Entity _, in AdmissionProbe _) =>
-            {
-                capture.World = hookWorld;
-                capture.HasWorld = true;
-                hookWorld.Commands().Add(destination, new HookResult { Value = 1 });
-            });
-
-        JobHandle writer = Jobs.Schedule(
-            new AddThenReuseDeferredWorldJob(
-                world,
-                trigger,
-                destination,
-                capture),
-            RelationshipJobAccess.TopologyWrite(world));
-
-        InvalidOperationException error =
-            Assert.Throws<InvalidOperationException>(() => writer.Complete());
-
-        Assert.True(world.Has<AdmissionProbe>(trigger));
-        Assert.False(world.Has<HookResult>(destination));
-
-        world.Flush();
-        Assert.Equal(1, world.Read<HookResult>(destination).Value);
+        World world = CreateJobWorld();
+        Entity trigger = world.Create(), destination = world.Create();
+        var captured = new CapturedWorld();
+        using var next = new CommandBuffer(world);
+        Jobs.Schedule(new CaptureAndRecord(world, trigger, destination, captured, next), world.Execution!.StructureWrite).Complete();
+        Assert.Same(world, captured.World);
+        Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(new AddResult(captured.World!, destination)).Complete());
+        Assert.True(world.Has<ProbeValue>(trigger));
+        Assert.False(world.Has<ResultValue>(destination));
+        next.Playback();
+        Assert.Equal(1, world.ReadComponentData<ResultValue>(destination).Value);
     }
 
     [Fact]
-    public void RawDeferredOverloadsRejectJobAccessBeforeReadingInvalidHandles()
+    public void DeferredEntitiesRemainBoundToTheirRecordingBatch()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        CommandBuffer commands = world.Commands();
-        JobResourceAccess topologyWrite = RelationshipJobAccess.TopologyWrite(world);
-
-        InvalidOperationException entityError = Assert.Throws<InvalidOperationException>(() =>
-            Jobs.Schedule(new InvalidDeferredEntityRecordJob(commands), topologyWrite).Complete());
-        InvalidOperationException relationError = Assert.Throws<InvalidOperationException>(() =>
-            Jobs.Schedule(new InvalidDeferredRelationRecordJob(commands), topologyWrite).Complete());
-        InvalidOperationException hierarchyError = Assert.Throws<InvalidOperationException>(() =>
-            Jobs.Schedule(new InvalidDeferredHierarchyRecordJob(commands), topologyWrite).Complete());
-
-        Assert.Equal(0, commands.CommandCount);
+        World world = CreateJobWorld();
+        using var target = new CommandBuffer(world);
+        using var first = new CommandBatch(world, 1);
+        DeferredEntity foreign = first[0].Create();
+        Assert.Throws<ArgumentException>(() => Jobs.Schedule(new RecordDeferred(target, default)).Complete());
+        Assert.Throws<ArgumentException>(() => Jobs.Schedule(new RecordDeferred(target, foreign)).Complete());
+        first.Clear();
+        Assert.Throws<ArgumentException>(() => Jobs.Schedule(new RecordDeferred(first[0], foreign)).Complete());
+        Assert.Equal(0, target.Count);
+        Assert.Equal(0, first[0].Count);
+        Assert.Equal(0, world.EntityCount);
     }
 
     [Fact]
-    public void HookFaultPreservesOriginalExceptionAndDiscardsOwnedOverlayInsideJob()
+    public void AFaultedCandidateKeepsTheSourceWorldAndItsRecordedSequence()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity trigger = world.CreateEntity();
-        Entity destination = world.CreateEntity();
-        world.Hooks<AdmissionProbe>().OnAdd(
-            (DeferredWorld hookWorld, Entity _, in AdmissionProbe _) =>
-            {
-                hookWorld.Commands().Add(destination, new HookResult { Value = 1 });
-                throw new AdmissionHookFaultException();
-            });
-
-        JobHandle writer = Jobs.Schedule(
-            new CandidateAddProbeJob(world, trigger, value: 17),
-            RelationshipJobAccess.TopologyWrite(world));
-
-        Assert.Throws<AdmissionHookFaultException>(() => writer.Complete());
-        Assert.False(world.Has<AdmissionProbe>(trigger));
-        Assert.False(world.Has<HookResult>(destination));
-
-        world.Flush();
-        Assert.False(world.Has<HookResult>(destination));
+        World world = CreateJobWorld();
+        Entity trigger = world.Create(), destination = world.Create();
+        using var checkpoint = new WorldCheckpoint();
+        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World(execution: new WorldJobs(Jobs));
+        checkpoint.Restore(candidate);
+        using var next = new CommandBuffer(candidate);
+        var failure = new StageFault();
+        JobHandle work = Jobs.Schedule(new RecordThenFail(candidate, trigger, destination, next, failure), candidate.Execution!.StructureWrite);
+        Assert.Same(failure, Assert.Throws<StageFault>(work.Complete));
+        Assert.False(world.Has<ProbeValue>(trigger));
+        Assert.False(world.Has<ResultValue>(destination));
+        Assert.Equal(1, next.Count);
     }
 
     [Fact]
-    public void ConcurrentFlushReservesTheExactEarlierWaveWithoutBlockingHookRecording()
+    public async Task IndependentSequencesRecordWhileAnEarlierPlaybackWaitsForTheWorld()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using var hookEntered = new ManualResetEventSlim();
-        using var allowHookRecord = new ManualResetEventSlim();
-        using var hookRecorded = new ManualResetEventSlim();
-        using var releaseHook = new ManualResetEventSlim();
-        var world = CreateJobWorld();
-        Entity earlierDestination = world.CreateEntity();
-        Entity laterDestination = world.CreateEntity();
-        Entity trigger = world.CreateEntity();
-        CommandBuffer earlierWave = world.Commands();
-        earlierWave.Add(earlierDestination, new HookResult { Value = 1 });
-
-        world.Hooks<AdmissionProbe>().OnAdd(
-            (DeferredWorld hookWorld, Entity _, in AdmissionProbe _) =>
-            {
-                DeferredCommandWriter hookCommands = hookWorld.Commands();
-                hookEntered.Set();
-                if (!allowHookRecord.Wait(TimeSpan.FromSeconds(5)))
-                    throw new TimeoutException("Hook record release timed out.");
-
-                hookCommands.Add(laterDestination, new HookResult { Value = 2 });
-                hookRecorded.Set();
-                if (!releaseHook.Wait(TimeSpan.FromSeconds(5)))
-                    throw new TimeoutException("Hook completion release timed out.");
-            });
-
-        JobHandle writer = Jobs.Schedule(
-            new AddProbeJob(world, trigger, value: 17),
-            RelationshipJobAccess.TopologyWrite(world));
-        Assert.True(hookEntered.Wait(TimeSpan.FromSeconds(5)));
-
-        Exception? flushFault = null;
-        var flushThread = new Thread(() =>
-        {
-            try
-            {
-                world.Flush();
-            }
-            catch (Exception exception)
-            {
-                flushFault = exception;
-            }
-        });
-
+        World world = CreateJobWorld();
+        Entity earlier = world.Create(), later = world.Create();
+        using var first = new CommandBuffer(world);
+        using var second = new CommandBuffer(world);
+        first.Add(earlier, new ProbeValue(1));
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        using var attempted = new ManualResetEventSlim();
+        JobHandle holding = Jobs.Schedule(new HoldStructure(entered, release), world.Execution!.StructureWrite);
+        Task playback = Task.CompletedTask;
         try
         {
-            flushThread.Start();
-
-            // Flush has reserved the direct wave and is waiting for topology admission. The
-            // command gate must be free so the current hook can publish its distinct later wave.
-            allowHookRecord.Set();
-            Assert.True(hookRecorded.Wait(TimeSpan.FromSeconds(5)));
-            releaseHook.Set();
-            writer.Complete();
-            Assert.True(flushThread.Join(TimeSpan.FromSeconds(5)));
-
-            Assert.Null(flushFault);
-            Assert.Equal(1, world.Read<HookResult>(earlierDestination).Value);
-            Assert.False(world.Has<HookResult>(laterDestination));
-
-            world.Flush();
-            Assert.Equal(2, world.Read<HookResult>(laterDestination).Value);
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            playback = Task.Run(() => { attempted.Set(); first.Playback(); });
+            Assert.True(attempted.Wait(TimeSpan.FromSeconds(5)));
+            Jobs.Schedule(new RecordValue(second, later, 2), JobResourceAccess.Write(Jobs.GetResourceToken(second))).Complete();
+            Assert.Equal(1, second.Count);
+            release.Set();
+            holding.Complete();
+            await playback.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(1, world.ReadComponentData<ProbeValue>(earlier).Value);
+            Assert.False(world.Has<ProbeValue>(later));
+            second.Playback();
+            Assert.Equal(2, world.ReadComponentData<ProbeValue>(later).Value);
         }
-        finally
-        {
-            allowHookRecord.Set();
-            releaseHook.Set();
-            flushThread.Join(TimeSpan.FromSeconds(5));
-        }
+        finally { release.Set(); holding.Complete(); await playback.WaitAsync(TimeSpan.FromSeconds(10)); }
     }
 
     [Fact]
-    public void EmptyFlushCannotDisposeAWriterMintedByAnExecutingHook()
+    public void EmptyPlaybackKeepsAnotherActiveProducerBufferAvailable()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using var writerMinted = new ManualResetEventSlim();
-        using var allowRecord = new ManualResetEventSlim();
-        var world = CreateJobWorld();
-        Entity trigger = world.CreateEntity();
-        Entity destination = world.CreateEntity();
-        world.Hooks<AdmissionProbe>().OnAdd(
-            (DeferredWorld hookWorld, Entity _, in AdmissionProbe _) =>
-            {
-                DeferredCommandWriter commands = hookWorld.Commands();
-                writerMinted.Set();
-                if (!allowRecord.Wait(TimeSpan.FromSeconds(5)))
-                    throw new TimeoutException("Minted writer release timed out.");
-                commands.Add(destination, new HookResult { Value = 5 });
-            });
-
-        JobHandle writer = Jobs.Schedule(
-            new AddProbeJob(world, trigger, value: 17),
-            RelationshipJobAccess.TopologyWrite(world));
-        Assert.True(writerMinted.Wait(TimeSpan.FromSeconds(5)));
-
-        Exception? flushFault = null;
-        var flushThread = new Thread(() =>
-        {
-            try
-            {
-                world.Flush();
-            }
-            catch (Exception exception)
-            {
-                flushFault = exception;
-            }
-        });
-
+        World world = CreateJobWorld();
+        Entity destination = world.Create();
+        using var empty = new CommandBuffer(world);
+        using var next = new CommandBuffer(world);
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        JobHandle recording = Jobs.Schedule(new WaitAndRecord(next, destination, entered, release));
         try
         {
-            flushThread.Start();
-            // The hook-owned empty recording is not a published playback wave. Flush must neither
-            // wait for topology admission nor dispose the minted writer's target.
-            Assert.True(flushThread.Join(TimeSpan.FromSeconds(5)));
-            Assert.Null(flushFault);
-
-            allowRecord.Set();
-            writer.Complete();
-            Assert.False(world.Has<HookResult>(destination));
-
-            world.Flush();
-            Assert.Equal(5, world.Read<HookResult>(destination).Value);
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            empty.Playback();
+            release.Set();
+            recording.Complete();
+            next.Playback();
+            Assert.Equal(5, world.ReadComponentData<ProbeValue>(destination).Value);
         }
-        finally
-        {
-            allowRecord.Set();
-            flushThread.Join(TimeSpan.FromSeconds(5));
-        }
+        finally { release.Set(); recording.Complete(); }
     }
 
     [Fact]
-    public void DirectHierarchyMutationWaitsForAnExistingTopologyOwner()
+    public async Task DirectHierarchyMutationFollowsTheExistingStructureWriter()
     {
+        World world = CreateJobWorld();
+        Entity parent = world.Create(), child = world.Create();
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
         using var attempted = new ManualResetEventSlim();
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
-        {
-            WorkerCount = 2,
-            SafetyMode = previousSafety,
-            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-        });
-
-        using var blockerStarted = new ManualResetEventSlim();
-        using var releaseBlocker = new ManualResetEventSlim();
-        releaseBlocker.WaitCallback = () => events.Enqueue("released");
-        using var mutationCompleted = new ManualResetEventSlim();
-        mutationCompleted.SetCallback = () => events.Enqueue("mutationCompleted");
-        JobHandle blocker = default;
-        Thread? mutationThread = null;
-        Exception? mutationFault = null;
+        JobHandle holding = Jobs.Schedule(new HoldAndRecord(entered, release, events), world.Execution!.StructureWrite);
+        Task mutation = Task.CompletedTask;
         try
         {
-            var world = CreateJobWorld();
-            Entity parent = world.CreateEntity();
-            Entity child = world.CreateEntity();
-
-            blocker = HierarchyJobAccess<Domain>.ScheduleParentWrite(
-                world,
-                new BlockingJob(blockerStarted, releaseBlocker));
-            Assert.True(blockerStarted.Wait(TimeSpan.FromSeconds(5)));
-
-            mutationThread = new Thread(() =>
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            mutation = Task.Run(() =>
             {
-            attempted.Set();
-                try
-                {
-                    Hierarchy<Domain>.SetParent(world, child, parent);
-                }
-                catch (Exception exception)
-                {
-                    mutationFault = exception;
-                }
-                finally
-                {
-                    mutationCompleted.Set();
-                }
+                attempted.Set();
+                Hierarchy<Tree>.SetParent(world, child, parent);
+                events.Enqueue("hierarchy changed");
             });
-            mutationThread.Start();
             Assert.True(attempted.Wait(TimeSpan.FromSeconds(5)));
-
-            releaseBlocker.Set();
-            Assert.True(mutationThread.Join(TimeSpan.FromSeconds(5)));
-            blocker.Complete();
-
-            Assert.Null(mutationFault);
-            Assert.Equal(parent, Hierarchy<Domain>.GetParent(world, child));
+            release.Set();
+            holding.Complete();
+            await mutation.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(parent, Hierarchy<Tree>.GetParent(world, child));
+            Assert.Equal(["writer finished", "hierarchy changed"], events);
         }
-        finally
-        {
-            releaseBlocker.Set();
-            blocker.Complete();
-            mutationThread?.Join(TimeSpan.FromSeconds(5));
-            ConfigureJobs(new JobRuntimeConfig
-            {
-                SafetyMode = previousSafety,
-                ManagedPayloadPolicy = previousPolicy,
-            });
-        }
-
-        string[] sequence = events.ToArray();
-        Assert.Contains("released", sequence);
-        Assert.Contains("mutationCompleted", sequence);
-        Assert.True(Array.LastIndexOf(sequence, "released") < Array.IndexOf(sequence, "mutationCompleted"));
+        finally { release.Set(); holding.Complete(); await mutation.WaitAsync(TimeSpan.FromSeconds(10)); }
     }
 
     [Fact]
-    public void DirectStructuralCallHoldsTopologyAdmissionThroughImmediateHooks()
+    public async Task AnExplicitStructureRangeCoversItsOperationsUntilItEnds()
     {
+        World world = CreateJobWorld();
+        Entity entity = world.Create();
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
+        Task mutation = Task.Run(() =>
         {
-            WorkerCount = 2,
-            SafetyMode = previousSafety,
-            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
+            using WorldStructureWriteScope structure = world.OpenStructureWrite();
+            world.Add(entity, new ProbeValue(1));
+            entered.Set();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+            events.Enqueue("range ended");
         });
-
-        using var hookStarted = new ManualResetEventSlim();
-        using var releaseHook = new ManualResetEventSlim();
-        releaseHook.WaitCallback = () => events.Enqueue("released");
-        using var jobStarted = new ManualResetEventSlim();
-        jobStarted.SetCallback = () => events.Enqueue("jobStarted");
-        Thread? mutationThread = null;
-        JobHandle laterWriter = default;
-        Exception? mutationFault = null;
+        JobHandle later = default;
         try
         {
-            var world = CreateJobWorld();
-            Entity entity = world.CreateEntity();
-
-            // Declaring the resource installs the optional ECS -> Job coordinator on this World.
-            _ = RelationshipJobAccess.TopologyWrite(world);
-            world.Hooks<AdmissionProbe>().OnAdd(
-                (DeferredWorld _, Entity _, in AdmissionProbe _) =>
-                {
-                    hookStarted.Set();
-                    releaseHook.Wait();
-                });
-
-            mutationThread = new Thread(() =>
-            {
-                try
-                {
-                    world.Add(entity, new AdmissionProbe { Value = 1 });
-                }
-                catch (Exception exception)
-                {
-                    mutationFault = exception;
-                }
-            });
-            mutationThread.Start();
-            Assert.True(hookStarted.Wait(TimeSpan.FromSeconds(5)));
-
-            laterWriter = HierarchyJobAccess<Domain>.ScheduleParentWrite(
-                world,
-                new SignalJob(jobStarted));
-
-            releaseHook.Set();
-            Assert.True(mutationThread.Join(TimeSpan.FromSeconds(5)));
-            laterWriter.Complete();
-
-            Assert.Null(mutationFault);
-            Assert.True(jobStarted.IsSet);
-            Assert.Equal(1, world.Read<AdmissionProbe>(entity).Value);
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            later = Jobs.Schedule(new RecordSignal(events), world.Execution!.StructureWrite);
+            release.Set();
+            await mutation.WaitAsync(TimeSpan.FromSeconds(10));
+            later.Complete();
+            Assert.Equal(1, world.ReadComponentData<ProbeValue>(entity).Value);
+            Assert.Equal(["range ended", "later writer"], events);
         }
-        finally
-        {
-            releaseHook.Set();
-            mutationThread?.Join(TimeSpan.FromSeconds(5));
-            laterWriter.Complete();
-            ConfigureJobs(new JobRuntimeConfig
-            {
-                SafetyMode = previousSafety,
-                ManagedPayloadPolicy = previousPolicy,
-            });
-        }
-
-        string[] sequence = events.ToArray();
-        Assert.Contains("released", sequence);
-        Assert.Contains("jobStarted", sequence);
-        Assert.True(Array.LastIndexOf(sequence, "released") < Array.IndexOf(sequence, "jobStarted"));
+        finally { release.Set(); await mutation.WaitAsync(TimeSpan.FromSeconds(10)); later.Complete(); }
     }
 
-    private readonly struct BlockingJob : IJob
-    {
-        private readonly ManualResetEventSlim _started;
-        private readonly ManualResetEventSlim _release;
-
-        internal BlockingJob(ManualResetEventSlim started, ManualResetEventSlim release)
-        {
-            _started = started;
-            _release = release;
-        }
-
-        public void Execute()
-        {
-            _started.Set();
-            _release.Wait();
-        }
-    }
-
-    private readonly struct ReadEntityCountJob : IJob
-    {
-        private readonly World _world;
-
-        internal ReadEntityCountJob(World world)
-        {
-            _world = world;
-        }
-
-        public void Execute()
-        {
-            _ = _world.EntityCount;
-        }
-    }
-
-    private readonly struct SignalJob : IJob
-    {
-        private readonly ManualResetEventSlim _started;
-
-        internal SignalJob(ManualResetEventSlim started)
-        {
-            _started = started;
-        }
-
-        public void Execute()
-        {
-            _started.Set();
-        }
-    }
-
-    private readonly struct FlushWorldJob : IJob
-    {
-        private readonly World _world;
-
-        internal FlushWorldJob(World world)
-        {
-            _world = world;
-        }
-
-        public void Execute()
-        {
-            _world.Flush();
-        }
-    }
-
-    private readonly struct UndeclaredWorldReplaceJob : IJob
-    {
-        private readonly World _world;
-        private readonly Entity _entity;
-        private readonly int _value;
-
-        internal UndeclaredWorldReplaceJob(World world, Entity entity, int value)
-        {
-            _world = world;
-            _entity = entity;
-            _value = value;
-        }
-
-        public void Execute()
-        {
-            _world.Replace(_entity, new AdmissionProbe { Value = _value });
-        }
-    }
-
-    private readonly struct UndeclaredWorldCreateJob(World world) : IJob
+    private readonly record struct ProbeValue(int Value) : IComponent;
+    private readonly record struct ResultValue(int Value) : IComponent;
+    private readonly struct Tree : IHierarchyDomain;
+    private sealed class CapturedWorld { internal World? World; }
+    private sealed class StageFault : Exception;
+    private readonly struct CreateEntity(World world) : IJob { public void Execute() => world.Create(); }
+    private readonly struct SetValue(World world, Entity entity, int value) : IJob { public void Execute() => world.Set(entity, new ProbeValue(value)); }
+    private readonly struct ReadCount(World world) : IJob { public void Execute() => _ = world.EntityCount; }
+    private readonly struct ReadValue(World world, Entity entity) : IJob { public void Execute() => _ = world.ReadComponentData<ProbeValue>(entity); }
+    private readonly struct ReadLife(World world, Entity entity) : IJob { public void Execute() => _ = world.IsAlive(entity); }
+    private readonly struct Playback(CommandBuffer commands) : IJob { public void Execute() => commands.Playback(); }
+    private readonly struct RecordValue(CommandBuffer commands, Entity entity, int value) : IJob
+    { public void Execute() => commands.Add(entity, new ProbeValue(value)); }
+    private readonly struct ParallelCreate(World world) : IJobParallelFor { public void Execute(int index) => world.Create(); }
+    private readonly struct ParallelSet(World world, Entity entity) : IJobParallelFor
+    { public void Execute(int index) => world.Set(entity, new ProbeValue(41)); }
+    private readonly struct ParallelRead(World world, Entity entity, int[] values) : IJobParallelFor
+    { public void Execute(int index) => values[index] = world.ReadComponentData<ProbeValue>(entity).Value; }
+    private readonly struct AddProbe(World world, Entity entity, int value) : IJob { public void Execute() => world.Add(entity, new ProbeValue(value)); }
+    private readonly struct AddResult(World world, Entity entity) : IJob { public void Execute() => world.Add(entity, new ResultValue(1)); }
+    private readonly struct RecordNext(World world, Entity trigger, Entity destination, CommandBuffer next) : IJob
     {
         public void Execute()
         {
-            world.CreateEntity();
+            world.Add(trigger, new ProbeValue(17));
+            next.Add(destination, new ResultValue(18));
         }
     }
-
-    private readonly struct RecordCommandJob : IJob
+    private readonly struct CaptureAndRecord(World world, Entity trigger, Entity destination, CapturedWorld captured, CommandBuffer next) : IJob
     {
-        private readonly CommandBuffer _commands;
-        private readonly Entity _entity;
-
-        internal RecordCommandJob(CommandBuffer commands, Entity entity)
-        {
-            _commands = commands;
-            _entity = entity;
-        }
-
         public void Execute()
         {
-            _commands.Add(_entity, new AdmissionProbe { Value = 23 });
+            world.Add(trigger, new ProbeValue(17));
+            captured.World = world;
+            next.Add(destination, new ResultValue(1));
         }
     }
-
-    private readonly struct PlaybackCommandJob : IJob
+    private readonly struct RecordDeferred(CommandBuffer commands, DeferredEntity entity) : IJob
+    { public void Execute() => commands.Add(entity, new ProbeValue(1)); }
+    private readonly struct RecordThenFail(World world, Entity trigger, Entity destination, CommandBuffer next, StageFault failure) : IJob
     {
-        private readonly CommandBuffer _commands;
-
-        internal PlaybackCommandJob(CommandBuffer commands)
-        {
-            _commands = commands;
-        }
-
         public void Execute()
         {
-            _commands.Playback();
+            world.Add(trigger, new ProbeValue(17));
+            next.Add(destination, new ResultValue(1));
+            throw failure;
         }
     }
-
-    private readonly struct ParallelCreateEntityJob : IJobParallelFor
+    private readonly struct HoldStructure(ManualResetEventSlim entered, ManualResetEventSlim release) : IJob
+    { public void Execute() { entered.Set(); Assert.True(release.Wait(TimeSpan.FromSeconds(10))); } }
+    private readonly struct WaitAndRecord(CommandBuffer commands, Entity entity, ManualResetEventSlim entered, ManualResetEventSlim release) : IJob
     {
-        private readonly World _world;
-
-        internal ParallelCreateEntityJob(World world)
-        {
-            _world = world;
-        }
-
-        public void Execute(int index)
-        {
-            _ = index;
-            _world.CreateEntity();
-        }
-    }
-
-    private readonly struct ParallelReplaceJob : IJobParallelFor
-    {
-        private readonly World _world;
-        private readonly Entity _entity;
-        private readonly int _value;
-
-        internal ParallelReplaceJob(World world, Entity entity, int value)
-        {
-            _world = world;
-            _entity = entity;
-            _value = value;
-        }
-
-        public void Execute(int index)
-        {
-            _ = index;
-            _world.Replace(_entity, new AdmissionProbe { Value = _value });
-        }
-    }
-
-    private readonly struct ParallelReadJob : IJobParallelFor
-    {
-        private readonly World _world;
-        private readonly Entity _entity;
-        private readonly int[] _values;
-
-        internal ParallelReadJob(World world, Entity entity, int[] values)
-        {
-            _world = world;
-            _entity = entity;
-            _values = values;
-        }
-
-        public void Execute(int index)
-        {
-            _values[index] = _world.Read<AdmissionProbe>(_entity).Value;
-        }
-    }
-
-    private readonly struct AddProbeJob : IJob
-    {
-        private readonly World _world;
-        private readonly Entity _entity;
-        private readonly int _value;
-
-        internal AddProbeJob(World world, Entity entity, int value)
-        {
-            _world = world;
-            _entity = entity;
-            _value = value;
-        }
-
         public void Execute()
         {
-            _world.Add(_entity, new AdmissionProbe { Value = _value });
+            entered.Set();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+            commands.Add(entity, new ProbeValue(5));
         }
     }
-
-    private readonly struct CandidateAddProbeJob : IJob
+    private readonly struct HoldAndRecord(ManualResetEventSlim entered, ManualResetEventSlim release,
+        System.Collections.Concurrent.ConcurrentQueue<string> events) : IJob
     {
-        private readonly World _world;
-        private readonly Entity _entity;
-        private readonly int _value;
-
-        internal CandidateAddProbeJob(World world, Entity entity, int value)
-        {
-            _world = world;
-            _entity = entity;
-            _value = value;
-        }
-
         public void Execute()
         {
-            var value = new AdmissionProbe { Value = _value };
-            _world.ExecuteBundleAdd(_entity,
-                [SomeEngine.ECS.Registry.ComponentMetadata<AdmissionProbe>.Id],
-                ref value,
-                static (BundleWriteView view, ref AdmissionProbe probe) => view.Write(in probe));
+            entered.Set();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+            events.Enqueue("writer finished");
         }
     }
-
-    private readonly struct AddThenReuseDeferredWorldJob : IJob
-    {
-        private readonly World _world;
-        private readonly Entity _trigger;
-        private readonly Entity _destination;
-        private readonly DeferredWorldCapture _capture;
-
-        internal AddThenReuseDeferredWorldJob(
-            World world,
-            Entity trigger,
-            Entity destination,
-            DeferredWorldCapture capture)
-        {
-            _world = world;
-            _trigger = trigger;
-            _destination = destination;
-            _capture = capture;
-        }
-
-        public void Execute()
-        {
-            _world.Add(_trigger, new AdmissionProbe { Value = 17 });
-            if (!_capture.HasWorld)
-                throw new InvalidOperationException("The immediate hook did not publish its DeferredWorld capture.");
-            _capture.World.Commands().Add(_destination, new HookResult { Value = 2 });
-        }
-    }
-
-    private readonly struct InvalidDeferredEntityRecordJob : IJob
-    {
-        private readonly CommandBuffer _commands;
-
-        internal InvalidDeferredEntityRecordJob(CommandBuffer commands)
-        {
-            _commands = commands;
-        }
-
-        public void Execute()
-        {
-            _commands.Add(default(DeferredEntity), new HookResult { Value = 1 });
-        }
-    }
-
-    private readonly struct InvalidDeferredRelationRecordJob : IJob
-    {
-        private readonly CommandBuffer _commands;
-
-        internal InvalidDeferredRelationRecordJob(CommandBuffer commands)
-        {
-            _commands = commands;
-        }
-
-        public void Execute()
-        {
-            _commands.Relations<AdmissionLink>().Destroy(default(DeferredRelationEdge<AdmissionLink>));
-        }
-    }
-
-    private readonly struct InvalidDeferredHierarchyRecordJob : IJob
-    {
-        private readonly CommandBuffer _commands;
-
-        internal InvalidDeferredHierarchyRecordJob(CommandBuffer commands)
-        {
-            _commands = commands;
-        }
-
-        public void Execute()
-        {
-            _commands.Hierarchy<Domain>().Detach(default(DeferredEntity));
-        }
-    }
-
-    private sealed class DeferredWorldCapture
-    {
-        internal DeferredWorld World;
-        internal bool HasWorld;
-    }
-
-    private sealed class AdmissionHookFaultException : Exception;
-
-    private void EnsureAmbientAdmissionInstalled()
-    {
-        // The escape jobs deliberately call no Systems access helper. Force only the optional
-        // integration module to load; this installs the ambient bridge without binding a World.
-        System.Runtime.CompilerServices.RuntimeHelpers.RunModuleConstructor(
-            typeof(RelationshipJobAccess).Module.ModuleHandle);
-    }
-
-    private readonly struct Domain : IHierarchyDomain;
-
-    private struct AdmissionProbe : IComponent
-    {
-        internal int Value;
-    }
-
-    private struct HookResult : IComponent
-    {
-        internal int Value;
-    }
-
-    [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
-    private struct AdmissionLink : IComponent;
+    private readonly struct RecordSignal(System.Collections.Concurrent.ConcurrentQueue<string> events) : IJob
+    { public void Execute() => events.Enqueue("later writer"); }
 }

@@ -18,21 +18,21 @@ internal static partial class TextEditingChecks
         frames.Frame();
         Keyboard.Text(frames.World, string.Empty);
         frames.Frame();
-        EditDisplay display = frames.World.Read<EditDisplay>(root);
+        EditDisplay display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Text == "ab" && display.Caret == 1 && display.SelectionStart == 2 &&
             display.ConsumedEdits == 1,
             "Empty character input preserves committed text and its selection.");
         Keyboard.Composition(frames.World, "候", 1);
         Keyboard.Text(frames.World, string.Empty);
         frames.Frame();
-        display = frames.World.Read<EditDisplay>(root);
+        display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Text == "ab" && display.Composition == "候" && display.CompositionCaret == 1 &&
             display.ConsumedEdits == 1,
             "Empty character input preserves candidate presentation until the platform ends composition.");
         Keyboard.Text(frames.World, "b");
         frames.Frame();
         CheckEdit(frames, root, "ab", 2, 1);
-        Require(frames.World.Read<EditDisplay>(root).Composition.Length == 0,
+        Require(frames.World.ReadComponentData<EditDisplay>(root).Composition.Length == 0,
             "Confirming the selected text consumes the composition and retains the committed edit display.");
     }
 

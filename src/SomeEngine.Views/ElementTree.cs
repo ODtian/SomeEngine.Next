@@ -1,11 +1,19 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.Views;
 
 /// <summary>The ordered hierarchy of view entities.</summary>
-public readonly struct ElementTree : IHierarchyDomain;
+public readonly struct ElementTree : IHierarchyDomain
+{
+    internal static Entity[] CopyChildren(World world, Entity parent)
+    {
+        using ChildrenRead children = Hierarchy<ElementTree>.GetChildren(world, parent);
+        return children.Entities.ToArray();
+    }
+}
 
 /// <summary>The number identifying the view's statically registered functions.</summary>
 public struct ViewType : IComponent

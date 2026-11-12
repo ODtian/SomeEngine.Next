@@ -19,8 +19,8 @@ public static partial class InterfaceAnimationChecks
     public static void Run()
     {
         using var world = new World();
-        Entity time = world.CreateEntity(new AnimationTime(0));
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity time = world.Create(new AnimationTime(0));
+        Entity canvas = world.Create(new Canvas { Size = new Size(800, 600) });
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new TimelineSystem(time));
@@ -34,44 +34,44 @@ public static partial class InterfaceAnimationChecks
         var target = new State<float>();
         Entity root = Views.Views.Spawn(world, canvas, new MovingSurface(target, 0));
         Frame(0);
-        var children = Hierarchy<ElementTree>.GetChildren(world, root);
+        var children = ElementChildren.Read(world, root);
         Entity distance = children[0];
         Entity container = children[1];
-        Entity panel = Hierarchy<ElementTree>.GetChildren(world, container)[0];
-        ElementTransform user = world.Read<ElementTransform>(panel);
+        Entity panel = ElementChildren.Read(world, container)[0];
+        ElementTransform user = world.ReadComponentData<ElementTransform>(panel);
 
         target.Value = 10;
         Frame(0);
         Frame(0.5f);
-        Require(world.Read<DistanceNode>(distance).Value.Meters == 5, "The user's value operations sample the declared channel.");
-        Require(world.Read<Surface>(panel).Fill == new Color(0.5f, 0, 0.5f), "The interface clock advances color while the game is paused.");
-        Require(world.Read<PresentationOffset>(panel).Matrix == Matrix3x2.CreateTranslation(-50, 0), "FLIP samples the inline matrix track.");
-        Require(world.Read<ElementTransform>(panel).Matrix == user.Matrix, "FLIP preserves the caller's transform.");
+        Require(world.ReadComponentData<DistanceNode>(distance).Value.Meters == 5, "The user's value operations sample the declared channel.");
+        Require(world.ReadComponentData<Surface>(panel).Fill == new Color(0.5f, 0, 0.5f), "The interface clock advances color while the game is paused.");
+        Require(world.ReadComponentData<PresentationOffset>(panel).Matrix == Matrix3x2.CreateTranslation(-50, 0), "FLIP samples the inline matrix track.");
+        Require(world.ReadComponentData<ElementTransform>(panel).Matrix == user.Matrix, "FLIP preserves the caller's transform.");
 
-        world.Replace(root, new MovingSurface(target, 1));
+        world.Set(root, new MovingSurface(target, 1));
         Frame(0.25f);
-        Require(world.Read<DistanceNode>(distance).Value.Meters == 7.5f, "An equal parameter target keeps its elapsed progress.");
-        Require(world.Read<Surface>(panel).Fill == new Color(0.75f, 0, 0.25f), "An equal modifier target keeps its elapsed progress.");
+        Require(world.ReadComponentData<DistanceNode>(distance).Value.Meters == 7.5f, "An equal parameter target keeps its elapsed progress.");
+        Require(world.ReadComponentData<Surface>(panel).Fill == new Color(0.75f, 0, 0.25f), "An equal modifier target keeps its elapsed progress.");
         Frame(0.25f);
-        Require(world.Read<PresentationOffset>(panel).Matrix == Matrix3x2.Identity, "FLIP completes at identity.");
+        Require(world.ReadComponentData<PresentationOffset>(panel).Matrix == Matrix3x2.Identity, "FLIP completes at identity.");
 
         target.Value = 0;
         Frame(0);
         Frame(0.5f);
-        Require(world.Read<DistanceNode>(distance).Value.Meters == 5, "A user's channel retargets from its presented value.");
+        Require(world.ReadComponentData<DistanceNode>(distance).Value.Meters == 5, "A user's channel retargets from its presented value.");
         target.Value = 10;
         Frame(0);
-        Require(world.Read<DistanceNode>(distance).Value.Meters == 5, "Retargeting keeps the first presented value continuous.");
-        Matrix3x2 presentation = world.Read<PresentationOffset>(panel).Matrix;
+        Require(world.ReadComponentData<DistanceNode>(distance).Value.Meters == 5, "Retargeting keeps the first presented value continuous.");
+        Matrix3x2 presentation = world.ReadComponentData<PresentationOffset>(panel).Matrix;
         Require(presentation == Matrix3x2.CreateTranslation(-50, 0), $"A second layout change continues from the current presentation: {presentation}.");
         Frame(0.5f);
-        Require(world.Read<DistanceNode>(distance).Value.Meters == 7.5f, "A user's channel continues toward the new target.");
+        Require(world.ReadComponentData<DistanceNode>(distance).Value.Meters == 7.5f, "A user's channel continues toward the new target.");
         Frame(0.5f);
-        Require(world.Read<DistanceNode>(distance).Value.Meters == 10, "A user's channel reaches its target.");
+        Require(world.ReadComponentData<DistanceNode>(distance).Value.Meters == 10, "A user's channel reaches its target.");
 
         void Frame(float delta)
         {
-            world.Replace(time, new AnimationTime(delta, gamePaused: true));
+            world.Set(time, new AnimationTime(delta, gamePaused: true));
             systems.Update();
         }
     }

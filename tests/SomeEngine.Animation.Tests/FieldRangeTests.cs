@@ -9,36 +9,36 @@ public sealed class FieldRangeTests
     [Fact]
     public void IndependentReferencedFieldsWriteTogetherThroughTheirDeclaredResources()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        using var world = new World(execution: new WorldJobs(scheduler));
         using var reached = new CountdownEvent(2);
         var firstData = new ReferenceValue { Reached = reached };
         var secondData = new ReferenceValue { Reached = reached };
-        var first = world.CreateEntity(new ReferenceRoot { Data = firstData });
-        var second = world.CreateEntity(new ReferenceRoot { Data = secondData });
+        var first = world.Create(new ReferenceRoot { Data = firstData });
+        var second = world.Create(new ReferenceRoot { Data = secondData });
         var channel = Channel<float>.Of<ReferenceRoot, ReferenceAccess, ReferenceResources>(1);
-        uint firstVersion = world.WriteVersion<ReferenceRoot>(first);
-        uint secondVersion = world.WriteVersion<ReferenceRoot>(second);
+        ulong firstVersion = world.ComponentDataWriteVersion<ReferenceRoot>(first);
+        ulong secondVersion = world.ComponentDataWriteVersion<ReferenceRoot>(second);
         FieldWrite<float>[] writes = [new(first, channel, 3), new(second, channel, 7)];
 
         channel.WriteBatch(world, writes);
 
         Assert.Equal(3f, firstData.Value);
         Assert.Equal(7f, secondData.Value);
-        Assert.True(world.WriteVersion<ReferenceRoot>(first) > firstVersion);
-        Assert.True(world.WriteVersion<ReferenceRoot>(second) > secondVersion);
+        Assert.True(world.ComponentDataWriteVersion<ReferenceRoot>(first) > firstVersion);
+        Assert.True(world.ComponentDataWriteVersion<ReferenceRoot>(second) > secondVersion);
     }
 
     [Fact]
     public void GeneratedReferenceFieldsWriteTogetherWithOneComponentVersion()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        using var world = new World(execution: new WorldJobs(scheduler));
         using var reached = new CountdownEvent(2);
         var firstData = new ReferenceValue { Reached = reached };
         var secondData = new ReferenceValue { Reached = reached };
-        var first = world.CreateEntity(new ReferenceRoot { Data = firstData });
-        var second = world.CreateEntity(new ReferenceRoot { Data = secondData });
+        var first = world.Create(new ReferenceRoot { Data = firstData });
+        var second = world.Create(new ReferenceRoot { Data = secondData });
         var channel = FieldRangeTests_ReferenceRootChannels.Value;
         FieldWrite<float>[] writes = [new(first, channel, 3), new(second, channel, 7)];
 
@@ -46,17 +46,17 @@ public sealed class FieldRangeTests
 
         Assert.Equal(3f, firstData.Value);
         Assert.Equal(7f, secondData.Value);
-        Assert.Equal(world.WriteVersion<ReferenceRoot>(first), world.WriteVersion<ReferenceRoot>(second));
+        Assert.Equal(world.ComponentDataWriteVersion<ReferenceRoot>(first), world.ComponentDataWriteVersion<ReferenceRoot>(second));
     }
 
     [Fact]
     public void AliasedReferenceTargetsKeepTheInputWriteOrder()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        using var world = new World(execution: new WorldJobs(scheduler));
         var data = new ReferenceValue();
-        var first = world.CreateEntity(new ReferenceRoot { Data = data });
-        var second = world.CreateEntity(new ReferenceRoot { Data = data });
+        var first = world.Create(new ReferenceRoot { Data = data });
+        var second = world.Create(new ReferenceRoot { Data = data });
         var channel = FieldRangeTests_ReferenceRootChannels.Value;
         FieldWrite<float>[] writes = [new(second, channel, 7), new(first, channel, 3)];
 
@@ -69,14 +69,14 @@ public sealed class FieldRangeTests
     [Fact]
     public void ReplacingTheRootReferenceWritesTheCurrentObjectForItsResourceConsumer()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        using var world = new World(execution: new WorldJobs(scheduler));
         var previous = new ReferenceValue();
         var current = new ReferenceValue();
-        var target = world.CreateEntity(new ReferenceRoot { Data = previous });
+        var target = world.Create(new ReferenceRoot { Data = previous });
         var channel = FieldRangeTests_ReferenceRootChannels.Value;
         channel.WriteBatch(world, [new(target, channel, 3)]);
-        world.Replace(target, new ReferenceRoot { Data = current });
+        world.Set(target, new ReferenceRoot { Data = current });
 
         channel.WriteBatch(world, [new(target, channel, 7)]);
 
@@ -95,12 +95,12 @@ public sealed class FieldRangeTests
     [Fact]
     public void DisjointFieldsInOneArrayWriteTogetherThroughTheirActualRanges()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        using var world = new World(execution: new WorldJobs(scheduler));
         using var reached = new CountdownEvent(2);
         float[] values = [0, 0];
-        var first = world.CreateEntity(new ArrayRoot { Values = values, Index = 0, Reached = reached });
-        var second = world.CreateEntity(new ArrayRoot { Values = values, Index = 1, Reached = reached });
+        var first = world.Create(new ArrayRoot { Values = values, Index = 0, Reached = reached });
+        var second = world.Create(new ArrayRoot { Values = values, Index = 1, Reached = reached });
         var channel = Channel<float>.Of<ArrayRoot, ArrayAccess, ArrayResources>(1);
 
         channel.WriteBatch(world, [new(first, channel, 3), new(second, channel, 7)]);
@@ -154,7 +154,7 @@ public sealed class FieldRangeTests
 
     [GenerateFields]
     [ComponentField("Data.Value", Name = "Value")]
-    public struct ReferenceRoot : IComponent
+    public struct ReferenceRoot : ITrackedComponent
     {
         public ReferenceValue Data;
     }

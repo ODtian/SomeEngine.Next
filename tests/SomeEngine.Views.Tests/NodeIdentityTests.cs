@@ -13,16 +13,16 @@ public sealed partial class NodeIdentityTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new RowList([11, 22, 33]));
         frames.Frame();
-        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-        frames.World.Replace(rows[1], new Selection(7));
-        frames.World.Replace(root, new RowList([33, 11, 22]));
+        Entity[] rows = ElementChildren.Read(frames.World, root);
+        frames.World.Set(rows[1], new Selection(7));
+        frames.World.Set(root, new RowList([33, 11, 22]));
 
         frames.Frame();
 
         Assert.Equal(new[] { rows[2], rows[0], rows[1] },
-            Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray());
-        Assert.Equal(7, frames.World.Read<Selection>(rows[1]).Value);
-        Assert.Equal(22UL, frames.World.Read<Row>(rows[1]).Id);
+            ElementChildren.Read(frames.World, root));
+        Assert.Equal(7, frames.World.ReadComponentData<Selection>(rows[1]).Value);
+        Assert.Equal(22UL, frames.World.ReadComponentData<Row>(rows[1]).Id);
     }
 
     [Fact]
@@ -31,19 +31,19 @@ public sealed partial class NodeIdentityTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new RowList([11, 22, 33]));
         frames.Frame();
-        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, rows[1]));
-        Entity tip = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, leaf));
-        frames.World.Replace(rows[1], new Row(99));
-        frames.World.Replace(root, new RowList([11, 33]));
+        Entity[] rows = ElementChildren.Read(frames.World, root);
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, rows[1]));
+        Entity tip = Assert.Single(ElementChildren.Read(frames.World, leaf));
+        frames.World.Set(rows[1], new Row(99));
+        frames.World.Set(root, new RowList([11, 33]));
 
         frames.Frame();
 
-        Assert.Equal(new[] { rows[0], rows[2] }, Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray());
-        Assert.False(frames.World.IsAlive(rows[1]));
-        Assert.False(frames.World.IsAlive(leaf));
-        Assert.False(frames.World.IsAlive(tip));
-        Assert.Equal(33UL, frames.World.Read<Row>(rows[2]).Id);
+        Assert.Equal(new[] { rows[0], rows[2] }, ElementChildren.Read(frames.World, root));
+        Assert.False(frames.World.IsAlive(rows[1]) && frames.World.Has<ViewType>(rows[1]));
+        Assert.False(frames.World.IsAlive(leaf) && frames.World.Has<ViewType>(leaf));
+        Assert.False(frames.World.IsAlive(tip) && frames.World.Has<ViewType>(tip));
+        Assert.Equal(33UL, frames.World.ReadComponentData<Row>(rows[2]).Id);
     }
 
     [Theory]
@@ -54,21 +54,21 @@ public sealed partial class NodeIdentityTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new RowOrLeaf(false, sparse));
         frames.Frame();
-        Entity row = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, row));
-        frames.World.Replace(root, new RowOrLeaf(true, sparse));
+        Entity row = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, row));
+        frames.World.Set(root, new RowOrLeaf(true, sparse));
 
         frames.Frame();
 
-        Entity replacement = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity replacement = Assert.Single(ElementChildren.Read(frames.World, root));
         Assert.NotEqual(row, replacement);
-        Assert.False(frames.World.IsAlive(row));
-        Assert.False(frames.World.IsAlive(leaf));
+        Assert.False(frames.World.IsAlive(row) && frames.World.Has<ViewType>(row));
+        Assert.False(frames.World.IsAlive(leaf) && frames.World.Has<ViewType>(leaf));
         Assert.Equal(44UL, sparse
-            ? frames.World.ReadSparse<SparseLeaf>(replacement).Id
-            : frames.World.Read<Leaf>(replacement).Id);
-        Assert.Equal(8UL, frames.World.Read<ElementKey>(replacement).Key);
-        Assert.Equal(0, frames.World.Read<ElementKey>(replacement).Occurrence);
+            ? frames.World.ReadComponentData<SparseLeaf>(replacement).Id
+            : frames.World.ReadComponentData<Leaf>(replacement).Id);
+        Assert.Equal(8UL, frames.World.ReadComponentData<ElementKey>(replacement).Key);
+        Assert.Equal(0, frames.World.ReadComponentData<ElementKey>(replacement).Occurrence);
     }
 
     [Fact]
@@ -77,17 +77,17 @@ public sealed partial class NodeIdentityTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ZeroKeyRows([11, 22, 33]));
         frames.Frame();
-        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-        frames.World.Replace(rows[0], new Selection(5));
-        frames.World.Replace(root, new ZeroKeyRows([33, 11, 22]));
+        Entity[] rows = ElementChildren.Read(frames.World, root);
+        frames.World.Set(rows[0], new Selection(5));
+        frames.World.Set(root, new ZeroKeyRows([33, 11, 22]));
 
         frames.Frame();
 
-        Assert.Equal(rows, Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray());
-        Assert.Equal(33UL, frames.World.Read<Row>(rows[0]).Id);
-        Assert.Equal(5, frames.World.Read<Selection>(rows[0]).Value);
-        Assert.Equal(new[] { 0, 1, 2 }, rows.Select(row => frames.World.Read<ElementKey>(row).Occurrence).ToArray());
-        Assert.All(rows, row => Assert.Equal(0UL, frames.World.Read<ElementKey>(row).Key));
+        Assert.Equal(rows, ElementChildren.Read(frames.World, root));
+        Assert.Equal(33UL, frames.World.ReadComponentData<Row>(rows[0]).Id);
+        Assert.Equal(5, frames.World.ReadComponentData<Selection>(rows[0]).Value);
+        Assert.Equal(new[] { 0, 1, 2 }, rows.Select(row => frames.World.ReadComponentData<ElementKey>(row).Occurrence).ToArray());
+        Assert.All(rows, row => Assert.Equal(0UL, frames.World.ReadComponentData<ElementKey>(row).Key));
     }
 
     [Fact]
@@ -96,18 +96,18 @@ public sealed partial class NodeIdentityTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new RepeatedLeaves(false));
         frames.Frame();
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-        frames.World.Replace(root, new RepeatedLeaves(true));
+        Entity[] children = ElementChildren.Read(frames.World, root);
+        frames.World.Set(root, new RepeatedLeaves(true));
 
         frames.Frame();
 
-        Entity[] reordered = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] reordered = ElementChildren.Read(frames.World, root);
         Assert.Equal(new[] { children[0], children[2], children[1] }, reordered[..3]);
-        Assert.Equal(40UL, frames.World.Read<Leaf>(reordered[3]).Id);
+        Assert.Equal(40UL, frames.World.ReadComponentData<Leaf>(reordered[3]).Id);
         Assert.Equal(new[] { 0, 0, 1, 2 },
-            reordered.Select(child => frames.World.Read<ElementKey>(child).Occurrence).ToArray());
+            reordered.Select(child => frames.World.ReadComponentData<ElementKey>(child).Occurrence).ToArray());
         Assert.Equal(new[] { 5UL, 9UL, 5UL, 5UL },
-            reordered.Select(child => frames.World.Read<ElementKey>(child).Key).ToArray());
+            reordered.Select(child => frames.World.ReadComponentData<ElementKey>(child).Key).ToArray());
     }
 
     [Fact]
@@ -116,19 +116,19 @@ public sealed partial class NodeIdentityTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new NestedRows([11, 22]));
         frames.Frame();
-        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-        frames.World.Replace(root, new NestedRows([22, 11]));
+        Entity[] rows = ElementChildren.Read(frames.World, root);
+        frames.World.Set(root, new NestedRows([22, 11]));
 
         frames.Frame();
 
         Assert.Equal(new[] { rows[2], rows[3], rows[0], rows[1], rows[4], rows[5] },
-            Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray());
+            ElementChildren.Read(frames.World, root));
         Assert.Equal(rows.Length,
-            rows.Select(row => frames.World.Read<ElementKey>(row).Key).Distinct().Count());
-        Assert.Equal(90UL, frames.World.Read<ElementKey>(rows[4]).Key);
-        Assert.Equal(0UL, frames.World.Read<ElementKey>(rows[5]).Key);
+            rows.Select(row => frames.World.ReadComponentData<ElementKey>(row).Key).Distinct().Count());
+        Assert.Equal(90UL, frames.World.ReadComponentData<ElementKey>(rows[4]).Key);
+        Assert.Equal(0UL, frames.World.ReadComponentData<ElementKey>(rows[5]).Key);
         Assert.All(rows, row => Assert.Equal(0UL,
-            frames.World.Read<ElementKey>(Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, row))).Key));
+            frames.World.ReadComponentData<ElementKey>(Assert.Single(ElementChildren.Read(frames.World, row))).Key));
     }
 
 #if DEBUG
@@ -143,10 +143,10 @@ public sealed partial class NodeIdentityTests
         Entity root = Views.Spawn(frames.World, Entity.Null,
             new RowList(Enumerable.Repeat(42UL, previousCount).ToArray()));
         frames.Frame();
-        frames.World.Replace(root, new RowList(Enumerable.Repeat(42UL, count).ToArray()));
+        frames.World.Set(root, new RowList(Enumerable.Repeat(42UL, count).ToArray()));
 
         frames.Frame();
-        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
+        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(root).Exception);
 
         Assert.Throws<InvalidOperationException>(() => Scope.Key(42));
     }
@@ -157,15 +157,15 @@ public sealed partial class NodeIdentityTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new RowList([42, 42]));
         frames.Frame();
-        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, rows[1]));
-        frames.World.Replace(root, new RowList([42]));
+        Entity[] rows = ElementChildren.Read(frames.World, root);
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, rows[1]));
+        frames.World.Set(root, new RowList([42]));
 
         frames.Frame();
 
-        Assert.Equal(rows[0], Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        Assert.False(frames.World.IsAlive(rows[1]));
-        Assert.False(frames.World.IsAlive(leaf));
+        Assert.Equal(rows[0], Assert.Single(ElementChildren.Read(frames.World, root)));
+        Assert.False(frames.World.IsAlive(rows[1]) && frames.World.Has<ViewType>(rows[1]));
+        Assert.False(frames.World.IsAlive(leaf) && frames.World.Has<ViewType>(leaf));
     }
 #endif
 
@@ -249,7 +249,7 @@ public sealed partial class NodeIdentityTests
             if (!Scope.World.Has<Selection>(Scope.Entity))
             {
                 Scope.World.Add(Scope.Entity, new Selection(0));
-                Scope.World.AddTag<LocalState>(Scope.Entity);
+                Scope.World.Set(Scope.Entity, default(LocalState));
             }
             Scope.View(new Leaf(Id), 0);
             return default;

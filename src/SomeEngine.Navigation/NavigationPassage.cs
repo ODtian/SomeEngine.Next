@@ -52,7 +52,7 @@ public sealed class NavigationPassage(int capacity)
             if (current.Remove(user)) inUse.Add(user);
         foreach (NavigationPassageUser user in previous.Waiting)
             if (current.Remove(user)) waiting.Add(user);
-        foreach (NavigationPassageUser user in current.Keys.OrderBy(user => user.Entity.Index)) waiting.Add(user);
+        foreach (NavigationPassageUser user in current.Keys.OrderBy(user => user.Entity.Id)) waiting.Add(user);
         int granted = Math.Min(Math.Max(0, capacity - inUse.Count), waiting.Count);
         for (int index = 0; index < granted; index++) inUse.Add(waiting[index]);
         waiting.RemoveRange(0, granted);
@@ -66,16 +66,14 @@ internal readonly record struct NavigationPassageActor(NavigationPassageUser Use
 /// <summary>Shares one queue update across navigation combinations; separate connections run as independent jobs.</summary>
 public sealed class NavigationPassageSystem(World world)
 {
-    private readonly Scheduler _scheduler = WorldJobs.GetScheduler(world);
+    private readonly Scheduler _scheduler = world.Execution!.Scheduler!;
     private readonly HashSet<NavigationPassage> _passages = [];
     private JobHandle _completion;
 
     public JobHandle Schedule(JobHandle traversalReady = default)
     {
         var actors = new List<NavigationPassageActor>();
-        JobHandle collected = new CollectNavigationPassages(actors).Schedule(world,
-            [JobResourceAccess.Write(_scheduler.GetResourceToken(actors))],
-            _scheduler.CombineDependencies([_completion, traversalReady]));
+        JobHandle collected = new CollectNavigationPassages(actors).Schedule(world, dependency: _scheduler.CombineDependencies([_completion, traversalReady]));
         JobHandle updated = _scheduler.Schedule(new UpdatePassages(_scheduler, _passages, actors),
             [JobResourceAccess.Write(_scheduler.GetResourceToken(_passages)), JobResourceAccess.Read(_scheduler.GetResourceToken(actors))], collected);
         _completion = new ApplyNavigationPassageGrants().ScheduleParallel(world, updated);
@@ -124,6 +122,8 @@ internal readonly struct NavigationPassageRead : IJobComponentResources<Navigati
 
 internal partial struct CollectNavigationPassages(List<NavigationPassageActor> actors) : IJobEntity
 {
+    public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(_actors);
+
     private readonly List<NavigationPassageActor> _actors = actors;
     public void Execute(Entity entity, [JobResources<NavigationPassageReference>] in NavigationPassageUse use,
         in NavigationTraversalRequest request)

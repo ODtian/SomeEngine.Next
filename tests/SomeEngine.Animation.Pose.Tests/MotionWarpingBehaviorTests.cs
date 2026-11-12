@@ -47,8 +47,16 @@ public sealed class MotionWarpingBehaviorTests
             builder.Leaf<ClipParameters, ClipLeaf>(target, new(clip, new PoseResultId(0), RootMotion: RootMotionMode.Extract));
         }
         Entity animation = builder.Play();
-        world.ExecuteBufferWrite<MotionWarpInstance, MotionWarpInput>(animation, ref input,
-            static (instances, ref input) => instances[0].Input = input);
+        {
+            using var instances = world.GetBuffer<MotionWarpInstance>(animation);
+            Visit(instances, ref input);
+
+            static void Visit(DynamicBuffer<MotionWarpInstance> instances, ref MotionWarpInput input)
+            {
+                instances[0].Input = input;
+
+            }
+        }
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         PoseAnimation.AddSystems(systems, static composition =>
             AnimationSystems.Add(composition, new MotionWarpSystem(), AnimationPhase.Composition));
@@ -59,18 +67,18 @@ public sealed class MotionWarpingBehaviorTests
             var context = new ImmediateSystemContext(world, 0, 0, times[sample] - previous);
             systems.Update(ref context);
             PoseResult result = PoseAnimation.ReadResult(world, in output);
-            WarpingActorTransform actor = world.Read<WarpingActorTransform>(target);
+            WarpingActorTransform actor = world.ReadComponentData<WarpingActorTransform>(target);
             actor.Transform = result.RootMotion.Transform * actor.Transform;
-            world.Replace(target, actor);
+            world.Set(target, actor);
             Matrix4x4 expected = Matrix4x4.CreateRotationZ(rotations[sample]) * Matrix4x4.CreateTranslation(positions[sample]);
-            Near(expected, world.Read<WarpingActorTransform>(target).Transform);
+            Near(expected, world.ReadComponentData<WarpingActorTransform>(target).Transform);
             Near(predictions[sample], actor.Transform);
             Near(Matrix4x4.CreateTranslation(0, 1 + times[sample], 0), instance.ModelPose.Transforms[1]);
             Assert.Equal(times[sample], result.Time);
             Assert.Equal(times[sample] / 2, result.Phase);
             previous = times[sample];
         }
-        Assert.Equal(1u, world.Read<Timeline>(animation).Completions);
+        Assert.Equal(1u, world.ReadComponentData<Timeline>(animation).Completions);
         Matrix4x4 entrance = Matrix4x4.CreateRotationZ(3 * MathF.PI / 4) * Matrix4x4.CreateTranslation(10, 21, 0);
         Near(entrance, input.SampleWorld(.5f - .0001f), .001f);
         Near(entrance, input.SampleWorld(.5f + .0001f), .001f);
@@ -117,8 +125,16 @@ public sealed class MotionWarpingBehaviorTests
         for (int actor = 0; actor < targets.Length; actor++)
         {
             world.Add(targets[actor], new WarpingActorTransform { Transform = inputs[actor].Start });
-            world.ExecuteBufferWrite<MotionWarpInstance, MotionWarpInput>(animations[actor], ref inputs[actor],
-                static (instances, ref input) => instances[0].Input = input);
+            {
+                using var instances = world.GetBuffer<MotionWarpInstance>(animations[actor]);
+                Visit(instances, ref inputs[actor]);
+
+                static void Visit(DynamicBuffer<MotionWarpInstance> instances, ref MotionWarpInput input)
+                {
+                    instances[0].Input = input;
+
+                }
+            }
         }
         PropertyAnimation.SetSpeed(world, animations[1], .5f);
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -131,26 +147,34 @@ public sealed class MotionWarpingBehaviorTests
             for (int actor = 0; actor < targets.Length; actor++)
             {
                 PoseResult result = PoseAnimation.ReadResult(world, in outputs[actor]);
-                WarpingActorTransform transform = world.Read<WarpingActorTransform>(targets[actor]);
+                WarpingActorTransform transform = world.ReadComponentData<WarpingActorTransform>(targets[actor]);
                 transform.Transform = result.RootMotion.Transform * transform.Transform;
-                world.Replace(targets[actor], transform);
+                world.Set(targets[actor], transform);
                 Near(inputs[actor].SampleWorld((float)result.Time), transform.Transform);
             }
         }
-        Near(inputs[0].Target, world.Read<WarpingActorTransform>(targets[0]).Transform);
-        Near(inputs[1].Target, world.Read<WarpingActorTransform>(targets[1]).Transform);
+        Near(inputs[0].Target, world.ReadComponentData<WarpingActorTransform>(targets[0]).Transform);
+        Near(inputs[1].Target, world.ReadComponentData<WarpingActorTransform>(targets[1]).Transform);
 
         animations[0] = graph.Play(world, targets[0]);
-        world.Replace(targets[0], new WarpingActorTransform { Transform = inputs[0].Start });
-        world.ExecuteBufferWrite<MotionWarpInstance, MotionWarpInput>(animations[0], ref inputs[0],
-            static (instances, ref input) => instances[0].Input = input);
+        world.Set(targets[0], new WarpingActorTransform { Transform = inputs[0].Start });
+        {
+            using var instances = world.GetBuffer<MotionWarpInstance>(animations[0]);
+            Visit(instances, ref inputs[0]);
+
+            static void Visit(DynamicBuffer<MotionWarpInstance> instances, ref MotionWarpInput input)
+            {
+                instances[0].Input = input;
+
+            }
+        }
         systems.Update(ref context);
         PoseResult restarted = PoseAnimation.ReadResult(world, in outputs[0]);
-        WarpingActorTransform restartedActor = world.Read<WarpingActorTransform>(targets[0]);
+        WarpingActorTransform restartedActor = world.ReadComponentData<WarpingActorTransform>(targets[0]);
         restartedActor.Transform = restarted.RootMotion.Transform * restartedActor.Transform;
-        world.Replace(targets[0], restartedActor);
-        Near(Matrix4x4.CreateTranslation(2, 0, 0), world.Read<WarpingActorTransform>(targets[0]).Transform);
-        Near(inputs[1].Target, world.Read<WarpingActorTransform>(targets[1]).Transform);
+        world.Set(targets[0], restartedActor);
+        Near(Matrix4x4.CreateTranslation(2, 0, 0), world.ReadComponentData<WarpingActorTransform>(targets[0]).Transform);
+        Near(inputs[1].Target, world.ReadComponentData<WarpingActorTransform>(targets[1]).Transform);
     }
 
     private static void Near(Matrix4x4 expected, Matrix4x4 actual, float tolerance = .0001f)

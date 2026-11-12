@@ -2,7 +2,6 @@ using System.Runtime.CompilerServices;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation;
@@ -15,9 +14,9 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
     where TOps : struct, IValueOps<T>
 {
     private readonly TrackFields _fields = fields;
-    private QueryHandle _tracks;
-    private QueryHandle _finishedTracks;
-    private QueryHandle _fieldSources;
+    private Query _tracks;
+    private Query _finishedTracks;
+    private Query _fieldSources;
     private readonly bool _evaluateTyped = true;
     private TypedTrackSystem<T, TOps, TweenParameters, TweenState, Tween<T, TOps, Linear>> _linear;
     private TypedTrackSystem<T, TOps, SpringParameters, SpringState<T>, Spring<T, TOps>> _spring;
@@ -40,21 +39,21 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
         }
     }
 
-    private static QueryHandle CreateQuery(World world, bool enabled)
+    private static Query CreateQuery(World world, bool enabled)
     {
-        var query = world.QueryDefinition()
-            .ReadWrite<Timeline>().WriteBuffer<Track<T>>()
-            .OptionalBuffer<Keyframe>(QueryAccess.Read)
-            .OptionalBuffer<TimelineStage>(QueryAccess.Read)
-            .Optional<GraphInstance>(QueryAccess.Read).OptionalBuffer<GraphMotion>(QueryAccess.Write);
-        return world.Query(enabled ? query.Enabled<Timeline>() : query.Disabled<Timeline>());
+        var query = new QueryDescription()
+            .WithStored<Timeline>().WithStored<Buffer<Track<T>>>()
+            .Optional<Buffer<Keyframe>>()
+            .Optional<Buffer<TimelineStage>>()
+            .Optional<GraphInstance>().Optional<Buffer<GraphMotion>>();
+        return world.Query(enabled ? query.With<Timeline>() : query.WithDisabled<Timeline>());
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         bool weightChannels = _fields == TrackFields.LayerWeights;
-        if (!context.World.HasQueryMembers(_tracks)
-            && (weightChannels || !context.World.HasQueryMembers(_finishedTracks))) return;
+        if (!(_tracks.Count != 0)
+            && (weightChannels || !(_finishedTracks.Count != 0))) return;
         Evaluate(context.World, context.LastSystemVersion, _tracks, weightChannels, enabled: true);
         if (!weightChannels)
             Evaluate(context.World, context.LastSystemVersion, _finishedTracks, weightChannels, enabled: false);
@@ -64,51 +63,61 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
         }
     }
 
-    private void Evaluate(World world, uint lastVersion, QueryHandle query, bool weightChannels, bool enabled)
+    private void Evaluate(World world, ulong lastVersion, Query query, bool weightChannels, bool enabled)
     {
         var evaluation = (World: world, WeightChannels: weightChannels, Enabled: enabled);
-        world.ExecuteQuery(query, lastVersion, ref evaluation,
-            static (QueryCursor rows, ref (World World, bool WeightChannels, bool Enabled) evaluation) =>
         {
-            World world = evaluation.World;
-            foreach (QueryChunkView chunk in rows.Chunks)
+            using QueryScope read = query.Since(lastVersion).Open();
+            Visit(in read, ref evaluation);
+
+            static void Visit(scoped in QueryScope rows, ref (World World, bool WeightChannels, bool Enabled) evaluation)
             {
-                bool hasKeyframes = chunk.HasBuffer<Keyframe>();
-                bool hasStages = chunk.HasBuffer<TimelineStage>();
-                foreach (QueryRow row in chunk.Rows)
+                World world = evaluation.World;
+                foreach (QueryChunk chunk in rows)
                 {
-                    DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
-                    ReadOnlySpan<Track<T>> values = tracks.ReadSpan();
-                    int firstLegacy = 0;
-                    while (firstLegacy < values.Length && values[firstLegacy].Typed)
-                        firstLegacy++;
-                    if (firstLegacy == values.Length)
-                        continue;
-                    ReadOnlySpan<Keyframe> keyframes = hasKeyframes ? row.ReadBuffer<Keyframe>().AsSpan() : default;
-                    ReadOnlySpan<TimelineStage> stages = hasStages ? row.ReadBuffer<TimelineStage>().AsSpan() : default;
-                    ref Timeline timeline = ref row.ReadWrite<Timeline>();
-                    int lastStage = FindLastSampledStage(stages, timeline.Stage, timeline.Time, timeline.Paused);
-                    SubmitFinishedTracks(world, row.Entity, tracks, lastStage, timeline.Time, timeline.Starts, evaluation.WeightChannels);
-                    if (!evaluation.Enabled)
-                        continue;
-                    float time = timeline.Time;
-                    for (int stage = timeline.Stage; stage <= lastStage; stage++)
+                    bool hasKeyframes = chunk.Has<Buffer<Keyframe>>();
+                    bool hasStages = chunk.Has<Buffer<TimelineStage>>();
+                    var values0 = chunk.Has<Timeline>() ? chunk.Write<Timeline>() : default;
+                    chunk.TryRead<GraphInstance>(out var values1);
+                    var buffers0 = chunk.Has<Buffer<Track<T>>>() ? chunk.GetBuffers<Track<T>>() : default;
+                    var buffers1 = chunk.Has<Buffer<GraphMotion>>() ? chunk.GetBuffers<GraphMotion>() : default;
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
                     {
-                        bool duration = stage < stages.Length && stages[stage].End == StageEnd.Duration;
-                        float sampleTime = duration ? Math.Min(time, stages[stage].Duration) : time;
-                        bool running = SampleTracks(world, row.Entity, tracks, stage, lastStage, sampleTime,
-                            timeline.Starts, timeline.Paused, evaluation.WeightChannels, keyframes);
-                        if (stage == lastStage && running && (timeline.Paused || !duration || time < stages[stage].Duration))
-                            timeline.Running |= 1;
-                        if (stage < lastStage)
-                            time -= stages[stage].Duration;
+                        DynamicBuffer<Track<T>> tracks = buffers0[rowIndex];
+                        ReadOnlySpan<Track<T>> values = tracks.AsSpan();
+                        int firstLegacy = 0;
+                        while (firstLegacy < values.Length && values[firstLegacy].Typed)
+                            firstLegacy++;
+                        if (firstLegacy == values.Length)
+                            continue;
+                        ReadOnlySpan<Keyframe> keyframes = hasKeyframes ? chunk.ReadBuffer<Keyframe>(rowIndex).AsSpan() : default;
+                        ReadOnlySpan<TimelineStage> stages = hasStages ? chunk.ReadBuffer<TimelineStage>(rowIndex).AsSpan() : default;
+                        ref Timeline timeline = ref values0[rowIndex];
+                        int lastStage = FindLastSampledStage(stages, timeline.Stage, timeline.Time, timeline.Paused);
+                        SubmitFinishedTracks(world, chunk.Entities[rowIndex], tracks, lastStage, timeline.Time, timeline.Starts, evaluation.WeightChannels);
+                        if (!evaluation.Enabled)
+                            continue;
+                        float time = timeline.Time;
+                        for (int stage = timeline.Stage; stage <= lastStage; stage++)
+                        {
+                            bool duration = stage < stages.Length && stages[stage].End == StageEnd.Duration;
+                            float sampleTime = duration ? Math.Min(time, stages[stage].Duration) : time;
+                            bool running = SampleTracks(world, chunk.Entities[rowIndex], tracks, stage, lastStage, sampleTime,
+                                timeline.Starts, timeline.Paused, evaluation.WeightChannels, keyframes);
+                            if (stage == lastStage && running && (timeline.Paused || !duration || time < stages[stage].Duration))
+                                timeline.Running |= 1;
+                            if (stage < lastStage)
+                                time -= stages[stage].Duration;
+                        }
+                        if (chunk.Has<GraphInstance>(rowIndex) && values1[rowIndex].Data is GraphData[] graph && graph[0].GroupCount > 0)
+                            SampleGraph(world, chunk.Entities[rowIndex], tracks, buffers1[rowIndex], graph,
+                                timeline.Starts, timeline.Paused, evaluation.WeightChannels, keyframes);
+
                     }
-                    if (row.Has<GraphInstance>() && row.Read<GraphInstance>().Data is GraphData[] graph && graph[0].GroupCount > 0)
-                        SampleGraph(world, row.Entity, tracks, row.Buffer<GraphMotion>(), graph,
-                            timeline.Starts, timeline.Paused, evaluation.WeightChannels, keyframes);
                 }
+
             }
-        });
+        }
     }
 
     private static int FindLastSampledStage(ReadOnlySpan<TimelineStage> stages, int stage, float time, bool paused)
@@ -133,7 +142,7 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
             return;
         for (int index = 0; index < tracks.Count; index++)
         {
-            Track<T> track = tracks.Read(index);
+            Track<T> track = tracks[index];
             if (track.Typed) continue;
             Entity target = track.Target == Entity.Null ? animation : track.Target;
             bool previousRun = track.StartId != starts;
@@ -152,7 +161,7 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
     {
         for (int index = 0; index < tracks.Count; index++)
         {
-            Track<T> current = tracks.Read(index);
+            Track<T> current = tracks[index];
             if (current.StartId == starts && current.Stage <= lastStage &&
                 (current.Stage < lastStage || current.Start <= time) &&
                 current.Channel == track.Channel && current.Layer == track.Layer &&
@@ -169,7 +178,7 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
         bool running = false;
         for (int i = 0; i < tracks.Count; i++)
         {
-            Track<T> previous = tracks.Read(i);
+            Track<T> previous = tracks[i];
             if (previous.Typed || previous.GraphMotion != 0 || previous.Finished && !previous.FromGraph || previous.Stage != stage || previous.StartId != starts)
                 continue;
             bool weightChannel = previous.Channel.Component == ComponentId<AnimationLayers>.Value;
@@ -189,7 +198,7 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
             if (paused)
             {
                 running = true;
-                if (world.HasBuffer<Contribution<T>>(target))
+                if (world.Has<Buffer<Contribution<T>>>(target))
                     Append(world, target, animation, (uint)i, in previous);
                 continue;
             }
@@ -213,11 +222,11 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
         {
             T current = track.Channel.Read(world, target);
             if (track.Channel.Component != ComponentId<AnimationLayers>.Value && world.Has<AnimationLayers>(target) &&
-                world.Read<AnimationLayers>(target).Items[track.Layer].Mode == LayerMode.Additive)
+                world.ReadComponentData<AnimationLayers>(target).Items[track.Layer].Mode == LayerMode.Additive)
                 PropertyAnimation.ReadBase(world, target, track.Channel, ref current);
             for (int earlier = 0; earlier < index; earlier++)
             {
-                Track<T> value = tracks.Read(earlier);
+                Track<T> value = tracks[earlier];
                 Entity valueTarget = value.Target == Entity.Null ? animation : value.Target;
                 int valueStage = value.GraphMotion == 0 ? value.Stage : value.MotionStage;
                 if (valueTarget == target && value.GraphMotion == track.GraphMotion && value.Channel == track.Channel && value.Layer == track.Layer &&
@@ -255,7 +264,7 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
     {
         for (int i = 0; i < tracks.Count; i++)
         {
-            Track<T> later = tracks.Read(i);
+            Track<T> later = tracks[i];
             if (finishedValuesOnly && !later.Finished || later.GraphMotion != 0 ||
                 later.StartId != track.StartId || later.Stage < track.Stage || later.Stage > lastStage ||
                 later.Channel != track.Channel || later.Layer != track.Layer)
@@ -279,9 +288,9 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
 
     private static void Submit(World world, Entity target, Entity animation, uint output, in Track<T> track)
     {
-        if (track.FromGraph && world.HasBuffer<GraphFieldOutput<T>>(animation))
+        if (track.FromGraph && world.Has<Buffer<GraphFieldOutput<T>>>(animation))
             return;
-        if (world.HasBuffer<Contribution<T>>(target))
+        if (world.Has<Buffer<Contribution<T>>>(target))
             Append(world, target, animation, output, in track);
         else
             PropertyAnimation.WriteSingle<T, TOps>(world, target, track.Channel, track.Layer, ReadValue(world, target, in track));
@@ -291,11 +300,16 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
     {
         var contribution = new Contribution<T>
         {
-            Channel = track.Channel, Layer = track.Layer, Value = ReadValue(world, target, in track),
-            Source = source, Output = output,
+            Channel = track.Channel,
+            Layer = track.Layer,
+            Value = ReadValue(world, target, in track),
+            Source = source,
+            Output = output,
         };
-        world.ExecuteBufferWrite<Contribution<T>, Contribution<T>>(target, ref contribution,
-            static (DynamicBuffer<Contribution<T>> values, ref Contribution<T> value) => values.Add(value));
+        {
+            using var values = world.GetBuffer<Contribution<T>>(target);
+            values.Add(contribution);
+        }
     }
 
     private static T ReadValue(World world, Entity target, in Track<T> track)
@@ -304,7 +318,7 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
         if (track.Endpoints == TrackEndpoints.Values || track.Channel.Component == ComponentId<AnimationLayers>.Value ||
             !world.Has<AnimationLayers>(target))
             return value;
-        AnimationLayers layers = world.Read<AnimationLayers>(target);
+        AnimationLayers layers = world.ReadComponentData<AnimationLayers>(target);
         DevelopmentCheck.Require(layers.Count <= 8 && track.Layer < layers.Count,
             "A property track requires a defined animation layer.");
         if (layers.Items[track.Layer].Mode != LayerMode.Additive)
@@ -318,13 +332,13 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
 
     public void OnDestroy(ref ImmediateSystemContext context)
     {
-        context.World.ReleaseQuery(_tracks);
+
         if (_fields == TrackFields.Properties)
-            context.World.ReleaseQuery(_finishedTracks);
-        context.World.ReleaseQuery(_fieldSources);
-        if (_evaluateTyped)
-        {
-            _linear.OnDestroy(ref context); _spring.OnDestroy(ref context); _keys.OnDestroy(ref context); _function.OnDestroy(ref context);
-        }
+
+
+            if (_evaluateTyped)
+            {
+                _linear.OnDestroy(ref context); _spring.OnDestroy(ref context); _keys.OnDestroy(ref context); _function.OnDestroy(ref context);
+            }
     }
 }

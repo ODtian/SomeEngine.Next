@@ -69,11 +69,7 @@ internal sealed class JobLifetime : IJobSubmissionObserver
 
     internal bool IsOpen
     {
-        get
-        {
-            lock (_gate)
-                return _state == Open;
-        }
+        get => Volatile.Read(ref _state) == Open;
     }
 
     internal JobSubmissionScope EnterSubmissionScope() =>
@@ -149,6 +145,13 @@ internal sealed class JobLifetime : IJobSubmissionObserver
     internal void CloseAndComplete(List<Exception> exceptions)
     {
         ArgumentNullException.ThrowIfNull(exceptions);
+        Close(exceptions);
+    }
+
+    internal void CloseAndWait() => Close(null);
+
+    private void Close(List<Exception>? exceptions)
+    {
 
         JobHandle currentScope = JobSystem.GetCurrentScope();
         if (currentScope.Index != 0)
@@ -171,7 +174,7 @@ internal sealed class JobLifetime : IJobSubmissionObserver
                 return;
             }
 
-            _state = Closing;
+            Volatile.Write(ref _state, Closing);
             while (_pendingSubmissions != 0)
                 Monitor.Wait(_gate);
             RetireObservedRootsUnderGate();
@@ -194,7 +197,7 @@ internal sealed class JobLifetime : IJobSubmissionObserver
             lock (_gate)
             {
                 _roots.Clear();
-                _state = Closed;
+                Volatile.Write(ref _state, Closed);
                 Monitor.PulseAll(_gate);
             }
         }
@@ -285,7 +288,7 @@ internal sealed class JobLifetime : IJobSubmissionObserver
     private static void CompleteRoots(
         JobHandle[]? roots,
         int rootCount,
-        List<Exception> exceptions)
+        List<Exception>? exceptions)
     {
         if (roots is null)
             return;
@@ -294,6 +297,11 @@ internal sealed class JobLifetime : IJobSubmissionObserver
         {
             if (roots[i].IsCompleted && !JobSystem.NeedsLifetimeTracking(roots[i]))
                 continue;
+            if (exceptions is null)
+            {
+                roots[i].Scheduler!.WaitForScope(roots[i]);
+                continue;
+            }
             try
             {
                 roots[i].Complete();

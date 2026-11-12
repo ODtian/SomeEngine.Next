@@ -22,6 +22,8 @@ public static class ImportedSceneBuild
         projectRoot = Path.GetFullPath(projectRoot);
         engineRoot = Path.GetFullPath(engineRoot);
         var timer = Stopwatch.StartNew();
+        string catalog = Path.Combine(projectRoot, "Library/AssetManifest", AssetManifest.CatalogFileName);
+        AssetManifest? previous = File.Exists(catalog) ? AssetManifest.Load(Path.GetDirectoryName(catalog)!) : null;
         foreach (string directory in new[] { "assets", "Library/AssetManifest" })
             foreach (string file in Directory.EnumerateFiles(Path.Combine(applicationDirectory, directory), "*", SearchOption.AllDirectories))
             {
@@ -34,19 +36,43 @@ public static class ImportedSceneBuild
         foreach (AssetEntry entry in imported.Assets.Values.Where(entry => entry.AssetType != ApplicationSettingsAsset.FileType
             && entry.AssetType != MaterialAsset.FileType))
         {
+            if (project.Manifest.Assets.ContainsKey(entry.AssetGuid)) continue;
             string destination = Path.Combine(projectRoot, entry.Path);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             if (!File.Exists(destination)) File.Copy(Path.Combine(importedDirectory, entry.Path), destination);
-            project.RegisterAsset(entry);
+            bool sceneShader = entry.AssetType == ShaderAsset.FileType
+                && entry.DefinitionPath.StartsWith("assets/Shaders/scene_", StringComparison.Ordinal);
+            if (sceneShader)
+            {
+                File.Copy(Path.Combine(importedDirectory, entry.DefinitionPath),
+                    Path.Combine(projectRoot, entry.DefinitionPath), overwrite: true);
+                string build = SourceMeta.GetBuildPath(Path.Combine(projectRoot, entry.DefinitionPath));
+                string cachedBuild = SourceMeta.GetBuildPath(Path.Combine(importedDirectory, entry.DefinitionPath));
+                if (!File.Exists(build) && File.Exists(cachedBuild)) File.Copy(cachedBuild, build);
+            }
+            project.RegisterAsset(sceneShader && previous is not null
+                && previous.Assets.TryGetValue(entry.AssetGuid, out AssetEntry existing)
+                ? existing : entry);
         }
         string metadata = Path.Combine(importedDirectory, "scene-import.json");
         var description = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(metadata))!;
         string source = description["source"]!.GetValue<string>();
         ModelRoot model = ModelRoot.Load(source);
+        AssetEntry firstMesh = imported.Assets.Values.First(entry => entry.AssetType == MeshAsset.FileType);
+        bool packedVertices;
+        using (MeshAsset mesh = await MeshAsset.OpenAsync(Path.Combine(projectRoot, firstMesh.Path)))
+            packedVertices = await mesh.TryGetBlockAsync<ClusterGeometryBlock>() is null;
         var importer = new ImportedSceneImporter();
-        await importer.BuildAsync(project, model, engineRoot, packedVertices: true);
-        await importer.UpdateMaterialsAsync(project, model, imported);
+        await importer.BuildAsync(project, model, engineRoot, packedVertices);
         AssetEntry scene = imported.Assets.Values.Single(entry => entry.AssetType == WorldAsset.FileType);
+        string sourcePath = imported.Sources[scene.SourceGuid];
+        string localSource = Path.Combine(projectRoot, sourcePath);
+        SourceMeta sourceMetadata = SourceMeta.Load(File.Exists(SourceMeta.GetMetaPath(localSource))
+            ? localSource : Path.Combine(importedDirectory, sourcePath));
+        GltfImporterSettings gltfSettings = sourceMetadata.GetSettings(GltfSourceImporter.SourceImporterId,
+            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
+        await importer.UpdateMaterialsAsync(project, model, imported, gltfSettings);
+        await importer.RebuildSceneAsync(project, model, imported, sourceMetadata, scene);
         string settingsPath = Path.Combine(projectRoot, "assets/Runtime/default.runtime.asset");
         using (ApplicationSettingsAsset settings = await ApplicationSettingsAsset.OpenAsync(settingsPath))
         {
@@ -55,6 +81,7 @@ public static class ImportedSceneBuild
         }
         description["ImportedDirectory"] = importedDirectory;
         description["ReusedMeshAssets"] = imported.Assets.Values.Count(entry => entry.AssetType == MeshAsset.FileType);
+        description["assets"] = project.Manifest.Assets.Values.Count(entry => entry.SourceGuid == scene.SourceGuid);
         description["PreparationSeconds"] = timer.Elapsed.TotalSeconds;
         File.WriteAllText(Path.Combine(projectRoot, "scene-import.json"), description.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"Reused {description["ReusedMeshAssets"]} meshes from {importedDirectory} in {timer.Elapsed.TotalSeconds:F3}s.");
@@ -124,8 +151,9 @@ public static class ImportedSceneBuild
                 !previous.TryGetValue(value.AssetGuid, out var old) || old != (value.Version, value.ContentHash)))
             throw new InvalidDataException("Unchanged reimport changed generated assets.");
 
-        string sceneKey = model.DefaultScene.Extras?["someengine_id"]?.GetValue<string>() is { Length: > 0 } id
-            ? $"scene:id:{id}" : $"scene:index:{model.DefaultScene.LogicalIndex}";
+        GltfImporterSettings gltfSettings = metadata.GetSettings(GltfSourceImporter.SourceImporterId,
+            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
+        string sceneKey = GltfSourceImporter.GetElementKey(gltfSettings, "scene", model.DefaultScene.LogicalIndex, model.DefaultScene);
         Guid sceneId = metadata.ElementIds[sceneKey];
         string settingsPath = Path.Combine(projectRoot, "assets", "Runtime", "default.runtime.asset");
         using (ApplicationSettingsAsset settings = await ApplicationSettingsAsset.OpenAsync(settingsPath))

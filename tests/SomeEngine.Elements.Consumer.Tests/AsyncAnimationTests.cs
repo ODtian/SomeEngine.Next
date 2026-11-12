@@ -18,20 +18,20 @@ public sealed partial class AsyncAnimationTests
         var error = new InvalidOperationException("The parent rejects its animated parameter.");
         Entity root = frames.Spawn(new ParameterParent(new Color(1, 0, 0), null, error));
         frames.Frame(0);
-        Entity label = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity label = Assert.Single(ElementChildren.Read(frames.World, root));
         var completion = new TaskCompletionSource();
-        frames.World.Replace(root, new ParameterParent(new Color(0, 0, 1), completion.Task, error));
+        frames.World.Set(root, new ParameterParent(new Color(0, 0, 1), completion.Task, error));
         frames.Frame(0);
         frames.Frame(0.25f);
-        Assert.Equal(new Color(0.75f, 0, 0.25f), frames.World.Read<ColorLabel>(label).Fill);
+        Assert.Equal(new Color(0.75f, 0, 0.25f), frames.World.ReadComponentData<ColorLabel>(label).Fill);
         completion.SetResult();
         frames.Frame(0);
-        Assert.Same(error, frames.World.ReadSparse<BuildError>(root).Exception);
-        Assert.Equal(new Color(0.75f, 0, 0.25f), frames.World.Read<ColorLabel>(label).Fill);
+        Assert.Same(error, frames.World.ReadComponentData<BuildError>(root).Exception);
+        Assert.Equal(new Color(0.75f, 0, 0.25f), frames.World.ReadComponentData<ColorLabel>(label).Fill);
         frames.Frame(0.5f);
-        Assert.Equal(new Color(0.875f, 0, 0.125f), frames.World.Read<ColorLabel>(label).Fill);
+        Assert.Equal(new Color(0.875f, 0, 0.125f), frames.World.ReadComponentData<ColorLabel>(label).Fill);
         frames.Frame(0.5f);
-        Assert.Equal(new Color(1, 0, 0), frames.World.Read<ColorLabel>(label).Fill);
+        Assert.Equal(new Color(1, 0, 0), frames.World.ReadComponentData<ColorLabel>(label).Fill);
     }
 
     [Theory]
@@ -41,37 +41,37 @@ public sealed partial class AsyncAnimationTests
     public void CrossFrameFailureRestoresThePreviouslyCompletedTarget(bool nested, bool computed)
     {
         using var frames = new InterfaceFrames();
-        Entity panel = frames.World.CreateEntity(new Surface { Fill = new Color(1, 0, 0) });
+        Entity panel = frames.World.Create(new Surface { Fill = new Color(1, 0, 0) });
         var error = new InvalidOperationException("The resumed view rejects its changes.");
         Entity root = computed ? frames.Spawn(new ComputedGroup(panel, new Color(1, 0, 0), null, error)) : nested
             ? frames.Spawn(new FailingGroup(panel, new Color(1, 0, 0), null, error))
             : frames.Spawn(new FailingSurface(panel, new Color(1, 0, 0), null, error));
         frames.Frame(0);
         var completion = new TaskCompletionSource();
-        if (computed) frames.World.Replace(root, new ComputedGroup(panel, new Color(0, 0, 1), completion.Task, error));
-        else if (nested) frames.World.Replace(root, new FailingGroup(panel, new Color(0, 0, 1), completion.Task, error));
-        else frames.World.Replace(root, new FailingSurface(panel, new Color(0, 0, 1), completion.Task, error));
+        if (computed) frames.World.Set(root, new ComputedGroup(panel, new Color(0, 0, 1), completion.Task, error));
+        else if (nested) frames.World.Set(root, new FailingGroup(panel, new Color(0, 0, 1), completion.Task, error));
+        else frames.World.Set(root, new FailingSurface(panel, new Color(0, 0, 1), completion.Task, error));
         frames.Frame(0);
         frames.Frame(0.25f);
-        Assert.Equal(new Color(0.75f, 0, 0.25f), frames.World.Read<Surface>(panel).Fill);
+        Assert.Equal(new Color(0.75f, 0, 0.25f), frames.World.ReadComponentData<Surface>(panel).Fill);
 
         completion.SetResult();
         frames.Frame(0.5f);
-        Assert.Equal(new Color(0.375f, 0.5f, 0.125f), frames.World.Read<Surface>(panel).Fill);
-        uint surfaceVersion = frames.World.WriteVersion<Surface>(panel);
+        Assert.Equal(new Color(0.375f, 0.5f, 0.125f), frames.World.ReadComponentData<Surface>(panel).Fill);
+        ulong surfaceVersion = frames.World.ComponentDataWriteVersion<Surface>(panel);
         frames.Frame(0);
-        Entity content = nested ? Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)) : root;
-        Assert.Same(error, frames.World.ReadSparse<BuildError>(content).Exception);
-        Assert.Equal(new Color(0.375f, 0.5f, 0.125f), frames.World.Read<Surface>(panel).Fill);
+        Entity content = nested ? Assert.Single(ElementChildren.Read(frames.World, root)) : root;
+        Assert.Same(error, frames.World.ReadComponentData<BuildError>(content).Exception);
+        Assert.Equal(new Color(0.375f, 0.5f, 0.125f), frames.World.ReadComponentData<Surface>(panel).Fill);
         if (!computed)
         {
-            Assert.Equal(3, frames.World.Read<Surface>(panel).CornerRadius);
-            Assert.NotEqual(surfaceVersion, frames.World.WriteVersion<Surface>(panel));
+            Assert.Equal(3, frames.World.ReadComponentData<Surface>(panel).CornerRadius);
+            Assert.NotEqual(surfaceVersion, frames.World.ComponentDataWriteVersion<Surface>(panel));
         }
         frames.Frame(0.5f);
-        Assert.Equal(new Color(0.6875f, 0.25f, 0.0625f), frames.World.Read<Surface>(panel).Fill);
+        Assert.Equal(new Color(0.6875f, 0.25f, 0.0625f), frames.World.ReadComponentData<Surface>(panel).Fill);
         frames.Frame(0.5f);
-        Assert.Equal(new Color(1, 0, 0), frames.World.Read<Surface>(panel).Fill);
+        Assert.Equal(new Color(1, 0, 0), frames.World.ReadComponentData<Surface>(panel).Fill);
     }
 
     [Theory]
@@ -80,24 +80,24 @@ public sealed partial class AsyncAnimationTests
     public void SuspendedAndResumedWritesContinueFromThePresentedColor(bool sameTarget)
     {
         using var frames = new InterfaceFrames();
-        Entity panel = frames.World.CreateEntity(new Surface { Fill = new Color(1, 0, 0) });
+        Entity panel = frames.World.Create(new Surface { Fill = new Color(1, 0, 0) });
         Entity root = frames.Spawn(new SegmentedSurface(panel, new Color(1, 0, 0), default, null));
         frames.Frame(0);
         var completion = new TaskCompletionSource();
         Color after = sameTarget ? new Color(0, 0, 1) : new Color(0, 1, 0);
-        frames.World.Replace(root, new SegmentedSurface(panel, new Color(0, 0, 1), after, completion.Task));
+        frames.World.Set(root, new SegmentedSurface(panel, new Color(0, 0, 1), after, completion.Task));
 
         frames.Frame(0);
         frames.Frame(0.25f);
-        Assert.Equal(new Color(0.75f, 0, 0.25f), frames.World.Read<Surface>(panel).Fill);
+        Assert.Equal(new Color(0.75f, 0, 0.25f), frames.World.ReadComponentData<Surface>(panel).Fill);
         completion.SetResult();
         frames.Frame(0);
-        Assert.Equal(new Color(0.75f, 0, 0.25f), frames.World.Read<Surface>(panel).Fill);
+        Assert.Equal(new Color(0.75f, 0, 0.25f), frames.World.ReadComponentData<Surface>(panel).Fill);
         frames.Frame(0.5f);
         Assert.Equal(sameTarget ? new Color(0.25f, 0, 0.75f) : new Color(0.375f, 0.5f, 0.125f),
-            frames.World.Read<Surface>(panel).Fill);
+            frames.World.ReadComponentData<Surface>(panel).Fill);
         frames.Frame(0.5f);
-        Assert.Equal(after, frames.World.Read<Surface>(panel).Fill);
+        Assert.Equal(after, frames.World.ReadComponentData<Surface>(panel).Fill);
     }
 
     private readonly record struct SegmentedSurface(Entity Panel, Color Before, Color After, Task? Wait) : IView, IComponent

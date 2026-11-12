@@ -16,14 +16,14 @@ public sealed partial class RememberTests
         Entity root = Views.Spawn(frames.World, Entity.Null, new RememberedScreens.Children_View(2));
         frames.Frame();
 
-        frames.World.ReplaceSparse(root, new RememberedScreens.Children_View(3));
+        frames.World.SetSparse(root, new RememberedScreens.Children_View(3));
         frames.Frame();
 
 #if DEBUG
-        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
-        Assert.Equal(2, Hierarchy<ElementTree>.GetChildren(frames.World, root).Count());
+        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(root).Exception);
+        Assert.Equal(2, ElementChildren.Read(frames.World, root).Count());
 #else
-        Assert.Equal(3, Hierarchy<ElementTree>.GetChildren(frames.World, root).Count());
+        Assert.Equal(3, ElementChildren.Read(frames.World, root).Count());
 #endif
     }
 
@@ -35,11 +35,11 @@ public sealed partial class RememberTests
         frames.Frame();
 
 #if DEBUG
-        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
+        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(root).Exception);
 #else
-        frames.World.Replace(root, new UninterceptedMemory(7));
+        frames.World.Set(root, new UninterceptedMemory(7));
         frames.Frame();
-        Assert.Equal("3", frames.World.ReadSparse<ComposeText>(root).Value);
+        Assert.Equal("3", frames.World.ReadComponentData<ComposeText>(root).Value);
 #endif
     }
 }

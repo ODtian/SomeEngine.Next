@@ -6,7 +6,7 @@ public sealed class JobForCompatibilityTests
 
     public JobForCompatibilityTests()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
         _data.Reset();
     }
 
@@ -54,7 +54,7 @@ public sealed class JobForCompatibilityTests
     [Fact]
     public void JobForAdapterExecutesArrayAndListResults()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         _data.Values = new int[5];
         var managedLog = new List<int>();
 

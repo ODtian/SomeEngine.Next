@@ -9,7 +9,7 @@ public sealed class ExternalCompletionTests
     [InlineData(true)]
     public async Task ValueTaskFailureReachesItsConsumer(bool completed)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         var source = new TaskCompletionSource();
         var failure = new ApplicationException();
         if (completed)
@@ -27,7 +27,7 @@ public sealed class ExternalCompletionTests
     [InlineData(true)]
     public async Task ValueTaskCancellationReachesItsConsumer(bool completed)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         var source = new TaskCompletionSource();
@@ -47,7 +47,7 @@ public sealed class ExternalCompletionTests
     [Fact]
     public async Task CancellingOneWaiterKeepsTheWorkAndResourceAlive()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         using var cancellation = new CancellationTokenSource();
         var source = new TaskCompletionSource();
         JobResource resource = scheduler.CreateResource();
@@ -76,7 +76,7 @@ public sealed class ExternalCompletionTests
     [InlineData(true)]
     public async Task TaskCancellationReachesItsConsumer(bool completed)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         var source = new TaskCompletionSource();
@@ -98,7 +98,7 @@ public sealed class ExternalCompletionTests
     [InlineData(true)]
     public void ValueTaskSourceIsConsumedBeforeDependentWork(bool completed)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         var source = new NumberSource();
         if (completed)
             source.Complete();
@@ -117,7 +117,7 @@ public sealed class ExternalCompletionTests
     [InlineData(true)]
     public async Task TaskFailureReachesItsConsumer(bool completed)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         var source = new TaskCompletionSource();
         var failure = new ApplicationException();
         if (completed)
@@ -133,7 +133,7 @@ public sealed class ExternalCompletionTests
     [Fact]
     public async Task ExternalFenceFailureReachesItsConsumer()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         var failure = new ApplicationException();
         JobHandle handle = scheduler.CreateExternalFenceHandle(new FailedFence(failure));
 

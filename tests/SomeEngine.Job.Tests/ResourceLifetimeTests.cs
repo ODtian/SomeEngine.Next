@@ -7,7 +7,7 @@ public sealed class ResourceLifetimeTests
     [Fact]
     public void ParallelCompletionReleasesItsCallbackData()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 1 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 1 });
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         int[] result = new int[16];
@@ -56,7 +56,7 @@ public sealed class ResourceLifetimeTests
     [InlineData(JobSafetyMode.Fast)]
     public void ResourceReleaseFollowsDependencyAndAttachedReaderCompletion(JobSafetyMode mode)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = mode });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, SafetyMode = mode });
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         var ready = new DataReady();
@@ -91,7 +91,7 @@ public sealed class ResourceLifetimeTests
     [InlineData(JobSafetyMode.Fast)]
     public void ContainerDataSurvivesItsDependencyAndAttachedReader(JobSafetyMode mode)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = mode });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, SafetyMode = mode });
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         var ready = new DataReady();

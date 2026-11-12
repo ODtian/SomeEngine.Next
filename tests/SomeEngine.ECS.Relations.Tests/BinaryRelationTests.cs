@@ -1,4 +1,3 @@
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
@@ -11,15 +10,15 @@ public sealed class BinaryRelationTests
     public void ProductPreservesInputPositionsAndSelfPairs()
     {
         using var world = new World();
-        var first = world.CreateEntity(new Score { Value = 1 });
-        var overlap = world.CreateEntity(new Score { Value = 4 });
-        var last = world.CreateEntity(new Score { Value = 7 });
-        world.AddTag<LeftSet>(first);
-        world.AddTag<LeftSet>(overlap);
-        world.AddTag<RightSet>(overlap);
-        world.AddTag<RightSet>(last);
-        var left = world.Query(world.QueryDefinition().All<LeftSet>());
-        var right = world.Query(world.QueryDefinition().All<RightSet>());
+        var first = world.Create(new Score { Value = 1 });
+        var overlap = world.Create(new Score { Value = 4 });
+        var last = world.Create(new Score { Value = 7 });
+        world.Add(first, new LeftSet());
+        world.Add(overlap, new LeftSet());
+        world.Add(overlap, new RightSet());
+        world.Add(last, new RightSet());
+        var left = world.Query(new QueryDescription().WithStored<LeftSet>());
+        var right = world.Query(new QueryDescription().WithStored<RightSet>());
         var pairs = new List<(Entity, Entity)>();
         var output = new PairList(pairs);
 
@@ -33,11 +32,11 @@ public sealed class BinaryRelationTests
     public void WithinEmitsEachAscendingIdentityPairOnce()
     {
         using var world = new World();
-        var first = world.CreateEntity(new Score { Value = 1 });
-        var middle = world.CreateEntity(new Score { Value = 4 });
-        var last = world.CreateEntity(new Score { Value = 7 });
-        world.AddTag<LeftSet>(first);
-        var members = world.Query(world.QueryDefinition().All<Score>());
+        var first = world.Create(new Score { Value = 1 });
+        var middle = world.Create(new Score { Value = 4 });
+        var last = world.Create(new Score { Value = 7 });
+        world.Add(first, new LeftSet());
+        var members = world.Query(new QueryDescription().WithStored<Score>());
         var pairs = new List<(Entity, Entity)>();
         var output = new PairList(pairs);
 
@@ -51,18 +50,18 @@ public sealed class BinaryRelationTests
     public void BetweenDeduplicatesOverlapAndKeepsReversedDisjointPairs()
     {
         using var world = new World();
-        var first = world.CreateEntity(new Score { Value = 1 });
-        var second = world.CreateEntity(new Score { Value = 4 });
-        var third = world.CreateEntity(new Score { Value = 7 });
-        var last = world.CreateEntity(new Score { Value = 10 });
-        world.AddTag<RightSet>(first);
-        world.AddTag<LeftSet>(second);
-        world.AddTag<RightSet>(second);
-        world.AddTag<LeftSet>(third);
-        world.AddTag<RightSet>(third);
-        world.AddTag<LeftSet>(last);
-        var left = world.Query(world.QueryDefinition().All<LeftSet>());
-        var right = world.Query(world.QueryDefinition().All<RightSet>());
+        var first = world.Create(new Score { Value = 1 });
+        var second = world.Create(new Score { Value = 4 });
+        var third = world.Create(new Score { Value = 7 });
+        var last = world.Create(new Score { Value = 10 });
+        world.Add(first, new RightSet());
+        world.Add(second, new LeftSet());
+        world.Add(second, new RightSet());
+        world.Add(third, new LeftSet());
+        world.Add(third, new RightSet());
+        world.Add(last, new LeftSet());
+        var left = world.Query(new QueryDescription().WithStored<LeftSet>());
+        var right = world.Query(new QueryDescription().WithStored<RightSet>());
         var pairs = new List<(Entity, Entity)>();
         var output = new PairList(pairs);
 
@@ -77,14 +76,14 @@ public sealed class BinaryRelationTests
     [Fact]
     public void SortedBetweenBindsComponentsAcrossOriginalInputRoles()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
-        using var world = WorldJobs.CreateWorld(scheduler: jobs);
-        uint baseline = world.AcquireSystemTick();
-        var score = world.CreateEntity(new Score { Value = 1 });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var world = new World(execution: new WorldJobs(jobs));
+        ulong baseline = world.Version;
+        var score = world.Create(new Score { Value = 1 });
         world.Add(score, new Temperature { Value = 20 });
-        world.CreateEntity(new Weight { Value = 8 });
-        var left = world.Query(world.QueryDefinition().Read<Weight>().None<Score>());
-        var right = world.Query(world.QueryDefinition().Read<Score>().Changed<Temperature>().None<Weight>());
+        world.Create(new Weight { Value = 8 });
+        var left = world.Query(new QueryDescription().WithStored<Weight>().Without<Score>());
+        var right = world.Query(new QueryDescription().WithStored<Score>().WithChanged<Temperature>(0).Without<Weight>());
 
         Assert.Equal(1, world.Between(left, right).Where(new ScoreWeightGap(5)).Count(baseline));
     }
@@ -93,13 +92,13 @@ public sealed class BinaryRelationTests
     public void WithinBindsDifferentOptionalComponentsByOutputPosition()
     {
         using var world = new World();
-        var score = world.CreateEntity(new Score { Value = 1 });
-        var weight = world.CreateEntity(new Weight { Value = 8 });
-        var ordinary = world.CreateEntity();
-        world.AddTag<LeftSet>(weight);
-        world.AddTag<LeftSet>(score);
-        world.AddTag<LeftSet>(ordinary);
-        var members = world.Query(world.QueryDefinition().All<LeftSet>());
+        var score = world.Create(new Score { Value = 1 });
+        var weight = world.Create(new Weight { Value = 8 });
+        var ordinary = world.Create();
+        world.Add(weight, new LeftSet());
+        world.Add(score, new LeftSet());
+        world.Add(ordinary, new LeftSet());
+        var members = world.Query(new QueryDescription().WithStored<LeftSet>());
         var pairs = new List<(Entity, Entity)>();
         var output = new PairList(pairs);
 
@@ -122,7 +121,7 @@ public sealed class BinaryRelationTests
 public struct LeftSet : ITag;
 public struct RightSet : ITag;
 
-public struct Temperature : IComponent
+public struct Temperature : IAddedComponent
 {
     public int Value;
 }

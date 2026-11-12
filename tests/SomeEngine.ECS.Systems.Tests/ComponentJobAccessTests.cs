@@ -2,8 +2,6 @@ using ManualResetEventSlim = SomeEngine.Testing.TestSignal;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Hooks;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.Job;
 
@@ -20,16 +18,23 @@ public sealed class ComponentJobAccessTests
     [InlineData(ComponentEntry.Disable)]
     [InlineData(ComponentEntry.IsEnabled)]
     [InlineData(ComponentEntry.GetByIndex)]
-    public void DirectComponentEntryInsideJob_RejectsMissingTypedCapability(
+    public void DirectComponentEntriesUseTheirDataAndStructureDeclarations(
         ComponentEntry entry)
     {
         using var jobs = new TestJobs(workerCount: 2);
         World world = CreateWorld(jobs, out Entity entity);
         JobHandle handle = jobs.Scheduler.Schedule(
             new ComponentEntryJob(world, entity, entry),
-            RelationshipJobAccess.TopologyRead(world));
+            world.Execution!.StructureRead);
 
-        Assert.Throws<JobResourceSafetyException>(() => handle.Complete());
+        if (entry is ComponentEntry.GetByIndex or ComponentEntry.IsEnabled)
+        {
+            handle.Complete();
+            Assert.True(world.IsEnabled<EnabledA>(entity));
+            Assert.Equal(1, CountIndexed(world, 4));
+        }
+        else Assert.Throws<JobResourceSafetyException>(handle.Complete);
+        Assert.Equal(1, world.ReadComponentData<TableA>(entity).Value);
     }
 
     [Fact]
@@ -39,7 +44,7 @@ public sealed class ComponentJobAccessTests
         World world = CreateWorld(jobs, out Entity entity);
         JobHandle handle = jobs.Scheduler.Schedule(
             new ReadJob<TableA>(world, entity),
-            ComponentJobAccess<TableA>.Read(world));
+            ((WorldJobs)world.Execution!).Read<TableA>());
 
         Assert.Throws<JobResourceSafetyException>(() => handle.Complete());
     }
@@ -49,9 +54,7 @@ public sealed class ComponentJobAccessTests
     {
         using var jobs = new TestJobs(workerCount: 2);
         World world = CreateWorld(jobs, out Entity entity);
-        Span<JobResourceAccess> accesses = stackalloc JobResourceAccess[2];
-        accesses[0] = ComponentJobAccess<TableA>.Read(world);
-        accesses[1] = RelationshipJobAccess.TopologyRead(world);
+        JobResourceAccess[] accesses = [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<TableA>()];
         JobHandle handle = jobs.Scheduler.Schedule(
             new ReplaceJob<TableA>(world, entity, new TableA { Value = 7 }),
             accesses);
@@ -67,7 +70,7 @@ public sealed class ComponentJobAccessTests
         var capture = new BoolCapture();
         JobHandle handle = jobs.Scheduler.Schedule(
             new HasJob<TableA>(world, entity, capture),
-            RelationshipJobAccess.TopologyRead(world));
+            world.Execution!.StructureRead);
 
         handle.Complete();
 
@@ -85,18 +88,14 @@ public sealed class ComponentJobAccessTests
         JobHandle first = default;
         try
         {
-            first = ComponentJobAccess<TableA>.ScheduleRead(
-                world,
-                new BlockingReadJob<TableA>(
+            first = world.Execution!.Scheduler!.Schedule(new BlockingReadJob<TableA>(
                     world,
                     entity,
                     firstStarted,
-                    releaseFirst));
+                    releaseFirst), [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<TableA>()]);
             Assert.True(firstStarted.Wait(StartTimeout));
 
-            JobHandle second = ComponentJobAccess<TableA>.ScheduleRead(
-                world,
-                new SignalReadJob<TableA>(world, entity, secondStarted));
+            JobHandle second = world.Execution!.Scheduler!.Schedule(new SignalReadJob<TableA>(world, entity, secondStarted), [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<TableA>()]);
             Assert.True(secondStarted.Wait(StartTimeout));
             second.Complete();
         }
@@ -125,26 +124,20 @@ public sealed class ComponentJobAccessTests
         JobHandle laterWriter = default;
         try
         {
-            writer = ComponentJobAccess<TableA>.ScheduleWrite(
-                world,
-                new BlockingReplaceJob<TableA>(
+            writer = world.Execution!.Scheduler!.Schedule(new BlockingReplaceJob<TableA>(
                     world,
                     entity,
                     new TableA { Value = 2 },
                     writerStarted,
-                    releaseWriter));
+                    releaseWriter), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<TableA>()));
             Assert.True(writerStarted.Wait(StartTimeout));
 
-            reader = ComponentJobAccess<TableA>.ScheduleRead(
-                world,
-                new SignalReadJob<TableA>(world, entity, readerStarted));
-            laterWriter = ComponentJobAccess<TableA>.ScheduleWrite(
-                world,
-                new SignalReplaceJob<TableA>(
+            reader = world.Execution!.Scheduler!.Schedule(new SignalReadJob<TableA>(world, entity, readerStarted), [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<TableA>()]);
+            laterWriter = world.Execution!.Scheduler!.Schedule(new SignalReplaceJob<TableA>(
                     world,
                     entity,
                     new TableA { Value = 3 },
-                    laterWriterStarted));
+                    laterWriterStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<TableA>()));
 
             releaseWriter.Set();
             reader.Complete();
@@ -181,30 +174,24 @@ public sealed class ComponentJobAccessTests
         JobHandle blocker = default;
         try
         {
-            blocker = ComponentJobAccess<TableA>.ScheduleWrite(
-                world,
-                new BlockingReplaceJob<TableA>(
+            blocker = world.Execution!.Scheduler!.Schedule(new BlockingReplaceJob<TableA>(
                     world,
                     entity,
                     new TableA { Value = 2 },
                     blockerStarted,
-                    releaseBlocker));
+                    releaseBlocker), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<TableA>()));
             Assert.True(blockerStarted.Wait(StartTimeout));
 
-            JobHandle otherType = ComponentJobAccess<TableB>.ScheduleWrite(
-                world,
-                new SignalReplaceJob<TableB>(
+            JobHandle otherType = world.Execution!.Scheduler!.Schedule(new SignalReplaceJob<TableB>(
                     world,
                     entity,
                     new TableB { Value = 4 },
-                    otherTypeStarted));
-            JobHandle otherWorldHandle = ComponentJobAccess<TableA>.ScheduleWrite(
-                otherWorld,
-                new SignalReplaceJob<TableA>(
+                    otherTypeStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<TableB>()));
+            JobHandle otherWorldHandle = otherWorld.Execution!.Scheduler!.Schedule(new SignalReplaceJob<TableA>(
                     otherWorld,
                     otherWorldEntity,
                     new TableA { Value = 5 },
-                    otherWorldStarted));
+                    otherWorldStarted), ((WorldJobs)otherWorld.Execution!).CollectAccess(new SystemAccesses().WriteRandom<TableA>()));
 
             Assert.True(otherTypeStarted.Wait(StartTimeout));
             Assert.True(otherWorldStarted.Wait(StartTimeout));
@@ -231,20 +218,18 @@ public sealed class ComponentJobAccessTests
         using var directCompleted = new ManualResetEventSlim();
         directCompleted.SetCallback = () => events.Enqueue("directCompleted");
         Exception? directFault = null;
-        JobHandle writer = ComponentJobAccess<TableA>.ScheduleWrite(
-            world,
-            new BlockingReplaceJob<TableA>(
+        JobHandle writer = world.Execution!.Scheduler!.Schedule(new BlockingReplaceJob<TableA>(
                 world,
                 entity,
                 new TableA { Value = 6 },
                 writerStarted,
-                releaseWriter));
+                releaseWriter), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<TableA>()));
         Thread direct = new(() =>
         {
             attempted.Set();
             try
             {
-                _ = world.Read<TableA>(entity);
+                _ = world.ReadComponentData<TableA>(entity);
             }
             catch (Exception exception)
             {
@@ -282,29 +267,26 @@ public sealed class ComponentJobAccessTests
     }
 
     [Fact]
-    public void DirectReplace_HoldsTypedOwnerThroughHookAndBlocksScheduledReader()
+    public void ExplicitValueWriteScopeBlocksAScheduledReaderUntilItEnds()
     {
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using var jobs = new TestJobs(workerCount: 4);
         World world = CreateWorld(jobs, out Entity entity);
-        _ = ComponentJobAccess<TableA>.Write(world);
+
         using var hookStarted = new ManualResetEventSlim();
         using var releaseHook = new ManualResetEventSlim();
         releaseHook.WaitCallback = () => events.Enqueue("released");
         using var scheduledStarted = new ManualResetEventSlim();
         scheduledStarted.SetCallback = () => events.Enqueue("scheduledStarted");
         Exception? directFault = null;
-        world.Hooks<TableA>().OnReplace(
-            (DeferredWorld _, Entity _, in TableA _) =>
-            {
-                hookStarted.Set();
-                releaseHook.Wait();
-            });
         Thread direct = new(() =>
         {
             try
             {
-                world.Replace(entity, new TableA { Value = 7 });
+                using WriteLookup<TableA> write = world.OpenWrite<TableA>();
+                hookStarted.Set();
+                Assert.True(releaseHook.Wait(StartTimeout));
+                write.Set(entity, new TableA { Value = 7 });
             }
             catch (Exception exception)
             {
@@ -316,9 +298,7 @@ public sealed class ComponentJobAccessTests
         {
             direct.Start();
             Assert.True(hookStarted.Wait(StartTimeout));
-            scheduled = ComponentJobAccess<TableA>.ScheduleRead(
-                world,
-                new SignalReadJob<TableA>(world, entity, scheduledStarted));
+            scheduled = world.Execution!.Scheduler!.Schedule(new SignalReadJob<TableA>(world, entity, scheduledStarted), [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<TableA>()]);
 
             releaseHook.Set();
             Assert.True(direct.Join(StartTimeout));
@@ -340,75 +320,54 @@ public sealed class ComponentJobAccessTests
     }
 
     [Fact]
-    public void UnrelatedComponentHook_DoesNotUpgradeValueReplaceToTopologyWrite()
+    public void UnrelatedMembershipObservationKeepsAValueWriteWithinItsDeclaredData()
     {
         using var jobs = new TestJobs(workerCount: 2);
         World world = CreateWorld(jobs, out Entity entity);
-        world.Hooks<TableB>().OnReplace(
-            static (DeferredWorld _, Entity _, in TableB _) => { });
-
-        ComponentJobAccess<TableA>.ScheduleWrite(
-            world,
-            new ReplaceJob<TableA>(world, entity, new TableA { Value = 21 })).Complete();
-
-        Assert.Equal(21, world.Read<TableA>(entity).Value);
+        using EventReader<MembershipChange> reader = world.WatchMembership(world.Query<TableB>());
+        jobs.Scheduler.Schedule(new ReplaceJob<TableA>(world, entity, new TableA { Value = 21 }),
+            ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<TableA>())).Complete();
+        Assert.Equal(21, world.ReadComponentData<TableA>(entity).Value);
+        using EventRead<MembershipChange> changes = reader.Open();
+        Assert.Equal(0, changes.Count);
     }
 
     [Fact]
-    public void SameComponentIrrelevantHookEvents_DoNotUpgradeValueReplaceToTopologyWrite()
+    public void ReplacingAValuePreservesItsQueryMembership()
     {
         using var jobs = new TestJobs(workerCount: 2);
         World world = CreateWorld(jobs, out Entity entity);
-        int callbackCount = 0;
-        world.Hooks<TableA>()
-            .OnAdd((DeferredWorld _, Entity _, in TableA _) => callbackCount++)
-            .OnRemove((DeferredWorld _, Entity _, in TableA _) => callbackCount++);
-
-        ComponentJobAccess<TableA>.ScheduleWrite(
-            world,
-            new ReplaceJob<TableA>(world, entity, new TableA { Value = 22 })).Complete();
-
-        Assert.Equal(22, world.Read<TableA>(entity).Value);
-        Assert.Equal(0, callbackCount);
+        using EventReader<MembershipChange> reader = world.WatchMembership(world.Query<TableA>());
+        jobs.Scheduler.Schedule(new ReplaceJob<TableA>(world, entity, new TableA { Value = 22 }),
+            ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<TableA>())).Complete();
+        Assert.Equal(22, world.ReadComponentData<TableA>(entity).Value);
+        using EventRead<MembershipChange> changes = reader.Open();
+        Assert.Equal(0, changes.Count);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void ValueReplaceHook_RequiresExplicitTopologyWrite(bool insertHook)
+    public void AConcreteStageDeclaresItsStructureWrites(bool add)
     {
         using var jobs = new TestJobs(workerCount: 2);
         World world = CreateWorld(jobs, out Entity entity);
-        int callbackCount = 0;
-        ComponentHooks<TableA> hooks = world.Hooks<TableA>();
-        if (insertHook)
-        {
-            hooks.OnInsert(
-                (DeferredWorld _, Entity _, in TableA _) => callbackCount++);
-        }
-        else
-        {
-            hooks.OnReplace(
-                (DeferredWorld _, Entity _, in TableA _) => callbackCount++);
-        }
-
-        JobHandle underDeclared = ComponentJobAccess<TableA>.ScheduleWrite(
-            world,
-            new ReplaceJob<TableA>(world, entity, new TableA { Value = 23 }));
-
-        Assert.Throws<JobResourceSafetyException>(() => underDeclared.Complete());
-        Assert.Equal(1, world.Read<TableA>(entity).Value);
-        Assert.Equal(0, callbackCount);
-
-        Span<JobResourceAccess> exactAccesses = stackalloc JobResourceAccess[2];
-        exactAccesses[0] = ComponentJobAccess<TableA>.Write(world);
-        exactAccesses[1] = RelationshipJobAccess.TopologyWrite(world);
-        jobs.Scheduler.Schedule(
-            new ReplaceJob<TableA>(world, entity, new TableA { Value = 24 }),
-            exactAccesses).Complete();
-
-        Assert.Equal(24, world.Read<TableA>(entity).Value);
-        Assert.Equal(1, callbackCount);
+        if (!add) world.Add(entity, default(EditProbe));
+        using EventReader<MembershipChange> reader = world.WatchMembership(world.Query<EditProbe>());
+        JobResourceAccess[] values = ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<TableA>());
+        JobHandle rejected = add
+            ? jobs.Scheduler.Schedule(new ReplaceAndAdd(world, entity, 23), values)
+            : jobs.Scheduler.Schedule(new ReplaceAndRemove(world, entity, 23), values);
+        Assert.Throws<JobResourceSafetyException>(rejected.Complete);
+        Assert.Equal(1, world.ReadComponentData<TableA>(entity).Value);
+        JobHandle complete = add
+            ? jobs.Scheduler.Schedule(new ReplaceAndAdd(world, entity, 24), world.Execution!.StructureWrite)
+            : jobs.Scheduler.Schedule(new ReplaceAndRemove(world, entity, 24), world.Execution!.StructureWrite);
+        complete.Complete();
+        Assert.Equal(24, world.ReadComponentData<TableA>(entity).Value);
+        using EventRead<MembershipChange> changes = reader.Open();
+        Assert.Equal(1, changes.Count);
+        Assert.Equal(add, world.Has<EditProbe>(entity));
     }
 
     [Fact]
@@ -416,20 +375,16 @@ public sealed class ComponentJobAccessTests
     {
         using var jobs = new TestJobs(workerCount: 2);
         World world = CreateWorld(jobs, out Entity entity);
-        QueryHandle readQuery = world.Query(
-            new QueryDefinitionBuilder().Read<TableA>().Build());
-        QueryHandle writeQuery = world.Query(
-            new QueryDefinitionBuilder().Write<TableA>().Build());
+        Query readQuery = world.Query(
+            new QueryDescription().WithStored<TableA>());
+        Query writeQuery = world.Query(
+            new QueryDescription().WithStored<TableA>());
         var readCapture = new IntCapture();
 
-        ComponentJobAccess<TableA>.ScheduleRead(
-            world,
-            new ReadQueryJob<TableA>(world, readQuery, readCapture)).Complete();
+        world.Execution!.Scheduler!.Schedule(new ReadQueryJob<TableA>(world, readQuery, readCapture), [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<TableA>()]).Complete();
         Assert.Equal(1, readCapture.Value);
 
-        Span<JobResourceAccess> readOnly = stackalloc JobResourceAccess[2];
-        readOnly[0] = ComponentJobAccess<TableA>.Read(world);
-        readOnly[1] = RelationshipJobAccess.TopologyRead(world);
+        JobResourceAccess[] readOnly = [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<TableA>()];
         JobHandle underDeclared = jobs.Scheduler.Schedule(
             new WriteQueryJob<TableA>(
                 world,
@@ -438,13 +393,11 @@ public sealed class ComponentJobAccessTests
             readOnly);
         Assert.Throws<JobResourceSafetyException>(() => underDeclared.Complete());
 
-        ComponentJobAccess<TableA>.ScheduleWrite(
-            world,
-            new WriteQueryJob<TableA>(
+        world.Execution!.Scheduler!.Schedule(new WriteQueryJob<TableA>(
                 world,
                 writeQuery,
-                new TableA { Value = 9 })).Complete();
-        Assert.Equal(9, world.Read<TableA>(entity).Value);
+                new TableA { Value = 9 }), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<TableA>())).Complete();
+        Assert.Equal(9, world.ReadComponentData<TableA>(entity).Value);
     }
 
     [Fact]
@@ -453,12 +406,10 @@ public sealed class ComponentJobAccessTests
         using var jobs = new TestJobs(workerCount: 2);
         World world = CreateWorld(jobs, out Entity entity);
         world.AddBuffer<Element>(entity);
-        QueryHandle query = world.Query(
-            new QueryDefinitionBuilder().ReadBuffer<Element>().Build());
+        Query query = world.Query(
+            new QueryDescription().WithStored<Buffer<Element>>());
 
-        BufferJobAccess<Element>.ScheduleRead(
-            world,
-            new EmptyQueryJob(world, query)).Complete();
+        world.Execution!.Scheduler!.Schedule(new EmptyQueryJob(world, query), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().ReadRandom<Buffer<Element>>())).Complete();
     }
 
     [Fact]
@@ -466,9 +417,9 @@ public sealed class ComponentJobAccessTests
     {
         using var jobs = new TestJobs(workerCount: 2);
         var world = jobs.CreateWorld();
-        Entity parent = world.CreateEntity();
-        Entity child = world.CreateEntity();
-        Entity target = world.CreateEntity();
+        Entity parent = world.Create();
+        Entity child = world.Create();
+        Entity target = world.Create();
         Hierarchy<Domain>.SetParent(world, child, parent);
         RelationEdge<Payload> edge = world.CreateRelation(
             child,
@@ -477,12 +428,8 @@ public sealed class ComponentJobAccessTests
         var parentCapture = new EntityCapture();
         var endpointCapture = new EndpointsCapture();
 
-        ComponentJobAccess<Parent<Domain>>.ScheduleRead(
-            world,
-            new ParentViaRelationshipAccessJob(world, child, parentCapture)).Complete();
-        ComponentJobAccess<DirectedRelationEndpoints<Payload>>.ScheduleRead(
-            world,
-            new EndpointsViaRelationshipAccessJob(world, edge, endpointCapture)).Complete();
+        world.Execution!.Scheduler!.Schedule(new ParentViaRelationshipAccessJob(world, child, parentCapture), [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<Parent<Domain>>()]).Complete();
+        world.Execution!.Scheduler!.Schedule(new EndpointsViaRelationshipAccessJob(world, edge, endpointCapture), [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<RelationEndpoints<Payload>>()]).Complete();
 
         Assert.Equal(parent, parentCapture.Value);
         Assert.Equal(child, endpointCapture.Source);
@@ -494,9 +441,9 @@ public sealed class ComponentJobAccessTests
     {
         using var jobs = new TestJobs(workerCount: 2);
         World world = CreateWorld(jobs, out Entity entity);
-        _ = ComponentJobAccess<TableA>.Write(world);
-        _ = ComponentJobAccess<EnabledA>.Write(world);
-        _ = ComponentJobAccess<IndexedA>.Read(world);
+
+
+
         {
             for (int i = 0; i < 128; i++)
                 ExerciseDirectEntries(world, entity, i);
@@ -513,7 +460,7 @@ public sealed class ComponentJobAccessTests
         var world = jobs.CreateWorld();
         const int threadCount = 8;
         const int ticksPerThread = 4_096;
-        var ticks = new uint[threadCount * ticksPerThread];
+        var ticks = new ulong[threadCount * ticksPerThread];
         var threads = new Thread[threadCount];
         using var start = new ManualResetEventSlim();
 
@@ -524,7 +471,7 @@ public sealed class ComponentJobAccessTests
             {
                 start.Wait();
                 for (int i = 0; i < ticksPerThread; i++)
-                    ticks[offset + i] = world.AcquireSystemTick();
+                    ticks[offset + i] = world.AcquireSystemVersion();
             });
             threads[threadIndex].Start();
         }
@@ -535,29 +482,35 @@ public sealed class ComponentJobAccessTests
 
         Array.Sort(ticks);
         for (int i = 0; i < ticks.Length; i++)
-            Assert.Equal(unchecked((uint)(i + 1)), ticks[i]);
-        Assert.Equal(unchecked((uint)(ticks.Length + 1)), world.CurrentTick);
+            Assert.Equal(unchecked((ulong)(i + 1)), ticks[i]);
+        Assert.Equal((ulong)ticks.Length, world.Version);
     }
 
     private static World CreateWorld(TestJobs jobs, out Entity entity)
     {
         var world = jobs.CreateWorld();
-        entity = world.CreateEntity(new TableA { Value = 1 });
+        entity = world.Create(new TableA { Value = 1 });
         world.Add(entity, new TableB { Value = 2 });
         world.Add(entity, new EnabledA { Value = 3 });
         world.Add(entity, new IndexedA { Key = 4 });
-        _ = world.GetByIndex<IndexedA, int>(4);
+        _ = CountIndexed(world, 4);
         return world;
+    }
+
+    private static int CountIndexed(World world, int key)
+    {
+        using var members = world.Index<IndexedA, int>().Find(key);
+        return members.Entities.Length;
     }
 
     private static void ExerciseDirectEntries(World world, Entity entity, int iteration)
     {
-        _ = world.Read<TableA>(entity);
-        world.Replace(entity, new TableA { Value = iteration });
+        _ = world.ReadComponentData<TableA>(entity);
+        world.Set(entity, new TableA { Value = iteration });
         world.Disable<EnabledA>(entity);
         world.Enable<EnabledA>(entity);
         _ = world.IsEnabled<EnabledA>(entity);
-        _ = world.GetByIndex<IndexedA, int>(4).Length;
+        _ = CountIndexed(world, 4);
     }
 
     public enum ComponentEntry
@@ -588,10 +541,10 @@ public sealed class ComponentJobAccessTests
             switch (_entry)
             {
                 case ComponentEntry.Read:
-                    _ = _world.Read<TableA>(_entity);
+                    _ = _world.ReadComponentData<TableA>(_entity);
                     break;
                 case ComponentEntry.Replace:
-                    _world.Replace(_entity, new TableA { Value = 11 });
+                    _world.Set(_entity, new TableA { Value = 11 });
                     break;
                 case ComponentEntry.Enable:
                     _world.Enable<EnabledA>(_entity);
@@ -603,7 +556,7 @@ public sealed class ComponentJobAccessTests
                     _ = _world.IsEnabled<EnabledA>(_entity);
                     break;
                 case ComponentEntry.GetByIndex:
-                    _ = _world.GetByIndex<IndexedA, int>(4).Length;
+                    _ = CountIndexed(_world, 4);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -623,7 +576,7 @@ public sealed class ComponentJobAccessTests
             _entity = entity;
         }
 
-        public void Execute() => _ = _world.Read<T>(_entity);
+        public void Execute() => _ = _world.ReadComponentData<T>(_entity);
     }
 
     private readonly struct ReplaceJob<T> : IJob
@@ -640,7 +593,7 @@ public sealed class ComponentJobAccessTests
             _value = value;
         }
 
-        public void Execute() => _world.Replace(_entity, in _value);
+        public void Execute() => _world.Set(_entity, in _value);
     }
 
     private readonly struct HasJob<T> : IJob
@@ -682,7 +635,7 @@ public sealed class ComponentJobAccessTests
 
         public void Execute()
         {
-            _ = _world.Read<T>(_entity);
+            _ = _world.ReadComponentData<T>(_entity);
             _started.Set();
             _release.Wait();
         }
@@ -704,7 +657,7 @@ public sealed class ComponentJobAccessTests
 
         public void Execute()
         {
-            _ = _world.Read<T>(_entity);
+            _ = _world.ReadComponentData<T>(_entity);
             _started.Set();
         }
     }
@@ -734,7 +687,7 @@ public sealed class ComponentJobAccessTests
 
         public void Execute()
         {
-            _world.Replace(_entity, in _value);
+            _world.Set(_entity, in _value);
             _started.Set();
             _release.Wait();
         }
@@ -762,7 +715,7 @@ public sealed class ComponentJobAccessTests
 
         public void Execute()
         {
-            _world.Replace(_entity, in _value);
+            _world.Set(_entity, in _value);
             _started.Set();
         }
     }
@@ -771,10 +724,10 @@ public sealed class ComponentJobAccessTests
         where T : struct, IComponent
     {
         private readonly World _world;
-        private readonly QueryHandle _query;
+        private readonly Query _query;
         private readonly IntCapture _capture;
 
-        internal ReadQueryJob(World world, QueryHandle query, IntCapture capture)
+        internal ReadQueryJob(World world, Query query, IntCapture capture)
         {
             _world = world;
             _query = query;
@@ -783,16 +736,10 @@ public sealed class ComponentJobAccessTests
 
         public void Execute()
         {
-            int count = 0;
-            _world.ExecuteQuery(
-                _query,
-                ref count,
-                static (scoped QueryCursor cursor, ref int result) =>
-                {
-                    foreach (QueryChunkView chunk in cursor.Chunks)
-                        result += chunk.Read<T>().Length;
-                });
-            _capture.Value = count;
+            int result = 0;
+            using QueryScope rows = _query.OpenRead();
+            foreach (QueryChunk chunk in rows) result += chunk.Read<T>().Length;
+            _capture.Value = result;
         }
     }
 
@@ -800,10 +747,10 @@ public sealed class ComponentJobAccessTests
         where T : struct, IComponent
     {
         private readonly World _world;
-        private readonly QueryHandle _query;
+        private readonly Query _query;
         private readonly T _value;
 
-        internal WriteQueryJob(World world, QueryHandle query, in T value)
+        internal WriteQueryJob(World world, Query query, in T value)
         {
             _world = world;
             _query = query;
@@ -812,30 +759,23 @@ public sealed class ComponentJobAccessTests
 
         public void Execute()
         {
-            T value = _value;
-            _world.ExecuteQuery(
-                _query,
-                ref value,
-                static (scoped QueryCursor cursor, ref T replacement) =>
-                {
-                    foreach (QueryChunkView chunk in cursor.Chunks)
-                        chunk.Write<T>().Fill(replacement);
-                });
+            using QueryScope rows = _query.Open();
+            foreach (QueryChunk chunk in rows) chunk.Write<T>().Fill(_value);
         }
     }
 
     private readonly struct EmptyQueryJob : IJob
     {
         private readonly World _world;
-        private readonly QueryHandle _query;
+        private readonly Query _query;
 
-        internal EmptyQueryJob(World world, QueryHandle query)
+        internal EmptyQueryJob(World world, Query query)
         {
             _world = world;
             _query = query;
         }
 
-        public void Execute() => _world.ExecuteQuery(_query, static _ => { });
+        public void Execute() { using QueryScope rows = _query.OpenRead(); }
     }
 
     private readonly struct ParentViaRelationshipAccessJob : IJob
@@ -855,7 +795,7 @@ public sealed class ComponentJobAccessTests
         }
 
         public void Execute() =>
-            _capture.Value = HierarchyJobAccess<Domain>.GetParent(_world, _child);
+            _capture.Value = Hierarchy<Domain>.GetParent(_world, _child);
     }
 
     private readonly struct EndpointsViaRelationshipAccessJob : IJob
@@ -876,8 +816,8 @@ public sealed class ComponentJobAccessTests
 
         public void Execute()
         {
-            DirectedRelationEndpoints<Payload> endpoints =
-                RelationJobAccess<Payload>.GetDirectedEndpoints(_world, _edge);
+            RelationEndpoints<Payload> endpoints =
+                _world.ReadComponentData<RelationEndpoints<Payload>>(_edge.Entity);
             _capture.Source = endpoints.Source;
             _capture.Target = endpoints.Target;
         }
@@ -910,7 +850,7 @@ public sealed class ComponentJobAccessTests
 
         internal TestJobs(int workerCount)
         {
-            Scheduler = new Scheduler(new JobRuntimeConfig
+            Scheduler = new Scheduler(new JobConfiguration
             {
                 WorkerCount = workerCount,
                 SafetyMode = JobSafetyMode.Checked,
@@ -922,7 +862,7 @@ public sealed class ComponentJobAccessTests
 
         internal World CreateWorld()
         {
-            var world = WorldJobs.CreateWorld(scheduler: Scheduler);
+            var world = new World(execution: new WorldJobs(Scheduler));
             _worlds.Add(world);
             return world;
         }
@@ -932,6 +872,26 @@ public sealed class ComponentJobAccessTests
             foreach (var world in _worlds)
                 world.Dispose();
             Scheduler.Dispose();
+        }
+    }
+
+    private struct EditProbe : IComponent;
+    private readonly struct ReplaceAndAdd(World world, Entity entity, int value) : IJob
+    {
+        public void Execute()
+        {
+            using WorldStructureWriteScope structure = world.OpenStructureWrite();
+            world.Set(entity, new TableA { Value = value });
+            world.Add(entity, default(EditProbe));
+        }
+    }
+    private readonly struct ReplaceAndRemove(World world, Entity entity, int value) : IJob
+    {
+        public void Execute()
+        {
+            using WorldStructureWriteScope structure = world.OpenStructureWrite();
+            world.Set(entity, new TableA { Value = value });
+            world.Remove<EditProbe>(entity);
         }
     }
 

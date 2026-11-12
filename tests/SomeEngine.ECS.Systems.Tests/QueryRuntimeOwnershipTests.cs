@@ -1,31 +1,27 @@
+using SomeEngine.ECS.Serialization;
 using ManualResetEventSlim = SomeEngine.Testing.TestSignal;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class QueryRuntimeOwnershipTests : JobTest
+public sealed partial class QueryRuntimeOwnershipTests : JobTest
 {
 
     [Fact]
     public void ConcurrentRepeatedReadQueriesDoesNotThrow()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
-        Entity first = world.CreateEntity(new ComponentA { Value = 1 });
-        Entity second = world.CreateEntity(new ComponentB { Value = 2 });
-        QueryHandle firstQuery = world.Query(world.QueryDefinition().Read<ComponentA>());
-        QueryHandle secondQuery = world.Query(world.QueryDefinition().Read<ComponentB>());
+        Entity first = world.Create(new ComponentA { Value = 1 });
+        Entity second = world.Create(new ComponentB { Value = 2 });
+        Query firstQuery = world.Query(new QueryDescription().WithStored<ComponentA>());
+        Query secondQuery = world.Query(new QueryDescription().WithStored<ComponentB>());
 
-        JobHandle firstReader = ComponentJobAccess<ComponentA>.ScheduleRead(
-            world,
-            new RepeatedExactQueryJob(world, firstQuery, first));
-        JobHandle secondReader = ComponentJobAccess<ComponentB>.ScheduleRead(
-            world,
-            new RepeatedExactQueryJob(world, secondQuery, second));
+        JobHandle firstReader = world.Execution!.Scheduler!.Schedule(new RepeatedQueryJob(world, firstQuery, first), [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<ComponentA>()]);
+        JobHandle secondReader = world.Execution!.Scheduler!.Schedule(new RepeatedQueryJob(world, secondQuery, second), [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<ComponentB>()]);
 
         firstReader.Complete();
         secondReader.Complete();
@@ -34,14 +30,14 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     [Fact]
     public void DifferentTableComponents_EnterQueryCallbacksConcurrently()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
-        _ = world.CreateEntity(new ComponentA { Value = 1 });
-        _ = world.CreateEntity(new ComponentB { Value = 2 });
-        QueryHandle firstQuery = world.Query(
-            world.QueryDefinition().ReadWrite<ComponentA>());
-        QueryHandle secondQuery = world.Query(
-            world.QueryDefinition().ReadWrite<ComponentB>());
+        _ = world.Create(new ComponentA { Value = 1 });
+        _ = world.Create(new ComponentB { Value = 2 });
+        Query firstQuery = world.Query(
+            new QueryDescription().WithStored<ComponentA>());
+        Query secondQuery = world.Query(
+            new QueryDescription().WithStored<ComponentB>());
         using var firstStarted = new ManualResetEventSlim();
         using var releaseFirst = new ManualResetEventSlim();
         using var secondStarted = new ManualResetEventSlim();
@@ -50,14 +46,10 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
 
         try
         {
-            first = ComponentJobAccess<ComponentA>.ScheduleWrite(
-                world,
-                new BlockingQueryJob(world, firstQuery, firstStarted, releaseFirst));
+            first = world.Execution!.Scheduler!.Schedule(new BlockingQueryJob(world, firstQuery, firstStarted, releaseFirst), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentA>()));
             Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            second = ComponentJobAccess<ComponentB>.ScheduleWrite(
-                world,
-                new SignalQueryJob(world, secondQuery, secondStarted));
+            second = world.Execution!.Scheduler!.Schedule(new SignalQueryJob(world, secondQuery, secondStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentB>()));
 
             Assert.True(secondStarted.Wait(TimeSpan.FromSeconds(5)));
             second.Complete();
@@ -74,13 +66,13 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     public void SameTableComponent_WriteQueryBlocksReadQueryAtResourceFrontier()
     {
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
-        _ = world.CreateEntity(new ComponentA { Value = 1 });
-        QueryHandle writeQuery = world.Query(
-            world.QueryDefinition().ReadWrite<ComponentA>());
-        QueryHandle readQuery = world.Query(
-            world.QueryDefinition().Read<ComponentA>());
+        _ = world.Create(new ComponentA { Value = 1 });
+        Query writeQuery = world.Query(
+            new QueryDescription().WithStored<ComponentA>());
+        Query readQuery = world.Query(
+            new QueryDescription().WithStored<ComponentA>());
         using var writerStarted = new ManualResetEventSlim();
         using var releaseWriter = new ManualResetEventSlim();
         releaseWriter.WaitCallback = () => events.Enqueue("released");
@@ -91,14 +83,10 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
 
         try
         {
-            writer = ComponentJobAccess<ComponentA>.ScheduleWrite(
-                world,
-                new BlockingQueryJob(world, writeQuery, writerStarted, releaseWriter));
+            writer = world.Execution!.Scheduler!.Schedule(new BlockingQueryJob(world, writeQuery, writerStarted, releaseWriter), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentA>()));
             Assert.True(writerStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            reader = ComponentJobAccess<ComponentA>.ScheduleRead(
-                world,
-                new SignalQueryJob(world, readQuery, readerStarted));
+            reader = world.Execution!.Scheduler!.Schedule(new SignalQueryJob(world, readQuery, readerStarted), [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<ComponentA>()]);
 
             releaseWriter.Set();
             reader.Complete();
@@ -121,15 +109,15 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     [Fact]
     public void SameTableComponent_InDifferentWorldsDoesNotShareQueryOwner()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var firstWorld = CreateJobWorld();
         var secondWorld = CreateJobWorld();
-        _ = firstWorld.CreateEntity(new ComponentA { Value = 1 });
-        _ = secondWorld.CreateEntity(new ComponentA { Value = 2 });
-        QueryHandle firstQuery = firstWorld.Query(
-            firstWorld.QueryDefinition().ReadWrite<ComponentA>());
-        QueryHandle secondQuery = secondWorld.Query(
-            secondWorld.QueryDefinition().ReadWrite<ComponentA>());
+        _ = firstWorld.Create(new ComponentA { Value = 1 });
+        _ = secondWorld.Create(new ComponentA { Value = 2 });
+        Query firstQuery = firstWorld.Query(
+            new QueryDescription().WithStored<ComponentA>());
+        Query secondQuery = secondWorld.Query(
+            new QueryDescription().WithStored<ComponentA>());
         using var firstStarted = new ManualResetEventSlim();
         using var releaseFirst = new ManualResetEventSlim();
         using var secondStarted = new ManualResetEventSlim();
@@ -138,14 +126,10 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
 
         try
         {
-            first = ComponentJobAccess<ComponentA>.ScheduleWrite(
-                firstWorld,
-                new BlockingQueryJob(firstWorld, firstQuery, firstStarted, releaseFirst));
+            first = firstWorld.Execution!.Scheduler!.Schedule(new BlockingQueryJob(firstWorld, firstQuery, firstStarted, releaseFirst), ((WorldJobs)firstWorld.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentA>()));
             Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            second = ComponentJobAccess<ComponentA>.ScheduleWrite(
-                secondWorld,
-                new SignalQueryJob(secondWorld, secondQuery, secondStarted));
+            second = secondWorld.Execution!.Scheduler!.Schedule(new SignalQueryJob(secondWorld, secondQuery, secondStarted), ((WorldJobs)secondWorld.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentA>()));
 
             Assert.True(secondStarted.Wait(TimeSpan.FromSeconds(5)));
             second.Complete();
@@ -161,16 +145,16 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     [Fact]
     public void ReadonlyRelationshipQuery_CanOverlapUnrelatedTableQuery()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
-        Entity parent = world.CreateEntity();
-        Entity child = world.CreateEntity();
-        _ = world.CreateEntity(new ComponentB { Value = 2 });
+        Entity parent = world.Create();
+        Entity child = world.Create();
+        _ = world.Create(new ComponentB { Value = 2 });
         Hierarchy<Domain>.SetParent(world, child, parent);
-        QueryHandle parentQuery = world.Query(
-            world.QueryDefinition().Read<Parent<Domain>>());
-        QueryHandle componentQuery = world.Query(
-            world.QueryDefinition().ReadWrite<ComponentB>());
+        Query parentQuery = world.Query(
+            new QueryDescription().WithStored<Parent<Domain>>());
+        Query componentQuery = world.Query(
+            new QueryDescription().WithStored<ComponentB>());
         using var parentStarted = new ManualResetEventSlim();
         using var releaseParent = new ManualResetEventSlim();
         using var componentStarted = new ManualResetEventSlim();
@@ -179,15 +163,10 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
 
         try
         {
-            parentReader = HierarchyJobAccess<Domain>.ScheduleParentReadChunks(
-                world,
-                parentQuery,
-                new BlockingParentReadJob(parentStarted, releaseParent));
+            parentReader = new BlockingParentReadJob(parentStarted, releaseParent).Schedule(world, query: parentQuery);
             Assert.True(parentStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            componentWriter = ComponentJobAccess<ComponentB>.ScheduleWrite(
-                world,
-                new SignalQueryJob(world, componentQuery, componentStarted));
+            componentWriter = world.Execution!.Scheduler!.Schedule(new SignalQueryJob(world, componentQuery, componentStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentB>()));
 
             Assert.True(componentStarted.Wait(TimeSpan.FromSeconds(5)));
             componentWriter.Complete();
@@ -204,16 +183,16 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     public void WritableRelationshipQuery_BlocksOrdinaryQueryAtTopologyFrontier()
     {
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
-        Entity parent = world.CreateEntity();
-        Entity child = world.CreateEntity();
-        _ = world.CreateEntity(new ComponentB { Value = 2 });
+        Entity parent = world.Create();
+        Entity child = world.Create();
+        _ = world.Create(new ComponentB { Value = 2 });
         Hierarchy<Domain>.SetParent(world, child, parent);
-        QueryHandle parentQuery = world.Query(
-            world.QueryDefinition().ReadWrite<Parent<Domain>>());
-        QueryHandle componentQuery = world.Query(
-            world.QueryDefinition().ReadWrite<ComponentB>());
+        Query parentQuery = world.Query(
+            new QueryDescription().WithStored<Parent<Domain>>());
+        Query componentQuery = world.Query(
+            new QueryDescription().WithStored<ComponentB>());
         using var parentStarted = new ManualResetEventSlim();
         using var releaseParent = new ManualResetEventSlim();
         releaseParent.WaitCallback = () => events.Enqueue("released");
@@ -224,15 +203,10 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
 
         try
         {
-            parentWriter = HierarchyJobAccess<Domain>.ScheduleParentWriteChunks(
-                world,
-                parentQuery,
-                new BlockingParentWriteJob(parentStarted, releaseParent));
+            parentWriter = Jobs.Schedule(new BlockingParentWriteJob(parentStarted, releaseParent), world.Execution!.StructureWrite);
             Assert.True(parentStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            componentWriter = ComponentJobAccess<ComponentB>.ScheduleWrite(
-                world,
-                new SignalQueryJob(world, componentQuery, componentStarted));
+            componentWriter = world.Execution!.Scheduler!.Schedule(new SignalQueryJob(world, componentQuery, componentStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentB>()));
 
             releaseParent.Set();
             componentWriter.Complete();
@@ -253,90 +227,85 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     }
 
     [Fact]
-    public void WritableRelationshipOwner_DefensivelyRejectsNestedOrdinaryQuery()
+    public void ProtectedParentColumnRequiresTheTypedHierarchyWriteEntry()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity parent = world.CreateEntity();
-        Entity child = world.CreateEntity();
-        _ = world.CreateEntity(new ComponentB { Value = 2 });
+        World world = CreateJobWorld();
+        Entity parent = world.Create(), child = world.Create(new ComponentB { Value = 2 });
         Hierarchy<Domain>.SetParent(world, child, parent);
-        QueryHandle relationshipQuery = world.Query(
-            world.QueryDefinition().ReadWrite<Parent<Domain>>());
-        QueryHandle ordinaryQuery = world.Query(
-            world.QueryDefinition().Read<ComponentB>());
-
-        world.ExecuteQuery(relationshipQuery, _ =>
+        Query relationshipQuery = world.Query<Parent<Domain>>();
+        Assert.Throws<InvalidOperationException>(() =>
         {
-            Assert.Throws<InvalidOperationException>(
-                () => world.ExecuteQuery(ordinaryQuery, static _ => { }));
+            using WorldStructureWriteScope structure = world.OpenStructureWrite();
+            using QueryScope rows = relationshipQuery.Open();
+            foreach (QueryChunk chunk in rows) _ = chunk.Write<Parent<Domain>>();
         });
-
+        Assert.Equal(1, world.Query<ComponentB>().Count);
         Assert.Equal(parent, Hierarchy<Domain>.GetParent(world, child));
     }
 
     [Fact]
     public void FaultedOrdinaryQuery_ReleasesBorrowAndSynchronousResourceOwner()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
-        Entity entity = world.CreateEntity(new ComponentA { Value = 1 });
-        QueryHandle query = world.Query(
-            world.QueryDefinition().ReadWrite<ComponentA>());
-        _ = ComponentJobAccess<ComponentA>.Write(world);
+        Entity entity = world.Create(new ComponentA { Value = 1 });
+        Query query = world.Query(
+            new QueryDescription().WithStored<ComponentA>());
 
-        Assert.Throws<ProbeException>(
-            () => world.ExecuteQuery(query, static _ => throw new ProbeException()));
+        Assert.Throws<ProbeException>((Action)(() =>
+        {
+            using QueryScope rows = query.OpenRead();
+            throw new ProbeException();
+        }));
 
         // A leaked ordinary borrow rejects this structural mutation. The scheduled callback then
         // proves the synchronous component-resource owner was released as well.
         world.Add(entity, new ComponentB { Value = 2 });
         using var started = new ManualResetEventSlim();
-        ComponentJobAccess<ComponentA>
-            .ScheduleWrite(world, new SignalQueryJob(world, query, started))
-            .Complete();
+        Jobs.Schedule(new SignalQueryJob(world, query, started),
+            ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentA>())).Complete();
         Assert.True(started.IsSet);
     }
 
     [Fact]
     public void WritableRelationshipQuery_BodyFaultStillRollsBackCanonicalValue()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
-        Entity oldParent = world.CreateEntity();
-        Entity newParent = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        Entity oldParent = world.Create();
+        Entity newParent = world.Create();
+        Entity child = world.Create();
         Hierarchy<Domain>.SetParent(world, child, oldParent);
-        QueryHandle query = world.Query(
-            world.QueryDefinition().ReadWrite<Parent<Domain>>());
+        Query query = world.Query(
+            new QueryDescription().WithStored<Parent<Domain>>());
 
-        Assert.Throws<ProbeException>(() =>
-            world.ExecuteQuery(query, cursor =>
-            {
-                foreach (QueryRow row in cursor.Rows)
-                {
-                    row.ReadWrite<Parent<Domain>>().Value = newParent;
-                    throw new ProbeException();
-                }
-            }));
+        using var checkpoint = new WorldCheckpoint();
+        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        Assert.Throws<ProbeException>((Action)(() =>
+        {
+            Hierarchy<Domain>.SetParentDeferred(candidate, child, newParent);
+            throw new ProbeException();
+        }));
 
         Assert.Equal(oldParent, Hierarchy<Domain>.GetParent(world, child));
         Assert.Equal(
             new[] { child },
-            Hierarchy<Domain>.GetChildren(world, oldParent).ToArray());
-        Assert.Empty(Hierarchy<Domain>.GetChildren(world, newParent));
+            ReadChildren(world, oldParent));
+        Assert.Empty(ReadChildren(world, newParent));
     }
 
     private readonly struct BlockingQueryJob : IJob
     {
         private readonly World _world;
-        private readonly QueryHandle _query;
+        private readonly Query _query;
         private readonly ManualResetEventSlim _started;
         private readonly ManualResetEventSlim _release;
 
         internal BlockingQueryJob(
             World world,
-            QueryHandle query,
+            Query query,
             ManualResetEventSlim started,
             ManualResetEventSlim release)
         {
@@ -348,23 +317,21 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
 
         public void Execute()
         {
-            var state = new BlockingState(_started, _release);
-            _world.ExecuteQuery(
-                _query,
-                ref state,
-                static (scoped QueryCursor _, ref BlockingState blocking) => blocking.Block());
+            using QueryScope rows = _query.Open();
+            _started.Set();
+            if (!_release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException();
         }
     }
 
     private readonly struct SignalQueryJob : IJob
     {
         private readonly World _world;
-        private readonly QueryHandle _query;
+        private readonly Query _query;
         private readonly ManualResetEventSlim _started;
 
         internal SignalQueryJob(
             World world,
-            QueryHandle query,
+            Query query,
             ManualResetEventSlim started)
         {
             _world = world;
@@ -374,21 +341,18 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
 
         public void Execute()
         {
-            ManualResetEventSlim started = _started;
-            _world.ExecuteQuery(
-                _query,
-                ref started,
-                static (scoped QueryCursor _, ref ManualResetEventSlim signal) => signal.Set());
+            using QueryScope rows = _query.OpenRead();
+            _started.Set();
         }
     }
 
-    private readonly struct RepeatedExactQueryJob : IJob
+    private readonly struct RepeatedQueryJob : IJob
     {
         private readonly World _world;
-        private readonly QueryHandle _query;
+        private readonly Query _query;
         private readonly Entity _expected;
 
-        internal RepeatedExactQueryJob(World world, QueryHandle query, Entity expected)
+        internal RepeatedQueryJob(World world, Query query, Entity expected)
         {
             _world = world;
             _query = query;
@@ -399,47 +363,20 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
         {
             for (int iteration = 0; iteration < 2_000; iteration++)
             {
-                var state = new ExactQueryState(_expected);
-                _world.ExecuteQuery(
-                    _query,
-                    lastSystemVersion: 0,
-                    ref state,
-                    static (scoped QueryCursor cursor, ref ExactQueryState exact) =>
+                int count = 0;
+                using QueryScope rows = _query.OpenRead();
+                foreach (QueryChunk chunk in rows)
+                    foreach (Entity entity in chunk.Entities)
                     {
-                        foreach (QueryRow row in cursor.Rows)
-                        {
-                            if (row.Entity != exact.Expected)
-                            {
-                                throw new InvalidOperationException(
-                                    "A concurrent query lookup returned another query's state.");
-                            }
-
-                            exact.Count++;
-                        }
-                    });
-
-                if (state.Count != 1)
-                {
-                    throw new InvalidOperationException(
-                        $"Expected one exact query row, observed {state.Count}.");
-                }
+                        Assert.Equal(_expected, entity);
+                        count++;
+                    }
+                Assert.Equal(1, count);
             }
         }
     }
 
-    private struct ExactQueryState
-    {
-        internal ExactQueryState(Entity expected)
-        {
-            Expected = expected;
-            Count = 0;
-        }
-
-        internal Entity Expected;
-        internal int Count;
-    }
-
-    private readonly struct BlockingParentReadJob : IParentReadChunkJob<Domain>
+    private readonly partial struct BlockingParentReadJob : IJobChunk
     {
         private readonly ManualResetEventSlim _started;
         private readonly ManualResetEventSlim _release;
@@ -450,6 +387,12 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
         {
             _started = started;
             _release = release;
+        }
+
+        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources)
+        {
+            resources.Write(_started);
+            resources.Read(_release);
         }
 
         public void Execute(
@@ -463,7 +406,7 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
         }
     }
 
-    private readonly struct BlockingParentWriteJob : IParentWriteChunkJob<Domain>
+    private readonly struct BlockingParentWriteJob : IJob
     {
         private readonly ManualResetEventSlim _started;
         private readonly ManualResetEventSlim _release;
@@ -476,36 +419,18 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
             _release = release;
         }
 
-        public void Execute(
-            ReadOnlySpan<Entity> entities,
-            Span<Parent<Domain>> parents)
+        public void Execute()
         {
-            Assert.Equal(entities.Length, parents.Length);
             _started.Set();
             if (!_release.Wait(TimeSpan.FromSeconds(10)))
                 throw new TimeoutException("Timed out waiting to release the parent query callback.");
         }
     }
 
-    private sealed class BlockingState
+    private static Entity[] ReadChildren(World world, Entity parent)
     {
-        private readonly ManualResetEventSlim _started;
-        private readonly ManualResetEventSlim _release;
-
-        internal BlockingState(
-            ManualResetEventSlim started,
-            ManualResetEventSlim release)
-        {
-            _started = started;
-            _release = release;
-        }
-
-        internal void Block()
-        {
-            _started.Set();
-            if (!_release.Wait(TimeSpan.FromSeconds(10)))
-                throw new TimeoutException("Timed out waiting to release the query callback.");
-        }
+        using var children = Hierarchy<Domain>.GetChildren(world, parent);
+        return children.Entities.ToArray();
     }
 
     private sealed class ProbeException : Exception;
@@ -520,5 +445,5 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
         internal int Value;
     }
 
-    private sealed class Domain : IHierarchyDomain;
+    private readonly struct Domain : IHierarchyDomain;
 }

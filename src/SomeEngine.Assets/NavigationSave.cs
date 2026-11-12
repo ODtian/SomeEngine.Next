@@ -1,6 +1,5 @@
-using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Serialization;
 using SomeEngine.Navigation;
 
@@ -21,65 +20,76 @@ public static partial class NavigationSave
         var capture = new NavigationSaveResourceCapture(resources);
         capture.CaptureRegions();
         var actors = new List<NavigationSavedActor>();
-        QueryHandle query = world.Query(world.QueryDefinition().Read<NavigationAgent>()
-            .Optional<NavigationGoal>(QueryAccess.Read).Optional<FlowFollower>(QueryAccess.Read)
-            .Optional<PathNavigation<NavigationMesh>>(QueryAccess.Read).Optional<PathNavigation<HeadingNavigationMesh>>(QueryAccess.Read)
-            .Optional<PathNavigation<NavigationVehicleSpace>>(QueryAccess.Read)
-            .Optional<PathNavigation<NavigationScene>>(QueryAccess.Read).Optional<PathNavigation<HeadingNavigationScene>>(QueryAccess.Read));
-        try
+        Query query = world.Query(new QueryDescription().WithStored<NavigationAgent>()
+            .Optional<NavigationGoal>().Optional<FlowFollower>()
+            .Optional<PathNavigation<NavigationMesh>>().Optional<PathNavigation<HeadingNavigationMesh>>()
+            .Optional<PathNavigation<NavigationVehicleSpace>>()
+            .Optional<PathNavigation<NavigationScene>>().Optional<PathNavigation<HeadingNavigationScene>>());
         {
-            world.ExecuteReadSnapshot(query, cursor =>
             {
-                foreach (QueryRow row in cursor.Rows)
+                using QueryScope cursor = query.OpenRead();
+                foreach (QueryChunk chunk in cursor)
                 {
-                    NavigationAgent agent = row.Read<NavigationAgent>();
-                    row.TryRead(out NavigationGoal goal);
-                    int resource = -1;
-                    SavedPathKind kind = SavedPathKind.None;
-                    bool enabled = true;
-                    if (row.TryRead(out FlowFollower follower))
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
                     {
-                        kind = SavedPathKind.Flow;
-                        resource = capture.Add(follower.Flow);
-                        enabled = world.IsEnabled<FlowFollower>(row.Entity);
+                        NavigationGoal goal = chunk.Optional<NavigationGoal>(rowIndex).Value;
+                        FlowFollower follower = chunk.Optional<FlowFollower>(rowIndex).Value;
+                        PathNavigation<NavigationMesh> mesh = chunk.Optional<PathNavigation<NavigationMesh>>(rowIndex).Value;
+                        PathNavigation<HeadingNavigationMesh> heading = chunk.Optional<PathNavigation<HeadingNavigationMesh>>(rowIndex).Value;
+                        PathNavigation<NavigationVehicleSpace> vehicle = chunk.Optional<PathNavigation<NavigationVehicleSpace>>(rowIndex).Value;
+                        PathNavigation<NavigationScene> scene = chunk.Optional<PathNavigation<NavigationScene>>(rowIndex).Value;
+                        PathNavigation<HeadingNavigationScene> headingScene = chunk.Optional<PathNavigation<HeadingNavigationScene>>(rowIndex).Value;
+
+                        NavigationAgent agent = chunk.Read<NavigationAgent>()[rowIndex];
+
+                        int resource = -1;
+                        SavedPathKind kind = SavedPathKind.None;
+                        bool enabled = true;
+                        if (chunk.Has<FlowFollower>(rowIndex))
+                        {
+                            kind = SavedPathKind.Flow;
+                            resource = capture.Add(follower.Flow);
+                            enabled = world.IsEnabled<FlowFollower>(chunk.Entities[rowIndex]);
+                        }
+                        else if (chunk.Has<PathNavigation<NavigationMesh>>(rowIndex))
+                        {
+                            kind = NavigationComponents.HasPath<NavigationMesh, PolyanyaSearchState>(world, chunk.Entities[rowIndex]) ? SavedPathKind.Polyanya : SavedPathKind.Polygon;
+                            resource = capture.Add(mesh.Space);
+                        }
+                        else if (chunk.Has<PathNavigation<HeadingNavigationMesh>>(rowIndex))
+                        {
+                            kind = SavedPathKind.Asa;
+                            resource = capture.Add(heading.Space);
+                        }
+                        else if (chunk.Has<PathNavigation<NavigationVehicleSpace>>(rowIndex))
+                        {
+                            kind = NavigationComponents.HasPath<NavigationVehicleSpace, HybridAStarSearchState>(world, chunk.Entities[rowIndex]) ? SavedPathKind.HybridAStar : SavedPathKind.StateLattice;
+                            resource = capture.Add(vehicle.Space);
+                        }
+                        else if (chunk.Has<PathNavigation<NavigationScene>>(rowIndex))
+                        {
+                            kind = NavigationComponents.HasPath<NavigationScene, DStarLiteSearchState>(world, chunk.Entities[rowIndex]) ? SavedPathKind.DStarLite : SavedPathKind.Scene;
+                            resource = capture.Add(scene.Space);
+                        }
+                        else if (chunk.Has<PathNavigation<HeadingNavigationScene>>(rowIndex))
+                        {
+                            kind = SavedPathKind.HeadingScene;
+                            resource = capture.Add(headingScene.Space);
+                        }
+                        if (kind is not SavedPathKind.None and not SavedPathKind.Flow) enabled = world.IsEnabled<NavigationGoal>(chunk.Entities[rowIndex]);
+                        actors.Add(new(chunk.Entities[rowIndex], capture.Add(agent.Profile), capture.Add(agent.Policy), agent.DesiredSpeed, kind, resource, goal, enabled));
+
                     }
-                    else if (row.TryRead(out PathNavigation<NavigationMesh> mesh))
-                    {
-                        kind = NavigationComponents.HasPath<NavigationMesh, PolyanyaSearchState>(world, row.Entity) ? SavedPathKind.Polyanya : SavedPathKind.Polygon;
-                        resource = capture.Add(mesh.Space);
-                    }
-                    else if (row.TryRead(out PathNavigation<HeadingNavigationMesh> heading))
-                    {
-                        kind = SavedPathKind.Asa;
-                        resource = capture.Add(heading.Space);
-                    }
-                    else if (row.TryRead(out PathNavigation<NavigationVehicleSpace> vehicle))
-                    {
-                        kind = NavigationComponents.HasPath<NavigationVehicleSpace, HybridAStarSearchState>(world, row.Entity) ? SavedPathKind.HybridAStar : SavedPathKind.StateLattice;
-                        resource = capture.Add(vehicle.Space);
-                    }
-                    else if (row.TryRead(out PathNavigation<NavigationScene> scene))
-                    {
-                        kind = NavigationComponents.HasPath<NavigationScene, DStarLiteSearchState>(world, row.Entity) ? SavedPathKind.DStarLite : SavedPathKind.Scene;
-                        resource = capture.Add(scene.Space);
-                    }
-                    else if (row.TryRead(out PathNavigation<HeadingNavigationScene> headingScene))
-                    {
-                        kind = SavedPathKind.HeadingScene;
-                        resource = capture.Add(headingScene.Space);
-                    }
-                    if (kind is not SavedPathKind.None and not SavedPathKind.Flow) enabled = world.IsEnabled<NavigationGoal>(row.Entity);
-                    actors.Add(new(row.Entity, capture.Add(agent.Profile), capture.Add(agent.Policy), agent.DesiredSpeed, kind, resource, goal, enabled));
                 }
-            });
+
+            }
         }
-        finally { world.ReleaseQuery(query); }
         for (int index = 0; index < actors.Count; index++)
             actors[index] = actors[index] with { Traversal = CaptureTraversal(world, actors[index]), Controls = CaptureControls(world, actors[index].Entity, capture) };
         NavigationSavedSource[] sourceBindings = CaptureSources(world, capture);
         var table = new NavigationSavedTable(capture.Records.ToArray(), actors.ToArray(), sourceBindings, capture.Regions.ToArray(), CaptureCrowd(world));
-        WorldSerializer.WriteDurableComponent(stream, in table, TableRegistry);
-        WorldSerializer.WriteDurableWorld(stream, world, gameRegistry, options);
+        WorldSerializer.WriteComponent(stream, in table, TableRegistry, new SerializeOptions(Purpose: SavePurpose.DurableSave));
+        new WorldSerializer(gameRegistry).Save(world, stream, options with { Purpose = SavePurpose.DurableSave });
     }
 }
 

@@ -12,7 +12,6 @@ internal struct GraphInstance : ICleanupComponent
     public bool CleanupQueued;
 }
 
-[BufferCapacity(4)]
 internal struct GraphState : IBufferElement
 {
     public int Current, CurrentMotion;
@@ -20,7 +19,6 @@ internal struct GraphState : IBufferElement
     public bool Started;
 }
 
-[BufferCapacity(4)]
 internal struct GraphMotion : IBufferElement
 {
     public float Time, Weight, BlendWeight, FromWeight;
@@ -35,20 +33,20 @@ internal static class GraphPlayback
     {
         if (world.Has<GraphInstance>(animation))
         {
-            GraphInstance previous = world.Read<GraphInstance>(animation);
+            GraphInstance previous = world.ReadComponentData<GraphInstance>(animation);
             if (previous.Data is not null)
             {
                 ReleaseConditions(world, animation, previous.Data);
                 GraphData.Release(previous.Data);
             }
-            world.Replace(animation, new GraphInstance());
+            world.Set(animation, new GraphInstance());
         }
         if (data[0].GroupCount == 0 && data[0].PartCount == 1)
             return;
         Interlocked.Increment(ref data[0].References);
         var instance = new GraphInstance { Data = data, Part = part, TimeSource = timeSource };
         if (world.Has<GraphInstance>(animation))
-            world.Replace(animation, instance);
+            world.Set(animation, instance);
         else
             world.Add(animation, instance);
         for (int index = 0; index < data[0].NodeCount; index++)
@@ -61,25 +59,35 @@ internal static class GraphPlayback
         if (!world.Has<GraphParameters>(animation))
             world.Add(animation, data[0].Parameters);
         else
-            world.Replace(animation, data[0].Parameters);
-        if (!world.HasBuffer<GraphState>(animation))
+            world.Set(animation, data[0].Parameters);
+        if (!world.Has<Buffer<GraphState>>(animation))
             world.AddBuffer<GraphState>(animation);
-        if (!world.HasBuffer<GraphMotion>(animation))
+        if (!world.Has<Buffer<GraphMotion>>(animation))
             world.AddBuffer<GraphMotion>(animation);
-        world.ExecuteBufferWrite<GraphState, int>(animation, ref data[0].GroupCount,
-            static (DynamicBuffer<GraphState> states, ref int count) =>
+        {
+            using var states = world.GetBuffer<GraphState>(animation);
+            Visit(states, ref data[0].GroupCount);
+
+            static void Visit(DynamicBuffer<GraphState> states, ref int count)
             {
                 states.Clear();
                 for (int i = 0; i < count; i++)
                     states.Add(default);
-            });
-        world.ExecuteBufferWrite<GraphMotion, int>(animation, ref data[0].MotionCount,
-            static (DynamicBuffer<GraphMotion> motions, ref int count) =>
+
+            }
+        }
+        {
+            using var motions = world.GetBuffer<GraphMotion>(animation);
+            Visit(motions, ref data[0].MotionCount);
+
+            static void Visit(DynamicBuffer<GraphMotion> motions, ref int count)
             {
                 motions.Clear();
                 for (int i = 0; i < count; i++)
                     motions.Add(default);
-            });
+
+            }
+        }
     }
 
     public static unsafe void Update(World world, Entity animation, GraphData[] graph, int part,
@@ -96,7 +104,7 @@ internal static class GraphPlayback
             float groupWeight = 1;
             if (group.ParentMotion > 0)
             {
-                GraphMotion parent = motions.Read(group.ParentMotion - 1);
+                GraphMotion parent = motions[group.ParentMotion - 1];
                 time = (parent.Stage, parent.Time);
                 groupWeight = parent.Weight;
             }

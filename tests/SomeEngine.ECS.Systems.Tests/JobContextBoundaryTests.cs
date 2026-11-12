@@ -175,8 +175,8 @@ public class JobContextBoundaryTests
             int slotIndex,
             World world,
             IServiceProvider services,
-            uint lastSystemVersion,
-            uint currentSystemVersion)
+            ulong lastSystemVersion,
+            ulong currentSystemVersion)
         {
             _driver = driver;
             _slotIndex = slotIndex;
@@ -190,9 +190,9 @@ public class JobContextBoundaryTests
 
         public IServiceProvider Services { get; }
 
-        public uint LastSystemVersion { get; }
+        public ulong LastSystemVersion { get; }
 
-        public uint CurrentSystemVersion { get; }
+        public ulong CurrentSystemVersion { get; }
 
         public ref FakeJobScheduler Jobs => ref _driver.Jobs;
 
@@ -214,12 +214,12 @@ public class JobContextBoundaryTests
 
         public ref FakeJobScheduler Jobs => ref _jobs;
 
-        public uint AcquireSystemVersion(ref SystemSlot slot)
+        public ulong AcquireSystemVersion(ref SystemState slot)
         {
             return _world.AcquireSystemVersion();
         }
 
-        public FakeJobSystemContext CreateContext(ref SystemSlot slot)
+        public FakeJobSystemContext CreateContext(scoped ref SystemState slot)
         {
             EnsureSlot(slot.Index);
             return new FakeJobSystemContext(
@@ -245,7 +245,7 @@ public class JobContextBoundaryTests
 
         private void EnsureSlot(int slotIndex)
         {
-            if ((uint)slotIndex < (uint)_jobSlots.Length)
+            if ((ulong)slotIndex < (ulong)_jobSlots.Length)
                 return;
 
             int newLength = _jobSlots.Length;

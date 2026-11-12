@@ -39,7 +39,7 @@ public sealed partial class GlyphAtlas
     private static void RequireGlyph(Font font, uint glyph)
     {
         DevelopmentCheck.Require(font is not null, "A glyph needs a font.");
-        DevelopmentCheck.Require(!font.Data.IsClosed, "The font must be alive while using its atlas.");
+        DevelopmentCheck.Require(!font!.Data.IsClosed, "The font must be alive while using its atlas.");
         DevelopmentCheck.Require(glyph < HarfBuzz.GetGlyphCount(font.Data.Face), "The glyph must belong to the font.");
     }
 

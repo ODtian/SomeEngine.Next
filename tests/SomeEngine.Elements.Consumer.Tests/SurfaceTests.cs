@@ -25,21 +25,21 @@ public sealed partial class SurfaceTests
         using var frames = new ElementFrames();
         Entity root = frames.Spawn(new ResizedPanel(120, rewritten));
         frames.Frame();
-        Entity container = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity panel = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container));
-        uint nodeVersion = frames.World.WriteVersion<Surface>(panel);
-        uint typeVersion = frames.World.ComponentWriteVersion<Surface>();
-        Surface surface = frames.World.Read<Surface>(panel);
-        Assert.Equal(new Rect(0, 0, 120, 80), frames.World.Read<LayoutRect>(panel).Value);
+        Entity container = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity panel = Assert.Single(ElementChildren.Read(frames.World, container));
+        ulong nodeVersion = frames.World.ComponentDataWriteVersion<Surface>(panel);
+        ulong typeVersion = frames.World.ComponentWriteVersion(ComponentId<Surface>.Value);
+        Surface surface = frames.World.ReadComponentData<Surface>(panel);
+        Assert.Equal(new Rect(0, 0, 120, 80), frames.World.ReadComponentData<LayoutRect>(panel).Value);
 
-        frames.World.Replace(root, new ResizedPanel(200, rewritten));
+        frames.World.Set(root, new ResizedPanel(200, rewritten));
         frames.Frame();
 
-        Assert.Equal(panel, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container)));
-        Assert.Equal(new Rect(0, 0, 200, 80), frames.World.Read<LayoutRect>(panel).Value);
-        Assert.Equal(surface, frames.World.Read<Surface>(panel));
-        Assert.Equal(nodeVersion, frames.World.WriteVersion<Surface>(panel));
-        Assert.Equal(typeVersion, frames.World.ComponentWriteVersion<Surface>());
+        Assert.Equal(panel, Assert.Single(ElementChildren.Read(frames.World, container)));
+        Assert.Equal(new Rect(0, 0, 200, 80), frames.World.ReadComponentData<LayoutRect>(panel).Value);
+        Assert.Equal(surface, frames.World.ReadComponentData<Surface>(panel));
+        Assert.Equal(nodeVersion, frames.World.ComponentDataWriteVersion<Surface>(panel));
+        Assert.Equal(typeVersion, frames.World.ComponentWriteVersion(ComponentId<Surface>.Value));
     }
 
     [Theory]
@@ -50,21 +50,21 @@ public sealed partial class SurfaceTests
         using var frames = new ElementFrames();
         Entity root = frames.Spawn(new RecoloredPanel(new Color(0.2f, 0.4f, 0.6f, 0.8f), rewritten));
         frames.Frame();
-        Entity panel = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        uint nodeVersion = frames.World.WriteVersion<Surface>(panel);
-        uint typeVersion = frames.World.ComponentWriteVersion<Surface>();
+        Entity panel = Assert.Single(ElementChildren.Read(frames.World, root));
+        ulong nodeVersion = frames.World.ComponentDataWriteVersion<Surface>(panel);
+        ulong typeVersion = frames.World.ComponentWriteVersion(ComponentId<Surface>.Value);
 
-        frames.World.Replace(root, new RecoloredPanel(new Color(0.1f, 0.3f, 0.5f, 0.7f), rewritten));
+        frames.World.Set(root, new RecoloredPanel(new Color(0.1f, 0.3f, 0.5f, 0.7f), rewritten));
         frames.Frame();
 
-        Assert.Equal(panel, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        Surface surface = frames.World.Read<Surface>(panel);
+        Assert.Equal(panel, Assert.Single(ElementChildren.Read(frames.World, root)));
+        Surface surface = frames.World.ReadComponentData<Surface>(panel);
         Assert.Equal(new Color(0.1f, 0.3f, 0.5f, 0.7f), surface.Fill);
         Assert.Equal(4, surface.CornerRadius);
         Assert.Equal(new Color(0.9f, 0.7f, 0.5f), surface.BorderColor);
         Assert.Equal(2, surface.BorderWidth);
-        Assert.NotEqual(nodeVersion, frames.World.WriteVersion<Surface>(panel));
-        Assert.NotEqual(typeVersion, frames.World.ComponentWriteVersion<Surface>());
+        Assert.NotEqual(nodeVersion, frames.World.ComponentDataWriteVersion<Surface>(panel));
+        Assert.NotEqual(typeVersion, frames.World.ComponentWriteVersion(ComponentId<Surface>.Value));
     }
 
 #if DEBUG
@@ -96,15 +96,15 @@ public sealed partial class SurfaceTests
 
         frames.Frame();
 
-        Entity panel = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal(panel, frames.World.Read<PanelReference>(root).Value);
-        Surface surface = frames.World.Read<Surface>(panel);
+        Entity panel = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal(panel, frames.World.ReadComponentData<PanelReference>(root).Value);
+        Surface surface = frames.World.ReadComponentData<Surface>(panel);
         Assert.Equal(new Color(0.2f, 0.4f, 0.6f, 0.8f), surface.Fill);
         Assert.Equal(4, surface.CornerRadius);
         Assert.Equal(new Color(0.9f, 0.7f, 0.5f), surface.BorderColor);
         Assert.Equal(2, surface.BorderWidth);
-        Assert.Equal(new Rect(0, 0, 800, 600), frames.World.Read<LayoutRect>(panel).Value);
-        Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, panel).ToArray());
+        Assert.Equal(new Rect(0, 0, 800, 600), frames.World.ReadComponentData<LayoutRect>(panel).Value);
+        Assert.Empty(ElementChildren.Read(frames.World, panel));
     }
 
     [Fact]
@@ -115,14 +115,14 @@ public sealed partial class SurfaceTests
 
         frames.Frame();
 
-        Entity panel = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Surface surface = frames.World.Read<Surface>(panel);
+        Entity panel = Assert.Single(ElementChildren.Read(frames.World, root));
+        Surface surface = frames.World.ReadComponentData<Surface>(panel);
         Assert.Equal(new Color(0.2f, 0.4f, 0.6f, 0.8f), surface.Fill);
         Assert.Equal(0, surface.CornerRadius);
         Assert.Equal(default, surface.BorderColor);
         Assert.Equal(0, surface.BorderWidth);
-        Assert.Equal(new Rect(0, 0, 800, 600), frames.World.Read<LayoutRect>(panel).Value);
-        Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, panel).ToArray());
+        Assert.Equal(new Rect(0, 0, 800, 600), frames.World.ReadComponentData<LayoutRect>(panel).Value);
+        Assert.Empty(ElementChildren.Read(frames.World, panel));
     }
 
     private readonly record struct FilledPanel(Color Fill) : IView, IComponent
@@ -196,7 +196,7 @@ internal sealed class ElementFrames : IDisposable
     public ElementFrames()
     {
         World = new World();
-        _canvas = World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        _canvas = World.Create(new Canvas { Size = new Size(800, 600) });
         _systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(World));
         _systems.Add(new ViewRebuildSystem());
         _systems.Add(new LayoutSystem());

@@ -1,19 +1,17 @@
 using SomeEngine.ECS;
-using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Registry;
 using Xunit;
 
 namespace SomeEngine.ECS.Tests;
 
-public struct VisibilityState : SomeEngine.ECS.IEnableableComponent
+public struct VisibilityState : SomeEngine.ECS.IEnableableComponent, IAddedComponent
 {
     public int Value;
 }
 
-public struct MoveSpeed : SomeEngine.ECS.IComponent
+public struct MoveSpeed : SomeEngine.ECS.IAddedComponent
 {
     public int Value;
 }
@@ -24,7 +22,7 @@ public class EnableableComponentTests
     public void Add_EnableableComponent_DefaultsToEnabled()
     {
         var world = new World();
-        var entity = world.CreateEntity();
+        var entity = world.Create();
 
         world.Add(entity, new VisibilityState { Value = 7 });
 
@@ -37,7 +35,7 @@ public class EnableableComponentTests
     public void Disable_AndEnable_DoNotAffectComponentExistence()
     {
         var world = new World();
-        var entity = world.CreateEntity(new VisibilityState { Value = 3 });
+        var entity = world.Create(new VisibilityState { Value = 3 });
 
         world.Disable<VisibilityState>(entity);
         Assert.True(world.Has<VisibilityState>(entity));
@@ -52,12 +50,12 @@ public class EnableableComponentTests
     public void SwapRemove_PreservesMovedEntityEnableBit()
     {
         var world = new World();
-        var entity1 = world.CreateEntity(new VisibilityState { Value = 1 });
-        var entity2 = world.CreateEntity(new VisibilityState { Value = 2 });
-        var entity3 = world.CreateEntity(new VisibilityState { Value = 3 });
+        var entity1 = world.Create(new VisibilityState { Value = 1 });
+        var entity2 = world.Create(new VisibilityState { Value = 2 });
+        var entity3 = world.Create(new VisibilityState { Value = 3 });
 
         world.Disable<VisibilityState>(entity3);
-        world.DestroyEntity(entity1);
+        world.Destroy(entity1);
 
         Assert.True(world.IsAlive(entity2));
         Assert.True(world.IsAlive(entity3));
@@ -72,52 +70,54 @@ public class EnableableComponentTests
         var expected = new List<Entity>();
         for (int i = 0; i < 513; i++)
         {
-            var entity = world.CreateEntity(new VisibilityState { Value = i });
+            var entity = world.Create(new VisibilityState { Value = i });
             if (i % 2 == 0)
                 world.Disable<VisibilityState>(entity);
             else
                 expected.Add(entity);
         }
-        var query = world.Query(world.QueryDefinition().Enabled<VisibilityState>());
+        var query = world.Query(new QueryDescription().With<VisibilityState>());
         var actual = new List<Entity>();
-        world.ExecuteQuery(query, cursor =>
         {
-            foreach (var row in cursor.Rows)
-                actual.Add(row.Entity);
-        });
-        Assert.Equal(expected.OrderBy(entity => entity.Index), actual.OrderBy(entity => entity.Index));
+            using QueryScope cursor = (query).OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                actual.Add(rowChunk.Entities[row]);
+
+        };
+        Assert.Equal(expected.OrderBy(entity => entity.Id), actual.OrderBy(entity => entity.Id));
     }
 
     [Fact]
     public void QueryCache_WithEnabledAndWithDisabled_UsesRowLevelEnableState()
     {
         var world = new World();
-        var enabledEntity = world.CreateEntity(new VisibilityState { Value = 10 });
-        var disabledEntity = world.CreateEntity(new VisibilityState { Value = 20 });
+        var enabledEntity = world.Create(new VisibilityState { Value = 10 });
+        var disabledEntity = world.Create(new VisibilityState { Value = 20 });
         world.Disable<VisibilityState>(disabledEntity);
 
         var enabledQuery = world.Query(
-            world.QueryDefinition()
-                .All<VisibilityState>()
-                .Enabled<VisibilityState>());
+            new QueryDescription().WithStored<VisibilityState>().With<VisibilityState>());
         var disabledQuery = world.Query(
-            world.QueryDefinition()
-                .All<VisibilityState>()
-                .Disabled<VisibilityState>());
+            new QueryDescription().WithStored<VisibilityState>().WithDisabled<VisibilityState>());
 
         var enabledMatches = new List<Entity>();
-        world.ExecuteQuery(enabledQuery, cursor =>
         {
-            foreach (var row in cursor.Rows)
-                enabledMatches.Add(row.Entity);
-        });
+            using QueryScope cursor = (enabledQuery).OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                enabledMatches.Add(rowChunk.Entities[row]);
+
+        };
 
         var disabledMatches = new List<Entity>();
-        world.ExecuteQuery(disabledQuery, cursor =>
         {
-            foreach (var row in cursor.Rows)
-                disabledMatches.Add(row.Entity);
-        });
+            using QueryScope cursor = (disabledQuery).OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                disabledMatches.Add(rowChunk.Entities[row]);
+
+        };
 
         Assert.Equal([enabledEntity], enabledMatches);
         Assert.Equal([disabledEntity], disabledMatches);
@@ -129,24 +129,24 @@ public class EnableableComponentTests
         var world = new World();
         Entity[] entities = new Entity[128];
         for (int i = 0; i < entities.Length; i++)
-            entities[i] = world.CreateEntity(new VisibilityState { Value = i });
+            entities[i] = world.Create(new VisibilityState { Value = i });
         for (int i = 0; i < entities.Length; i++)
             world.Disable<VisibilityState>(entities[i]);
 
         var query = world.Query(
-            world.QueryDefinition()
-                .Read<VisibilityState>()
-                .Enabled<VisibilityState>());
+            new QueryDescription().WithStored<VisibilityState>().With<VisibilityState>());
 
         int chunks = 0;
         int rows = 0;
-        world.ExecuteQuery(query, cursor =>
         {
-            foreach (QueryChunkView _ in cursor.Chunks)
+            using QueryScope cursor = (query).OpenRead();
+            foreach (QueryChunk _ in cursor)
                 chunks++;
-            foreach (QueryRow _ in cursor.Rows)
+            foreach (QueryChunk _Chunk in cursor)
+                for (int _ = 0; _ < _Chunk.Count; _++)
                 rows++;
-        });
+
+        };
 
         Assert.Equal(0, chunks);
         Assert.Equal(0, rows);
@@ -157,22 +157,22 @@ public class EnableableComponentTests
     {
         var world = new World();
         for (int i = 0; i < 128; i++)
-            world.CreateEntity(new VisibilityState { Value = i });
+            world.Create(new VisibilityState { Value = i });
 
         var query = world.Query(
-            world.QueryDefinition()
-                .Read<VisibilityState>()
-                .Disabled<VisibilityState>());
+            new QueryDescription().WithStored<VisibilityState>().WithDisabled<VisibilityState>());
 
         int chunks = 0;
         int rows = 0;
-        world.ExecuteQuery(query, cursor =>
         {
-            foreach (QueryChunkView _ in cursor.Chunks)
+            using QueryScope cursor = (query).OpenRead();
+            foreach (QueryChunk _ in cursor)
                 chunks++;
-            foreach (QueryRow _ in cursor.Rows)
+            foreach (QueryChunk _Chunk in cursor)
+                for (int _ = 0; _ < _Chunk.Count; _++)
                 rows++;
-        });
+
+        };
 
         Assert.Equal(0, chunks);
         Assert.Equal(0, rows);

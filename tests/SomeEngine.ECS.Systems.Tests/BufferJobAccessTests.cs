@@ -1,7 +1,6 @@
 using ManualResetEventSlim = SomeEngine.Testing.TestSignal;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Hooks;
 using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
@@ -11,15 +10,15 @@ public sealed class BufferJobAccessTests : JobTest
     [Fact]
     public void BufferCallbackInsideJob_RejectsMissingLogicalResource()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
 
         // Bind the optional World coordinator, but deliberately omit the logical buffer resource.
-        _ = BufferJobAccess<Element>.Read(world);
+
         JobHandle handle = Jobs.Schedule(
             new ReadBufferJob<Element>(world, entity),
-            RelationshipJobAccess.TopologyRead(world));
+            world.Execution!.StructureRead);
 
         Assert.Throws<JobResourceSafetyException>(() => handle.Complete());
     }
@@ -27,7 +26,7 @@ public sealed class BufferJobAccessTests : JobTest
     [Fact]
     public void SameWorldSameBuffer_ReadOwnersCanRunConcurrently()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         using var firstStarted = new ManualResetEventSlim();
@@ -36,14 +35,10 @@ public sealed class BufferJobAccessTests : JobTest
         JobHandle first = default;
         try
         {
-            first = BufferJobAccess<Element>.ScheduleRead(
-                world,
-                new BlockingReadJob<Element>(world, entity, firstStarted, releaseFirst));
+            first = world.Execution!.Scheduler!.Schedule(new BlockingReadJob<Element>(world, entity, firstStarted, releaseFirst), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().ReadRandom<Buffer<Element>>()));
             Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            JobHandle second = BufferJobAccess<Element>.ScheduleRead(
-                world,
-                new SignalReadJob<Element>(world, entity, secondStarted));
+            JobHandle second = world.Execution!.Scheduler!.Schedule(new SignalReadJob<Element>(world, entity, secondStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().ReadRandom<Buffer<Element>>()));
             Assert.True(secondStarted.Wait(TimeSpan.FromSeconds(5)));
             second.Complete();
         }
@@ -58,7 +53,7 @@ public sealed class BufferJobAccessTests : JobTest
     public void SameWorldSameBuffer_WriteOwnerBlocksReadersAndWriters()
     {
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         using var writerStarted = new ManualResetEventSlim();
@@ -71,17 +66,11 @@ public sealed class BufferJobAccessTests : JobTest
         JobHandle writer = default;
         try
         {
-            writer = BufferJobAccess<Element>.ScheduleWrite(
-                world,
-                new BlockingWriteJob<Element>(world, entity, writerStarted, releaseWriter));
+            writer = world.Execution!.Scheduler!.Schedule(new BlockingWriteJob<Element>(world, entity, writerStarted, releaseWriter), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Buffer<Element>>()));
             Assert.True(writerStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            JobHandle reader = BufferJobAccess<Element>.ScheduleRead(
-                world,
-                new SignalJob(readerStarted));
-            JobHandle laterWriter = BufferJobAccess<Element>.ScheduleWrite(
-                world,
-                new SignalJob(laterWriterStarted));
+            JobHandle reader = world.Execution!.Scheduler!.Schedule(new SignalJob(readerStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().ReadRandom<Buffer<Element>>()));
+            JobHandle laterWriter = world.Execution!.Scheduler!.Schedule(new SignalJob(laterWriterStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Buffer<Element>>()));
 
             releaseWriter.Set();
             reader.Complete();
@@ -106,7 +95,7 @@ public sealed class BufferJobAccessTests : JobTest
     [Fact]
     public void DifferentBufferTypesAndWorlds_DoNotShareLogicalResource()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         var otherWorld = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
@@ -119,17 +108,11 @@ public sealed class BufferJobAccessTests : JobTest
         JobHandle blocker = default;
         try
         {
-            blocker = BufferJobAccess<Element>.ScheduleWrite(
-                world,
-                new BlockingWriteJob<Element>(world, entity, blockerStarted, releaseBlocker));
+            blocker = world.Execution!.Scheduler!.Schedule(new BlockingWriteJob<Element>(world, entity, blockerStarted, releaseBlocker), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Buffer<Element>>()));
             Assert.True(blockerStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            JobHandle otherType = BufferJobAccess<OtherElement>.ScheduleWrite(
-                world,
-                new SignalWriteJob<OtherElement>(world, otherTypeEntity, otherTypeStarted));
-            JobHandle otherWorldHandle = BufferJobAccess<Element>.ScheduleWrite(
-                otherWorld,
-                new SignalWriteJob<Element>(otherWorld, otherWorldEntity, otherWorldStarted));
+            JobHandle otherType = world.Execution!.Scheduler!.Schedule(new SignalWriteJob<OtherElement>(world, otherTypeEntity, otherTypeStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Buffer<OtherElement>>()));
+            JobHandle otherWorldHandle = otherWorld.Execution!.Scheduler!.Schedule(new SignalWriteJob<Element>(otherWorld, otherWorldEntity, otherWorldStarted), ((WorldJobs)otherWorld.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Buffer<Element>>()));
 
             Assert.True(otherTypeStarted.Wait(TimeSpan.FromSeconds(5)));
             Assert.True(otherWorldStarted.Wait(TimeSpan.FromSeconds(5)));
@@ -146,20 +129,19 @@ public sealed class BufferJobAccessTests : JobTest
     [Fact]
     public void FaultedBufferBody_ReleasesIterationAndSynchronousResourceOwner()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
-        _ = BufferJobAccess<Element>.Write(world);
 
-        Assert.Throws<ProbeException>(() =>
-            world.ExecuteBufferWrite<Element>(entity, static _ => throw new ProbeException()));
+
+        Assert.Throws<ProbeException>((Action)(() =>
+            { using (var buffer = world.GetBuffer<Element>(entity)) { throw new ProbeException(); } }));
 
         // Structural success proves iteration ownership was released; scheduled success proves
         // the synchronous logical storage owner was released.
         world.Add(entity, new ProbeComponent { Value = 1 });
         using var started = new ManualResetEventSlim();
-        BufferJobAccess<Element>
-            .ScheduleWrite(world, new SignalWriteJob<Element>(world, entity, started))
+        world.Execution!.Scheduler!.Schedule(new SignalWriteJob<Element>(world, entity, started), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Buffer<Element>>()))
             .Complete();
         Assert.True(started.IsSet);
     }
@@ -167,7 +149,7 @@ public sealed class BufferJobAccessTests : JobTest
     [Fact]
     public void RepeatedBufferAccessInvokesEveryCallback()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var unboundWorld = new World();
         Entity unboundEntity = CreateBufferEntity<Element>(unboundWorld);
         int unboundCallbacks = 0;
@@ -178,7 +160,7 @@ public sealed class BufferJobAccessTests : JobTest
 
         var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
-        _ = BufferJobAccess<Element>.Read(world);
+
         int callbacks = 0;
 
         for (int i = 0; i < 128; i++)
@@ -187,20 +169,20 @@ public sealed class BufferJobAccessTests : JobTest
             ExecuteCountedRead(world, entity, ref callbacks);
 
         for (int i = 0; i < 128; i++)
-            _ = world.HasBuffer<Element>(entity);
+            _ = world.Has<Buffer<Element>>(entity);
         for (int i = 0; i < 1_000; i++)
-            _ = world.HasBuffer<Element>(entity);
+            _ = world.Has<Buffer<Element>>(entity);
 
         Assert.Equal(1_128, callbacks);
     }
 
     [Fact]
-    public void TopologyWriteHook_CanBorrowBufferAfterLaterBufferOwnerWasRegistered()
+    public void StructureWriteCanBorrowItsBufferAfterALaterBufferJobRegisters()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
-        _ = BufferJobAccess<Element>.Write(world);
+
         using var hookStarted = new ManualResetEventSlim();
         using var laterRegistered = new ManualResetEventSlim();
         using var nestedBorrowCompleted = new ManualResetEventSlim();
@@ -210,22 +192,16 @@ public sealed class BufferJobAccessTests : JobTest
         JobHandle later = default;
         try
         {
-            world.Hooks<ProbeComponent>().OnAdd(
-                (DeferredWorld _, Entity _, in ProbeComponent _) =>
-                {
-                    hookStarted.Set();
-                    laterRegistered.Wait();
-                    world.ExecuteBufferWrite<Element>(
-                        entity,
-                        static buffer => buffer.Add(new Element { Value = 7 }));
-                    nestedBorrowCompleted.Set();
-                });
-
             mutationThread = new Thread(() =>
             {
                 try
                 {
+                    using WorldStructureWriteScope structure = world.OpenStructureWrite();
                     world.Add(entity, new ProbeComponent { Value = 1 });
+                    hookStarted.Set();
+                    Assert.True(laterRegistered.Wait(TimeSpan.FromSeconds(5)));
+                    using (DynamicBuffer<Element> buffer = world.GetBuffer<Element>(entity)) buffer.Add(new Element { Value = 7 });
+                    nestedBorrowCompleted.Set();
                 }
                 catch (Exception exception)
                 {
@@ -235,9 +211,7 @@ public sealed class BufferJobAccessTests : JobTest
             mutationThread.Start();
             Assert.True(hookStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            later = BufferJobAccess<Element>.ScheduleWrite(
-                world,
-                new SignalWriteJob<Element>(world, entity, laterJobStarted));
+            later = world.Execution!.Scheduler!.Schedule(new SignalWriteJob<Element>(world, entity, laterJobStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Buffer<Element>>()));
             laterRegistered.Set();
 
             Assert.True(nestedBorrowCompleted.Wait(TimeSpan.FromSeconds(5)));
@@ -257,17 +231,17 @@ public sealed class BufferJobAccessTests : JobTest
     private Entity CreateBufferEntity<T>(World world)
         where T : struct, IBufferElement
     {
-        Entity entity = world.CreateEntity();
+        Entity entity = world.Create();
         world.AddBuffer<T>(entity);
         return entity;
     }
 
     private void ExecuteCountedRead(World world, Entity entity, ref int callbacks)
     {
-        world.ExecuteBufferRead<Element, int>(
-            entity,
-            ref callbacks,
-            static (BufferView<Element> _, ref int count) => count++);
+        using (var buffer = world.ReadBuffer<Element>(entity))
+        {
+            callbacks++;
+        }
     }
 
     private readonly struct ReadBufferJob<T> : IJob
@@ -284,7 +258,10 @@ public sealed class BufferJobAccessTests : JobTest
 
         public void Execute()
         {
-            _world.ExecuteBufferRead<T>(_entity, static _ => { });
+            using (var buffer = _world.ReadBuffer<T>(_entity))
+            {
+
+            }
         }
     }
 
@@ -311,10 +288,10 @@ public sealed class BufferJobAccessTests : JobTest
         public void Execute()
         {
             var state = new BlockingState(_started, _release);
-            _world.ExecuteBufferRead<T, BlockingState>(
-                _entity,
-                ref state,
-                static (BufferView<T> _, ref BlockingState blocking) => blocking.Block());
+            using (var buffer = _world.ReadBuffer<T>(_entity))
+            {
+                state.Block();
+            }
         }
     }
 
@@ -341,10 +318,10 @@ public sealed class BufferJobAccessTests : JobTest
         public void Execute()
         {
             var state = new BlockingState(_started, _release);
-            _world.ExecuteBufferWrite<T, BlockingState>(
-                _entity,
-                ref state,
-                static (DynamicBuffer<T> _, ref BlockingState blocking) => blocking.Block());
+            using (var buffer = _world.GetBuffer<T>(_entity))
+            {
+                state.Block();
+            }
         }
     }
 
@@ -380,10 +357,10 @@ public sealed class BufferJobAccessTests : JobTest
         public void Execute()
         {
             ManualResetEventSlim state = _started;
-            _world.ExecuteBufferRead<T, ManualResetEventSlim>(
-                _entity,
-                ref state,
-                static (BufferView<T> _, ref ManualResetEventSlim started) => started.Set());
+            using (var buffer = _world.ReadBuffer<T>(_entity))
+            {
+                state.Set();
+            }
         }
     }
 
@@ -404,10 +381,10 @@ public sealed class BufferJobAccessTests : JobTest
         public void Execute()
         {
             ManualResetEventSlim state = _started;
-            _world.ExecuteBufferWrite<T, ManualResetEventSlim>(
-                _entity,
-                ref state,
-                static (DynamicBuffer<T> _, ref ManualResetEventSlim started) => started.Set());
+            using (var buffer = _world.GetBuffer<T>(_entity))
+            {
+                state.Set();
+            }
         }
     }
 

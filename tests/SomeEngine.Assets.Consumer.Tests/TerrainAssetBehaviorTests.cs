@@ -13,7 +13,7 @@ public sealed class TerrainAssetBehaviorTests
         string path = Path.Combine(Path.GetTempPath(), $"SomeEngine-Terrain-{Guid.NewGuid():N}.terrain.asset");
         try
         {
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
             var editing = new TerrainEditing(scheduler);
             var terrain = new Terrain(editing);
             HeightField heights = terrain.CreateHeightField("ground", new HeightGrid(5, 5, 2));

@@ -71,10 +71,10 @@
         "type": "Project",
         "dependencies": {
           "SomeEngine.Diagnostics": "[1.0.0, )",
-          "SomeEngine.Job.Contracts": "[1.0.0, )"
+          "SomeEngine.Job.Resources": "[1.0.0, )"
         }
       },
-      "someengine.job.contracts": {
+      "someengine.job.resources": {
         "type": "Project"
       }
     }

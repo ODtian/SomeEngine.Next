@@ -26,7 +26,7 @@ public sealed partial class Scheduler
     {
         private const string CorruptCompletionStatePoolMessage = "Completion state pool is corrupt.";
 
-        private readonly RuntimeCounters _counters;
+        private readonly JobCounters _counters;
         private readonly long _generation;
         private readonly Scheduler _scheduler;
         private readonly int _maxCompletionStates;
@@ -36,7 +36,7 @@ public sealed partial class Scheduler
         private readonly Stack<int> _observedFaultedStates = new();
         private int _nextStateIndex;
 
-        internal CompletionStore(Scheduler scheduler, JobRuntimeConfig config, RuntimeCounters counters, long generation)
+        internal CompletionStore(Scheduler scheduler, JobConfiguration config, JobCounters counters, long generation)
         {
             _scheduler = scheduler;
             _counters = counters;

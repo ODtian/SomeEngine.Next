@@ -30,19 +30,19 @@ public sealed class ComposeTests
                     registry.Register<CheckpointValue, CheckpointValueCodec>(new SerializationTypeKey(
                         new System.Guid("e4b64561-5a8c-4b95-9200-29b54aee4d97"), "ComposeNumber", 1));
                     using var frames = new HeadlessFrameDriver();
-                    Entity source = frames.World.CreateEntity(new CheckpointValue(7));
+                    Entity source = frames.World.Create(new CheckpointValue(7));
                     Entity root = Views.Spawn(frames.World, Entity.Null, new CheckpointComposition.Number_View(source));
                     frames.Frame();
-                    Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
+                    Entity child = ElementChildren.Read(frames.World, root).Single();
                     using var checkpoint = new MemoryStream();
                     WorldCheckpointCodec.Write(checkpoint, frames.World, registry);
                     checkpoint.Position = 0;
                     using var restored = new HeadlessFrameDriver(WorldCheckpointCodec.Read(checkpoint, registry));
-                    restored.World.Replace(source, new CheckpointValue(13));
+                    restored.World.Set(source, new CheckpointValue(13));
                     restored.Frame();
-                    return Hierarchy<ElementTree>.GetChildren(restored.World, root).Single() == child &&
-                        restored.World.ReadSparse<CheckpointComposition.Number_View>(root).source == source &&
-                        restored.World.ReadSparse<CheckpointLabel>(child).Value == 13;
+                    return ElementChildren.Read(restored.World, root).Single() == child &&
+                        restored.World.ReadComponentData<CheckpointComposition.Number_View>(root).source == source &&
+                        restored.World.ReadComponentData<CheckpointLabel>(child).Value == 13;
                 }
             }
             """));
@@ -83,9 +83,9 @@ public sealed class ComposeTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Panel("external"));
                     frames.Frame();
-                    Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-                    string[] titles = children.Select(child => frames.World.ReadSparse<Card>(
-                        Hierarchy<ElementTree>.GetChildren(frames.World, child).Single()).Title).ToArray();
+                    Entity[] children = ElementChildren.Read(frames.World, root).ToArray();
+                    string[] titles = children.Select(child => frames.World.ReadComponentData<Card>(
+                        ElementChildren.Read(frames.World, child).Single()).Title).ToArray();
                     return titles.SequenceEqual(new[] { "external", "9" });
                 }
             }
@@ -124,11 +124,11 @@ public sealed class ComposeTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Composition<string>.Panel(8));
                     frames.Frame();
-                    Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    Entity card = Hierarchy<ElementTree>.GetChildren(frames.World, child).Single();
-                    var view = frames.World.ReadSparse<Composition<string>.Label_View<int>>(child);
+                    Entity child = ElementChildren.Read(frames.World, root).Single();
+                    Entity card = ElementChildren.Read(frames.World, child).Single();
+                    var view = frames.World.ReadComponentData<Composition<string>.Label_View<int>>(child);
                     return view.value == 8 && view.suffix == " default" &&
-                        frames.World.ReadSparse<Card>(card).Title == "8 default";
+                        frames.World.ReadComponentData<Card>(card).Title == "8 default";
                 }
             }
 
@@ -171,19 +171,19 @@ public sealed class ComposeTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Panel(false));
                     frames.Frame();
-                    Entity first = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    Entity card = Hierarchy<ElementTree>.GetChildren(frames.World, first).Single();
-                    if (frames.World.ReadSparse<ReferencedComposition.Label_View>(first).value != 7 ||
-                        frames.World.ReadSparse<Card>(card).Title != "7")
+                    Entity first = ElementChildren.Read(frames.World, root).Single();
+                    Entity card = ElementChildren.Read(frames.World, first).Single();
+                    if (frames.World.ReadComponentData<ReferencedComposition.Label_View>(first).value != 7 ||
+                        frames.World.ReadComponentData<Card>(card).Title != "7")
                         return false;
-                    frames.World.Replace(card, new CardState(9));
-                    frames.World.Replace(root, new Panel(true));
+                    frames.World.Set(card, new CardState(9));
+                    frames.World.Set(root, new Panel(true));
                     frames.Frame();
-                    Entity second = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    Entity secondCard = Hierarchy<ElementTree>.GetChildren(frames.World, second).Single();
-                    return first != second && !frames.World.IsAlive(first) &&
-                        frames.World.ReadSparse<ReferencedComposition.Label_View>(second).value == 7 &&
-                        frames.World.Read<CardState>(secondCard).Value == 0;
+                    Entity second = ElementChildren.Read(frames.World, root).Single();
+                    Entity secondCard = ElementChildren.Read(frames.World, second).Single();
+                    return first != second && !frames.World.Has<ViewType>(first) &&
+                        frames.World.ReadComponentData<ReferencedComposition.Label_View>(second).value == 7 &&
+                        frames.World.ReadComponentData<CardState>(secondCard).Value == 0;
                 }
             }
 
@@ -254,20 +254,20 @@ public sealed class ComposeTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Panel("first"));
                     frames.Frame();
-                    Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    Entity card = Hierarchy<ElementTree>.GetChildren(frames.World, child).Single();
-                    frames.World.Replace(root, new Panel("failed"));
+                    Entity child = ElementChildren.Read(frames.World, root).Single();
+                    Entity card = ElementChildren.Read(frames.World, child).Single();
+                    frames.World.Set(root, new Panel("failed"));
                     frames.Frame();
                     if (frames.World.HasSparse<BuildError>(root) ||
-                        frames.World.ReadSparse<BuildError>(child).Exception is not System.InvalidOperationException ||
-                        frames.World.ReadSparse<Card>(card).Title != "first")
+                        frames.World.ReadComponentData<BuildError>(child).Exception is not System.InvalidOperationException ||
+                        frames.World.ReadComponentData<Card>(card).Title != "first")
                         return false;
 
-                    frames.World.Replace(root, new Panel("recovered"));
+                    frames.World.Set(root, new Panel("recovered"));
                     frames.Frame();
                     return !frames.World.HasSparse<BuildError>(child) &&
-                        Hierarchy<ElementTree>.GetChildren(frames.World, root).Single() == child &&
-                        frames.World.ReadSparse<Card>(card).Title == "recovered";
+                        ElementChildren.Read(frames.World, root).Single() == child &&
+                        frames.World.ReadComponentData<Card>(card).Title == "recovered";
                 }
             }
 
@@ -365,25 +365,25 @@ public sealed class ComposeTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Panel("first", 0));
                     frames.Frame();
-                    Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    Entity card = Hierarchy<ElementTree>.GetChildren(frames.World, child).Single();
-                    if (frames.World.ReadSparse<Composition.Label_View>(child).text != "first" ||
-                        frames.World.ReadSparse<Card>(card).Title != "first old")
+                    Entity child = ElementChildren.Read(frames.World, root).Single();
+                    Entity card = ElementChildren.Read(frames.World, child).Single();
+                    if (frames.World.ReadComponentData<Composition.Label_View>(child).text != "first" ||
+                        frames.World.ReadComponentData<Card>(card).Title != "first old")
                         return false;
 
                     Composition.Decoration = " new";
-                    frames.World.Replace(root, new Panel("first", 1));
+                    frames.World.Set(root, new Panel("first", 1));
                     frames.Frame();
-                    if (Hierarchy<ElementTree>.GetChildren(frames.World, root).Single() != child ||
-                        frames.World.ReadSparse<Card>(card).Title != "first old" ||
-                        frames.World.Read<Refresh>(root).Value != 1)
+                    if (ElementChildren.Read(frames.World, root).Single() != child ||
+                        frames.World.ReadComponentData<Card>(card).Title != "first old" ||
+                        frames.World.ReadComponentData<Refresh>(root).Value != 1)
                         return false;
 
-                    frames.World.Replace(root, new Panel("second", 2));
+                    frames.World.Set(root, new Panel("second", 2));
                     frames.Frame();
-                    return Hierarchy<ElementTree>.GetChildren(frames.World, root).Single() == child &&
-                        frames.World.ReadSparse<Composition.Label_View>(child).text == "second" &&
-                        frames.World.ReadSparse<Card>(card).Title == "second new";
+                    return ElementChildren.Read(frames.World, root).Single() == child &&
+                        frames.World.ReadComponentData<Composition.Label_View>(child).text == "second" &&
+                        frames.World.ReadComponentData<Card>(card).Title == "second new";
                 }
             }
 
@@ -401,7 +401,7 @@ public sealed class ComposeTests
                 {
                     Composition.Label(Text);
                     if (Scope.World.Has<Refresh>(Scope.Entity))
-                        Scope.World.Replace(Scope.Entity, new Refresh(Tick));
+                        Scope.World.Set(Scope.Entity, new Refresh(Tick));
                     else
                         Scope.World.Add(Scope.Entity, new Refresh(Tick));
                     return default;

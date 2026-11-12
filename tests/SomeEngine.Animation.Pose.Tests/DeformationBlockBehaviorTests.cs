@@ -7,9 +7,9 @@ using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;
-using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
+using SomeEngine.ECS.Serialization;
 using SomeEngine.Render;
 using SomeEngine.Render.Components;
 
@@ -61,13 +61,18 @@ public sealed class DeformationBlockBehaviorTests
 
         AssetEntry scene = Assert.Single(project.Manifest.Assets.Values, entry => entry.AssetType == WorldAsset.FileType);
         using WorldAsset worldAsset = await WorldAsset.OpenAsync(Path.Combine(files.Directory, scene.Path));
-        using World world = await worldAsset.LoadAsync(SceneSerialization.CreateRegistry());
+        WorldContent content = Assert.Single((await worldAsset.GetBlockAsync<WorldBlock>()).Contents);
+        await using var loader = new AssetLoader(project.CreateStorage());
+        using EntityAsset entities = await EntityAsset.OpenAsync(loader, new(content.Asset.Value));
+        ReadOnlyMemory<byte> bytes = await (await entities.GetBlockAsync<EntityBlock>()).ReadBytesAsync(EntityBlock.ContentKey);
+        using var world = new World();
+        WorldSerializer.ReadEntities(bytes, world, new(Codecs: SceneSerialization.Codecs));
         Entity[] nodes = MeshNodes(world);
         Entity[] skinned = nodes.Where(node => world.Has<SkeletonSource>(node)).ToArray();
         Assert.Equal(2, skinned.Length);
-        Assert.All(skinned, node => Assert.Equal(mesh.Reference, world.Read<MeshSource>(node).Mesh));
-        Assert.Equal(new[] { first.Id, second.Id }.Order(), skinned.Select(node => world.Read<SkeletonSource>(node).Skeleton.Value).Order());
-        Entity staticNode = Assert.Single(nodes, node => world.Read<MeshSource>(node).Mesh == staticMesh.Reference);
+        Assert.All(skinned, node => Assert.Equal(mesh.Reference, world.ReadComponentData<MeshSource>(node).Mesh));
+        Assert.Equal(new[] { first.Id, second.Id }.Order(), skinned.Select(node => world.ReadComponentData<SkeletonSource>(node).Skeleton.Value).Order());
+        Entity staticNode = Assert.Single(nodes, node => world.ReadComponentData<MeshSource>(node).Mesh == staticMesh.Reference);
         Assert.False(world.Has<SkeletonSource>(staticNode));
 
         string saved = Path.Combine(files.Directory, "copy.skeleton.asset");
@@ -225,15 +230,10 @@ public sealed class DeformationBlockBehaviorTests
     private static Entity[] MeshNodes(World world)
     {
         var nodes = new List<Entity>();
-        QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<MeshSource>());
-        try
-        {
-            world.ExecuteQuery(query, ref nodes, static (QueryCursor rows, ref List<Entity> values) =>
-            {
-                foreach (var row in rows.Rows) values.Add(row.Entity);
-            });
-        }
-        finally { world.ReleaseQuery(query); }
+        Query query = world.Query(new QueryDescription().WithStored<MeshSource>());
+        using (QueryScope rows = query.OpenRead())
+            foreach (QueryChunk chunk in rows)
+                foreach (Entity entity in chunk.Entities) nodes.Add(entity);
         return nodes.ToArray();
     }
 

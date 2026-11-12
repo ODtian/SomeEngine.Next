@@ -39,4 +39,4 @@ public readonly record struct TerrainChunkBounds(TerrainChunkCoordinate Coordina
 
 public readonly record struct TerrainChunk(
     int PlacementId, TerrainChunkCoordinate Coordinates, int Lod, ulong Revision, int GeometryId,
-    TerrainTransitionFaces TransitionFaces = TerrainTransitionFaces.None) : IComponent;
+    TerrainTransitionFaces TransitionFaces = TerrainTransitionFaces.None) : ITrackedComponent;

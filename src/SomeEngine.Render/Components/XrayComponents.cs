@@ -16,7 +16,7 @@ public readonly record struct Xray(XrayBlend Visible, XrayBlend Occluded,
 
 /// <summary>Extracted X-ray rules stored with the mesh's other GPU instance properties.</summary>
 [StructLayout(LayoutKind.Sequential, Size = 48)]
-public readonly record struct RenderXray : IComponent
+public readonly record struct RenderXray : IComponent, ITrackedComponent
 {
     public readonly Vector4 Visible;
     public readonly Vector4 Occluded;

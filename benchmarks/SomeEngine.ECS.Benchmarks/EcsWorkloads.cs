@@ -4,7 +4,6 @@ using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Registry;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Serialization;
@@ -27,7 +26,7 @@ public struct BenchmarkJobVelocity : SomeEngine.ECS.IComponent
 public readonly record struct BenchmarkDurablePosition(int X, int Y) :
     SomeEngine.ECS.IComponent;
 
-public struct BenchmarkDurablePositionCodec : ICanonicalComponentCodec<BenchmarkDurablePosition>
+public struct BenchmarkDurablePositionCodec : IDurableComponentCodec<BenchmarkDurablePosition>
 {
     public void Write(ref DataWriter writer, in BenchmarkDurablePosition value)
     {
@@ -69,13 +68,13 @@ internal static partial class EcsBenchmarkSuite
 
     private static readonly int[] JobComponents =
     [
-        ComponentMetadata<BenchmarkJobPosition>.Id,
-        ComponentMetadata<BenchmarkJobVelocity>.Id,
+        ComponentId<BenchmarkJobPosition>.Value,
+        ComponentId<BenchmarkJobVelocity>.Value,
     ];
 
     private static readonly int[] DurablePositionComponents =
     [
-        ComponentMetadata<BenchmarkDurablePosition>.Id,
+        ComponentId<BenchmarkDurablePosition>.Value,
     ];
 
     private static readonly SerializationTypeKey DurablePositionTypeKey = new(
@@ -85,28 +84,25 @@ internal static partial class EcsBenchmarkSuite
 
     private static readonly int[] FilterComponents =
     [
-        ComponentMetadata<FilterPosition>.Id,
-        ComponentMetadata<FilterVisibility>.Id,
+        ComponentId<FilterPosition>.Value,
+        ComponentId<FilterVisibility>.Value,
     ];
 
-    private static readonly int[] StorageOwnerComponents =
+    private static readonly int[] StorageValueComponents =
     [
-        ComponentMetadata<StorageIndex>.Id,
-        ComponentMetadata<StorageBucket>.Id,
+        ComponentId<StorageIndex>.Value,
+        ComponentId<StorageBucket>.Value,
     ];
 
     private static readonly int[] StorageBufferComponents =
     [
-        ComponentMetadata<StorageIndex>.Id,
-        ComponentMetadata<StorageBucket>.Id,
-        BufferComponents.Header<BenchmarkBufferElement>(),
-        BufferComponents.Inline<BenchmarkBufferElement>(),
+        ComponentId<StorageIndex>.Value,
+        ComponentId<StorageBucket>.Value,
+        ComponentId<Buffer<BenchmarkBufferElement>>.Value,
     ];
 
-    private static readonly int[] StorageSparseComponents =
-    [
-        ComponentMetadata<StorageSparse>.Id,
-    ];
+    private static World CreateJobWorld(int capacity)
+        => new(capacity, execution: new WorldJobs(SomeEngine.Job.JobSystem.Default));
 
     private static string FormatHash(params long[] values)
     {
@@ -138,20 +134,10 @@ internal static partial class EcsBenchmarkSuite
     {
         if ((uint)capturedEntityCount > (uint)entityCount)
             throw new ArgumentOutOfRangeException(nameof(capturedEntityCount));
-        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(entityCount);
+        var world = CreateJobWorld(entityCount);
         entities = new Entity[capturedEntityCount];
         var state = new EntityCaptureState(world, entities, entityCount);
-        world.ExecuteBundleSpawnBatch(
-            PositionComponents,
-            state.EntityCount,
-            ref state,
-            static (BundleWriteView view, ref EntityCaptureState capture) =>
-            {
-                var position = new Position(view.Index, view.Index + 1);
-                view.Write(in position);
-                if (view.Index < capture.Entities.Length)
-                    capture.Entities[view.Index] = view.Entity;
-            });
+        world.ExecuteBundleSpawnBatch(PositionComponents, state.EntityCount, state, new CapturedPositionWriter());
         return world;
     }
 
@@ -162,25 +148,8 @@ internal static partial class EcsBenchmarkSuite
         internal ParallelIntegrateExecution(int entityCount)
         {
             _entityCount = entityCount;
-            World = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(entityCount);
-            World.ExecuteBundleSpawnBatch(
-                JobComponents,
-                entityCount,
-                static view =>
-                {
-                    var position = new BenchmarkJobPosition
-                    {
-                        X = view.Index,
-                        Y = -view.Index,
-                    };
-                    var velocity = new BenchmarkJobVelocity
-                    {
-                        X = view.Index % 7 + 1,
-                        Y = 2,
-                    };
-                    view.Write(in position);
-                    view.Write(in velocity);
-                });
+            World = CreateJobWorld(entityCount);
+            World.ExecuteBundleSpawnBatch(JobComponents, entityCount, 0, new JobComponentsWriter());
         }
 
         public World World { get; }
@@ -189,31 +158,31 @@ internal static partial class EcsBenchmarkSuite
             new BenchmarkIntegrateJob()
                 .ScheduleParallel(
                     World,
-                    new JobEntityScheduleOptions(rowsPerPacket: 256))
+                    query: null)
                 .Complete();
 
         public string ValidateAndGetChecksum()
         {
-            QueryHandle query = World.Query(
-                World.QueryDefinition()
-                    .Read<BenchmarkJobPosition>()
-                    .Read<BenchmarkJobVelocity>());
+            Query query = World.Query(
+                new QueryDescription()
+                    .WithStored<BenchmarkJobPosition>()
+                    .WithStored<BenchmarkJobVelocity>());
             var state = new JobChecksum();
-            World.ExecuteQuery(
-                query,
-                ref state,
-                static (scoped QueryCursor cursor, ref JobChecksum checksum) =>
+            using (QueryScope source = query.OpenRead())
+            foreach (QueryChunk chunk in source)
+            {
+                ReadOnlySpan<BenchmarkJobPosition> valuesBenchmarkJobPosition = chunk.Read<BenchmarkJobPosition>();
+                ReadOnlySpan<BenchmarkJobVelocity> valuesBenchmarkJobVelocity = chunk.Read<BenchmarkJobVelocity>();
+                for (int row = 0; row < chunk.Count; row++)
                 {
-                    foreach (QueryRow row in cursor.Rows)
-                    {
-                        BenchmarkJobPosition position = row.Read<BenchmarkJobPosition>();
-                        BenchmarkJobVelocity velocity = row.Read<BenchmarkJobVelocity>();
-                        checksum.Count++;
-                        checksum.SumX += position.X;
-                        checksum.SumY += position.Y;
-                        checksum.VelocitySum += velocity.X + velocity.Y;
-                    }
-                });
+                    BenchmarkJobPosition position = valuesBenchmarkJobPosition[row];
+                    BenchmarkJobVelocity velocity = valuesBenchmarkJobVelocity[row];
+                    state.Count++;
+                    state.SumX += position.X;
+                    state.SumY += position.Y;
+                    state.VelocitySum += velocity.X + velocity.Y;
+                }
+            }
 
             long initialSum = (long)_entityCount * (_entityCount - 1) / 2;
             long velocityX = 0;
@@ -234,8 +203,8 @@ internal static partial class EcsBenchmarkSuite
     {
         private readonly int _entityCount;
         private readonly int _queryIterations;
-        private readonly QueryHandle _query;
-        private readonly uint _lastVersion;
+        private readonly Query _query;
+        private readonly ulong _lastVersion;
         private readonly long _expectedRowsPerIteration;
         private readonly long _expectedSumPerIteration;
         private long _rows;
@@ -245,43 +214,32 @@ internal static partial class EcsBenchmarkSuite
         {
             _entityCount = entityCount;
             _queryIterations = queryIterations;
-            World = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(entityCount);
+            World = CreateJobWorld(entityCount);
             var entities = new Entity[entityCount];
             var capture = new FilterPopulateState(entities);
-            World.ExecuteBundleSpawnBatch(
-                FilterComponents,
-                entityCount,
-                ref capture,
-                static (BundleWriteView view, ref FilterPopulateState state) =>
-                {
-                    var position = new FilterPosition(view.Index);
-                    var visibility = new FilterVisibility(view.Index);
-                    view.Write(in position);
-                    view.Write(in visibility);
-                    state.Entities[view.Index] = view.Entity;
-                });
+            World.ExecuteBundleSpawnBatch(FilterComponents, entityCount, capture, new FilterComponentsWriter());
 
             for (int i = 1; i < entities.Length; i += 2)
                 World.Disable<FilterVisibility>(entities[i]);
 
-            _lastVersion = World.AcquireSystemTick();
+            _lastVersion = World.AcquireSystemVersion();
             long expectedRows = 0;
             long expectedSum = 0;
             for (int i = 0; i < entities.Length; i += 4)
             {
                 int value = checked(i + 1_000);
-                World.Replace(entities[i], new FilterPosition(value));
+                World.Set(entities[i], new FilterPosition(value));
                 expectedRows++;
                 expectedSum += value;
             }
             _expectedRowsPerIteration = expectedRows;
             _expectedSumPerIteration = expectedSum;
             _query = World.Query(
-                World.QueryDefinition()
-                    .Read<FilterPosition>()
-                    .Read<FilterVisibility>()
-                    .Changed<FilterPosition>()
-                    .Enabled<FilterVisibility>());
+                new QueryDescription()
+                    .WithStored<FilterPosition>()
+                    .WithStored<FilterVisibility>()
+                    .WithChanged<FilterPosition>(_lastVersion)
+                    .With<FilterVisibility>());
         }
 
         public World World { get; }
@@ -291,18 +249,16 @@ internal static partial class EcsBenchmarkSuite
             var state = new FilterChecksum();
             for (int iteration = 0; iteration < _queryIterations; iteration++)
             {
-                World.ExecuteQuery(
-                    _query,
-                    _lastVersion,
-                    ref state,
-                    static (scoped QueryCursor cursor, ref FilterChecksum checksum) =>
-                    {
-                        foreach (QueryRow row in cursor.Rows)
-                        {
-                            checksum.Rows++;
-                            checksum.Sum += row.Read<FilterPosition>().Value;
-                        }
-                    });
+                using (QueryScope source = _query.Since(_lastVersion).OpenRead())
+            foreach (QueryChunk chunk in source)
+            {
+                ReadOnlySpan<FilterPosition> valuesFilterPosition = chunk.Read<FilterPosition>();
+                for (int row = 0; row < chunk.Count; row++)
+                {
+                    state.Rows++;
+                    state.Sum += valuesFilterPosition[row].Value;
+                }
+            }
             }
             _rows = state.Rows;
             _sum = state.Sum;
@@ -317,63 +273,31 @@ internal static partial class EcsBenchmarkSuite
                 throw new InvalidOperationException(
                     "Changed+Enabled benchmark selected an incorrect row set.");
             }
-            return FormatHash(_rows, _sum, World.CurrentTick);
+            return FormatHash(_rows, _sum, unchecked((long)World.Version));
         }
     }
 
-    private sealed class StorageOwnersExecution : IBenchmarkExecution
+    private sealed class StorageCollectionsExecution : IBenchmarkExecution
     {
         private readonly int _entityCount;
         private readonly int _bufferEntityCount;
-        private readonly QueryHandle _bufferQuery;
-        private readonly QueryHandle _sharedQuery;
+        private readonly Query _bufferQuery;
+        private readonly Query[] _sharedQueries = new Query[SharedBucketCount];
         private StorageChecksum _checksum;
 
-        internal StorageOwnersExecution(int entityCount)
+        internal StorageCollectionsExecution(int entityCount)
         {
             _entityCount = entityCount;
             _bufferEntityCount = Math.Min(entityCount, 4_096);
-            World = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(entityCount);
-            var bufferState = new StoragePopulateState(offset: 0, includeBuffer: true);
-            World.ExecuteBundleSpawnBatch(
-                StorageBufferComponents,
-                StorageSparseComponents,
-                _bufferEntityCount,
-                ref bufferState,
-                static (BundleWriteView view, ref StoragePopulateState state) =>
-                {
-                    int item = state.Offset + view.Index;
-                    var index = new StorageIndex(item % IndexBucketCount);
-                    var bucket = new StorageBucket(item % SharedBucketCount);
-                    var sparse = new StorageSparse(item);
-                    view.WriteShared(in bucket);
-                    view.Write(in index);
-                    view.WriteSparse(in sparse);
-                    if (state.IncludeBuffer)
-                    {
-                        ReadOnlyMemory<BenchmarkBufferElement> buffer =
-                            InitialBufferValues.AsMemory();
-                        view.WriteBuffer(in buffer);
-                    }
-                });
-            var ownerState = new StoragePopulateState(_bufferEntityCount, includeBuffer: false);
-            World.ExecuteBundleSpawnBatch(
-                StorageOwnerComponents,
-                StorageSparseComponents,
-                entityCount - _bufferEntityCount,
-                ref ownerState,
-                static (BundleWriteView view, ref StoragePopulateState state) =>
-                {
-                    int item = state.Offset + view.Index;
-                    var index = new StorageIndex(item % IndexBucketCount);
-                    var bucket = new StorageBucket(item % SharedBucketCount);
-                    var sparse = new StorageSparse(item);
-                    view.WriteShared(in bucket);
-                    view.Write(in index);
-                    view.WriteSparse(in sparse);
-                });
-            _bufferQuery = World.Query(World.QueryDefinition().ReadBuffer<BenchmarkBufferElement>());
-            _sharedQuery = World.Query(World.QueryDefinition().Shared<StorageBucket>());
+            World = CreateJobWorld(entityCount);
+            var bufferState = new StoragePopulateState(offset: 0);
+            World.ExecuteBundleSpawnBatch(StorageBufferComponents, _bufferEntityCount, bufferState, new StorageBufferWriter());
+            var valueState = new StoragePopulateState(_bufferEntityCount);
+            World.ExecuteBundleSpawnBatch(StorageValueComponents, entityCount - _bufferEntityCount, valueState, new StorageSparseWriter());
+            _bufferQuery = World.Query(new QueryDescription().WithStored<Buffer<BenchmarkBufferElement>>());
+            for (int bucket = 0; bucket < SharedBucketCount; bucket++)
+                _sharedQueries[bucket] = World.Query(new QueryDescription().WithShared(World.InternShared(new StorageBucket(bucket))));
+            _ = World.Index<StorageIndex, int>();
         }
 
         public World World { get; }
@@ -381,49 +305,32 @@ internal static partial class EcsBenchmarkSuite
         public void Execute()
         {
             var checksum = new StorageChecksum();
-            World.ExecuteSparseWrite<StorageSparse, StorageChecksum>(
-                ref checksum,
-                static (ReadOnlySpan<Entity> entities, Span<StorageSparse> values, ref StorageChecksum state) =>
-                {
-                    state.SparseCount = entities.Length;
-                    for (int i = 0; i < values.Length; i++)
-                    {
-                        values[i] = new StorageSparse(values[i].Value + 1);
-                        state.SparseSum += values[i].Value;
-                    }
-                });
-
-            World.ExecuteQuery(
-                _bufferQuery,
-                ref checksum,
-                static (scoped QueryCursor cursor, ref StorageChecksum state) =>
-                {
-                    foreach (QueryRow row in cursor.Rows)
-                    {
-                        BufferView<BenchmarkBufferElement> buffer = row.ReadBuffer<BenchmarkBufferElement>();
-                        state.BufferElements += buffer.Count;
-                        for (int i = 0; i < buffer.Count; i++)
-                            state.BufferSum += buffer[i].Value;
-                    }
-                });
-
-            for (int bucket = 0; bucket < SharedBucketCount; bucket++)
+            using (SparseWriteScope<StorageSparse> sparse = World.OpenSparseWrite<StorageSparse>())
             {
-                var value = new StorageBucket(bucket);
-                var sharedState = new SharedCountState(value);
-                World.ExecuteQuery(
-                    _sharedQuery,
-                    ref sharedState,
-                    static (scoped QueryCursor cursor, ref SharedCountState state) =>
-                    {
-                        foreach (QueryRow _ in cursor.RowsWithShared(in state.Bucket))
-                            state.Count++;
-                    });
-                checksum.SharedRows += sharedState.Count;
+                checksum.SparseCount = sparse.Entities.Length;
+                Span<StorageSparse> values = sparse.Values;
+                for (int i = 0; i < values.Length; i++)
+                {
+                    values[i] = new StorageSparse(values[i].Value + 1);
+                    checksum.SparseSum += values[i].Value;
+                }
             }
-
+            using (QueryScope source = _bufferQuery.OpenRead())
+                foreach (QueryChunk chunk in source)
+                    for (int row = 0; row < chunk.Count; row++)
+                    {
+                        using ReadOnlyBuffer<BenchmarkBufferElement> buffer = chunk.ReadBuffer<BenchmarkBufferElement>(row);
+                        checksum.BufferElements += buffer.Count;
+                        foreach (BenchmarkBufferElement value in buffer.AsSpan()) checksum.BufferSum += value.Value;
+                    }
+            foreach (Query query in _sharedQueries)
+                using (QueryScope source = query.OpenRead())
+                    foreach (QueryChunk chunk in source) checksum.SharedRows += chunk.Count;
             for (int key = 0; key < IndexBucketCount; key++)
-                checksum.IndexRows += World.GetByIndex<StorageIndex, int>(key).Length;
+            {
+                using IndexMembers members = World.Index<StorageIndex, int>().Find(key);
+                checksum.IndexRows += members.Entities.Length;
+            }
             _checksum = checksum;
         }
 
@@ -460,13 +367,13 @@ internal static partial class EcsBenchmarkSuite
 
         internal RelationMaintenanceExecution(int topologyCount)
         {
-            World = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(checked(topologyCount * 2));
-            _source = World.CreateEntity();
+            World = CreateJobWorld(checked(topologyCount * 2));
+            _source = World.Create();
             _targets = new Entity[Math.Max(0, topologyCount - 1)];
             _edges = new RelationEdge<BenchmarkRelation>[_targets.Length];
             for (int i = 0; i < _targets.Length; i++)
             {
-                _targets[i] = World.CreateEntity();
+                _targets[i] = World.Create();
                 _edges[i] = World.CreateRelation(
                     _source,
                     _targets[i],
@@ -482,66 +389,58 @@ internal static partial class EcsBenchmarkSuite
                 return;
 
             using var commands = new CommandBuffer(World);
-            RelationCommandWriter<BenchmarkRelation> relations = commands.Relations<BenchmarkRelation>();
             for (int i = 0; i < _edges.Length; i++)
-            {
-                relations.Retarget(
-                    _edges[i],
-                    _source,
-                    _targets[(i + 1) % _targets.Length],
-                    RelationMaintenanceTiming.Deferred);
-            }
+                commands.RetargetRelation(_edges[i], _source, _targets[(i + 1) % _targets.Length], deferred: true);
             commands.Playback();
             World.MaintainRelations<BenchmarkRelation>();
         }
 
         public string ValidateAndGetChecksum()
         {
-            RelationAdjacencySnapshot<BenchmarkRelation> outgoing =
-                World.GetOutgoingRelations<BenchmarkRelation>(_source);
-            if (outgoing.Count != _edges.Length)
+            using RelationRead outgoing = Relations<BenchmarkRelation>.Outgoing(World, _source);
+            if (outgoing.Entries.Length != _edges.Length)
                 throw new InvalidOperationException("Relation benchmark lost outgoing adjacency.");
 
             long endpointSum = 0;
             long payloadSum = 0;
             for (int i = 0; i < _edges.Length; i++)
             {
-                DirectedRelationEndpoints<BenchmarkRelation> endpoints =
-                    World.GetDirectedRelationEndpoints(_edges[i]);
+                RelationEndpoints<BenchmarkRelation> endpoints =
+                    World.ReadComponentData<RelationEndpoints<BenchmarkRelation>>(_edges[i].Entity);
                 Entity expectedTarget = _targets[(i + 1) % _targets.Length];
                 if (endpoints.Source != _source || endpoints.Target != expectedTarget)
                     throw new InvalidOperationException("Relation benchmark published incorrect endpoints.");
-                endpointSum += endpoints.Target.Index;
-                payloadSum += World.Read<BenchmarkRelation>(_edges[i].Entity).Value;
+                endpointSum += endpoints.Target.Id;
+                payloadSum += World.ReadComponentData<BenchmarkRelation>(_edges[i].Entity).Value;
             }
-            return FormatHash(_edges.Length, outgoing.Generation, endpointSum, payloadSum);
+            return FormatHash(_edges.Length, unchecked((long)World.Version), endpointSum, payloadSum);
         }
     }
 
     private sealed class HierarchyMaintenanceExecution : IBenchmarkExecution
     {
         private readonly Entity[] _nodes;
+        private readonly ParentCommandEdit[] _fanout = [];
 
         internal HierarchyMaintenanceExecution(int topologyCount)
         {
-            World = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(topologyCount);
+            World = CreateJobWorld(topologyCount);
             _nodes = new Entity[topologyCount];
             for (int i = 0; i < _nodes.Length; i++)
-                _nodes[i] = World.CreateEntity();
+                _nodes[i] = World.Create();
 
             if (_nodes.Length <= 1)
                 return;
 
-            using var commands = new CommandBuffer(World);
-            HierarchyCommandWriter<BenchmarkHierarchyDomain> hierarchy =
-                commands.Hierarchy<BenchmarkHierarchyDomain>();
+            _fanout = new ParentCommandEdit[_nodes.Length - 1];
+            var chain = new ParentCommandEdit[_nodes.Length - 1];
             for (int i = 1; i < _nodes.Length; i++)
             {
-                hierarchy.SetParent(
-                    _nodes[i],
-                    _nodes[i - 1],
-                    HierarchyMaintenanceTiming.Deferred);
+                chain[i - 1] = new(_nodes[i], _nodes[i - 1]);
+                _fanout[i - 1] = new(_nodes[i], _nodes[0]);
             }
+            using var commands = new CommandBuffer(World);
+            commands.EditParents<BenchmarkHierarchyDomain>(chain, deferred: true);
             commands.Playback();
             Hierarchy<BenchmarkHierarchyDomain>.Maintain(World);
         }
@@ -554,15 +453,7 @@ internal static partial class EcsBenchmarkSuite
                 return;
 
             using var commands = new CommandBuffer(World);
-            HierarchyCommandWriter<BenchmarkHierarchyDomain> hierarchy =
-                commands.Hierarchy<BenchmarkHierarchyDomain>();
-            for (int i = 1; i < _nodes.Length; i++)
-            {
-                hierarchy.SetParent(
-                    _nodes[i],
-                    _nodes[0],
-                    HierarchyMaintenanceTiming.Deferred);
-            }
+            commands.EditParents<BenchmarkHierarchyDomain>(_fanout, deferred: true);
             commands.Playback();
             Hierarchy<BenchmarkHierarchyDomain>.Maintain(World);
         }
@@ -572,8 +463,7 @@ internal static partial class EcsBenchmarkSuite
             if (_nodes.Length == 0)
                 throw new InvalidOperationException("Hierarchy benchmark requires at least one node.");
 
-            HierarchyChildrenSnapshot<BenchmarkHierarchyDomain> children =
-                Hierarchy<BenchmarkHierarchyDomain>.GetChildren(World, _nodes[0]);
+            using ChildrenRead children = Hierarchy<BenchmarkHierarchyDomain>.GetChildren(World, _nodes[0]);
             if (children.Count != _nodes.Length - 1)
                 throw new InvalidOperationException("Hierarchy benchmark did not publish the expected fanout.");
 
@@ -582,9 +472,9 @@ internal static partial class EcsBenchmarkSuite
             {
                 if (Hierarchy<BenchmarkHierarchyDomain>.GetParent(World, _nodes[i]) != _nodes[0])
                     throw new InvalidOperationException("Hierarchy benchmark published an incorrect parent.");
-                sum += _nodes[i].Index;
+                sum += _nodes[i].Id;
             }
-            return FormatHash(_nodes.Length, unchecked((long)children.Generation), sum);
+            return FormatHash(_nodes.Length, unchecked((long)World.Version), sum);
         }
     }
 
@@ -594,7 +484,6 @@ internal static partial class EcsBenchmarkSuite
         private readonly int _width;
         private readonly int _iterations;
         private readonly Entity[] _entities;
-        private readonly WorldStructuralMetrics _before;
 
         internal CommandBufferChurnExecution(int entityCount, int width, int iterations)
         {
@@ -602,7 +491,6 @@ internal static partial class EcsBenchmarkSuite
             _width = width;
             _iterations = iterations;
             World = CreatePopulatedWorldWithEntities(entityCount, width, out _entities);
-            _before = World.GetStructuralMetrics();
         }
 
         public World World { get; }
@@ -615,9 +503,9 @@ internal static partial class EcsBenchmarkSuite
                 for (int i = 0; i < _width; i++)
                 {
                     if ((iteration & 1) == 0)
-                        commands.AddTag<ChurnTag>(_entities[i]);
+                        commands.Add(_entities[i], new ChurnTag());
                     else
-                        commands.RemoveTag<ChurnTag>(_entities[i]);
+                        commands.Remove<ChurnTag>(_entities[i]);
                 }
                 commands.Playback();
             }
@@ -625,15 +513,6 @@ internal static partial class EcsBenchmarkSuite
 
         public string ValidateAndGetChecksum()
         {
-            WorldStructuralMetrics after = World.GetStructuralMetrics();
-            if (after.Published - _before.Published != _iterations ||
-                after.Started - _before.Started != _iterations ||
-                after.Aborted != _before.Aborted)
-            {
-                throw new InvalidOperationException(
-                    "Command-buffer churn must publish exactly one candidate per playback.");
-            }
-
             bool expectedTag = (_iterations & 1) != 0;
             for (int i = 0; i < _entities.Length; i++)
             {
@@ -647,17 +526,17 @@ internal static partial class EcsBenchmarkSuite
                 checksum.SumX,
                 checksum.SumY,
                 unchecked((long)checksum.Hash),
-                after.Published - _before.Published);
+                _iterations);
         }
     }
 
-    private sealed class SnapshotWriteExecution : IBenchmarkExecution
+    private sealed class CheckpointWriteExecution : IBenchmarkExecution
     {
         private readonly int _entityCount;
         private readonly SerializationRegistry _registry = new SerializationRegistry().Register<Position>();
         private MemoryStream? _stream;
 
-        internal SnapshotWriteExecution(int entityCount)
+        internal CheckpointWriteExecution(int entityCount)
         {
             _entityCount = entityCount;
             World = CreatePopulatedWorld(entityCount);
@@ -672,20 +551,20 @@ internal static partial class EcsBenchmarkSuite
         {
             _stream = new MemoryStream();
             long started = Stopwatch.GetTimestamp();
-            WorldSerializer.WriteWorld(_stream, World, _registry);
+            new WorldSerializer(_registry).Save(World, _stream);
             WorkloadMetrics = BenchmarkWorkloadMetricSample.Empty with
             {
                 PayloadBytes = _stream.Length,
-                SnapshotWriteMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                CheckpointWriteMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
             };
         }
 
         public string ValidateAndGetChecksum()
         {
             MemoryStream stream = _stream ??
-                throw new InvalidOperationException("Snapshot benchmark did not produce a stream.");
+                throw new InvalidOperationException("Checkpoint benchmark did not produce a stream.");
             if (stream.Length <= 0)
-                throw new InvalidOperationException("Snapshot benchmark produced an empty payload.");
+                throw new InvalidOperationException("Checkpoint benchmark produced an empty payload.");
 
             string hash = HashBytes(stream);
             stream.Position = 0;
@@ -695,7 +574,7 @@ internal static partial class EcsBenchmarkSuite
         }
     }
 
-    private sealed class SnapshotReadExecution : IBenchmarkExecution, IDisposable
+    private sealed class CheckpointReadExecution : IBenchmarkExecution, IDisposable
     {
         private readonly int _entityCount;
         private readonly SerializationRegistry _registry = new SerializationRegistry().Register<Position>();
@@ -703,12 +582,12 @@ internal static partial class EcsBenchmarkSuite
         private readonly string _payloadHash;
         private World? _loaded;
 
-        internal SnapshotReadExecution(int entityCount)
+        internal CheckpointReadExecution(int entityCount)
         {
             _entityCount = entityCount;
             World = CreatePopulatedWorld(entityCount);
             _payload = new MemoryStream();
-            WorldSerializer.WriteWorld(_payload, World, _registry);
+            new WorldSerializer(_registry).Save(World, _payload);
             _payloadHash = HashBytes(_payload);
         }
 
@@ -732,7 +611,7 @@ internal static partial class EcsBenchmarkSuite
         public string ValidateAndGetChecksum()
         {
             World loaded = _loaded ??
-                throw new InvalidOperationException("Snapshot-read benchmark did not load a World.");
+                throw new InvalidOperationException("Checkpoint-read benchmark did not load a World.");
             _ = ValidateWorld(loaded, _entityCount, addedEntityCount: 0);
             return _payloadHash;
         }
@@ -757,25 +636,8 @@ internal static partial class EcsBenchmarkSuite
         internal MixedRenderGraphFrameState(int entityCount)
         {
             _entityCount = entityCount;
-            World = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(entityCount);
-            World.ExecuteBundleSpawnBatch(
-                JobComponents,
-                entityCount,
-                static view =>
-                {
-                    var position = new BenchmarkJobPosition
-                    {
-                        X = view.Index,
-                        Y = -view.Index,
-                    };
-                    var velocity = new BenchmarkJobVelocity
-                    {
-                        X = view.Index % 7 + 1,
-                        Y = 2,
-                    };
-                    view.Write(in position);
-                    view.Write(in velocity);
-                });
+            World = CreateJobWorld(entityCount);
+            World.ExecuteBundleSpawnBatch(JobComponents, entityCount, 0, new JobComponentsWriter());
         }
 
         public World World { get; }
@@ -789,13 +651,13 @@ internal static partial class EcsBenchmarkSuite
             new BenchmarkIntegrateJob()
                 .ScheduleParallel(
                     World,
-                    new JobEntityScheduleOptions(rowsPerPacket: 256))
+                    query: null)
                 .Complete();
             double updateMilliseconds = Stopwatch.GetElapsedTime(updateStarted).TotalMilliseconds;
 
             _stream = new MemoryStream();
             long writeStarted = Stopwatch.GetTimestamp();
-            WorldSerializer.WriteWorld(_stream, World, _registry);
+            new WorldSerializer(_registry).Save(World, _stream);
             double writeMilliseconds = Stopwatch.GetElapsedTime(writeStarted).TotalMilliseconds;
 
             _stream.Position = 0;
@@ -847,18 +709,11 @@ internal static partial class EcsBenchmarkSuite
         internal DurableSaveRoundTripExecution(int entityCount)
         {
             _entityCount = entityCount;
-            _registry = new SerializationRegistry().RegisterCanonical<
+            _registry = new SerializationRegistry().RegisterDurable<
                 BenchmarkDurablePosition,
                 BenchmarkDurablePositionCodec>(DurablePositionTypeKey);
-            World = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(entityCount);
-            World.ExecuteBundleSpawnBatch(
-                DurablePositionComponents,
-                entityCount,
-                static view =>
-                {
-                    var position = new BenchmarkDurablePosition(view.Index, view.Index + 1);
-                    view.Write(in position);
-                });
+            World = CreateJobWorld(entityCount);
+            World.ExecuteBundleSpawnBatch(DurablePositionComponents, entityCount, 0, new DurablePositionWriter());
             _store = new DurableSaveStore(Path.Combine(_directoryPath, "world.save"));
         }
 
@@ -870,11 +725,17 @@ internal static partial class EcsBenchmarkSuite
         public void Execute()
         {
             long commitStarted = Stopwatch.GetTimestamp();
-            _commit = _store.WriteWorld(World, _registry);
+            using (DurableSaveStore.SaveWrite write = _store.BeginWrite())
+            {
+                new WorldSerializer(_registry).Save(World, write.Stream, SavePurpose.DurableSave);
+                _commit = write.Commit();
+            }
             double commitMilliseconds = Stopwatch.GetElapsedTime(commitStarted).TotalMilliseconds;
 
             long loadStarted = Stopwatch.GetTimestamp();
-            _loaded = _store.ReadWorld(_registry);
+            using (DurableSaveStore.SaveRead read = _store.BeginRead())
+                _loaded = WorldSerializer.ReadWorld(read.Stream, _registry,
+                    new WorldLoadOptions(RequiredPurpose: SavePurpose.DurableSave, RequireEndOfInput: true));
             double loadMilliseconds = Stopwatch.GetElapsedTime(loadStarted).TotalMilliseconds;
 
             WorkloadMetrics = BenchmarkWorkloadMetricSample.Empty with
@@ -921,26 +782,26 @@ internal static partial class EcsBenchmarkSuite
 
     private static void ValidateIntegratedJobWorld(World world, int entityCount)
     {
-        QueryHandle query = world.Query(
-            world.QueryDefinition()
-                .Read<BenchmarkJobPosition>()
-                .Read<BenchmarkJobVelocity>());
+        Query query = world.Query(
+            new QueryDescription()
+                .WithStored<BenchmarkJobPosition>()
+                .WithStored<BenchmarkJobVelocity>());
         var state = new JobChecksum();
-        world.ExecuteQuery(
-            query,
-            ref state,
-            static (scoped QueryCursor cursor, ref JobChecksum checksum) =>
+        using (QueryScope source = query.OpenRead())
+            foreach (QueryChunk chunk in source)
             {
-                foreach (QueryRow row in cursor.Rows)
+                ReadOnlySpan<BenchmarkJobPosition> valuesBenchmarkJobPosition = chunk.Read<BenchmarkJobPosition>();
+                ReadOnlySpan<BenchmarkJobVelocity> valuesBenchmarkJobVelocity = chunk.Read<BenchmarkJobVelocity>();
+                for (int row = 0; row < chunk.Count; row++)
                 {
-                    BenchmarkJobPosition position = row.Read<BenchmarkJobPosition>();
-                    BenchmarkJobVelocity velocity = row.Read<BenchmarkJobVelocity>();
-                    checksum.Count++;
-                    checksum.SumX += position.X;
-                    checksum.SumY += position.Y;
-                    checksum.VelocitySum += velocity.X + velocity.Y;
+                    BenchmarkJobPosition position = valuesBenchmarkJobPosition[row];
+                    BenchmarkJobVelocity velocity = valuesBenchmarkJobVelocity[row];
+                    state.Count++;
+                    state.SumX += position.X;
+                    state.SumY += position.Y;
+                    state.VelocitySum += velocity.X + velocity.Y;
                 }
-            });
+            }
 
         long initialSum = (long)entityCount * (entityCount - 1) / 2;
         long velocityX = 0;
@@ -957,22 +818,21 @@ internal static partial class EcsBenchmarkSuite
 
     private static DurablePositionChecksum ValidateDurableWorld(World world, int entityCount)
     {
-        QueryHandle query = world.Query(
-            world.QueryDefinition().Read<BenchmarkDurablePosition>());
+        Query query = world.Query(
+            new QueryDescription().WithStored<BenchmarkDurablePosition>());
         var checksum = new DurablePositionChecksum();
-        world.ExecuteQuery(
-            query,
-            ref checksum,
-            static (scoped QueryCursor cursor, ref DurablePositionChecksum state) =>
+        using (QueryScope source = query.OpenRead())
+            foreach (QueryChunk chunk in source)
             {
-                foreach (QueryRow row in cursor.Rows)
+                ReadOnlySpan<BenchmarkDurablePosition> valuesBenchmarkDurablePosition = chunk.Read<BenchmarkDurablePosition>();
+                for (int row = 0; row < chunk.Count; row++)
                 {
-                    BenchmarkDurablePosition position = row.Read<BenchmarkDurablePosition>();
-                    state.Count++;
-                    state.SumX += position.X;
-                    state.SumY += position.Y;
+                    BenchmarkDurablePosition position = valuesBenchmarkDurablePosition[row];
+                    checksum.Count++;
+                    checksum.SumX += position.X;
+                    checksum.SumY += position.Y;
                 }
-            });
+            }
 
         long expectedSumX = (long)entityCount * (entityCount - 1) / 2;
         long expectedSumY = (long)entityCount * (entityCount + 1L) / 2;
@@ -1018,17 +878,6 @@ internal static partial class EcsBenchmarkSuite
         internal long IndexRows;
     }
 
-    private struct SharedCountState
-    {
-        internal SharedCountState(StorageBucket bucket)
-        {
-            Bucket = bucket;
-        }
-
-        internal StorageBucket Bucket;
-        internal long Count;
-    }
-
     private readonly struct EntityCaptureState
     {
         internal EntityCaptureState(World world, Entity[] entities, int entityCount)
@@ -1052,30 +901,27 @@ internal static partial class EcsBenchmarkSuite
 
     private readonly struct StoragePopulateState
     {
-        internal StoragePopulateState(int offset, bool includeBuffer)
+        internal StoragePopulateState(int offset)
         {
             Offset = offset;
-            IncludeBuffer = includeBuffer;
         }
 
         internal int Offset { get; }
-        internal bool IncludeBuffer { get; }
     }
 
-    private readonly record struct FilterPosition(int Value) : SomeEngine.ECS.IComponent;
+    private readonly record struct FilterPosition(int Value) : SomeEngine.ECS.ITrackedComponent;
 
     private readonly record struct FilterVisibility(int Value) : SomeEngine.ECS.IEnableableComponent;
 
     private readonly record struct StorageSparse(int Value) : SomeEngine.ECS.Components.ISparseComponent;
 
-    private readonly record struct StorageBucket(int Value) : SomeEngine.ECS.Components.ISharedComponent;
+    private readonly record struct StorageBucket(int Value) : SomeEngine.ECS.ISharedComponent;
 
-    private readonly record struct StorageIndex(int Key) : SomeEngine.ECS.Components.IIndexedComponent<int>
+    private readonly record struct StorageIndex(int Key) : SomeEngine.ECS.IIndexedComponent<int>
     {
         public int GetKey() => Key;
     }
 
-    [BufferCapacity(8)]
     private readonly record struct BenchmarkBufferElement(int Value) : SomeEngine.ECS.Components.IBufferElement;
 
     [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
@@ -1083,5 +929,5 @@ internal static partial class EcsBenchmarkSuite
 
     private readonly struct BenchmarkHierarchyDomain : IHierarchyDomain;
 
-    private readonly struct ChurnTag : SomeEngine.ECS.Components.ITag;
+    private readonly struct ChurnTag : SomeEngine.ECS.ITag;
 }

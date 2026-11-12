@@ -20,7 +20,7 @@ public sealed class MeasurementData : IDisposable
     {
         long started = Stopwatch.GetTimestamp();
         Input = input;
-        Jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = input.WorkerCount, SafetyMode = JobSafetyMode.Fast });
+        Jobs = new Scheduler(new JobConfiguration { WorkerCount = input.WorkerCount, SafetyMode = JobSafetyMode.Fast });
         World = WorldJobs.CreateWorld(input.EntityCount + input.CharacterCount + 32, Jobs);
         Characters = new Entity[input.CharacterCount];
         for (int index = 0; index < Characters.Length; index++)

@@ -20,7 +20,7 @@ public static partial class Scope
         var identity = AsyncIdentity(callKey);
         LaunchComputation<TKey> task = FindAsync<LaunchComputation<TKey>>(identity.Key, identity.Occurrence)
             ?? new LaunchComputation<TKey>(identity.Key, identity.Occurrence);
-        task.Update(key, run);
+        task.Update(key, run!);
     }
 
     /// <summary>Retains a fetched value while requesting a changed source.</summary>
@@ -39,7 +39,7 @@ public static partial class Scope
         var identity = AsyncIdentity(callKey);
         ResourceComputation<TSource, T> request = FindAsync<ResourceComputation<TSource, T>>(identity.Key, identity.Occurrence)
             ?? new ResourceComputation<TSource, T>(identity.Key, identity.Occurrence);
-        request.Update(source, fetch);
+        request.Update(source, fetch!);
         return request.Resource;
     }
 

@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Render.Instances;
@@ -14,17 +15,17 @@ public interface IRenderInstanceProducer
 
     /// <summary>Reports value invalidation for the ECS columns owned by this producer.</summary>
     RenderInstanceChanges GetChanges(
-        ReadOnlyQueryPacket packet,
-        uint lastSystemVersion);
+        QueryChunk packet,
+        ulong lastSystemVersion);
 
     /// <summary>Binds this producer's shared/per-instance metadata once for the batch.</summary>
     void Bind(RenderInstanceWriteSlice destination);
 
     /// <summary>
-    /// Writes the rows represented by <paramref name="chunk"/> into the matching destination
+    /// Writes the rows represented by <paramref name="packet"/> into the matching destination
     /// range. The slice already carries that range; producers never calculate a storage row.
     /// </summary>
-    void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet);
+    void Write(RenderInstanceWriteSlice destination, QueryChunk packet);
 }
 
 /// <summary>
@@ -39,14 +40,14 @@ public readonly struct EmptyRenderInstanceProducer : IRenderInstanceProducer
     public RenderInstancePropertyLayout Properties => EmptyProperties;
 
     public RenderInstanceChanges GetChanges(
-        ReadOnlyQueryPacket packet,
-        uint lastSystemVersion) => RenderInstanceChanges.None;
+        QueryChunk packet,
+        ulong lastSystemVersion) => RenderInstanceChanges.None;
 
     public void Bind(RenderInstanceWriteSlice destination)
     {
     }
 
-    public void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet)
+    public void Write(RenderInstanceWriteSlice destination, QueryChunk packet)
     {
     }
 }
@@ -78,16 +79,16 @@ public readonly struct RenderInstanceComponentProducer<T> : IRenderInstanceProdu
     public RenderInstancePropertyLayout Properties { get; }
 
     public RenderInstanceChanges GetChanges(
-        ReadOnlyQueryPacket packet,
-        uint lastSystemVersion) =>
-        packet.ChangedSince<T>(lastSystemVersion)
+        QueryChunk packet,
+        ulong lastSystemVersion) =>
+        packet.WasWritten<T>(lastSystemVersion)
             ? RenderInstanceChanges.Values
             : RenderInstanceChanges.None;
 
     public void Bind(RenderInstanceWriteSlice destination) =>
         destination.BindPerInstance(_property);
 
-    public void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet) =>
+    public void Write(RenderInstanceWriteSlice destination, QueryChunk packet) =>
         destination.Write(_property, packet.Read<T>());
 }
 
@@ -131,8 +132,8 @@ public readonly struct RenderInstanceProducerBundle<TFirst, TSecond> : IRenderIn
     public TSecond Second => _second;
 
     public RenderInstanceChanges GetChanges(
-        ReadOnlyQueryPacket packet,
-        uint lastSystemVersion) =>
+        QueryChunk packet,
+        ulong lastSystemVersion) =>
         _first.GetChanges(packet, lastSystemVersion)
         | _second.GetChanges(packet, lastSystemVersion);
 
@@ -142,7 +143,7 @@ public readonly struct RenderInstanceProducerBundle<TFirst, TSecond> : IRenderIn
         _second.Bind(destination.Restrict(_second.Properties));
     }
 
-    public void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet)
+    public void Write(RenderInstanceWriteSlice destination, QueryChunk packet)
     {
         _first.Write(destination.Restrict(_first.Properties), packet);
         _second.Write(destination.Restrict(_second.Properties), packet);

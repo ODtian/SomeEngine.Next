@@ -2,7 +2,7 @@ namespace SomeEngine.Job.Tests;
 
 public sealed class AsyncJobRejectionTests
 {
-    public AsyncJobRejectionTests() => JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+    public AsyncJobRejectionTests() => JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
 
     [Fact]
     public void AsyncVoidJobIsRejectedBeforeExecution()

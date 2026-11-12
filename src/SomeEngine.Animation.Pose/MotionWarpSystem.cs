@@ -1,7 +1,6 @@
 using System.Numerics;
-using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation.Pose;
@@ -9,13 +8,13 @@ namespace SomeEngine.Animation.Pose;
 /// <summary>Copies the selected pose and publishes movement from its bound corrected trajectory.</summary>
 public struct MotionWarpSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNodeContext>
 {
-    private QueryHandle _warps;
+    private Query _warps;
 
     public void OnCreate(ref ImmediateSystemContext context) =>
-        _warps = context.World.Query(AnimationGraph.WithTimeAccess(context.World.QueryDefinition()
-            .ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<MotionWarpInstance>()
-            .OptionalBuffer<LocalPose>(QueryAccess.ReadWrite).OptionalBuffer<PoseResult>(QueryAccess.ReadWrite)
-            .Optional<AnimationLayers>(QueryAccess.Read)));
+        _warps = context.World.Query(AnimationGraph.WithTimeAccess(new QueryDescription()
+            .WithStored<Timeline>().With<Timeline>().WithStored<Buffer<MotionWarpInstance>>()
+            .Optional<Buffer<LocalPose>>().Optional<Buffer<PoseResult>>()
+            .Optional<AnimationLayers>()));
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
@@ -42,15 +41,27 @@ public struct MotionWarpSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNo
     private void Evaluate(ref WarpFrame frame)
     {
         frame.NextLevel = int.MaxValue;
-        frame.World.ExecuteQuery(_warps, ref frame, static (QueryCursor rows, ref WarpFrame frame) =>
         {
-            foreach (QueryRow row in rows.Rows)
-                foreach (ref MotionWarpInstance instance in row.Buffer<MotionWarpInstance>().AsSpan())
+            using QueryScope read = _warps.Open();
+            Visit(in read, ref frame);
+
+            static void Visit(scoped in QueryScope rows, ref WarpFrame frame)
+            {
+                foreach (QueryChunk chunk in rows)
                 {
-                    if (instance.Node.Level > frame.Level) frame.NextLevel = Math.Min(frame.NextLevel, instance.Node.Level);
-                    if (instance.Node.Level == frame.Level) Evaluate(frame.World, row.Entity, ref instance);
+                    var buffers0 = chunk.Has<Buffer<MotionWarpInstance>>() ? chunk.GetBuffers<MotionWarpInstance>() : default;
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+                        foreach (ref MotionWarpInstance instance in buffers0[rowIndex].AsSpan())
+                        {
+                            if (instance.Node.Level > frame.Level) frame.NextLevel = Math.Min(frame.NextLevel, instance.Node.Level);
+                            if (instance.Node.Level == frame.Level) Evaluate(frame.World, chunk.Entities[rowIndex], ref instance);
+                        }
+                    }
                 }
-        });
+
+            }
+        }
     }
 
     private static void Evaluate(World world, Entity animation, ref MotionWarpInstance instance)
@@ -74,7 +85,7 @@ public struct MotionWarpSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNo
         float weight = source.Weight == 0 ? 0 : time.Weight;
         if (world.Has<AnimationLayers>(instance.Output.Entity))
         {
-            AnimationLayers layers = world.Read<AnimationLayers>(instance.Output.Entity);
+            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(instance.Output.Entity);
             if (instance.Placement.Layer < layers.Count) weight *= layers.Items[instance.Placement.Layer].Weight;
         }
         bool sampled = !instance.Finished && instance.SourceVersion != source.Version;
@@ -87,17 +98,25 @@ public struct MotionWarpSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNo
             instance.PreviousMotion = current;
             instance.SourceVersion = source.Version;
             var copy = (Source: instance.Source.Range, Output: instance.Output.Range);
-            world.ExecuteBufferWrite<LocalPose, (PoseRange Source, PoseRange Output)>(instance.Output.Entity, ref copy,
-                static (poses, ref copy) =>
+            {
+                using var poses = world.GetBuffer<LocalPose>(instance.Output.Entity);
+                Visit(poses, ref copy);
+
+                static void Visit(DynamicBuffer<LocalPose> poses, ref (PoseRange Source, PoseRange Output) copy)
                 {
                     Span<BoneTransform> transforms = LocalPose.Transforms(poses.AsSpan());
                     transforms.Slice(copy.Source.Start, copy.Source.Count)
                         .CopyTo(transforms.Slice(copy.Output.Start, copy.Output.Count));
-                });
+
+                }
+            }
         }
         var output = (Index: instance.Output.Index, Source: source, Weight: weight, Motion: motion, Sampled: sampled);
-        world.ExecuteBufferWrite<PoseResult, (int Index, PoseResult Source, float Weight, RootMotionDelta Motion, bool Sampled)>(
-            instance.Output.Entity, ref output, static (results, ref output) =>
+        {
+            using var results = world.GetBuffer<PoseResult>(instance.Output.Entity);
+            Visit(results, ref output);
+
+            static void Visit(DynamicBuffer<PoseResult> results, ref (int Index, PoseResult Source, float Weight, RootMotionDelta Motion, bool Sampled) output)
             {
                 ref PoseResult result = ref results[output.Index];
                 result.Weight = output.Weight;
@@ -107,14 +126,16 @@ public struct MotionWarpSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNo
                 result.Starts = output.Source.Starts;
                 result.RootMotion = new(output.Motion.Transform * result.RootMotion.Transform);
                 result.Version++;
-            });
+
+            }
+        }
         instance.Finished |= time.Time.Time >= instance.Definition.Parameters[instance.Index].Warp.Source.Duration;
         AnimationGraph.Submit(world, animation, in instance.Placement, !instance.Finished);
     }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_warps);
+    public void OnDestroy(ref ImmediateSystemContext context) { }
 
-    public void OnDestroy(ref PoseNodeContext context) => context.Frame.World.ReleaseQuery(_warps);
+    public void OnDestroy(ref PoseNodeContext context) { }
 
     private struct WarpFrame
     {

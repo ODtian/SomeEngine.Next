@@ -1,5 +1,4 @@
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.Job;
 
@@ -8,362 +7,155 @@ namespace SomeEngine.ECS.Systems.Tests;
 public sealed class HierarchyMaintenanceSystemTests : JobTest
 {
     [Fact]
-    public void RelaxedReaderSeesLastApplied_AndFreshReaderDependsOnMaintenanceHandle()
+    public void CapturedChildrenKeepTheirAppliedValuesAndFreshReadsFollowMaintenance()
     {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity oldParent = world.CreateEntity();
-            Entity newParent = world.CreateEntity();
-            Entity child = world.CreateEntity();
-            Hierarchy<DomainA>.SetParent(world, child, oldParent);
-
-            using var parentWritten = new ManualResetEventSlim();
-            using var releaseWriter = new ManualResetEventSlim();
-            var writer = new DeferredParentWriter<DomainA>(
-                world,
-                child,
-                newParent,
-                parentWritten,
-                releaseWriter);
-            JobHandle writerHandle = HierarchyJobAccess<DomainA>.ScheduleParentWrite(
-                world,
-                writer);
-
-            Assert.True(parentWritten.Wait(TimeSpan.FromSeconds(2)));
-
-            var relaxedCapture = new ChildrenCapture();
-            JobHandle relaxed = Jobs.Schedule(
-                new CaptureChildrenJob<DomainA>(world, oldParent, relaxedCapture));
-            relaxed.Complete();
-
-            Assert.Equal([child], relaxedCapture.Children);
-            Assert.Equal([child], Hierarchy<DomainA>.GetChildren(world, oldParent).ToArray());
-            Assert.Empty(Hierarchy<DomainA>.GetChildren(world, newParent));
-
-            JobHandle maintenance = HierarchyMaintenanceSystem<DomainA>.Schedule(world);
-            var freshCapture = new ChildrenCapture();
-            JobHandle fresh = Jobs.Schedule(
-                new CaptureChildrenJob<DomainA>(world, newParent, freshCapture),
-                maintenance);
-
-            Assert.False(maintenance.IsCompleted);
-            Assert.False(fresh.IsCompleted);
-
-            releaseWriter.Set();
-            fresh.Complete();
-            writerHandle.Complete();
-            maintenance.Complete();
-
-            Assert.Equal([child], freshCapture.Children);
-            Assert.Empty(Hierarchy<DomainA>.GetChildren(world, oldParent));
-            Assert.Equal([child], Hierarchy<DomainA>.GetChildren(world, newParent).ToArray());
-        });
+        World world = CreateJobWorld();
+        Entity oldParent = world.Create(), newParent = world.Create(), child = world.Create();
+        Hierarchy<DomainA>.SetParent(world, child, oldParent);
+        Entity[] earlier = Children<DomainA>(world, oldParent);
+        Jobs.Schedule(new SetParent<DomainA>(world, child, newParent), world.Execution!.StructureWrite).Complete();
+        Assert.Equal(newParent, Hierarchy<DomainA>.GetParent(world, child));
+        Assert.Equal([child], Children<DomainA>(world, oldParent));
+        Assert.Empty(Children<DomainA>(world, newParent));
+        var captured = new ChildrenResult();
+        var fresh = new ChildrenResult();
+        JobHandle copied = Jobs.Schedule(new CopyChildren(earlier, captured));
+        JobHandle maintenance = Jobs.Schedule(new Maintain<DomainA>(world), world.Execution.StructureWrite);
+        JobHandle read = Jobs.Schedule(new ReadChildren<DomainA>(world, newParent, fresh), world.Execution.StructureRead, maintenance);
+        copied.Complete();
+        read.Complete();
+        Assert.Equal([child], captured.Values);
+        Assert.Equal([child], fresh.Values);
+        Assert.Empty(Children<DomainA>(world, oldParent));
     }
 
     [Fact]
-    public void TopologyWrites_SerializeAcrossDomainsButNotWorlds()
+    public void StructureWritesSerializeDomainsWithinAWorldAndAllowAnotherWorldToRun()
     {
-        WithJobRuntime(() =>
+        World first = CreateJobWorld(), second = CreateJobWorld();
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        JobHandle holding = Jobs.Schedule(new Hold(entered, release, events), first.Execution!.StructureWrite);
+        JobHandle same = default;
+        try
         {
-            var worldA = CreateJobWorld();
-            var worldB = CreateJobWorld();
-            using var blockerStarted = new ManualResetEventSlim();
-            using var releaseBlocker = new ManualResetEventSlim();
-
-            JobHandle blocker = HierarchyJobAccess<DomainA>.ScheduleParentWrite(
-                worldA,
-                new BlockingJob(blockerStarted, releaseBlocker));
-            Assert.True(blockerStarted.Wait(TimeSpan.FromSeconds(2)));
-
-            JobHandle otherDomain = HierarchyMaintenanceSystem<DomainB>.Schedule(worldA);
-            JobHandle otherWorld = HierarchyMaintenanceSystem<DomainA>.Schedule(worldB);
-
-            otherWorld.Complete();
-            Assert.False(otherDomain.IsCompleted);
-            Assert.False(blocker.IsCompleted);
-
-            releaseBlocker.Set();
-            otherDomain.Complete();
-            blocker.Complete();
-        });
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            same = Jobs.Schedule(new RecordMaintenance<DomainB>(first, events, "first maintained"), first.Execution.StructureWrite);
+            Jobs.Schedule(new RecordMaintenance<DomainA>(second, events, "second maintained"), second.Execution!.StructureWrite).Complete();
+            release.Set();
+            same.Complete();
+            holding.Complete();
+            Assert.Equal(["second maintained", "first write ended", "first maintained"], events);
+        }
+        finally { release.Set(); holding.Complete(); same.Complete(); }
     }
 
     [Fact]
-    public void OwnerBoundParentMutation_RejectsMissingOrReadOnlyCapability()
+    public void ParentMutationRequiresWriteAccessToItsOwnWorld()
     {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity parent = world.CreateEntity();
-            Entity child = world.CreateEntity();
-            var mutation = new SetParentJob<DomainA>(world, child, parent);
-
-            JobHandle undeclared = Jobs.Schedule(mutation);
-            Assert.Throws<JobResourceSafetyException>(() => undeclared.Complete());
-            Assert.Equal(Entity.Null, Hierarchy<DomainA>.GetParent(world, child));
-
-            JobHandle missingWorldGate = Jobs.Schedule(
-                mutation,
-                HierarchyJobAccess<DomainA>.ParentWrite(world));
-            Assert.Throws<JobResourceSafetyException>(() => missingWorldGate.Complete());
-            Assert.Equal(Entity.Null, Hierarchy<DomainA>.GetParent(world, child));
-
-            JobResourceAccess[] readOnly =
-            [
-                HierarchyJobAccess<DomainA>.ParentRead(world),
-                RelationshipJobAccess.TopologyWrite(world),
-            ];
-            JobHandle insufficient = Jobs.Schedule(mutation, readOnly);
-            Assert.Throws<JobResourceSafetyException>(() => insufficient.Complete());
-            Assert.Equal(Entity.Null, Hierarchy<DomainA>.GetParent(world, child));
-
-            HierarchyJobAccess<DomainA>.ScheduleParentWrite(world, mutation).Complete();
-            Assert.Equal(parent, Hierarchy<DomainA>.GetParent(world, child));
-        });
+        World world = CreateJobWorld(), other = CreateJobWorld();
+        Entity parent = world.Create(), child = world.Create();
+        var mutation = new SetParent<DomainA>(world, child, parent);
+        Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(mutation).Complete());
+        Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(mutation, other.Execution!.StructureWrite).Complete());
+        Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(mutation, world.Execution!.StructureRead).Complete());
+        Assert.Equal(Entity.Null, Hierarchy<DomainA>.GetParent(world, child));
+        Jobs.Schedule(mutation, world.Execution!.StructureWrite).Complete();
+        Assert.Equal(parent, Hierarchy<DomainA>.GetParent(world, child));
     }
 
     [Fact]
-    public void OwnerBoundParentMutation_RejectsMultiBatchParallelOwner()
+    public void ParentMutationRejectsAWholeWorldWriteSharedByParallelWorkItems()
     {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity parent = world.CreateEntity();
-            Entity child = world.CreateEntity();
-            JobResourceAccess[] accesses =
-            [
-                HierarchyJobAccess<DomainA>.ParentWrite(world),
-                RelationshipJobAccess.TopologyWrite(world),
-            ];
-
-            JobHandle parallel = Jobs.ScheduleParallel(
-                new ParallelSetParentJob<DomainA>(world, child, parent),
-                length: 2,
-                batchSize: 1,
-                accesses);
-
-            Assert.Throws<JobResourceSafetyException>(() => parallel.Complete());
-            Assert.Equal(Entity.Null, Hierarchy<DomainA>.GetParent(world, child));
-        });
+        World world = CreateJobWorld();
+        Entity parent = world.Create(), child = world.Create();
+        JobHandle work = Jobs.ScheduleParallel(new ParallelSetParent(world, child, parent), 2, 1, world.Execution!.StructureWrite);
+        Assert.Throws<JobResourceSafetyException>(work.Complete);
+        Assert.Equal(Entity.Null, Hierarchy<DomainA>.GetParent(world, child));
     }
 
     [Fact]
-    public void ImmutableChildrenSnapshot_IsSafeWithoutALifetimeResourceOwner()
+    public void CapturedChildrenCanBeConsumedAfterTheWorldChanges()
     {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity parent = world.CreateEntity();
-            var capture = new ChildrenCapture();
-
-            JobHandle reader = Jobs.Schedule(
-                new CaptureChildrenJob<DomainA>(world, parent, capture));
-
-            reader.Complete();
-            Assert.Empty(capture.Children);
-        });
+        World world = CreateJobWorld();
+        Entity first = world.Create(), second = world.Create(), child = world.Create();
+        Hierarchy<DomainA>.SetParent(world, child, first);
+        Entity[] captured = Children<DomainA>(world, first);
+        Hierarchy<DomainA>.SetParent(world, child, second);
+        var result = new ChildrenResult();
+        Jobs.Schedule(new CopyChildren(captured, result)).Complete();
+        Assert.Equal([child], result.Values);
+        Assert.Empty(Children<DomainA>(world, first));
+        Assert.Equal([child], Children<DomainA>(world, second));
     }
 
     [Fact]
-    public void ReplacingTheDefaultSchedulerDoesNotRebindAnExplicitWorld()
+    public void ReplacingTheDefaultSchedulerKeepsTheWorldsExplicitScheduler()
     {
-        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = Jobs.SafetyMode;
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
-        using var world = CreateJobWorld(scheduler: scheduler);
-        Entity parent = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
+        using var world = new World(execution: new WorldJobs(scheduler));
+        Entity parent = world.Create(), child = world.Create();
+        int workers = JobSystem.WorkerCount;
+        JobSafetyMode safety = JobSystem.SafetyMode;
+        ManagedPayloadPolicy payload = JobSystem.ManagedPayloadPolicy;
         try
         {
             Hierarchy<DomainA>.SetParentDeferred(world, child, parent);
-            InitializeJobRuntime(previousSafety);
-            HierarchyMaintenanceSystem<DomainA>.Schedule(world).Complete();
-            Assert.Equal(parent, Hierarchy<DomainA>.GetParent(world, child));
-            Assert.Contains(child, Hierarchy<DomainA>.GetChildren(world, parent).Span.ToArray());
-            InitializeJobRuntime(previousSafety);
-            HierarchyMaintenanceSystem<DomainA>.Schedule(world).Complete();
-            Assert.Equal(parent, Hierarchy<DomainA>.GetParent(world, child));
-            Assert.Contains(child, Hierarchy<DomainA>.GetChildren(world, parent).Span.ToArray());
+            JobSystem.Initialize(new JobConfiguration { WorkerCount = 1 });
+            world.Execution!.Scheduler!.Schedule(new Maintain<DomainA>(world), world.Execution.StructureWrite).Complete();
+            Assert.Same(scheduler, world.Execution.Scheduler);
+            Assert.Equal([child], Children<DomainA>(world, parent));
+            JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
+            world.Execution.Scheduler!.Schedule(new Maintain<DomainA>(world), world.Execution.StructureWrite).Complete();
+            Assert.Same(scheduler, world.Execution.Scheduler);
+            Assert.Equal([child], Children<DomainA>(world, parent));
         }
-        finally
-        {
-            RestoreJobRuntime(previousPolicy, previousSafety);
-        }
+        finally { JobSystem.Initialize(new JobConfiguration { WorkerCount = workers, SafetyMode = safety, ManagedPayloadPolicy = payload }); }
     }
 
     [Fact]
-    public void RejectManagedPayloadPolicy_IsHonoredAndNotMutatedBySchedule()
+    public void TheManagedPayloadPolicyAppliesToConcreteMaintenanceJobs()
     {
-        ManagedPayloadPolicy previous = Jobs.ManagedPayloadPolicy;
+        World world = CreateJobWorld();
+        Jobs.ManagedPayloadPolicy = ManagedPayloadPolicy.Reject;
         try
         {
-            Jobs.ManagedPayloadPolicy = ManagedPayloadPolicy.Reject;
-            var world = CreateJobWorld();
-
-            var error = Assert.Throws<InvalidOperationException>(
-                () => HierarchyMaintenanceSystem<DomainA>.Schedule(world));
-
+            Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(new Maintain<DomainA>(world), world.Execution!.StructureWrite));
             Assert.Equal(ManagedPayloadPolicy.Reject, Jobs.ManagedPayloadPolicy);
         }
-        finally
-        {
-            Jobs.ManagedPayloadPolicy = previous;
-        }
+        finally { Jobs.ManagedPayloadPolicy = ManagedPayloadPolicy.Allow; }
     }
 
-    private void WithJobRuntime(Action action)
+    private static Entity[] Children<T>(World world, Entity parent) where T : struct, IHierarchyDomain
     {
-        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = Jobs.SafetyMode;
-        InitializeJobRuntime(previousSafety);
-        try
-        {
-            action();
-        }
-        finally
-        {
-            RestoreJobRuntime(previousPolicy, previousSafety);
-        }
+        using ChildrenRead children = Hierarchy<T>.GetChildren(world, parent);
+        return children.Entities.ToArray();
     }
-
-    private void InitializeJobRuntime(JobSafetyMode safetyMode)
+    private sealed class ChildrenResult { internal Entity[] Values = []; }
+    private readonly struct CopyChildren(Entity[] values, ChildrenResult result) : IJob
+    { public void Execute() => result.Values = values.ToArray(); }
+    private readonly struct ReadChildren<T>(World world, Entity parent, ChildrenResult result) : IJob where T : struct, IHierarchyDomain
+    { public void Execute() => result.Values = Children<T>(world, parent); }
+    private readonly struct SetParent<T>(World world, Entity child, Entity parent) : IJob where T : struct, IHierarchyDomain
+    { public void Execute() => Hierarchy<T>.SetParentDeferred(world, child, parent); }
+    private readonly struct Maintain<T>(World world) : IJob where T : struct, IHierarchyDomain
+    { public void Execute() => Hierarchy<T>.Maintain(world); }
+    private readonly struct ParallelSetParent(World world, Entity child, Entity parent) : IJobParallelFor
+    { public void Execute(int index) => Hierarchy<DomainA>.SetParentDeferred(world, child, parent); }
+    private readonly struct Hold(ManualResetEventSlim entered, ManualResetEventSlim release,
+        System.Collections.Concurrent.ConcurrentQueue<string> events) : IJob
     {
-        ConfigureJobs(new JobRuntimeConfig
-        {
-            WorkerCount = 4,
-            SafetyMode = safetyMode,
-            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-        });
-    }
-
-    private void RestoreJobRuntime(
-        ManagedPayloadPolicy payloadPolicy,
-        JobSafetyMode safetyMode)
-    {
-        ConfigureJobs(new JobRuntimeConfig
-        {
-            SafetyMode = safetyMode,
-            ManagedPayloadPolicy = payloadPolicy,
-        });
-    }
-
-    private sealed class ChildrenCapture
-    {
-        public Entity[] Children { get; set; } = [];
-    }
-
-    private readonly struct DeferredParentWriter<TDomain> : IJob
-        where TDomain : IHierarchyDomain
-    {
-        private readonly World _world;
-        private readonly Entity _child;
-        private readonly Entity _parent;
-        private readonly ManualResetEventSlim _written;
-        private readonly ManualResetEventSlim _release;
-
-        public DeferredParentWriter(
-            World world,
-            Entity child,
-            Entity parent,
-            ManualResetEventSlim written,
-            ManualResetEventSlim release)
-        {
-            _world = world;
-            _child = child;
-            _parent = parent;
-            _written = written;
-            _release = release;
-        }
-
         public void Execute()
         {
-            HierarchyJobAccess<TDomain>.SetParentDeferred(_world, _child, _parent);
-            _written.Set();
-            _release.Wait();
+            entered.Set();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+            events.Enqueue("first write ended");
         }
     }
-
-    private readonly struct CaptureChildrenJob<TDomain> : IJob
-        where TDomain : IHierarchyDomain
-    {
-        private readonly World _world;
-        private readonly Entity _parent;
-        private readonly ChildrenCapture _capture;
-
-        public CaptureChildrenJob(World world, Entity parent, ChildrenCapture capture)
-        {
-            _world = world;
-            _parent = parent;
-            _capture = capture;
-        }
-
-        public void Execute()
-        {
-            _capture.Children = HierarchyJobAccess<TDomain>.GetChildren(_world, _parent).ToArray();
-        }
-    }
-
-    private readonly struct SetParentJob<TDomain> : IJob
-        where TDomain : IHierarchyDomain
-    {
-        private readonly World _world;
-        private readonly Entity _child;
-        private readonly Entity _parent;
-
-        internal SetParentJob(World world, Entity child, Entity parent)
-        {
-            _world = world;
-            _child = child;
-            _parent = parent;
-        }
-
-        public void Execute()
-        {
-            HierarchyJobAccess<TDomain>.SetParentDeferred(_world, _child, _parent);
-        }
-    }
-
-    private readonly struct ParallelSetParentJob<TDomain> : IJobParallelFor
-        where TDomain : IHierarchyDomain
-    {
-        private readonly World _world;
-        private readonly Entity _child;
-        private readonly Entity _parent;
-
-        internal ParallelSetParentJob(World world, Entity child, Entity parent)
-        {
-            _world = world;
-            _child = child;
-            _parent = parent;
-        }
-
-        public void Execute(int index)
-        {
-            _ = index;
-            HierarchyJobAccess<TDomain>.SetParentDeferred(_world, _child, _parent);
-        }
-    }
-
-    private readonly struct BlockingJob : IJob
-    {
-        private readonly ManualResetEventSlim _started;
-        private readonly ManualResetEventSlim _release;
-
-        public BlockingJob(ManualResetEventSlim started, ManualResetEventSlim release)
-        {
-            _started = started;
-            _release = release;
-        }
-
-        public void Execute()
-        {
-            _started.Set();
-            _release.Wait();
-        }
-    }
-
+    private readonly struct RecordMaintenance<T>(World world, System.Collections.Concurrent.ConcurrentQueue<string> events, string value) : IJob
+        where T : struct, IHierarchyDomain
+    { public void Execute() { Hierarchy<T>.Maintain(world); events.Enqueue(value); } }
     private readonly struct DomainA : IHierarchyDomain;
-
     private readonly struct DomainB : IHierarchyDomain;
 }

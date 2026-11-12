@@ -1,7 +1,7 @@
 using SomeEngine.Serialization;
-using System.Runtime.ExceptionServices;
+
 using System.Security.Cryptography;
-using SomeEngine.ECS;
+
 using SomeEngine.Serialization.IO;
 
 namespace SomeEngine.ECS.Serialization;
@@ -75,7 +75,6 @@ public sealed partial class DurableSaveStore : IDisposable
         {
             MaximumPayloadBytes = suppliedOptions.MaximumPayloadBytes,
             MinimumAcceptedGeneration = suppliedOptions.MinimumAcceptedGeneration,
-            WriteStageObserver = suppliedOptions.WriteStageObserver,
             AuthenticationKey = null,
         };
     }
@@ -86,246 +85,19 @@ public sealed partial class DurableSaveStore : IDisposable
     /// <summary>The second on-disk generation slot.</summary>
     public string PreviousPath { get; }
 
-    /// <summary>
-    /// Commits a payload produced by <paramref name="writePayload"/>.
-    /// The callback must complete synchronously; disposing the supplied stream does not
-    /// close the store's temporary file.
-    /// </summary>
-    public DurableSaveCommit Write(Action<Stream> writePayload)
+    /// <summary>Opens a streaming save that publishes when Commit completes.</summary>
+    public SaveWrite BeginWrite() => new(this);
+
+    public DurableSaveCommit Write(Stream payload)
     {
-        using OperationLease operation = EnterOperation();
-        ArgumentNullException.ThrowIfNull(writePayload);
-        return WriteCore(writePayload);
-    }
-
-    private DurableSaveCommit WriteCore(Action<Stream> writePayload)
-    {
-        RequireSynchronousWriter(writePayload);
-        Directory.CreateDirectory(_directoryPath);
-
-        using FileStream writeLock = OpenWriteLock();
-        SlotSet slots = InspectVerifiedSlots();
-        if (!slots.HasValidSlot && slots.HasExistingSlot)
-            throw CreateNoValidGenerationException(slots);
-
-        SlotInspection? latest = slots.Latest;
-        ulong generationBaseline = latest?.Generation ?? _options.MinimumAcceptedGeneration;
-        if (generationBaseline == ulong.MaxValue)
-            throw new InvalidOperationException("The durable-save generation counter is exhausted.");
-
-        // A brand-new store has no durable generation from which to advance. Treat the caller's
-        // anti-rollback floor as that baseline so the first committed generation is immediately
-        // admissible. Existing but rejected slots still fail closed above; silently jumping past
-        // their generation would turn an apparent rollback into an accepted history rewrite.
-        ulong generation = generationBaseline + 1;
-        string targetPath = latest is null || !PathEquals(latest.Path, PrimaryPath)
-            ? PrimaryPath
-            : PreviousPath;
-        string temporaryPath = CreateTemporaryPath();
-
-        try
-        {
-            WriteTemporaryFile(temporaryPath, generation, writePayload);
-
-            SlotInspection verification = VerifyTemporaryFile(temporaryPath);
-            if (!verification.IsValid ||
-                verification.Generation != generation)
-            {
-                throw new IOException(
-                    $"The temporary durable-save generation failed verification: {verification.FailureReason}");
-            }
-
-            Observe(DurableSaveWriteStage.TemporaryFileVerified);
-            Observe(DurableSaveWriteStage.BeforePublish);
-            Publish(temporaryPath, targetPath);
-            Observe(DurableSaveWriteStage.Published);
-
-            return new DurableSaveCommit(generation, verification.PayloadLength, targetPath);
-        }
-        finally
-        {
-            TryDeleteTemporaryFile(temporaryPath);
-        }
-    }
-
-    /// <summary>Serializes and commits a durable world snapshot.</summary>
-    public DurableSaveCommit WriteWorld(
-        World world,
-        SerializationRegistry registry,
-        SerializeOptions options = default)
-    {
-        using OperationLease operation = EnterOperation();
-        ArgumentNullException.ThrowIfNull(world);
-        ArgumentNullException.ThrowIfNull(registry);
-        return WriteCore(stream => WorldSerializer.WriteDurableWorld(stream, world, registry, options));
-    }
-
-    /// <summary>Reads and deserializes the highest valid durable world snapshot.</summary>
-    public World ReadWorld(
-        SerializationRegistry registry,
-        WorldLoadOptions options = default)
-    {
-        using OperationLease operation = EnterOperation();
-        ArgumentNullException.ThrowIfNull(registry);
-        return ReadWorldCore(registry, options);
-    }
-
-    private World ReadWorldCore(
-        SerializationRegistry registry,
-        WorldLoadOptions options)
-    {
-        const int maximumConcurrentWriteRetries = 3;
-
-        for (int attempt = 0; attempt < maximumConcurrentWriteRetries; attempt++)
-        {
-            SlotSet slots = InspectSlots();
-            if (slots.Latest is null)
-            {
-                if (!slots.HasExistingSlot)
-                {
-                    throw new FileNotFoundException(
-                        "No durable-save generation exists.",
-                        PrimaryPath);
-                }
-
-                throw CreateNoValidGenerationException(slots);
-            }
-
-            bool retryInspection = false;
-            for (int candidateIndex = 0; candidateIndex < 2; candidateIndex++)
-            {
-                SlotInspection? candidate = slots.Latest;
-                if (candidate is null)
-                    break;
-
-                CandidateWorldRead result = ReadWorldCandidate(candidate, registry, options);
-                switch (result.Status)
-                {
-                    case CandidateReadStatus.Success:
-                        return result.World!;
-                    case CandidateReadStatus.RetryInspection:
-                        retryInspection = true;
-                        break;
-                    case CandidateReadStatus.IntegrityFailure:
-                        slots = slots.Reject(candidate.Path, result.FailureReason!, result.Error);
-                        continue;
-                    default:
-                        throw new InvalidOperationException("Unknown durable-save candidate read status.");
-                }
-
-                break;
-            }
-
-            if (!retryInspection)
-                throw CreateNoValidGenerationException(slots);
-        }
-
-        throw new IOException("The durable-save generations changed repeatedly while they were being read.");
-    }
-
-    private CandidateWorldRead ReadWorldCandidate(
-        SlotInspection candidate,
-        SerializationRegistry registry,
-        WorldLoadOptions options)
-    {
-        FileStream file;
-        try
-        {
-            file = OpenSlot(candidate.Path);
-        }
-        catch (FileNotFoundException)
-        {
-            return CandidateWorldRead.Retry;
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return CandidateWorldRead.Retry;
-        }
-
-        using (file)
-        {
-            EnvelopeHeader header;
-            try
-            {
-                header = ReadAndValidateHeader(file);
-                ValidateFileLength(file, header.PayloadLength);
-            }
-            catch (InvalidDataException exception)
-            {
-                return CandidateWorldRead.Integrity(exception.Message, SerializationErrors.GetError(exception));
-            }
-            catch (EndOfStreamException exception)
-            {
-                return CandidateWorldRead.Integrity(exception.Message, SerializationError.IntegrityMismatch);
-            }
-
-            if (header.Generation != candidate.Generation)
-                return CandidateWorldRead.Retry;
-
-            using var payload = new HashingReadStream(
-                file,
-                header.PayloadLength,
-                CreateEnvelopeHasher(header.AuthenticationKind));
-            World? world = null;
-            ExceptionDispatchInfo? decodeFailure = null;
-            try
-            {
-                world = WorldSerializer.ReadDurableWorld(payload, registry, options);
-            }
-            catch (Exception exception)
-                when (exception is not OperationCanceledException and not OutOfMemoryException)
-            {
-                decodeFailure = ExceptionDispatchInfo.Capture(exception);
-            }
-
-            long decodedBytes = payload.Position;
-            bool verified;
-            try
-            {
-                verified = DrainAndVerify(payload, header);
-            }
-            catch (EndOfStreamException exception)
-            {
-                world?.Dispose();
-                return CandidateWorldRead.Integrity(exception.Message, SerializationError.IntegrityMismatch);
-            }
-            catch (Exception verificationFailure)
-            {
-                if (world is null)
-                    throw;
-                WorldSerializer.RethrowAfterTemporaryWorldFailure(
-                    verificationFailure,
-                    world.Dispose);
-                throw;
-            }
-
-            if (!verified)
-            {
-                world?.Dispose();
-                return CandidateWorldRead.Integrity(
-                    "The envelope digest does not match its metadata or payload.");
-            }
-
-            if (decodeFailure is not null)
-            {
-                world?.Dispose();
-                decodeFailure.Throw();
-            }
-
-            if (decodedBytes != header.PayloadLength)
-            {
-                world!.Dispose();
-                throw new InvalidDataException(
-                    $"The durable-save decoder consumed {decodedBytes} of {header.PayloadLength} payload bytes.");
-            }
-
-            return CandidateWorldRead.Success(world!);
-        }
+        using SaveWrite write = BeginWrite();
+        payload.CopyTo(write.Stream);
+        return write.Commit();
     }
 
     /// <summary>
     /// Waits for in-flight synchronous operations, then deterministically clears the owned
-    /// authentication key. Disposing from inside this store's own callback is rejected to avoid
+    /// authentication key. Disposing from inside this store's active write is rejected to avoid
     /// waiting on the current operation.
     /// </summary>
     public void Dispose()
@@ -338,7 +110,7 @@ public sealed partial class DurableSaveStore : IDisposable
             if (_operationThreads.ContainsKey(threadId))
             {
                 throw new InvalidOperationException(
-                    "DurableSaveStore cannot be disposed from inside one of its active callbacks.");
+                    "DurableSaveStore cannot be disposed from inside one of its active writes.");
             }
 
             if (_disposeRequested)
@@ -415,14 +187,11 @@ public sealed partial class DurableSaveStore : IDisposable
         }
     }
 
-    private static InvalidDataException CreateNoValidGenerationException(SlotSet slots) =>
+    private static InvalidDataException CreateNoValidGenerationException(SaveFilesInspection slots) =>
         SerializationErrors.CreateDataException(
             slots.Primary.Exists ? slots.Primary.Error : slots.Previous.Error,
             "No valid durable-save generation was found. " +
             $"Primary: {slots.Primary.FailureReason}; previous: {slots.Previous.FailureReason}.");
-
-    private void Observe(DurableSaveWriteStage stage) =>
-        _options.WriteStageObserver?.Invoke(stage);
 
     private static bool PathEquals(string left, string right) =>
         string.Equals(
@@ -430,7 +199,7 @@ public sealed partial class DurableSaveStore : IDisposable
             right,
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
-    private OperationLease EnterOperation()
+    private SaveOperation EnterOperation()
     {
         int threadId = Environment.CurrentManagedThreadId;
         lock (_lifetimeGate)
@@ -441,7 +210,7 @@ public sealed partial class DurableSaveStore : IDisposable
             _activeOperations = checked(_activeOperations + 1);
             _operationThreads.TryGetValue(threadId, out int depth);
             _operationThreads[threadId] = checked(depth + 1);
-            return new OperationLease(this, threadId);
+            return new SaveOperation(this, threadId);
         }
     }
 
@@ -467,12 +236,12 @@ public sealed partial class DurableSaveStore : IDisposable
         }
     }
 
-    private sealed class OperationLease : IDisposable
+    private sealed class SaveOperation : IDisposable
     {
         private DurableSaveStore? _owner;
         private readonly int _threadId;
 
-        internal OperationLease(DurableSaveStore owner, int threadId)
+        internal SaveOperation(DurableSaveStore owner, int threadId)
         {
             _owner = owner;
             _threadId = threadId;
@@ -492,23 +261,23 @@ public sealed partial class DurableSaveStore : IDisposable
         RetryInspection,
     }
 
-    private readonly record struct CandidateWorldRead(
+    private readonly record struct CandidateFileRead(
         CandidateReadStatus Status,
-        World? World,
+        SaveRead? Read,
         string? FailureReason,
         SerializationError Error = SerializationError.Unspecified)
     {
-        internal static CandidateWorldRead Success(World world) =>
-            new(CandidateReadStatus.Success, world, null);
+        internal static CandidateFileRead Success(SaveRead read) =>
+            new(CandidateReadStatus.Success, read, null);
 
-        internal static CandidateWorldRead Integrity(string reason, SerializationError error = SerializationError.IntegrityMismatch) =>
+        internal static CandidateFileRead Integrity(string reason, SerializationError error = SerializationError.IntegrityMismatch) =>
             new(CandidateReadStatus.IntegrityFailure, null, reason, error);
 
-        internal static CandidateWorldRead Retry =>
+        internal static CandidateFileRead Retry =>
             new(CandidateReadStatus.RetryInspection, null, null);
     }
 
-    private sealed record SlotInspection(
+    private sealed record SaveFileInspection(
         string Path,
         bool Exists,
         bool IsValid,
@@ -517,22 +286,22 @@ public sealed partial class DurableSaveStore : IDisposable
         string FailureReason,
         SerializationError Error = SerializationError.Unspecified)
     {
-        internal static SlotInspection Missing(string path) =>
+        internal static SaveFileInspection Missing(string path) =>
             new(path, Exists: false, IsValid: false, 0, 0, "missing");
 
-        internal static SlotInspection Invalid(string path, string reason, SerializationError error = SerializationError.IntegrityMismatch) =>
+        internal static SaveFileInspection Invalid(string path, string reason, SerializationError error = SerializationError.IntegrityMismatch) =>
             new(path, Exists: true, IsValid: false, 0, 0, reason, error);
 
-        internal static SlotInspection Valid(string path, ulong generation, long payloadLength) =>
+        internal static SaveFileInspection Valid(string path, ulong generation, long payloadLength) =>
             new(path, Exists: true, IsValid: true, generation, payloadLength, "valid");
     }
 
-    private sealed record SlotSet(SlotInspection Primary, SlotInspection Previous)
+    private sealed record SaveFilesInspection(SaveFileInspection Primary, SaveFileInspection Previous)
     {
         internal bool HasExistingSlot => Primary.Exists || Previous.Exists;
         internal bool HasValidSlot => Primary.IsValid || Previous.IsValid;
 
-        internal SlotInspection? Latest
+        internal SaveFileInspection? Latest
         {
             get
             {
@@ -544,12 +313,12 @@ public sealed partial class DurableSaveStore : IDisposable
             }
         }
 
-        internal SlotSet Reject(string path, string reason, SerializationError error)
+        internal SaveFilesInspection Reject(string path, string reason, SerializationError error)
         {
             if (PathEquals(path, Primary.Path))
-                return new SlotSet(SlotInspection.Invalid(Primary.Path, reason, error), Previous);
+                return new SaveFilesInspection(SaveFileInspection.Invalid(Primary.Path, reason, error), Previous);
             if (PathEquals(path, Previous.Path))
-                return new SlotSet(Primary, SlotInspection.Invalid(Previous.Path, reason, error));
+                return new SaveFilesInspection(Primary, SaveFileInspection.Invalid(Previous.Path, reason, error));
             throw new InvalidOperationException("The rejected durable-save path is not one of this store's slots.");
         }
     }
@@ -577,21 +346,6 @@ public sealed class DurableSaveStoreOptions
     /// </summary>
     public ulong MinimumAcceptedGeneration { get; init; }
 
-    /// <summary>
-    /// Optional commit-stage observer for telemetry and deterministic fault injection.
-    /// Exceptions abort the write; at <see cref="DurableSaveWriteStage.Published"/> the
-    /// new generation has already become durable and may be recovered by the next read.
-    /// </summary>
-    public Action<DurableSaveWriteStage>? WriteStageObserver { get; init; }
-}
-
-public enum DurableSaveWriteStage
-{
-    PayloadWritten,
-    TemporaryFileFlushed,
-    TemporaryFileVerified,
-    BeforePublish,
-    Published,
 }
 
 public sealed record DurableSaveCommit(

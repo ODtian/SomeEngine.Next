@@ -18,13 +18,13 @@ public static partial class TypedAnimationChecks
         var target = new State<float>();
         Entity root = Views.Spawn(frames.World, Entity.Null, new FieldTargets(target, new State<int>()));
         frames.Frame(0);
-        Entity panel = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity panel = ElementChildren.Read(frames.World, root)[0];
 
         target.Value = 10;
         frames.Frame(0);
         frames.Frame(0.5f);
 
-        Require(frames.World.Read<AnimatedPanel>(panel).Opacity == 5, "The ordinary field retains the expected animation progress.");
+        Require(frames.World.ReadComponentData<AnimatedPanel>(panel).Opacity == 5, "The ordinary field retains the expected animation progress.");
     }
 
     public static void EqualTargetsPreserveTheirElapsedProgress()
@@ -34,7 +34,7 @@ public static partial class TypedAnimationChecks
         var revision = new State<int>();
         Entity root = Views.Spawn(frames.World, Entity.Null, new FieldTargets(target, revision));
         frames.Frame(0);
-        Entity panel = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity panel = ElementChildren.Read(frames.World, root)[0];
         target.Value = 10;
         frames.Frame(0);
         frames.Frame(0.25f);
@@ -42,7 +42,7 @@ public static partial class TypedAnimationChecks
         revision.Value++;
         frames.Frame(0.25f);
 
-        Require(frames.World.Read<AnimatedPanel>(panel).Opacity == 5, "The ordinary field retains the expected animation progress.");
+        Require(frames.World.ReadComponentData<AnimatedPanel>(panel).Opacity == 5, "The ordinary field retains the expected animation progress.");
     }
 
     public static void ReferencedStateReceivesOnlyThePresentedValues()
@@ -52,8 +52,8 @@ public static partial class TypedAnimationChecks
         var presented = new State<float>();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ReferenceTargets(target, presented));
         frames.Frame(0);
-        Entity panel = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        uint version = frames.World.WriteVersion<AnimatedPanel>(panel);
+        Entity panel = ElementChildren.Read(frames.World, root)[0];
+        ulong version = frames.World.ComponentDataWriteVersion<AnimatedPanel>(panel);
 
         target.Value = 10;
         frames.Frame(0);
@@ -61,8 +61,8 @@ public static partial class TypedAnimationChecks
         frames.Frame(0.5f);
 
         Require(presented.Value == 5, "The consumer receives the expected intermediate value.");
-        Require(version != frames.World.WriteVersion<AnimatedPanel>(panel), "The referenced field advances the root write version.");
-        Require(ReferenceEquals(presented, frames.World.Read<AnimatedPanel>(panel).Progress), "The referenced state keeps its identity.");
+        Require(version != frames.World.ComponentDataWriteVersion<AnimatedPanel>(panel), "The referenced field advances the root write version.");
+        Require(ReferenceEquals(presented, frames.World.ReadComponentData<AnimatedPanel>(panel).Progress), "The referenced state keeps its identity.");
     }
 
     public static void EqualHeldTargetsPreserveTheirPresentationVersion()
@@ -72,7 +72,7 @@ public static partial class TypedAnimationChecks
         var revision = new State<int>();
         Entity root = Views.Spawn(frames.World, Entity.Null, new FieldTargets(target, revision));
         frames.Frame(0);
-        Entity panel = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity panel = ElementChildren.Read(frames.World, root)[0];
         var layers = new AnimationLayers { Count = 1 };
         layers.Items[0] = new AnimationLayer { Weight = 1 };
         frames.World.Add(panel, layers);
@@ -81,12 +81,12 @@ public static partial class TypedAnimationChecks
         frames.Frame(0);
         frames.Frame(1);
         frames.Frame(0);
-        uint version = frames.World.WriteVersion<AnimatedPanel>(panel);
+        ulong version = frames.World.ComponentDataWriteVersion<AnimatedPanel>(panel);
 
         revision.Value++;
         frames.Frame(0);
 
-        Require(frames.World.Read<AnimatedPanel>(panel).Opacity == 10 && frames.World.WriteVersion<AnimatedPanel>(panel) == version,
+        Require(frames.World.ReadComponentData<AnimatedPanel>(panel).Opacity == 10 && frames.World.ComponentDataWriteVersion<AnimatedPanel>(panel) == version,
             "Submitting the same completed layer target preserves its presentation version.");
     }
 
@@ -145,7 +145,7 @@ public static partial class TypedAnimationChecks
     {
         using var frames = new TypedFrames();
         var presented = new State<float>();
-        Entity panel = frames.World.CreateEntity(new AnimatedPanel { Progress = presented });
+        Entity panel = frames.World.Create(new AnimatedPanel { Progress = presented });
         var resume = new TaskCompletionSource();
         Entity root = Views.Spawn(frames.World, Entity.Null, new AwaitedTargets(panel, 8, resume.Task, 16));
         frames.Frame(0);
@@ -155,7 +155,7 @@ public static partial class TypedAnimationChecks
         frames.Frame(0.5f);
 
         if (frames.World.HasSparse<BuildError>(root))
-            throw frames.World.ReadSparse<BuildError>(root).Exception;
+            throw frames.World.ReadComponentData<BuildError>(root).Exception;
         Require(presented.Value == 9, $"The resumed segment continues from the current referenced presentation: {presented.Value}.");
     }
 
@@ -163,15 +163,15 @@ public static partial class TypedAnimationChecks
     {
         using var frames = new TypedFrames();
         var presented = new State<float>();
-        Entity panel = frames.World.CreateEntity(new AnimatedPanel { Progress = presented });
+        Entity panel = frames.World.Create(new AnimatedPanel { Progress = presented });
         Entity root = Views.Spawn(frames.World, Entity.Null, new AwaitedTargets(panel, 0, null, 0));
         frames.Frame(0);
         var resume = new TaskCompletionSource();
-        frames.World.Replace(root, new AwaitedTargets(panel, 8, resume.Task, 16));
+        frames.World.Set(root, new AwaitedTargets(panel, 8, resume.Task, 16));
         frames.Frame(0);
         frames.Frame(0.25f);
 
-        frames.World.Replace(root, new AwaitedTargets(panel, 4, null, 0));
+        frames.World.Set(root, new AwaitedTargets(panel, 4, null, 0));
         frames.Frame(0);
         frames.Frame(0.5f);
         resume.SetResult();
@@ -187,7 +187,7 @@ public static partial class TypedAnimationChecks
         var presented = new State<float>();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ReferenceTargets(target, presented));
         frames.Frame(0);
-        Entity panel = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity panel = ElementChildren.Read(frames.World, root)[0];
         Entity rootReader = Views.Spawn(frames.World, Entity.Null, new RootReader(panel));
         Entity leafReader = Views.Spawn(frames.World, Entity.Null, new LeafReader(presented));
         frames.Frame(0);
@@ -197,7 +197,7 @@ public static partial class TypedAnimationChecks
         frames.Frame(0.5f);
         frames.Frame(0);
 
-        Require(frames.World.Read<Observation>(rootReader).Value == 5 && frames.World.Read<Observation>(leafReader).Value == 5,
+        Require(frames.World.ReadComponentData<Observation>(rootReader).Value == 5 && frames.World.ReadComponentData<Observation>(leafReader).Value == 5,
             "Root-only and leaf-only dependencies both observe the rendered reference value.");
     }
 
@@ -210,10 +210,10 @@ public static partial class TypedAnimationChecks
         var presented = new State<float>();
         Entity root = Views.Spawn(frames.World, Entity.Null, new DeclaredTargets(selection, target, presented));
         frames.Frame(0);
-        Entity panel = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        using var tables = frames.World.ObserveEntityTables();
-        tables.Accept(tables.Read());
-        int count = frames.World.EntityCount;
+        Entity panel = ElementChildren.Read(frames.World, root)[0];
+        using var tables = frames.World.WatchMembership(frames.World.Query(new QueryDescription().With<Buffer<Track<float>>>()));
+        tables.Advance(tables.Capture().Through);
+        int count = frames.World.Query(new QueryDescription().With<ViewType>()).Count;
 
         for (int index = 0; index < 9; index++)
         {
@@ -229,9 +229,10 @@ public static partial class TypedAnimationChecks
                 "The reselected typed or convenience algorithm produces its declared interpolation.");
         }
 
-        Require(frames.World.EntityCount == count && tables.Read().Count == 0,
-            "Repeated algorithm selection reuses the declared entity and component storage.");
-        Require(ReferenceEquals(frames.World.Read<AnimatedPanel>(panel).Progress, presented),
+        using EventRead<MembershipChange> membership = tables.Open(tables.Capture());
+        Require(frames.World.Query(new QueryDescription().With<ViewType>()).Count == count && membership.Count == 0,
+            "Repeated algorithm selection retains the declared animation membership and entity count.");
+        Require(ReferenceEquals(frames.World.ReadComponentData<AnimatedPanel>(panel).Progress, presented),
             "Repeated algorithm selection retains the referenced field.");
     }
 
@@ -289,7 +290,7 @@ public static partial class TypedAnimationChecks
 
     private sealed class TypedFrames : IDisposable
     {
-        private readonly Scheduler _scheduler = new(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        private readonly Scheduler _scheduler = new(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         internal World World { get; }
         private readonly SystemGroup<ImmediateSystemContext> _builds;
         private readonly SystemGroup<ImmediateSystemContext> _animations;
@@ -299,7 +300,7 @@ public static partial class TypedAnimationChecks
 
         internal TypedFrames()
         {
-            World = WorldJobs.CreateWorld(scheduler: _scheduler);
+            World = new World(execution: new WorldJobs(_scheduler));
             _builds = new(new ImmediateSystemDriver(World));
             _builds.Add(_viewSystem);
             _animations = new(new ImmediateSystemDriver(World));
@@ -469,7 +470,7 @@ public static partial class TypedAnimationChecks
 
 [GenerateFields]
 [ComponentField("Progress.Value", Name = "ProgressValue")]
-internal struct AnimatedPanel : IView, IComponent, IEquatable<AnimatedPanel>
+internal struct AnimatedPanel : IView, ITrackedComponent, IEquatable<AnimatedPanel>
 {
     public float Opacity;
     public State<float> Progress;

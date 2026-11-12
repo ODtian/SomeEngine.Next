@@ -15,19 +15,19 @@ public sealed partial class RememberTests
         Entity first = Views.Spawn(frames.World, Entity.Null, new RememberedScreens.Values_View(3, 10, false));
         Entity second = Views.Spawn(frames.World, Entity.Null, new RememberedScreens.Values_View(3, 20, false));
         frames.Frame();
-        var firstValues = frames.World.ReadSparse<RememberedNumbers>(first);
+        var firstValues = frames.World.ReadComponentData<RememberedNumbers>(first);
         firstValues.Change(0, 31);
         firstValues.Change(1, 37);
         firstValues.Change(2, 41);
-        frames.World.ReplaceSparse(first, new RememberedScreens.Values_View(2, 50, false));
+        frames.World.SetSparse(first, new RememberedScreens.Values_View(2, 50, false));
         frames.Frame();
-        Assert.Equal([31, 37], frames.World.ReadSparse<RememberedNumbers>(first).Values);
-        Assert.Equal([20, 21, 22], frames.World.ReadSparse<RememberedNumbers>(second).Values);
+        Assert.Equal([31, 37], frames.World.ReadComponentData<RememberedNumbers>(first).Values);
+        Assert.Equal([20, 21, 22], frames.World.ReadComponentData<RememberedNumbers>(second).Values);
 
-        frames.World.ReplaceSparse(first, new RememberedScreens.Values_View(3, 70, false));
+        frames.World.SetSparse(first, new RememberedScreens.Values_View(3, 70, false));
         frames.Frame();
 
-        Assert.Equal([31, 37, 41], frames.World.ReadSparse<RememberedNumbers>(first).Values);
+        Assert.Equal([31, 37, 41], frames.World.ReadComponentData<RememberedNumbers>(first).Values);
     }
 
     [Fact]
@@ -36,14 +36,14 @@ public sealed partial class RememberTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new RememberedScreens.Values_View(3, 10, true));
         frames.Frame();
-        var values = frames.World.ReadSparse<RememberedNumbers>(root);
+        var values = frames.World.ReadComponentData<RememberedNumbers>(root);
         values.Change(0, 31);
         values.Change(2, 41);
 
-        frames.World.ReplaceSparse(root, new RememberedScreens.Values_View(3, 20, true));
+        frames.World.SetSparse(root, new RememberedScreens.Values_View(3, 20, true));
         frames.Frame();
 
-        Assert.Equal([41, 11, 31], frames.World.ReadSparse<RememberedNumbers>(root).Values);
+        Assert.Equal([41, 11, 31], frames.World.ReadComponentData<RememberedNumbers>(root).Values);
     }
 
     [Fact]
@@ -53,10 +53,10 @@ public sealed partial class RememberTests
         Entity root = Views.Spawn(frames.World, Entity.Null, new RememberedScreens.Simple_View(3));
         frames.Frame();
 
-        frames.World.ReplaceSparse(root, new RememberedScreens.Simple_View(7));
+        frames.World.SetSparse(root, new RememberedScreens.Simple_View(7));
         frames.Frame();
 
-        Assert.Equal("3:empty", frames.World.ReadSparse<ComposeText>(root).Value);
+        Assert.Equal("3:empty", frames.World.ReadComponentData<ComposeText>(root).Value);
     }
 }
 

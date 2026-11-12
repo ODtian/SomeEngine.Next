@@ -1,8 +1,6 @@
 using System.Numerics;
-using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Elements;
 using SomeEngine.Layout;
 
@@ -12,17 +10,16 @@ namespace SomeEngine.Runtime;
 public sealed class WindowInput : IDisposable
 {
     private readonly World _world;
-    private readonly QueryHandle _canvasQuery;
-    private readonly QueryHandle _captureQuery;
+    private readonly Query _canvasQuery;
+    private readonly Query _captureQuery;
     private readonly List<ScreenCanvas> _canvases = [];
     private char _highSurrogate;
 
     public WindowInput(World world)
     {
-        DevelopmentCheck.Require(world is not null, "Window input requires a game World.");
         _world = world;
-        _canvasQuery = world.Query(world.QueryDefinition().Read<Canvas>());
-        _captureQuery = world.Query(world.QueryDefinition().Read<InputCapture>());
+        _canvasQuery = world.Query(new QueryDescription().WithStored<Canvas>());
+        _captureQuery = world.Query(new QueryDescription().WithStored<InputCapture>());
     }
 
     /// <summary>The current game-world capture flags, after the interface input stage.</summary>
@@ -31,11 +28,9 @@ public sealed class WindowInput : IDisposable
         get
         {
             InputCapture capture = default;
-            _world.ExecuteQuery(_captureQuery, ref capture, static (rows, ref value) =>
-            {
-                foreach (var row in rows.Rows)
-                    value = row.Read<InputCapture>();
-            });
+            using QueryScope scope = _captureQuery.OpenRead();
+            foreach (QueryChunk chunk in scope)
+                foreach (InputCapture value in chunk.Read<InputCapture>()) capture = value;
             return capture;
         }
     }
@@ -135,22 +130,20 @@ public sealed class WindowInput : IDisposable
     private void ReadCanvases()
     {
         _canvases.Clear();
-        List<ScreenCanvas> canvases = _canvases;
-        _world.ExecuteQuery(_canvasQuery, ref canvases, static (rows, ref values) =>
+        using QueryScope scope = _canvasQuery.OpenRead();
+        foreach (QueryChunk chunk in scope)
         {
-            foreach (var row in rows.Rows)
-            {
-                Canvas canvas = row.Read<Canvas>();
-                if (canvas.Target.Kind == CanvasTargetKind.Screen)
-                    values.Add(new ScreenCanvas(row.Entity, canvas.Scale));
-            }
-        });
+            ReadOnlySpan<Canvas> values = chunk.Read<Canvas>();
+            for (int row = 0; row < chunk.Count; row++)
+                if (values[row].Target.Kind == CanvasTargetKind.Screen)
+                    _canvases.Add(new ScreenCanvas(chunk.Entities[row], values[row].Scale));
+        }
     }
 
     public void Dispose()
     {
-        _world.ReleaseQuery(_captureQuery);
-        _world.ReleaseQuery(_canvasQuery);
+        _canvases.Clear();
+        _highSurrogate = default;
     }
 
     private readonly record struct ScreenCanvas(Entity Entity, float Scale);

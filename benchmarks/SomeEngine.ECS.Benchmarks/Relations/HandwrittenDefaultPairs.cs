@@ -1,59 +1,35 @@
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 
 namespace SomeEngine.ECS.Benchmarks.Relations.Spatial;
 
-/// <summary>Remaining-row pair combinations with the default motion rule written directly.</summary>
+/// <summary>Chunk pairs with the default motion rule written directly.</summary>
 public static class HandwrittenDefaultPairs
 {
-    public static bool Enumerate<TOutput>(World world, QueryHandle bodies, ref TOutput output)
+    public static bool Enumerate<TOutput>(World world, Query bodies, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryDefinition original = world.GetQueryDefinition(bodies);
-        QueryDefinition definition = original.WithOptionalRead<Body>();
-        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
-        QueryHandle members = temporaryQuery ? world.Query(definition) : bodies;
-        var execution = new PairExecution<TOutput>(output);
-        try
+        using QueryScope members = bodies.WithOptionalRead<Body>().OpenRead();
+        int firstIndex = 0;
+        foreach (QueryChunk first in members)
         {
-            world.ExecuteQuery(members, ref execution);
-            return execution.Completed;
-        }
-        finally
-        {
-            output = execution.Output;
-            if (temporaryQuery)
-                world.ReleaseQuery(members);
-        }
-    }
-
-    private ref struct PairExecution<TOutput>(TOutput output) : IQueryExecution
-        where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
-    {
-        public TOutput Output = output;
-        public bool Completed;
-
-        public void Execute(scoped QueryCursor members)
-        {
-            var firstRows = members.ReadRows<Body, Body>();
-            while (firstRows.MoveNext(out var first, out var firstBody, out _))
+            if (!first.TryRead<Body>(out ReadOnlySpan<Body> firstBodies)) { firstIndex++; continue; }
+            int secondIndex = 0;
+            foreach (QueryChunk second in members)
             {
-                Entity firstEntity = first.Entity;
-                var secondRows = firstRows;
-                while (secondRows.MoveNext(out var second, out var secondBody, out _))
-                {
-                    if (firstBody.Value.Kind != MotionKind.Dynamic && secondBody.Value.Kind != MotionKind.Dynamic)
-                        continue;
-                    var pair = EntityOrder.OrderPair(firstEntity, second.Entity);
-                    if (!Output.Add(in pair))
+                int index = secondIndex++;
+                if (index < firstIndex || !second.TryRead<Body>(out ReadOnlySpan<Body> secondBodies)) continue;
+                for (int a = 0; a < first.Count; a++)
+                    for (int b = index == firstIndex ? a + 1 : 0; b < second.Count; b++)
                     {
-                        Completed = false;
-                        return;
+                        if (!first.Has<Body>(a) || !second.Has<Body>(b)) continue;
+                        if (firstBodies[a].Kind != MotionKind.Dynamic && secondBodies[b].Kind != MotionKind.Dynamic) continue;
+                        var pair = EntityOrder.OrderPair(first.Entities[a], second.Entities[b]);
+                        if (!output.Add(in pair)) return false;
                     }
-                }
             }
-            Completed = true;
+            firstIndex++;
         }
+        return true;
     }
 }

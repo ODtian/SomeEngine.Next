@@ -11,7 +11,7 @@ internal static partial class RelationsSmoke
 {
     private static int Main()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig
+        using var jobs = new Scheduler(new JobConfiguration
         {
             WorkerCount = 2,
             SafetyMode = JobSafetyMode.Checked,
@@ -25,26 +25,27 @@ internal static partial class RelationsSmoke
 
     private static void CheckNumbersAndEdges(Scheduler jobs)
     {
-        using var world = WorldJobs.CreateWorld(scheduler: jobs);
+        using var world = new World(execution: new WorldJobs(jobs));
+        var worldJobs = (WorldJobs)world.Execution!;
         var entities = new Entity[8];
         for (int i = 0; i < entities.Length; i++)
-            entities[i] = world.CreateEntity(new Number<int> { Value = i + 1 });
-        world.AddTag<Position1>(entities[0]);
-        world.AddTag<Position2>(entities[1]);
-        world.AddTag<Position3>(entities[2]);
-        world.AddTag<Position4>(entities[3]);
-        world.AddTag<Position5>(entities[4]);
-        world.AddTag<Position6>(entities[5]);
-        world.AddTag<Position7>(entities[6]);
-        world.AddTag<Position8>(entities[7]);
-        var first = world.Query(world.QueryDefinition().All<Position1>());
-        var second = world.Query(world.QueryDefinition().All<Position2>());
-        var third = world.Query(world.QueryDefinition().All<Position3>());
-        var fourth = world.Query(world.QueryDefinition().All<Position4>());
-        var fifth = world.Query(world.QueryDefinition().All<Position5>());
-        var sixth = world.Query(world.QueryDefinition().All<Position6>());
-        var seventh = world.Query(world.QueryDefinition().All<Position7>());
-        var eighth = world.Query(world.QueryDefinition().All<Position8>());
+            entities[i] = world.Create(new Number<int> { Value = i + 1 });
+        world.Set(entities[0], new Position1());
+        world.Set(entities[1], new Position2());
+        world.Set(entities[2], new Position3());
+        world.Set(entities[3], new Position4());
+        world.Set(entities[4], new Position5());
+        world.Set(entities[5], new Position6());
+        world.Set(entities[6], new Position7());
+        world.Set(entities[7], new Position8());
+        var first = world.Query(new QueryDescription().With<Position1>());
+        var second = world.Query(new QueryDescription().With<Position2>());
+        var third = world.Query(new QueryDescription().With<Position3>());
+        var fourth = world.Query(new QueryDescription().With<Position4>());
+        var fifth = world.Query(new QueryDescription().With<Position5>());
+        var sixth = world.Query(new QueryDescription().With<Position6>());
+        var seventh = world.Query(new QueryDescription().With<Position7>());
+        var eighth = world.Query(new QueryDescription().With<Position8>());
 
         Require(world.Product(first).Where(new Total1(1)).Count() == 1, "unary");
         Require(world.Product(first, second).Where(new Total2(3)).Count() == 1, "binary");
@@ -60,29 +61,26 @@ internal static partial class RelationsSmoke
         Require(!eight.Enumerate(ref output) && output.Count == 1 && result[0] == entities[7], "eighth identity and output stop");
         Require(eight.Count() == 1 && eight.Any(), "eight-position terminals");
 
-        var numbers = world.Query(world.QueryDefinition().All<Number<int>>().Read<Number<int>>());
+        var numbers = world.Query(new QueryDescription().With<Number<int>>());
         var within = world.Within(numbers).Where(new Total2(14)).Except(new Total2(15));
         var pair = new FirstNumberPair();
         Require(!within.Enumerate(ref pair) && pair.Count == 1 &&
             pair.Value == (entities[5], entities[7]), "within row binding and output stop");
         Require(within.Count() == 1 && within.Any() &&
             world.Within(numbers).Except(new Total2(4)).Count() == 1, "within where and except terminals");
-        var point = new NumberPointValue(entities[0]);
-        world.ExecuteQuery(numbers, ref point);
-        Require(point.Value == 1, "point component reference");
-        world.ReleaseQuery(numbers);
-
+        using (ReadLookup<Number<int>> point = world.OpenRead<Number<int>>())
+            Require(point.Has(entities[0]) && point.ReadKnown(entities[0]).Value == 1, "native point component read");
         new IncreaseNumbers().Schedule(world).Complete();
         var values = new List<int>();
-        ComponentJobAccess<Number<int>>.ScheduleRead(world, new ReadNumber(world, entities[0], values)).Complete();
+        jobs.Schedule(new ReadNumber(world, entities[0], values), worldJobs.CollectReadAccess(numbers)).Complete();
         Require(values.SequenceEqual([2]), "ordinary typed and generated access");
         bool addressRejected = false;
-        try { ComponentJobAccess<NativeAddress<int>>.Read(world); }
+        try { worldJobs.Read<NativeAddress<int>>(); }
         catch (InvalidOperationException) { addressRejected = true; }
         Require(addressRejected, "generated field classification");
         bool queryAddressRejected = false;
-        var addressReads = world.QueryDefinition().Read<NativeAddress<int>>().Build();
-        try { QueryJobAccess.CopyAccesses(world, addressReads, new JobResourceAccess[QueryJobAccess.Count(addressReads)]); }
+        Query addressReads = world.Query(new QueryDescription().Optional<NativeAddress<int>>());
+        try { worldJobs.CollectReadAccess(addressReads); }
         catch (InvalidOperationException) { queryAddressRejected = true; }
         Require(queryAddressRejected, "ordinary query field classification");
 
@@ -93,21 +91,19 @@ internal static partial class RelationsSmoke
         world.RetargetRelationDeferred(edge, entities[0], entities[2]);
         Require(world.EdgesBetween<Wire<int>>(entities[0], entities[1]).Count() == 2, "applied adjacency");
         var targets = new List<Entity>();
-        RelationJobAccess<Wire<int>>.ScheduleEndpointsRead(world, new ReadWireTarget(world, edge, targets)).Complete();
+        jobs.Schedule(new ReadWireTarget(world, edge, targets), worldJobs.StructureRead).Complete();
         Require(targets.SequenceEqual([entities[2]]), "current generic endpoints in a Job");
-        var endpointReads = world.QueryDefinition().Read<DirectedRelationEndpoints<Wire<int>>>().Build();
-        Require(QueryJobAccess.CopyAccesses(world, endpointReads, new JobResourceAccess[QueryJobAccess.Count(endpointReads)]) == 2,
-            "generated generic endpoint classification");
-        RelationMaintenanceSystem<Wire<int>>.Schedule(world).Complete();
+        Query endpointReads = world.Query(new QueryDescription().With<RelationEndpoints<Wire<int>>>());
+        Require(worldJobs.CollectReadAccess(endpointReads).Length > 0, "generic endpoint storage classification");
+        jobs.Schedule(new MaintainWire(world), worldJobs.StructureWrite).Complete();
         Require(world.IncomingEdges<Wire<int>>(entities[2]).Count() == 1, "maintained adjacency");
+
         var joint = world.CreateRelation(entities[2], entities[0], new Joint<int>());
-        var endpoints = world.GetUndirectedRelationEndpoints(joint);
-        Require(endpoints.EndpointA == entities[2] && endpoints.EndpointB == entities[0], "undirected roles");
+        var endpoints = world.ReadComponentData<RelationEndpoints<Joint<int>>>(joint.Entity);
+        Require(endpoints.Source == entities[2] && endpoints.Target == entities[0], "undirected roles");
         Require(RelationSchema.For<Joint<int>>().Cardinality == RelationCardinality.UniquePair, "generated generic schema");
         world.DestroyRelation(parallel);
         Require(world.OutgoingEdges<Wire<int>>(entities[0]).Count() == 1, "edge destruction");
-        foreach (var query in new[] { first, second, third, fourth, fifth, sixth, seventh, eighth })
-            world.ReleaseQuery(query);
         Console.WriteLine("numbers: 8 arities, Item8, typed/generated reads; edges: identities, roles, maintenance");
     }
 
@@ -131,7 +127,12 @@ internal static partial class RelationsSmoke
 
     private readonly struct ReadWireTarget(World world, RelationEdge<Wire<int>> edge, List<Entity> targets) : IJob
     {
-        public void Execute() => targets.Add(world.GetDirectedRelationEndpoints(edge).Target);
+        public void Execute() => targets.Add(world.ReadComponentData<RelationEndpoints<Wire<int>>>(edge.Entity).Target);
+    }
+
+    private readonly struct MaintainWire(World world) : IJob
+    {
+        public void Execute() => Relations<Wire<int>>.Maintain(world);
     }
 
     private static void Require(bool condition, string behavior)

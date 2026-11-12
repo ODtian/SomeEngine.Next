@@ -16,21 +16,21 @@ internal static partial class TextEditingChecks
         Keyboard.Key(frames.World, Key.Delete, true);
         frames.Frame();
         CheckEdit(frames, root, string.Empty, 0, 0);
-        Require(frames.World.Read<EditDisplay>(root).Composition.Length == 0,
+        Require(frames.World.ReadComponentData<EditDisplay>(root).Composition.Length == 0,
             "Inactive text input preserves the editor's empty candidate presentation.");
         Gamepad.Navigate(frames.World, Direction.Right);
         Keyboard.Text(frames.World, "kept");
         frames.Frame();
         CheckEdit(frames, root, "kept", 4, 1);
 
-        Entity node = frames.World.Read<EditDisplay>(root).Node;
+        Entity node = frames.World.ReadComponentData<EditDisplay>(root).Node;
         frames.World.RemoveSparse<Focused>(node);
         Keyboard.Text(frames.World, "lost");
         Keyboard.Composition(frames.World, "选", 1);
         Keyboard.Key(frames.World, Key.Backspace, true);
         frames.Frame();
         CheckEdit(frames, root, "kept", 4, 1);
-        Require(frames.World.Read<EditDisplay>(root).Composition.Length == 0,
+        Require(frames.World.ReadComponentData<EditDisplay>(root).Composition.Length == 0,
             "A released editor retains its committed text and empty candidate presentation.");
         Gamepad.Navigate(frames.World, Direction.Right);
         Keyboard.Text(frames.World, "+");
@@ -48,10 +48,10 @@ internal static partial class TextEditingChecks
         Keyboard.Key(frames.World, Key.Left, true);
         Keyboard.Composition(frames.World, "候", 1);
         frames.Frame();
-        EditDisplay previous = frames.World.Read<EditDisplay>(root);
-        frames.World.Replace(root, new EditingExample(rewritten, Revision: 1));
+        EditDisplay previous = frames.World.ReadComponentData<EditDisplay>(root);
+        frames.World.Set(root, new EditingExample(rewritten, Revision: 1));
         frames.Frame();
-        Require(frames.World.Read<EditDisplay>(root) == previous,
+        Require(frames.World.ReadComponentData<EditDisplay>(root) == previous,
             "Declaring the behavior again preserves its text, selection, composition, and consumed editing display.");
     }
 
@@ -73,8 +73,8 @@ internal static partial class TextEditingChecks
         Keyboard.Key(second.World, Key.Left, true);
         first.Frame();
         second.Frame();
-        EditDisplay firstDisplay = first.World.Read<EditDisplay>(firstRoot);
-        EditDisplay secondDisplay = second.World.Read<EditDisplay>(secondRoot);
+        EditDisplay firstDisplay = first.World.ReadComponentData<EditDisplay>(firstRoot);
+        EditDisplay secondDisplay = second.World.ReadComponentData<EditDisplay>(secondRoot);
         Require(firstDisplay.Text == "one" && firstDisplay.Caret == 2 && firstDisplay.SelectionStart == 3 &&
             firstDisplay.Composition == "一" && secondDisplay.Text == "two" &&
             secondDisplay.Caret == 2 && secondDisplay.SelectionStart == 2 && secondDisplay.Composition.Length == 0,
@@ -96,13 +96,13 @@ internal static partial class TextEditingChecks
         Keyboard.Text(frames.World, "kept");
         Keyboard.Composition(frames.World, "候", 1);
         frames.Frame();
-        Entity node = frames.World.Read<EditDisplay>(root).Node;
+        Entity node = frames.World.ReadComponentData<EditDisplay>(root).Node;
         frames.World.Remove<Focusable>(node);
         Keyboard.Text(frames.World, "lost");
         frames.Frame();
-        Require(frames.World.Read<EditableText>(node).Text == "kept" &&
-            string.IsNullOrEmpty(frames.World.Read<EditableText>(node).Composition) &&
-            frames.World.Read<EditableText>(node).CompositionCaret == 0 && !frames.World.HasSparse<Focused>(node),
+        Require(frames.World.ReadComponentData<EditableText>(node).Text == "kept" &&
+            string.IsNullOrEmpty(frames.World.ReadComponentData<EditableText>(node).Composition) &&
+            frames.World.ReadComponentData<EditableText>(node).CompositionCaret == 0 && !frames.World.HasSparse<Focused>(node),
             "Focusability removal ends candidate presentation and retains committed text.");
     }
 }

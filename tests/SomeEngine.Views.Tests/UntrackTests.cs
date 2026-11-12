@@ -13,74 +13,74 @@ public sealed partial class UntrackTests
     public void UntrackedReadsKeepTheDisplayUntilAnOutsideReadChanges(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity sample = frames.World.CreateEntity();
+        Entity sample = frames.World.Create();
         if (sparse)
-            frames.World.AddSparse(sample, new SparseValue(3));
+            frames.World.SetSparse(sample, new SparseValue(3));
         else
             frames.World.Add(sample, new Value(3));
-        Entity trigger = frames.World.CreateEntity(new Value(5));
+        Entity trigger = frames.World.Create(new Value(5));
         Entity root = Views.Spawn(frames.World, Entity.Null, new SampleDisplay(sample, trigger, sparse));
 
         frames.Frame();
-        Assert.Equal(new DisplayValues(3, 5), frames.World.Read<DisplayValues>(root));
+        Assert.Equal(new DisplayValues(3, 5), frames.World.ReadComponentData<DisplayValues>(root));
 
         if (sparse)
-            frames.World.ReplaceSparse(sample, new SparseValue(7));
+            frames.World.SetSparse(sample, new SparseValue(7));
         else
-            frames.World.Replace(sample, new Value(7));
+            frames.World.Set(sample, new Value(7));
         frames.Frame();
-        Assert.Equal(new DisplayValues(3, 5), frames.World.Read<DisplayValues>(root));
+        Assert.Equal(new DisplayValues(3, 5), frames.World.ReadComponentData<DisplayValues>(root));
 
-        frames.World.Replace(trigger, new Value(11));
+        frames.World.Set(trigger, new Value(11));
         frames.Frame();
-        Assert.Equal(new DisplayValues(7, 11), frames.World.Read<DisplayValues>(root));
+        Assert.Equal(new DisplayValues(7, 11), frames.World.ReadComponentData<DisplayValues>(root));
 
         if (sparse)
-            frames.World.ReplaceSparse(sample, new SparseValue(13));
+            frames.World.SetSparse(sample, new SparseValue(13));
         else
-            frames.World.Replace(sample, new Value(13));
+            frames.World.Set(sample, new Value(13));
         frames.Frame();
-        Assert.Equal(new DisplayValues(7, 11), frames.World.Read<DisplayValues>(root));
+        Assert.Equal(new DisplayValues(7, 11), frames.World.ReadComponentData<DisplayValues>(root));
     }
 
     [Fact]
     public void NestedUntrackBlocksKeepTheOuterBlockInItsValueOnlyState()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity sample = frames.World.CreateEntity(new Value(3));
-        Entity trigger = frames.World.CreateEntity(new Value(5));
+        Entity sample = frames.World.Create(new Value(3));
+        Entity trigger = frames.World.Create(new Value(5));
         Entity root = Views.Spawn(frames.World, Entity.Null, new NestedSampleDisplay(sample, trigger));
 
         frames.Frame();
-        Assert.Equal(new DisplayValues(9, 5), frames.World.Read<DisplayValues>(root));
+        Assert.Equal(new DisplayValues(9, 5), frames.World.ReadComponentData<DisplayValues>(root));
 
-        frames.World.Replace(sample, new Value(7));
+        frames.World.Set(sample, new Value(7));
         frames.Frame();
-        Assert.Equal(new DisplayValues(9, 5), frames.World.Read<DisplayValues>(root));
+        Assert.Equal(new DisplayValues(9, 5), frames.World.ReadComponentData<DisplayValues>(root));
 
-        frames.World.Replace(trigger, new Value(11));
+        frames.World.Set(trigger, new Value(11));
         frames.Frame();
-        Assert.Equal(new DisplayValues(21, 11), frames.World.Read<DisplayValues>(root));
+        Assert.Equal(new DisplayValues(21, 11), frames.World.ReadComponentData<DisplayValues>(root));
     }
 
     [Fact]
     public void UntrackDisposalAfterAnExceptionRestoresOutsideReads()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity sample = frames.World.CreateEntity(new Value(3));
-        Entity trigger = frames.World.CreateEntity(new Value(5));
+        Entity sample = frames.World.Create(new Value(3));
+        Entity trigger = frames.World.Create(new Value(5));
         Entity root = Views.Spawn(frames.World, Entity.Null, new ThrowingSampleDisplay(sample, trigger));
 
         frames.Frame();
-        Assert.Equal(new DisplayValues(3, 5), frames.World.Read<DisplayValues>(root));
+        Assert.Equal(new DisplayValues(3, 5), frames.World.ReadComponentData<DisplayValues>(root));
 
-        frames.World.Replace(sample, new Value(7));
+        frames.World.Set(sample, new Value(7));
         frames.Frame();
-        Assert.Equal(new DisplayValues(3, 5), frames.World.Read<DisplayValues>(root));
+        Assert.Equal(new DisplayValues(3, 5), frames.World.ReadComponentData<DisplayValues>(root));
 
-        frames.World.Replace(trigger, new Value(11));
+        frames.World.Set(trigger, new Value(11));
         frames.Frame();
-        Assert.Equal(new DisplayValues(7, 11), frames.World.Read<DisplayValues>(root));
+        Assert.Equal(new DisplayValues(7, 11), frames.World.ReadComponentData<DisplayValues>(root));
     }
 
 #if DEBUG
@@ -97,29 +97,29 @@ public sealed partial class UntrackTests
     public void ChildBuildsUseTheirModeAndRestoreTheSurroundingReadState(bool once)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity sample = frames.World.CreateEntity(new Value(3));
-        Entity childSource = frames.World.CreateEntity(new Value(5));
-        Entity trigger = frames.World.CreateEntity(new Value(7));
+        Entity sample = frames.World.Create(new Value(3));
+        Entity childSource = frames.World.Create(new Value(5));
+        Entity trigger = frames.World.Create(new Value(7));
         Entity root = once
             ? Views.Spawn(frames.World, Entity.Null, new OnceSampleGroup(sample, childSource, trigger))
             : Views.Spawn(frames.World, Entity.Null, new SampleGroup(sample, childSource, trigger));
 
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal(new DisplayValues(6, 7), frames.World.Read<DisplayValues>(root));
-        Assert.Equal(new DisplayValues(5, 0), frames.World.Read<DisplayValues>(child));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal(new DisplayValues(6, 7), frames.World.ReadComponentData<DisplayValues>(root));
+        Assert.Equal(new DisplayValues(5, 0), frames.World.ReadComponentData<DisplayValues>(child));
 
-        frames.World.Replace(sample, new Value(11));
-        frames.World.Replace(childSource, new Value(13));
+        frames.World.Set(sample, new Value(11));
+        frames.World.Set(childSource, new Value(13));
         frames.Frame();
-        Assert.Equal(new DisplayValues(6, 7), frames.World.Read<DisplayValues>(root));
-        Assert.Equal(new DisplayValues(13, 0), frames.World.Read<DisplayValues>(child));
+        Assert.Equal(new DisplayValues(6, 7), frames.World.ReadComponentData<DisplayValues>(root));
+        Assert.Equal(new DisplayValues(13, 0), frames.World.ReadComponentData<DisplayValues>(child));
 
-        frames.World.Replace(trigger, new Value(17));
+        frames.World.Set(trigger, new Value(17));
         frames.Frame();
         Assert.Equal(once ? new DisplayValues(6, 7) : new DisplayValues(22, 17),
-            frames.World.Read<DisplayValues>(root));
-        Assert.Equal(new DisplayValues(13, 0), frames.World.Read<DisplayValues>(child));
+            frames.World.ReadComponentData<DisplayValues>(root));
+        Assert.Equal(new DisplayValues(13, 0), frames.World.ReadComponentData<DisplayValues>(child));
     }
 
     private readonly record struct SampleGroup(Entity Sample, Entity ChildSource, Entity Trigger) : IView, IComponent
@@ -226,12 +226,12 @@ public sealed partial class UntrackTests
     private static void WriteDisplay(DisplayValues values)
     {
         if (Scope.World.Has<DisplayValues>(Scope.Entity))
-            Scope.World.Replace(Scope.Entity, values);
+            Scope.World.Set(Scope.Entity, values);
         else
             Scope.World.Add(Scope.Entity, values);
     }
 
-    private readonly record struct Value(int Number) : IComponent;
-    private readonly record struct SparseValue(int Number) : ISparseComponent;
+    private readonly record struct Value(int Number) : ITrackedComponent;
+    private readonly record struct SparseValue(int Number) : ISparseComponent, ITrackedComponent;
     private readonly record struct DisplayValues(int Sample, int Trigger) : IComponent;
 }

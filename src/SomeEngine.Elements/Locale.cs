@@ -7,7 +7,7 @@ using SomeEngine.ECS.Entities;
 namespace SomeEngine.Elements;
 
 /// <summary>The current language on the World's single translation entity.</summary>
-public struct Locale : IComponent
+public struct Locale : ITrackedComponent
 {
     private static readonly ConditionalWeakTable<World, LocaleEntity> s_entities = new();
     public string Name;
@@ -15,7 +15,7 @@ public struct Locale : IComponent
     internal static Entity Find(World world, bool required = true)
     {
         LocaleEntity data = s_entities.GetValue(world, static _ => new LocaleEntity());
-        uint version = world.ComponentWriteVersion<Locale>();
+        ulong version = world.ComponentWriteVersion(ComponentId<Locale>.Value);
         if (!data.HasResult || data.WriteVersion != version)
         {
             data.Entity = FindEntity(world);
@@ -30,34 +30,26 @@ public struct Locale : IComponent
 
     private static Entity FindEntity(World world)
     {
-        var query = world.Query(world.QueryDefinition().All<Locale>());
+        var query = world.Query(new QueryDescription().WithStored<Locale>());
         Entity found = Entity.Null;
-        try
-        {
-            world.ExecuteQuery(query, ref found, static (rows, ref source) =>
-            {
-                foreach (var row in rows.Rows)
+        using (QueryScope range = query.OpenRead())
+            foreach (QueryChunk chunk in range)
+                foreach (Entity entity in chunk.Entities)
                 {
-                    DevelopmentCheck.Require(source == Entity.Null, "Text requires one Locale per World.");
-                    source = row.Entity;
+                    DevelopmentCheck.Require(found == Entity.Null, "Text requires one Locale per World.");
+                    found = entity;
                 }
-            });
-        }
-        finally
-        {
-            world.ReleaseQuery(query);
-        }
         return found;
     }
 
     internal static CultureInfo? ReadCulture(World world, bool track)
     {
-        if (world.ComponentWriteVersion<Locale>() == 0)
+        if (world.ComponentWriteVersion(ComponentId<Locale>.Value) == 0)
             return null;
         Entity source = Find(world, required: false);
         if (source == Entity.Null)
             return null;
-        string name = track ? Views.Scope.Read<Locale>(source).Name : world.Read<Locale>(source).Name;
+        string name = track ? Views.Scope.Read<Locale>(source).Name : world.ReadComponentData<Locale>(source).Name;
         LocaleEntity data = s_entities.GetValue(world, static _ => new LocaleEntity());
         if (data.Culture is null)
         {
@@ -83,7 +75,7 @@ public struct Locale : IComponent
     private sealed class LocaleEntity
     {
         internal Entity Entity;
-        internal uint WriteVersion;
+        internal ulong WriteVersion;
         internal bool HasResult;
         internal CultureInfo? Culture;
     }

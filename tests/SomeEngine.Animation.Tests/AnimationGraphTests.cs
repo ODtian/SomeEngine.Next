@@ -13,8 +13,8 @@ public class AnimationGraphTests
     public void NestedTimingUsesOneAnimationAndMatchesWorkedIntervals()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new Display());
-        Entity second = world.CreateEntity(new Display());
+        Entity first = world.Create(new Display());
+        Entity second = world.Create(new Display());
         using var graph = new AnimationBuilder(world);
         using (graph.Sequence())
         {
@@ -35,21 +35,21 @@ public class AnimationGraphTests
 
         Assert.Equal(3, world.EntityCount);
         Tick(systems, world, 0.5);
-        Assert.Equal(5, world.Read<Display>(first).Value);
-        Assert.Equal(0, world.Read<Display>(second).Value);
+        Assert.Equal(5, world.ReadComponentData<Display>(first).Value);
+        Assert.Equal(0, world.ReadComponentData<Display>(second).Value);
         Tick(systems, world, 1.25);
-        Assert.Equal(10, world.Read<Display>(first).Value);
-        Assert.Equal(5, world.Read<Display>(first).Other);
-        Assert.Equal(7.5f, world.Read<Display>(second).Value);
-        Assert.Equal(0, world.Read<Display>(second).Other);
+        Assert.Equal(10, world.ReadComponentData<Display>(first).Value);
+        Assert.Equal(5, world.ReadComponentData<Display>(first).Other);
+        Assert.Equal(7.5f, world.ReadComponentData<Display>(second).Value);
+        Assert.Equal(0, world.ReadComponentData<Display>(second).Other);
         Tick(systems, world, 0.5);
-        Assert.Equal(15, world.Read<Display>(first).Other);
-        Assert.Equal(22.5f, world.Read<Display>(second).Value);
-        Assert.Equal(10, world.Read<Display>(second).Other);
+        Assert.Equal(15, world.ReadComponentData<Display>(first).Other);
+        Assert.Equal(22.5f, world.ReadComponentData<Display>(second).Value);
+        Assert.Equal(10, world.ReadComponentData<Display>(second).Other);
         Tick(systems, world, 0.75);
-        Assert.Equal(20, world.Read<Display>(first).Other);
-        Assert.Equal(30, world.Read<Display>(second).Value);
-        Assert.Equal(40, world.Read<Display>(second).Other);
+        Assert.Equal(20, world.ReadComponentData<Display>(first).Other);
+        Assert.Equal(30, world.ReadComponentData<Display>(second).Value);
+        Assert.Equal(40, world.ReadComponentData<Display>(second).Other);
         Assert.False(world.IsEnabled<Timeline>(animation));
     }
 
@@ -57,7 +57,7 @@ public class AnimationGraphTests
     public void SpringSequenceEntersTheNextIntervalAfterSettlementOnItsTarget()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display());
+        Entity target = world.Create(new Display());
         using var graph = new AnimationBuilder(world);
         using (graph.Sequence())
         {
@@ -71,14 +71,14 @@ public class AnimationGraphTests
         Assert.Equal(target, animation);
         Assert.Equal(1, world.EntityCount);
         Tick(systems, world, 0.25);
-        Assert.Equal(10, world.Read<Display>(target).Value);
-        for (int frame = 0; frame < 600 && world.Read<Timeline>(animation).Stage == 0; frame++)
+        Assert.Equal(10, world.ReadComponentData<Display>(target).Value);
+        for (int frame = 0; frame < 600 && world.ReadComponentData<Timeline>(animation).Stage == 0; frame++)
             Tick(systems, world, 1d / 60);
-        Assert.Equal(20, world.Read<Display>(target).Value);
+        Assert.Equal(20, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.125);
-        Assert.Equal(25, world.Read<Display>(target).Value);
+        Assert.Equal(25, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.125);
-        Assert.Equal(30, world.Read<Display>(target).Value);
+        Assert.Equal(30, world.ReadComponentData<Display>(target).Value);
         Assert.False(world.IsEnabled<Timeline>(target));
         Assert.Equal(1, world.EntityCount);
     }
@@ -87,7 +87,7 @@ public class AnimationGraphTests
     public void RepeatedDisplacementsStartAfterTheDriverAdvancesTheBoundary()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         using var graph = new AnimationBuilder(world);
         using (graph.Sequence())
         {
@@ -99,14 +99,14 @@ public class AnimationGraphTests
         using var systems = Systems(world);
 
         Tick(systems, world, 1);
-        Assert.Equal(10, world.Read<Display>(target).Value);
+        Assert.Equal(10, world.ReadComponentData<Display>(target).Value);
         Animation.Advance(world, animation);
         Tick(systems, world, 0.25);
-        Assert.Equal(12, world.Read<Display>(target).Value);
+        Assert.Equal(12, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(12, world.Read<Display>(target).Value);
+        Assert.Equal(12, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.25);
-        Assert.Equal(10, world.Read<Display>(target).Value);
+        Assert.Equal(10, world.ReadComponentData<Display>(target).Value);
         Assert.False(world.IsEnabled<Timeline>(animation));
     }
 
@@ -114,8 +114,8 @@ public class AnimationGraphTests
     public void BranchHandlePausesIndependentlyAndFusedEntitiesAreReused()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new Display());
-        Entity second = world.CreateEntity(new Display());
+        Entity first = world.Create(new Display());
+        Entity second = world.Create(new Display());
         using var systems = Systems(world);
         using var graph = new AnimationBuilder(world);
         graph.To(first, Value, 10f, Spec.Tween(1));
@@ -130,14 +130,14 @@ public class AnimationGraphTests
         Entity independent = AnimationGraph.GetBranch(world, animation, branchId);
         PropertyAnimation.Pause(world, independent);
         Tick(systems, world, 0.5);
-        Assert.Equal(5, world.Read<Display>(first).Value);
-        Assert.Equal(10, world.Read<Display>(second).Value);
-        Assert.Equal(0, world.Read<Display>(second).Other);
+        Assert.Equal(5, world.ReadComponentData<Display>(first).Value);
+        Assert.Equal(10, world.ReadComponentData<Display>(second).Value);
+        Assert.Equal(0, world.ReadComponentData<Display>(second).Other);
         PropertyAnimation.Resume(world, independent);
         Tick(systems, world, 0.5);
-        Assert.Equal(15, world.Read<Display>(second).Other);
+        Assert.Equal(15, world.ReadComponentData<Display>(second).Other);
         Tick(systems, world, 0.5);
-        Assert.Equal(30, world.Read<Display>(second).Other);
+        Assert.Equal(30, world.ReadComponentData<Display>(second).Other);
 
         int count = world.EntityCount;
         graph.To(first, Value, 0f, Spec.Tween(1));
@@ -151,7 +151,7 @@ public class AnimationGraphTests
     public void ButtonStatesReadDriverParametersAndCrossfadeOnOneEntity()
     {
         using var world = new World();
-        Entity button = world.CreateEntity(new Display());
+        Entity button = world.Create(new Display());
         var parameters = new GraphParameters();
         using var graph = new AnimationBuilder(world);
         using (var machine = graph.StateMachine(ref parameters))
@@ -171,25 +171,25 @@ public class AnimationGraphTests
         Tick(systems, world, 0);
         Assert.Equal(button, animation);
         Assert.Equal(1, world.EntityCount);
-        Assert.Equal(0, world.Read<Display>(button).Value);
+        Assert.Equal(0, world.ReadComponentData<Display>(button).Value);
         parameters.Values[0] = 1;
-        world.Replace(animation, parameters);
+        world.Set(animation, parameters);
         Tick(systems, world, 0.1);
-        Assert.Equal(5, world.Read<Display>(button).Value, 5);
+        Assert.Equal(5, world.ReadComponentData<Display>(button).Value, 5);
         Tick(systems, world, 0.1);
-        Assert.Equal(10, world.Read<Display>(button).Value);
+        Assert.Equal(10, world.ReadComponentData<Display>(button).Value);
         parameters.Values[0] = 2;
-        world.Replace(animation, parameters);
+        world.Set(animation, parameters);
         Tick(systems, world, 0.1);
-        Assert.Equal(15, world.Read<Display>(button).Value, 5);
+        Assert.Equal(15, world.ReadComponentData<Display>(button).Value, 5);
         Tick(systems, world, 0.1);
-        Assert.Equal(20, world.Read<Display>(button).Value);
+        Assert.Equal(20, world.ReadComponentData<Display>(button).Value);
         parameters.Values[0] = 0;
-        world.Replace(animation, parameters);
+        world.Set(animation, parameters);
         Tick(systems, world, 0.1);
-        Assert.Equal(10, world.Read<Display>(button).Value, 5);
+        Assert.Equal(10, world.ReadComponentData<Display>(button).Value, 5);
         Tick(systems, world, 0.1);
-        Assert.Equal(0, world.Read<Display>(button).Value);
+        Assert.Equal(0, world.ReadComponentData<Display>(button).Value);
         Assert.True(world.IsEnabled<Timeline>(animation));
     }
 
@@ -197,7 +197,7 @@ public class AnimationGraphTests
     public void BlendCoordinateInterpolatesSamplesAndRespectsPause()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display());
+        Entity target = world.Create(new Display());
         var parameters = new GraphParameters();
         parameters.Values[0] = 0.25f;
         using var graph = new AnimationBuilder(world);
@@ -211,23 +211,23 @@ public class AnimationGraphTests
         Entity animation = graph.Play();
         using var systems = Systems(world);
         Tick(systems, world, 0);
-        Assert.Equal(5, world.Read<Display>(target).Value);
+        Assert.Equal(5, world.ReadComponentData<Display>(target).Value);
         parameters.Values[0] = 0.75f;
-        world.Replace(animation, parameters);
+        world.Set(animation, parameters);
         Tick(systems, world, 0);
-        Assert.Equal(15, world.Read<Display>(target).Value);
+        Assert.Equal(15, world.ReadComponentData<Display>(target).Value);
         parameters.Values[0] = 2;
-        world.Replace(animation, parameters);
+        world.Set(animation, parameters);
         Tick(systems, world, 0);
-        Assert.Equal(20, world.Read<Display>(target).Value);
+        Assert.Equal(20, world.ReadComponentData<Display>(target).Value);
         PropertyAnimation.Pause(world, animation);
         parameters.Values[0] = -1;
-        world.Replace(animation, parameters);
+        world.Set(animation, parameters);
         Tick(systems, world, 1);
-        Assert.Equal(20, world.Read<Display>(target).Value);
+        Assert.Equal(20, world.ReadComponentData<Display>(target).Value);
         PropertyAnimation.Resume(world, animation);
         Tick(systems, world, 0);
-        Assert.Equal(0, world.Read<Display>(target).Value);
+        Assert.Equal(0, world.ReadComponentData<Display>(target).Value);
         Assert.Equal(1, world.EntityCount);
     }
 
@@ -235,7 +235,7 @@ public class AnimationGraphTests
     public void LayerScopeCombinesGraphOutputsWithTheCallersBaseValue()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         PropertyAnimation.SetBase(world, target, Value, 10f);
         using var graph = new AnimationBuilder(world);
         using (graph.Layer(0, new AnimationLayer { Mode = LayerMode.Override, Weight = 1 }))
@@ -246,9 +246,9 @@ public class AnimationGraphTests
         using var systems = Systems(world);
 
         Tick(systems, world, 0.5);
-        Assert.Equal(20, world.Read<Display>(target).Value);
+        Assert.Equal(20, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(30, world.Read<Display>(target).Value);
+        Assert.Equal(30, world.ReadComponentData<Display>(target).Value);
         Assert.Equal(target, animation);
         Assert.Equal(1, world.EntityCount);
     }
@@ -257,8 +257,8 @@ public class AnimationGraphTests
     public void CompiledStatesStartIndependentInstancesAndSurviveTheCompileHandle()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new Display());
-        Entity second = world.CreateEntity(new Display());
+        Entity first = world.Create(new Display());
+        Entity second = world.Create(new Display());
         var parameters = new GraphParameters();
         using var systems = Systems(world);
         using var builder = new AnimationBuilder(world);
@@ -276,15 +276,15 @@ public class AnimationGraphTests
         compiled.Dispose();
         Tick(systems, world, 0);
         parameters.Values[0] = 1;
-        world.Replace(a, parameters);
+        world.Set(a, parameters);
         Tick(systems, world, 0.1);
-        Assert.Equal(5, world.Read<Display>(first).Value, 5);
-        Assert.Equal(0, world.Read<Display>(second).Value);
-        world.Replace(b, parameters);
+        Assert.Equal(5, world.ReadComponentData<Display>(first).Value, 5);
+        Assert.Equal(0, world.ReadComponentData<Display>(second).Value);
+        world.Set(b, parameters);
         PropertyAnimation.Pause(world, a);
         Tick(systems, world, 0.1);
-        Assert.Equal(5, world.Read<Display>(first).Value, 5);
-        Assert.Equal(5, world.Read<Display>(second).Value, 5);
+        Assert.Equal(5, world.ReadComponentData<Display>(first).Value, 5);
+        Assert.Equal(5, world.ReadComponentData<Display>(second).Value, 5);
         Assert.Equal(2, world.EntityCount);
     }
 
@@ -292,22 +292,22 @@ public class AnimationGraphTests
     public void RepeatedGraphConstructionReusesTheAnimationEntity()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new Display());
-        Entity second = world.CreateEntity(new Display());
+        Entity first = world.Create(new Display());
+        Entity second = world.Create(new Display());
         using var systems = Systems(world);
         BuildAndPlay(world, systems, first, second);
         int count = world.EntityCount;
         BuildAndPlay(world, systems, first, second);
         Assert.Equal(count, world.EntityCount);
-        Assert.Equal(10, world.Read<Display>(first).Value);
-        Assert.Equal(20, world.Read<Display>(second).Value);
+        Assert.Equal(10, world.ReadComponentData<Display>(first).Value);
+        Assert.Equal(20, world.ReadComponentData<Display>(second).Value);
     }
 
     [Fact]
     public void StateSequencesContinueAfterTheirSpringSettles()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display());
+        Entity target = world.Create(new Display());
         var parameters = new GraphParameters();
         using var graph = new AnimationBuilder(world);
         using (var machine = graph.StateMachine(ref parameters))
@@ -319,13 +319,13 @@ public class AnimationGraphTests
         }
         Entity animation = graph.Play();
         using var systems = Systems(world);
-        for (int frame = 0; frame < 600 && world.Read<Display>(target).Value != 10; frame++)
+        for (int frame = 0; frame < 600 && world.ReadComponentData<Display>(target).Value != 10; frame++)
             Tick(systems, world, 1d / 60);
-        Assert.Equal(10, world.Read<Display>(target).Value);
+        Assert.Equal(10, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.125);
-        Assert.Equal(15, world.Read<Display>(target).Value);
+        Assert.Equal(15, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.125);
-        Assert.Equal(20, world.Read<Display>(target).Value);
+        Assert.Equal(20, world.ReadComponentData<Display>(target).Value);
         Assert.True(world.IsEnabled<Timeline>(animation));
     }
 
@@ -337,7 +337,7 @@ public class AnimationGraphTests
         using var graph = new AnimationBuilder(world);
         for (int i = 0; i < targets.Length; i++)
         {
-            targets[i] = world.CreateEntity(new Display());
+            targets[i] = world.Create(new Display());
             graph.To(targets[i], Value, 10f, Spec.Tween(1));
         }
         Entity animation = graph.Play();
@@ -345,15 +345,15 @@ public class AnimationGraphTests
         Assert.Equal(66, world.EntityCount);
         Tick(systems, world, 0.25);
         foreach (Entity target in targets)
-            Assert.Equal(2.5f, world.Read<Display>(target).Value);
+            Assert.Equal(2.5f, world.ReadComponentData<Display>(target).Value);
         PropertyAnimation.Pause(world, animation);
         Tick(systems, world, 0.5);
         foreach (Entity target in targets)
-            Assert.Equal(2.5f, world.Read<Display>(target).Value);
+            Assert.Equal(2.5f, world.ReadComponentData<Display>(target).Value);
         PropertyAnimation.Resume(world, animation);
         Tick(systems, world, 0.75);
         foreach (Entity target in targets)
-            Assert.Equal(10, world.Read<Display>(target).Value);
+            Assert.Equal(10, world.ReadComponentData<Display>(target).Value);
         Assert.False(world.IsEnabled<Timeline>(animation));
     }
 
@@ -361,8 +361,8 @@ public class AnimationGraphTests
     public void IndependentMultiTargetGraphsCombineTheirAdditiveFields()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new Display { Value = 10 });
-        Entity second = world.CreateEntity(new Display());
+        Entity first = world.Create(new Display { Value = 10 });
+        Entity second = world.Create(new Display());
         var layers = new AnimationLayers { Count = 1 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 1 };
         world.Add(first, layers);
@@ -377,16 +377,16 @@ public class AnimationGraphTests
         graph.Play();
 
         Tick(systems, world, 0.5);
-        Assert.Equal(25, world.Read<Display>(first).Value);
+        Assert.Equal(25, world.ReadComponentData<Display>(first).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(40, world.Read<Display>(first).Value);
+        Assert.Equal(40, world.ReadComponentData<Display>(first).Value);
     }
 
     [Fact]
     public void ParallelSequencesContinueAtTheirOwnOpenBoundaries()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display());
+        Entity target = world.Create(new Display());
         using var graph = new AnimationBuilder(world);
         using (graph.Parallel())
         {
@@ -403,14 +403,14 @@ public class AnimationGraphTests
         }
         Entity animation = graph.Play();
         using var systems = Systems(world);
-        for (int frame = 0; frame < 600 && world.Read<Display>(target).Value != 10; frame++)
+        for (int frame = 0; frame < 600 && world.ReadComponentData<Display>(target).Value != 10; frame++)
             Tick(systems, world, 1d / 60);
         Tick(systems, world, 0.25);
-        Assert.Equal(20, world.Read<Display>(target).Value);
-        Assert.Equal(0, world.Read<Display>(target).Other);
+        Assert.Equal(20, world.ReadComponentData<Display>(target).Value);
+        Assert.Equal(0, world.ReadComponentData<Display>(target).Other);
         Assert.True(world.IsEnabled<Timeline>(animation));
         Tick(systems, world, 11);
-        Assert.Equal(30, world.Read<Display>(target).Other);
+        Assert.Equal(30, world.ReadComponentData<Display>(target).Other);
         Assert.False(world.IsEnabled<Timeline>(animation));
         Assert.Equal(1, world.EntityCount);
     }
@@ -436,11 +436,11 @@ public class AnimationGraphTests
     public void RepeatedStateGraphConstructionReusesTheTarget()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display());
+        Entity target = world.Create(new Display());
         using var systems = Systems(world);
         BuildStateAndPlay(world, systems, target);
         BuildStateAndPlay(world, systems, target);
-        Assert.Equal(10, world.Read<Display>(target).Value);
+        Assert.Equal(10, world.ReadComponentData<Display>(target).Value);
         Assert.Equal(1, world.EntityCount);
     }
 
@@ -459,7 +459,7 @@ public class AnimationGraphTests
         Entity animation = graph.Play();
         Tick(systems, world, 0);
         parameters.Values[0] = 1;
-        world.Replace(animation, parameters);
+        world.Set(animation, parameters);
         Tick(systems, world, 0.25);
         PropertyAnimation.Stop(world, animation);
     }
@@ -468,7 +468,7 @@ public class AnimationGraphTests
     public void UserNodesAndValueOperationsUseTheSameGraphApi()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Reading());
+        Entity target = world.Create(new Reading());
         Channel<Meter> channel = Channel<Meter>.Of<Reading>(static (ref Reading value) => ref value.Value);
         using var graph = new AnimationBuilder(world);
         AddRiseAndFall(graph, target, channel);
@@ -481,11 +481,11 @@ public class AnimationGraphTests
         systems.Add(new GraphEndSystem());
         systems.Add(new TimelineEndSystem());
         Tick(systems, world, 0.5);
-        Assert.Equal(new Meter(5), world.Read<Reading>(target).Value);
+        Assert.Equal(new Meter(5), world.ReadComponentData<Reading>(target).Value);
         Tick(systems, world, 1);
-        Assert.Equal(new Meter(5), world.Read<Reading>(target).Value);
+        Assert.Equal(new Meter(5), world.ReadComponentData<Reading>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(new Meter(0), world.Read<Reading>(target).Value);
+        Assert.Equal(new Meter(0), world.ReadComponentData<Reading>(target).Value);
         Assert.Equal(target, animation);
     }
 
@@ -502,7 +502,7 @@ public class AnimationGraphTests
     public void ActiveInlineGraphsKeepTheirOwnTimeWhenANewGraphStarts()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display());
+        Entity target = world.Create(new Display());
         using var systems = Systems(world);
         using var graph = new AnimationBuilder(world);
         graph.To(target, Value, 10f, Spec.Tween(1));
@@ -513,8 +513,8 @@ public class AnimationGraphTests
         Assert.NotEqual(first, second);
         PropertyAnimation.Pause(world, first);
         Tick(systems, world, 0.5);
-        Assert.Equal(0, world.Read<Display>(target).Value);
-        Assert.Equal(10, world.Read<Display>(target).Other);
+        Assert.Equal(0, world.ReadComponentData<Display>(target).Value);
+        Assert.Equal(10, world.ReadComponentData<Display>(target).Other);
     }
 
     [Fact]
@@ -536,8 +536,8 @@ public class AnimationGraphTests
     public void DestroyedHandlesFinishCleanupWhileSharedInstancesContinue()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new Display());
-        Entity second = world.CreateEntity(new Display());
+        Entity first = world.Create(new Display());
+        Entity second = world.Create(new Display());
         using var systems = Systems(world);
         using var graph = new AnimationBuilder(world);
         var parameters = new GraphParameters();
@@ -550,13 +550,13 @@ public class AnimationGraphTests
         using CompiledGraph compiled = graph.Compile();
         Entity a = compiled.Play(world, first);
         Entity b = compiled.Play(world, second);
-        world.DestroyEntity(a);
+        world.Destroy(a);
         parameters.Values[0] = 1;
-        world.Replace(b, parameters);
+        world.Set(b, parameters);
         Tick(systems, world, 0);
         world.Flush();
         Assert.False(world.IsAlive(a));
-        Assert.Equal(10, world.Read<Display>(second).Value);
+        Assert.Equal(10, world.ReadComponentData<Display>(second).Value);
     }
 
     public struct Reading : IComponent { public Meter Value; }

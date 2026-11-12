@@ -1,7 +1,6 @@
-using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation.Pose;
@@ -43,7 +42,6 @@ public readonly struct GpuAimLeaf : IAnimationLeaf<GpuAimParameters>
     public static void Release(World world, Entity animation) => GpuRigPlayback.Release(world, animation);
 }
 
-[BufferCapacity(1)]
 public struct GpuRigInstance : IBufferElement
 {
     public GpuPoseRig Rig;
@@ -63,74 +61,106 @@ internal static class GpuRigPlayback
     internal static void Install(World world, Entity animation, Entity target, GpuPoseRig rig,
         float duration, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<GpuRigInstance>(animation)) world.AddBuffer<GpuRigInstance>(animation);
+        if (!world.Has<Buffer<GpuRigInstance>>(animation)) world.AddBuffer<GpuRigInstance>(animation);
         if (!world.Has<GraphParameters>(animation)) world.Add(animation, new GraphParameters());
-        if (!world.HasBuffer<GpuPoseGoal>(target)) world.AddBuffer<GpuPoseGoal>(target);
+        if (!world.Has<Buffer<GpuPoseGoal>>(target)) world.AddBuffer<GpuPoseGoal>(target);
         int goals = rig.GoalCount;
-        world.ExecuteBufferWrite<GpuPoseGoal, int>(target, ref goals, static (values, ref goals) =>
         {
-            values.Clear(); values.EnsureCapacity(goals);
-            for (int goal = 0; goal < goals; goal++) values.Add(default);
-        });
+            using var values = world.GetBuffer<GpuPoseGoal>(target);
+            Visit(values, ref goals);
+
+            static void Visit(DynamicBuffer<GpuPoseGoal> values, ref int goals)
+            {
+                values.Clear(); values.EnsureCapacity(goals);
+                for (int goal = 0; goal < goals; goal++) values.Add(default);
+
+            }
+        }
         var instance = new GpuRigInstance
         {
-            Rig = rig, Placement = placement, Target = target, Duration = duration,
+            Rig = rig,
+            Placement = placement,
+            Target = target,
+            Duration = duration,
             Controls = new float[rig.Source.InputCount],
         };
-        world.ExecuteBufferWrite<GpuRigInstance, GpuRigInstance>(animation, ref instance, static (instances, ref instance) =>
         {
-            if (instances.Count > 0 && instances.Read(0).Placement.Starts != instance.Placement.Starts) instances.Clear();
-            instances.Add(instance);
-        });
-        GpuPoseTarget output = world.Read<GpuPoseTarget>(target);
+            using var instances = world.GetBuffer<GpuRigInstance>(animation);
+            Visit(instances, ref instance);
+
+            static void Visit(DynamicBuffer<GpuRigInstance> instances, ref GpuRigInstance instance)
+            {
+                if (instances.Count > 0 && instances[0].Placement.Starts != instance.Placement.Starts) instances.Clear();
+                instances.Add(instance);
+
+            }
+        }
+        GpuPoseTarget output = world.ReadComponentData<GpuPoseTarget>(target);
         output.Clip = null; output.StateMachine = null;
         output.Blend = rig.Source; output.Rig = rig;
         output.Controls = instance.Controls;
         output.PlaybackTime = 0; output.Playing = false; output.Starts = placement.Starts;
         output.AnimationStarts = placement.Starts;
         output.ExtractRootMotion = false;
-        world.Replace(target, output);
+        world.Set(target, output);
     }
 
-    internal static void Release(World world, Entity animation) =>
-        world.ExecuteBufferWrite<GpuRigInstance>(animation, static instances => instances.Clear());
+    internal static void Release(World world, Entity animation)
+    {
+        using var instances = world.GetBuffer<GpuRigInstance>(animation);
+        instances.Clear();
+
+    }
 }
 
 internal struct GpuRigSystem : ISystem<ImmediateSystemContext>
 {
-    private QueryHandle _rigs;
+    private Query _rigs;
     public void OnCreate(ref ImmediateSystemContext context) =>
-        _rigs = context.World.Query(AnimationGraph.WithTimeAccess(context.World.QueryDefinition()
-            .ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<GpuRigInstance>().Read<GraphParameters>()
-            .Optional<GpuPoseTarget>(QueryAccess.ReadWrite)));
+        _rigs = context.World.Query(AnimationGraph.WithTimeAccess(new QueryDescription()
+            .WithStored<Timeline>().With<Timeline>().WithStored<Buffer<GpuRigInstance>>().WithStored<GraphParameters>()
+            .Optional<GpuPoseTarget>()));
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
-        world.ExecuteQuery(_rigs, ref world, static (scoped QueryCursor rows, ref World world) =>
         {
-            foreach (QueryRow row in rows.Rows)
+            using QueryScope read = _rigs.Open();
+            Visit(in read, ref world);
+
+            static void Visit(scoped in QueryScope rows, ref World world)
             {
-                GraphParameters controls = row.Read<GraphParameters>();
-                foreach (ref GpuRigInstance instance in row.Buffer<GpuRigInstance>().AsSpan())
+                foreach (QueryChunk chunk in rows)
                 {
-                    AnimationLeafTime time = AnimationGraph.ReadTime(world, row.Entity, in instance.Placement);
-                    if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; }
-                    if (!time.Active || instance.Finished) continue;
-                    float elapsed = Math.Min(time.Time.Time, instance.Duration);
-                    for (int input = 0; input < instance.Controls.Length; input++) instance.Controls[input] = controls.Values[input];
-                    GpuPoseTarget output = world.Read<GpuPoseTarget>(instance.Target);
-                    output.Clip = null; output.StateMachine = null;
-                    output.Blend = instance.Rig.Source; output.Rig = instance.Rig;
-                    output.Controls = instance.Controls;
-                    output.PlaybackTime = elapsed; output.Playing = true; output.Starts = time.Starts;
-                    output.ExtractRootMotion = false;
-                    world.Replace(instance.Target, output);
-                    instance.Finished = elapsed >= instance.Duration;
-                    AnimationGraph.Submit(world, row.Entity, in instance.Placement, !instance.Finished);
+                    chunk.TryRead<GraphParameters>(out var values0);
+                    var buffers0 = chunk.Has<Buffer<GpuRigInstance>>() ? chunk.GetBuffers<GpuRigInstance>() : default;
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+
+                        GraphParameters controls = values0[rowIndex];
+                        foreach (ref GpuRigInstance instance in buffers0[rowIndex].AsSpan())
+                        {
+                            AnimationLeafTime time = AnimationGraph.ReadTime(world, chunk.Entities[rowIndex], in instance.Placement);
+                            if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; }
+                            if (!time.Active || instance.Finished) continue;
+                            float elapsed = Math.Min(time.Time.Time, instance.Duration);
+                            for (int input = 0; input < instance.Controls.Length; input++) instance.Controls[input] = controls.Values[input];
+                            GpuPoseTarget output = world.ReadComponentData<GpuPoseTarget>(instance.Target);
+                            output.Clip = null; output.StateMachine = null;
+                            output.Blend = instance.Rig.Source; output.Rig = instance.Rig;
+                            output.Controls = instance.Controls;
+                            output.PlaybackTime = elapsed; output.Playing = true; output.Starts = time.Starts;
+                            output.ExtractRootMotion = false;
+                            world.Set(instance.Target, output);
+                            instance.Finished = elapsed >= instance.Duration;
+                            AnimationGraph.Submit(world, chunk.Entities[rowIndex], in instance.Placement, !instance.Finished);
+                        }
+
+                    }
                 }
+
             }
-        });
+        }
     }
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_rigs);
+    public void OnDestroy(ref ImmediateSystemContext context) { }
 }

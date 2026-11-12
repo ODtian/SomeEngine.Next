@@ -16,6 +16,8 @@ internal sealed record QueuedCommand(string Id, string Executable, string[] Argu
     public QueueSettings Settings { get; init; } = new();
     public string? DispatchReason { get; init; }
     public string? RemoteError { get; init; }
+    public SampleLimit? SampleLimit { get; init; }
+    public string? DiagnosticScope { get; init; }
 
     public Dictionary<string, string> GetThreadEnvironment()
     {

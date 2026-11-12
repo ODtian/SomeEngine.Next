@@ -5,7 +5,7 @@ public sealed class CallbackDependencyTests
     [Fact]
     public void CallbackCompletingUnfinishedWorkReportsInvalidOperation()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         int value = 0;
         JobHandle input = scheduler.Schedule(
             new CallbackJob(() => value = 7), new JobScheduleOptions(JobPriority.Low));
@@ -21,7 +21,7 @@ public sealed class CallbackDependencyTests
     [Fact]
     public void ChildDependingOnCombinedAncestorReportsInvalidOperation()
     {
-        var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 1 });
+        var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 1 });
         using var inputsReady = new ManualResetEventSlim();
         using var submissionFinished = new ManualResetEventSlim();
         JobHandle combined = default;

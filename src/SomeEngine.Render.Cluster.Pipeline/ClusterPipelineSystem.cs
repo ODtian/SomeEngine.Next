@@ -1,3 +1,4 @@
+using SomeEngine.Core.ECS.Components;
 using System.Collections.Immutable;
 using System.Buffers.Binary;
 using System.Numerics;
@@ -6,7 +7,7 @@ using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Components;
@@ -55,8 +56,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly ClusterStreamingFeedbackChannel _streamingFeedback;
     private ClusterPipelineOptions _options;
     private readonly ClusterVisibilityMode _visibilityMode;
-    private QueryHandle _viewQuery;
-    private QueryHandle _sceneQuery;
+    private Query _viewQuery;
+    private Query _sceneQuery;
     private RenderInstanceDataTransfer? _instanceDataTransfer;
     private int _frameInstanceGeneration;
     private ClusterPipelineSet? _pipelines;
@@ -329,15 +330,12 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             throw new InvalidOperationException("The Cluster pipeline is already created.");
         _options.Validate();
 
-        QueryHandle view = default;
         try
         {
-            view = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>());
-            _viewQuery = view;
-            _sceneQuery = context.World.Query(_instances.EntityQuery);
+            _viewQuery = context.World.World.Query(new QueryDescription().WithStored<RenderView>());
+            _sceneQuery = context.World.World.Query(_instances.EntityQuery);
             EnsurePipelineResources();
-            _decalWorld = context.World;
-            _decalQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderMaterialDecal>().Read<RenderTransform>());
+            _decalQuery = context.World.World.Query(new QueryDescription().WithStored<RenderMaterialDecal>().WithStored<RenderTransform>());
             EditGraph(InstallMaterialDecals);
             _rasterStages = new ClusterRasterStages(
                 _backend,
@@ -367,10 +365,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _dispatchIndirectLayout = null;
             _drawIndirectLayout?.Dispose();
             _drawIndirectLayout = null;
-            ReleaseIfValid(context.World, view);
-            ReleaseIfValid(context.World, _sceneQuery);
-            ReleaseIfValid(context.World, _decalQuery);
-            _sceneQuery = default;
+
+            _viewQuery = _sceneQuery = _decalQuery = default;
             throw;
         }
     }
@@ -536,10 +532,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             }
             else
             {
-                context.World.ExecuteQuery(
-                    _viewQuery,
-                    ref viewCollector,
-                    static (QueryCursor cursor, ref ViewCollector state) => state.Collect(cursor));
+                using (QueryScope query = _viewQuery.OpenRead()) viewCollector.Collect(query);
                 views = CollectionsMarshal.AsSpan(viewCollector.Views);
                 viewEntities = CollectionsMarshal.AsSpan(viewCollector.Entities);
                 primaryViewCount = views.Length;
@@ -977,10 +970,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _materialBindingVersions.Clear();
         _consumedMaterialAssignments = null;
         List<Exception>? failures = null;
-        Release(ref _viewQuery, context.World, ref failures);
-        Release(ref _sceneQuery, context.World, ref failures);
-        Release(ref _decalQuery, context.World, ref failures);
-        _decalWorld = null;
+        _viewQuery = default;
+        _sceneQuery = default;
+        _decalQuery = default;
         Dispose(ref _shadeStages, ref failures);
         foreach (TransparencyShaders shaders in _transparencyShaders)
         {
@@ -1191,24 +1183,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _drawIndirectLayout ?? throw new InvalidOperationException(
             "The Cluster draw indirect layout is unavailable.");
 
-    private static void ReleaseIfValid(RenderWorld world, QueryHandle query)
-    {
-        if (query.IsValid)
-            world.ReleaseQuery(query);
-    }
-
-    private static void Release(
-        ref QueryHandle query,
-        RenderWorld world,
-        ref List<Exception>? failures)
-    {
-        if (!query.IsValid)
-            return;
-        try { world.ReleaseQuery(query); }
-        catch (Exception failure) { (failures ??= []).Add(failure); }
-        query = default;
-    }
-
     private static void Dispose<T>(ref T? value, ref List<Exception>? failures)
         where T : class, IDisposable
     {
@@ -1226,12 +1200,16 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
         internal void Clear() { Views.Clear(); Entities.Clear(); }
 
-        internal void Collect(QueryCursor cursor)
+        internal void Collect(scoped QueryScope query)
         {
-            foreach (QueryRow row in cursor.Rows)
+            foreach (QueryChunk chunk in query)
             {
-                Views.Add(row.Read<RenderView>());
-                Entities.Add(row.Entity);
+                ReadOnlySpan<RenderView> values = chunk.Read<RenderView>();
+                for (int row = 0; row < chunk.Count; row++)
+                {
+                    Views.Add(values[row]);
+                    Entities.Add(chunk.Entities[row]);
+                }
             }
         }
     }

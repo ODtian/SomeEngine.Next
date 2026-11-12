@@ -8,7 +8,7 @@ public sealed class NavigationStreamingTransformTests
     [Fact]
     public void ReplacingARegionInstallsTheNewTileContentAtItsNewTransform()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         NavigationRegionTile[] local = [
             new(new(0, 0), new(new(0, 3, 0), new(4, 4, 4)), 1, 0, 0),
             new(new(1, 0), new(new(4, 3, 0), new(8, 4, 4)), 1, 0, 0),

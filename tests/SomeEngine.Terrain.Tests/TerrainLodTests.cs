@@ -14,7 +14,7 @@ public sealed class TerrainLodTests
     [Fact]
     public async Task CameraAndFieldChangesReplaceTheSameTerrainRegionAsACompletedBatch()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         var material = new UnlitMaterial();
@@ -79,7 +79,7 @@ public sealed class TerrainLodTests
     [Fact]
     public async Task CoarseAndFineSphereChunksFormOneClosedSurface()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var terrain = new Resources.Terrain(new TerrainEditing(scheduler));
         VoxelField field = terrain.CreateVoxelField("sphere", new VoxelGrid(4));
         field.EditCpu(new SphereSamples(new(-1, -1, -1, 19, 11, 11)));

@@ -18,17 +18,17 @@ public sealed class GeneratedComponentResourceTests : JobTest
             AddSample(world, second, 0),
             AddSample(world, second, 1),
         ];
-        var options = new JobEntityScheduleOptions(rowsPerPacket: 1);
-        new SampleComponentHeight().ScheduleParallel(world, options).Complete();
+        const int rangeRows = 1;
+        new SystemRunner(world, rangeRows: rangeRows).Schedule(new SampleComponentHeight(), dependency: default, parallel: true).Complete();
 
         var replacement = new HeightSamples([30, 40, 50]);
-        world.Replace(entities[0], new ReferencedHeight(replacement, 0));
-        world.Replace(entities[1], new ReferencedHeight(replacement, 1));
+        world.Set(entities[0], new ReferencedHeight(replacement, 0));
+        world.Set(entities[1], new ReferencedHeight(replacement, 1));
         Entity added = AddSample(world, replacement, 2);
-        new SampleComponentHeight().ScheduleParallel(world, options).Complete();
+        new SystemRunner(world, rangeRows: rangeRows).Schedule(new SampleComponentHeight(), dependency: default, parallel: true).Complete();
 
         Assert.Equal([30, 40, 9, 12, 50], entities.Append(added)
-            .Select(entity => world.Read<SampledHeight>(entity).Value));
+            .Select(entity => world.ReadComponentData<SampledHeight>(entity).Value));
     }
 
     [Fact]
@@ -39,16 +39,34 @@ public sealed class GeneratedComponentResourceTests : JobTest
         using var meeting = new Barrier(2);
         Entity[] entities =
         [
-            world.CreateEntity(new ReferencedRange(values, 0, meeting, 0)),
-            world.CreateEntity(new ReferencedRange(values, 0, null, 0)),
-            world.CreateEntity(new ReferencedRange(values, 1, meeting, 0)),
+            world.Create(new ReferencedRange(values, 0, meeting, 0)),
+            world.Create(new ReferencedRange(values, 0, null, 0)),
+            world.Create(new ReferencedRange(values, 1, meeting, 0)),
         ];
 
-        new IncrementComponentRange().ScheduleParallel(
-            world, new JobEntityScheduleOptions(rowsPerPacket: 1)).Complete();
+        new SystemRunner(world, rangeRows: 1).Schedule(new IncrementComponentRange(), dependency: default, parallel: true).Complete();
 
         Assert.Equal([2, 1, 1, 1, 1], values.Concat(
-            entities.Select(entity => world.Read<ReferencedRange>(entity).Updates)));
+            entities.Select(entity => world.ReadComponentData<ReferencedRange>(entity).Updates)));
+    }
+
+    [Fact]
+    public void SynchronousParallelGroupsCoordinateSharedWritesAndRunIndependentRangesTogether()
+    {
+        World world = CreateJobWorld();
+        int[] values = [0, 0];
+        using var meeting = new Barrier(2);
+        Entity[] entities =
+        [
+            world.Create(new ReferencedRange(values, 0, meeting, 0)),
+            world.Create(new ReferencedRange(values, 0, null, 0)),
+            world.Create(new ReferencedRange(values, 1, meeting, 0)),
+        ];
+
+        new SystemRunner(world, rangeRows: 1).ExecuteParallel(new IncrementComponentRange());
+
+        Assert.Equal([2, 1, 1, 1, 1], values.Concat(
+            entities.Select(entity => world.ReadComponentData<ReferencedRange>(entity).Updates)));
     }
 
     [Fact]
@@ -66,24 +84,24 @@ public sealed class GeneratedComponentResourceTests : JobTest
         fence.Signal();
         sampled.Complete();
 
-        Assert.Equal(99, world.Read<SampledHeight>(entity).Value);
+        Assert.Equal(99, world.ReadComponentData<SampledHeight>(entity).Value);
     }
 
     [Fact]
     public void GenericJobClosesItsComponentResourceDescriptor()
     {
         World world = CreateJobWorld();
-        Entity entity = world.CreateEntity(new ReferencedMemory<int>(new[] { 7, 31 }, 1));
+        Entity entity = world.Create(new ReferencedMemory<int>(new[] { 7, 31 }, 1));
         world.Add(entity, new MemorySample<int>());
 
         new SampleComponentMemory<int>().ScheduleParallel(world).Complete();
 
-        Assert.Equal(31, world.Read<MemorySample<int>>(entity).Value);
+        Assert.Equal(31, world.ReadComponentData<MemorySample<int>>(entity).Value);
     }
 
     private static Entity AddSample(World world, HeightSamples samples, int index)
     {
-        Entity entity = world.CreateEntity(new ReferencedHeight(samples, index));
+        Entity entity = world.Create(new ReferencedHeight(samples, index));
         world.Add(entity, new SampledHeight());
         return entity;
     }
@@ -151,6 +169,7 @@ public readonly struct HeightReferenceResources : IJobComponentResources<Referen
 public partial struct ReplaceComponentHeight(HeightSamples replacement) : IJobEntity
 {
     private readonly HeightSamples _replacement = replacement;
+    public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Read(_replacement);
 
     public void Execute([JobResources<HeightReferenceResources>] ref ReferencedHeight source) =>
         source = new ReferencedHeight(_replacement, source.Index);

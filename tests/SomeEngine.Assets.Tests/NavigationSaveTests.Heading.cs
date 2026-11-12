@@ -13,7 +13,7 @@ public sealed partial class NavigationSaveTests
     [Fact]
     public async Task HeadingFollowersResumeSavedActionExecutionAndKeepTheirSharedFlowAndRequestSequence()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var resources = new NavigationSaveResources();
         var manifest = new AssetManifest();
         var profile = new NavigationProfile([new(-0.2f, -0.8f), new(0.2f, -0.8f), new(0.2f, 0.8f), new(-0.2f, 0.8f)],
@@ -64,12 +64,12 @@ public sealed partial class NavigationSaveTests
         Entity headingActor;
         SaveMotion savedMotion;
         SaveAction savedAction;
-        using (World world = WorldJobs.CreateWorld(scheduler: scheduler))
+        using (World world = new World(execution: new WorldJobs(scheduler)))
         {
-            actors = [world.CreateEntity(new SaveMotion(new(2, 0, 2), default, MathF.PI / 2)),
-                world.CreateEntity(new SaveMotion(new(2.1f, 0, 2), default, MathF.PI / 2))];
+            actors = [world.Create(new SaveMotion(new(2, 0, 2), default, MathF.PI / 2)),
+                world.Create(new SaveMotion(new(2.1f, 0, 2), default, MathF.PI / 2))];
             var navigation = new NavigationSystems<SaveMotion, SaveMotionReader>(world);
-            headingActor = world.CreateEntity(new SaveMotion(new(2, 0, 2), default, MathF.PI / 2));
+            headingActor = world.Create(new SaveMotion(new(2, 0, 2), default, MathF.PI / 2));
             NavigationComponents.AddPath<HeadingNavigationMesh, AsaSearchState>(world, headingActor, regions[0].Mesh, profile, policy,
                 new(new Vector3(2, 0, 6), 0.05f, 0), 2);
             world.Disable<NavigationGoal>(headingActor);
@@ -77,9 +77,9 @@ public sealed partial class NavigationSaveTests
             for (int frame = 0; frame < 100; frame++)
             {
                 MoveActions(world, navigation, actors);
-                if (world.Read<SaveAction>(actors[0]).Elapsed >= 0.3f) break;
+                if (world.ReadComponentData<SaveAction>(actors[0]).Elapsed >= 0.3f) break;
             }
-            savedMotion = world.Read<SaveMotion>(actors[0]); savedAction = world.Read<SaveAction>(actors[0]);
+            savedMotion = world.ReadComponentData<SaveMotion>(actors[0]); savedAction = world.ReadComponentData<SaveAction>(actors[0]);
             Assert.InRange(savedMotion.Position.Z, 8.1f, 10.1f);
             NavigationSave.Write(stream, world, registry, resources);
         }
@@ -88,30 +88,30 @@ public sealed partial class NavigationSaveTests
         await using (var loader = new AssetLoader(new LooseAssetStorage(_directory, manifest)))
             restored = await NavigationSave.ReadAsync(stream, registry, loader, scheduler);
         using World loaded = restored.World;
-        NavigationFlow shared = loaded.Read<FlowFollower>(actors[0]).Flow;
-        Assert.Same(shared, loaded.Read<FlowFollower>(actors[1]).Flow);
+        NavigationFlow shared = loaded.ReadComponentData<FlowFollower>(actors[0]).Flow;
+        Assert.Same(shared, loaded.ReadComponentData<FlowFollower>(actors[1]).Flow);
         Assert.Same(shared.Costs, shared.Input.HeadingGraph!.Costs);
-        Assert.Same(shared.Input.HeadingGraph.Regions.Span[0].Mesh, loaded.Read<PathNavigation<HeadingNavigationMesh>>(headingActor).Space);
+        Assert.Same(shared.Input.HeadingGraph.Regions.Span[0].Mesh, loaded.ReadComponentData<PathNavigation<HeadingNavigationMesh>>(headingActor).Space);
         Assert.False(loaded.IsEnabled<NavigationGoal>(headingActor));
         Assert.True(NavigationComponents.HasPath<HeadingNavigationMesh, AsaSearchState>(loaded, headingActor));
         loaded.Enable<NavigationGoal>(headingActor);
         var headingPath = new NavigationSystems<HeadingNavigationMesh, AsaNavigationSearch, AsaSearchState, SaveMotion, SaveMotionReader>(loaded);
-        for (int step = 0; step < 80 && loaded.Read<NavigationProgress>(headingActor).Status != NavigationStatus.Arrived; step++)
+        for (int step = 0; step < 80 && loaded.ReadComponentData<NavigationProgress>(headingActor).Status != NavigationStatus.Arrived; step++)
         {
             headingPath.Schedule(0.1f, 64).Steering.Complete();
-            SaveMotion motion = loaded.Read<SaveMotion>(headingActor);
-            NavigationSteering steering = loaded.Read<NavigationSteering>(headingActor);
-            loaded.Replace(headingActor, new SaveMotion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
+            SaveMotion motion = loaded.ReadComponentData<SaveMotion>(headingActor);
+            NavigationSteering steering = loaded.ReadComponentData<NavigationSteering>(headingActor);
+            loaded.Set(headingActor, new SaveMotion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
             headingPath.ScheduleProgress(default).Complete();
         }
-        Assert.Equal(NavigationStatus.Arrived, loaded.Read<NavigationProgress>(headingActor).Status);
-        Assert.Equal(savedMotion, loaded.Read<SaveMotion>(actors[0]));
-        Assert.Equal(savedAction, loaded.Read<SaveAction>(actors[0]));
+        Assert.Equal(NavigationStatus.Arrived, loaded.ReadComponentData<NavigationProgress>(headingActor).Status);
+        Assert.Equal(savedMotion, loaded.ReadComponentData<SaveMotion>(actors[0]));
+        Assert.Equal(savedAction, loaded.ReadComponentData<SaveAction>(actors[0]));
         Assert.Equal(savedAction.Request, NavigationComponents.CaptureFlowTraversal(loaded, actors[0]).Request.RequestId);
         Assert.Contains(shared.Input.HeadingGraph.Links.GetPassage(71).InUse.ToArray(), user => user.Entity == actors[0]);
         var loadedNavigation = new NavigationSystems<SaveMotion, SaveMotionReader>(loaded);
         CompleteTrip();
-        Assert.All(actors, actor => Assert.Equal(1, loaded.Read<SaveAction>(actor).Count));
+        Assert.All(actors, actor => Assert.Equal(1, loaded.ReadComponentData<SaveAction>(actor).Count));
 
         shared.SetGoals(new NavigationFlowGoal[] { new(new(2, 0, 6), 0.05f, 0) });
         new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(shared, scheduler).Schedule().Complete();
@@ -119,18 +119,18 @@ public sealed partial class NavigationSaveTests
         CompleteTrip();
         Assert.All(actors, actor =>
         {
-            Assert.Equal(2, loaded.Read<SaveAction>(actor).Count);
-            Assert.True(loaded.Read<SaveAction>(actor).Request > savedAction.Request);
+            Assert.Equal(2, loaded.ReadComponentData<SaveAction>(actor).Count);
+            Assert.True(loaded.ReadComponentData<SaveAction>(actor).Request > savedAction.Request);
         });
 
         void CompleteTrip()
         {
-            for (int frame = 0; frame < 160 && actors.Any(actor => loaded.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived); frame++)
+            for (int frame = 0; frame < 160 && actors.Any(actor => loaded.ReadComponentData<NavigationProgress>(actor).Status != NavigationStatus.Arrived); frame++)
             {
                 MoveActions(loaded, loadedNavigation, actors);
                 Assert.InRange(shared.Input.HeadingGraph!.Links.GetPassage(71).InUse.Length, 0, 1);
             }
-            Assert.All(actors, actor => Assert.Equal(NavigationStatus.Arrived, loaded.Read<NavigationProgress>(actor).Status));
+            Assert.All(actors, actor => Assert.Equal(NavigationStatus.Arrived, loaded.ReadComponentData<NavigationProgress>(actor).Status));
         }
         void Add(AssetEntry entry) => manifest.AddAsset(entry.AssetGuid, entry.Name, Path.GetFileName(entry.Path), entry.AssetType,
             entry.SchemaFingerprint, version: entry.Version);
@@ -142,27 +142,27 @@ public sealed partial class NavigationSaveTests
         navigation.Schedule(step).Steering.Complete();
         foreach (Entity actor in actors)
         {
-            SaveMotion motion = world.Read<SaveMotion>(actor);
-            NavigationTraversalRequest request = world.Read<NavigationTraversalRequest>(actor);
+            SaveMotion motion = world.ReadComponentData<SaveMotion>(actor);
+            NavigationTraversalRequest request = world.ReadComponentData<NavigationTraversalRequest>(actor);
             if (request.Status is NavigationTraversalStatus.Requested or NavigationTraversalStatus.Executing)
             {
-                SaveAction action = world.Read<SaveAction>(actor);
+                SaveAction action = world.ReadComponentData<SaveAction>(actor);
                 if (action.Request != request.RequestId) action = new(request.RequestId, motion.Position, 0, action.Count + 1);
                 action = action with { Elapsed = action.Elapsed + step };
                 float progress = MathF.Min(1, action.Elapsed / request.Parameters.X);
                 Vector3 position = Vector3.Lerp(action.Start, request.Exit, progress);
                 motion = motion with { Position = position, Velocity = (position - motion.Position) / step };
-                world.Replace(actor, action);
-                world.Replace(actor, new NavigationTraversalResult(request.RequestId,
+                world.Set(actor, action);
+                world.Set(actor, new NavigationTraversalResult(request.RequestId,
                     progress == 1 ? NavigationTraversalExecution.Completed : NavigationTraversalExecution.Running, progress));
             }
             else
             {
-                NavigationSteering steering = world.Read<NavigationSteering>(actor);
+                NavigationSteering steering = world.ReadComponentData<NavigationSteering>(actor);
                 Vector3 velocity = steering.Active ? steering.Velocity : Vector3.Zero;
                 motion = new(motion.Position + velocity * step, velocity, steering.Active ? steering.Heading : motion.Heading);
             }
-            world.Replace(actor, motion);
+            world.Set(actor, motion);
         }
         navigation.ScheduleProgress(default).Complete();
     }

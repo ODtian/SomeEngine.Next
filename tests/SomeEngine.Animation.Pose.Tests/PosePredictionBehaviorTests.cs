@@ -36,7 +36,7 @@ public sealed class PosePredictionBehaviorTests
         PoseAnimation.AddSystems(liveSystems);
         PoseAnimation.AddSystems(referenceSystems);
         Tick(liveSystems, liveWorld, 0.25);
-        Timeline liveTime = liveWorld.Read<Timeline>(liveAnimation);
+        Timeline liveTime = liveWorld.ReadComponentData<Timeline>(liveAnimation);
         Matrix4x4[] livePose = live.ModelPose.Transforms.ToArray();
         ulong liveVersion = live.ModelPose.Version;
         Assert.Equal(1u, EventCount(liveWorld, liveAnimation, 11));
@@ -73,7 +73,7 @@ public sealed class PosePredictionBehaviorTests
         Assert.Equal(changedRequest, samples[0].Request);
         Assert.Equal(1.5f, samples[0].PathTime);
         Assert.Equal(10.25, samples[0].CalculatedAt);
-        Assert.Equal(liveTime, liveWorld.Read<Timeline>(liveAnimation));
+        Assert.Equal(liveTime, liveWorld.ReadComponentData<Timeline>(liveAnimation));
         Assert.Equal(livePose, live.ModelPose.Transforms.ToArray());
         Assert.Equal(liveVersion, live.ModelPose.Version);
         Assert.Equal(1u, EventCount(liveWorld, liveAnimation, 11));
@@ -143,12 +143,12 @@ public sealed class PosePredictionBehaviorTests
         var graph = new GraphParameters();
         graph.Values[0] = 0.75f;
         graph.Values[1] = 0.25f;
-        world.Replace(animation, graph);
+        world.Set(animation, graph);
         Tick(systems, world, 0.5);
         Match(reference, bones, poses.AsSpan(batch.GetOutputRange(0).Start, bones.Length));
         graph.Values[0] = 0.25f;
         graph.Values[1] = 0.75f;
-        world.Replace(animation, graph);
+        world.Set(animation, graph);
         Tick(systems, world, 1);
         Match(reference, bones, poses.AsSpan(batch.GetOutputRange(1).Start, bones.Length));
         Assert.Equal(request, samples[1].Request);
@@ -177,7 +177,7 @@ public sealed class PosePredictionBehaviorTests
         using var liveSystems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(liveWorld));
         PoseAnimation.AddSystems(liveSystems);
         Tick(liveSystems, liveWorld, 0.25);
-        Timeline liveTime = liveWorld.Read<Timeline>(liveAnimation);
+        Timeline liveTime = liveWorld.ReadComponentData<Timeline>(liveAnimation);
         Matrix4x4[] livePose = live.ModelPose.Transforms.ToArray();
         ulong liveVersion = live.ModelPose.Version;
         BoneTransform[] initialPose = live.LocalPose.ToArray();
@@ -187,7 +187,7 @@ public sealed class PosePredictionBehaviorTests
         var prediction = new PosePrediction<SpringParameters, SpringPoseHistory, SpringPoseAlgorithm>(
             new(request, [0, 3]), in parameters, in initialHistory, initialPose);
 
-        Entity referenceRoot = referenceWorld.CreateEntity(new RootFollow { Position = initialPose[0].Translation });
+        Entity referenceRoot = referenceWorld.Create(new RootFollow { Position = initialPose[0].Translation });
         var spring = Spec.Spring<Vector3, Vector3Ops>();
         PropertyAnimation.To(referenceWorld, referenceRoot, RootPosition, new Vector3(10, 0, 0), spring);
         using var referenceSystems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(referenceWorld));
@@ -195,12 +195,12 @@ public sealed class PosePredictionBehaviorTests
         var poses = new Matrix4x4[2];
         PosePredictionSample first = prediction.AdvanceTo(10.25, calculationTime: 10.01, poses);
         Tick(referenceSystems, referenceWorld, 0.25);
-        Vector3 expected = referenceWorld.Read<RootFollow>(referenceRoot).Position;
+        Vector3 expected = referenceWorld.ReadComponentData<RootFollow>(referenceRoot).Position;
         Near(expected, poses[0].Translation);
         Near(expected + new Vector3(0.5f, 1, 0), poses[1].Translation);
         PosePredictionSample second = prediction.AdvanceTo(10.5, calculationTime: 10.02, poses);
         Tick(referenceSystems, referenceWorld, 0.25);
-        expected = referenceWorld.Read<RootFollow>(referenceRoot).Position;
+        expected = referenceWorld.ReadComponentData<RootFollow>(referenceRoot).Position;
         Near(expected, poses[0].Translation);
         Near(expected + new Vector3(0.5f, 1, 0), poses[1].Translation);
         Assert.Equal(request, second.Request);
@@ -209,7 +209,7 @@ public sealed class PosePredictionBehaviorTests
         Assert.Equal(10.02, second.CalculatedAt);
         Assert.Equal(Vector3.Zero, initialHistory.Springs[0].Velocity);
         Assert.Equal(live.LocalPose.ToArray(), initialPose);
-        Assert.Equal(liveTime, liveWorld.Read<Timeline>(liveAnimation));
+        Assert.Equal(liveTime, liveWorld.ReadComponentData<Timeline>(liveAnimation));
         Assert.Equal(livePose, live.ModelPose.Transforms.ToArray());
         Assert.Equal(liveVersion, live.ModelPose.Version);
         Assert.Equal(1u, EventCount(liveWorld, liveAnimation, 31));
@@ -242,12 +242,17 @@ public sealed class PosePredictionBehaviorTests
     private static uint EventCount(World world, Entity animation, ushort id)
     {
         var read = (Id: id, Count: 0u);
-        world.ExecuteBufferRead<TimelineEvent, (ushort Id, uint Count)>(animation, ref read,
-            static (events, ref read) =>
+        {
+            using var events = world.ReadBuffer<TimelineEvent>(animation);
+            Visit(events, ref read);
+
+            static void Visit(ReadOnlyBuffer<TimelineEvent> events, ref (ushort Id, uint Count) read)
             {
                 foreach (TimelineEvent marker in events.AsSpan())
                     if (marker.Id == read.Id) read.Count = marker.Count;
-            });
+
+            }
+        }
         return read.Count;
     }
 

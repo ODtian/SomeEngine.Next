@@ -9,7 +9,7 @@ public sealed class NavigationStreamingRecoveryTests
     [Fact]
     public void MeshStreamingAcquiresTheRequestedTileAfterAReadFailure()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         var bounds = new NavigationBounds(new(0, 3, 0), new(4, 4, 4));
         var mesh = new NavigationMesh([new(0, 3.25f, 0), new(0, 3.25f, 4), new(4, 3.25f, 4), new(4, 3.25f, 0)],
             [0, 1, 2, 3], [new(0, 4, 0, 0)], []);
@@ -37,7 +37,7 @@ public sealed class NavigationStreamingRecoveryTests
     [Fact]
     public void GridStreamingAcquiresTheRequestedSupportAfterADecodeFailure()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         var bounds = new NavigationBounds(new(0, 3, 0), new(4, 4, 4));
         var grid = new NavigationGrid(bounds, 4, new NavigationGridCell[] { new(new(2, 3.25f, 2), 0, 0) }, []);
         var graph = new NavigationGridRegionGraph(bounds, 4, default,
@@ -66,7 +66,7 @@ public sealed class NavigationStreamingRecoveryTests
     [Fact]
     public void HeadingStreamingAcquiresTheRequestedPoseDataAfterAReadFailure()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         NavigationProfile profile = AsaNavigationTests.Profile();
         var policy = new NavigationPolicy();
         HeadingNavigationMesh mesh = HeadingNavigationMeshBuilder.Schedule(AsaNavigationTests.Scene(), profile, policy,

@@ -332,7 +332,7 @@ public sealed class SetReplacementImporter : IAssetImporter<GltfMesh, SetGltfSet
     }
 }
 
-[AssetImporter("d41a09fd-a105-44c6-b5fa-8d6b14e61ea2", typeof(WorldBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
+[AssetImporter("d41a09fd-a105-44c6-b5fa-8d6b14e61ea2", typeof(EntityBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
 public sealed class SetSceneImporter : GltfSceneImporter
 {
     public static readonly Guid ShaderId = new("0c1d0f85-e510-48c4-ab9c-cdc1a3501c48");

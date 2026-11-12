@@ -1,4 +1,4 @@
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Lighting;
@@ -16,7 +16,7 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
     private readonly RenderLightSetSystem _lights;
     private readonly RenderView[] _views;
     private readonly ViewCollector _collector;
-    private QueryHandle _viewQuery;
+    private Query _viewQuery;
 
     public LightingFeatureSystem(
         LightingFeature feature,
@@ -31,17 +31,13 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
     }
 
     public void OnCreate(ref RenderFrameSystemContext context) =>
-        _viewQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>());
+        _viewQuery = context.World.World.Query(new QueryDescription().WithStored<RenderView>());
 
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         _collector.Clear();
-        ViewCollector collector = _collector;
-        context.World.ExecuteQuery(
-            _viewQuery,
-            ref collector,
-            static (QueryCursor cursor, ref ViewCollector collector) => collector.Collect(cursor));
+        using (QueryScope scope = _viewQuery.OpenRead()) _collector.Collect(scope);
         if (_collector.Count == 0 || _collector.Count > _views.Length)
         {
             throw new InvalidOperationException(
@@ -49,7 +45,7 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
         }
         _collector.CopyTo(_views);
         RenderGraphFrame graph = context.Graph;
-        WorldJobs.TryGetScheduler(context.World, out var scheduler);
+        var scheduler = context.World.World.Execution?.Scheduler;
         _feature.Record(
             ref graph,
             _lights.RequireCurrent(),
@@ -58,8 +54,6 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
 
     public void OnDestroy(ref RenderFrameSystemContext context)
     {
-        if (_viewQuery.IsValid)
-            context.World.ReleaseQuery(_viewQuery);
         _viewQuery = default;
         _collector.Clear();
         Array.Clear(_views);
@@ -73,17 +67,15 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
 
         internal int Count => _values.Count;
 
-        internal void Collect(QueryCursor cursor)
+        internal void Collect(scoped QueryScope query)
         {
-            foreach (QueryRow row in cursor.Rows)
-            {
-                if (_values.Count == _values.Capacity)
+            foreach (QueryChunk chunk in query)
+                foreach (RenderView value in chunk.Read<RenderView>())
                 {
-                    throw new InvalidOperationException(
-                        $"Lighting view capacity {_values.Capacity} was exceeded.");
+                    if (_values.Count == _values.Capacity)
+                        throw new InvalidOperationException($"Lighting view capacity {_values.Capacity} was exceeded.");
+                    _values.Add(value);
                 }
-                _values.Add(row.Read<RenderView>());
-            }
         }
 
         internal void CopyTo(RenderView[] destination) =>

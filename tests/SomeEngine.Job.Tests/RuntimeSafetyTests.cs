@@ -7,7 +7,7 @@ public sealed class RuntimeSafetyTests
     [Fact]
     public void ConcurrentSchedulingFromMultipleThreadsIsSafe()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         int[] counts = new int[400];
         JobHandle[] handles = new JobHandle[counts.Length];
         Parallel.For(0, counts.Length, index =>
@@ -19,7 +19,7 @@ public sealed class RuntimeSafetyTests
     [Fact]
     public async Task ConcurrentCompleteOnSameHandleIsSafe()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 1 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 1 });
         using var gate = new ManualResetEventSlim();
         int[] counts = [0];
         JobHandle handle = scheduler.Schedule(new WaitAndIncrement(gate, counts));
@@ -34,7 +34,7 @@ public sealed class RuntimeSafetyTests
     [Fact]
     public void RootAndChildFailuresAreObservableThroughTheirHandles()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         JobHandle root = scheduler.Schedule(new ThrowingJob());
         Assert.Throws<InvalidOperationException>(root.Complete);
         JobHandle parent = scheduler.Schedule(new SpawnFailingChild());
@@ -44,8 +44,8 @@ public sealed class RuntimeSafetyTests
     [Fact]
     public void SchedulersDoNotExecuteEachOthersWork()
     {
-        using var first = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
-        using var second = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var first = new Scheduler(new JobConfiguration { WorkerCount = 0 });
+        using var second = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         int[] counts = [0, 0];
         JobHandle a = first.Schedule(new Increment(counts, 0));
         JobHandle b = second.Schedule(new Increment(counts, 1));
@@ -59,8 +59,8 @@ public sealed class RuntimeSafetyTests
     [Fact]
     public void CrossSchedulerDependenciesAreRejectedWithoutExecutingWork()
     {
-        using var first = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
-        using var second = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var first = new Scheduler(new JobConfiguration { WorkerCount = 0 });
+        using var second = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         int[] counts = [0];
         JobHandle dependency = first.Schedule(new Increment(counts, 0));
         Assert.Throws<ArgumentException>(() => second.Schedule(new Increment(counts, 0), dependency));
@@ -73,7 +73,7 @@ public sealed class RuntimeSafetyTests
     [Fact]
     public void DisposeDrainsAcceptedWorkWithoutDedicatedWorkers()
     {
-        var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         int[] counts = [0];
         JobHandle parent = scheduler.Schedule(new SpawnChild(counts));
         scheduler.Dispose();
@@ -87,7 +87,7 @@ public sealed class RuntimeSafetyTests
     [Fact]
     public async Task ClosingWaitsForRunningParentsAndTheirLaterChildren()
     {
-        var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 1 });
+        var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 1 });
         using var started = new ManualResetEventSlim();
         using var gate = new ManualResetEventSlim();
         int[] counts = [0];
@@ -116,7 +116,7 @@ public sealed class RuntimeSafetyTests
     [Fact]
     public void ShutdownReportsUnobservedFailuresAfterDrainingOtherWork()
     {
-        var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         int[] counts = [0];
         _ = scheduler.Schedule(new ThrowingJob());
         _ = scheduler.Schedule(new Increment(counts, 0));
@@ -129,7 +129,7 @@ public sealed class RuntimeSafetyTests
     [Fact]
     public void AJobCannotDisposeItsOwnScheduler()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         JobHandle handle = scheduler.Schedule(new StopScheduler(scheduler));
         Assert.Throws<InvalidOperationException>(handle.Complete);
     }
@@ -137,10 +137,10 @@ public sealed class RuntimeSafetyTests
     [Fact]
     public void ReplacingTheDefaultDoesNotReinterpretOldHandles()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         int[] counts = [0, 0];
         JobHandle old = JobSystem.Schedule(new Increment(counts, 0));
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         try
         {
             Assert.Equal(1, counts[0]);
@@ -158,14 +158,14 @@ public sealed class RuntimeSafetyTests
     [Fact]
     public void DefaultShutdownRequiresExplicitRestart()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         int[] counts = [0];
         JobHandle handle = JobSystem.Schedule(new Increment(counts, 0));
         JobSystem.Shutdown();
         Assert.Equal(1, counts[0]);
         handle.Complete();
         Assert.Throws<InvalidOperationException>(() => JobSystem.Schedule(new Increment(counts, 0)));
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         try
         {
             JobSystem.Schedule(new Increment(counts, 0)).Complete();
@@ -177,8 +177,8 @@ public sealed class RuntimeSafetyTests
     [Fact]
     public void ResourcesAndTokensFromAnotherSchedulerAreRejected()
     {
-        using var first = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Strict });
-        using var second = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Strict });
+        using var first = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Strict });
+        using var second = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Strict });
         JobResource resource = first.CreateResource("first data");
         JobResourceToken token = first.CreateResourceToken("first token");
         int[] counts = [0];

@@ -21,9 +21,11 @@
 
 `ICategoryPermission.Evaluate<TPermission,TRelation,TComponent,TReader,TItem,TOutput,TResult>` 把具体匹配结果交给 `ICategoryPermissionOutput<TItem,TOutput>.Matched/Unmatched`。默认实现调用该具体许可的泛型 Matches；库内单向与双方实现按方向判断后直接进入对应结果回调。自定义许可沿其原有算法形成结果。具体结果类型为无状态struct，Matched/Unmatched是static abstract操作；输入以scoped in传递，`TOutput`以scoped ref进入，结果状态继续由原BitmapFilterOutput持有。
 
-末端身份输出先通过BitmapRelation绑定两端组件引用，再把原pair的in参数和当前输出借用交给具体许可及结果操作。身份绑定先取得第一成员行及组件引用，再取得第二成员行及组件引用；原查询的完整成员和版本条件在两次点读取中生效。组件引用绑定与输出借用各在实际消费处形成。需要向后续筛选转发组件行时，静态 ReadsComponentRows 选择原有Matches和借用行转发，行的有效期继续限定为当前Add。Where/Except由现有选择类型决定匹配或其余行的输出，提前结束继续返回原输出的 bool。
+[BitmapRelation](../../../src/SomeEngine.ECS.Relationships/Pairing/BitmapRelation.cs) 在 chunk 对进入时通过 `Bind(first,second)` 保存 `ReadOnlySpan<TComponent>` 与对应 `QueryChunk`。`Matches(in pair,firstRow,secondRow,reversed)` 先读取实际行的 `Has<TComponent>(row)`，再把正确身份位置的两个组件只读值交给具体许可。后续筛选通过同一 `IQueryRelationOutput` 转发列绑定、行号与换位事实。
 
-`BitmapRelationGenerator` 读取这三个类型符号，生成接受语义实例与具体实现实例的 `Where`、`Except`。返回类型为 `RelationQuery<BitmapFilter<TEnumerable,TRelation,TImplementation,TComponent,TPermission,TSelection>,(Entity,Entity)>`，完整保留枚举、语义、读取器、组件、许可、接受选择及输出的具体类型。生成的Where使用WhereSelection，Except使用ExceptSelection；这两个普通值类型通过IRelationSelection.RequiresMatch分别声明接受匹配结果或其余结果，选择在组合类型形成时闭合。`BitmapFilter` 保存原枚举、语义与读取器值；临时 `BitmapRelation` 在回调中通过 `TryReadRef<TComponent>()` 取得组件只读引用，再进入具体许可的泛型标量读取操作。
+仅提供身份的来源使用同一绑定持有的 `ReadLookup<TComponent>`，按身份检查组件存在后通过 `ReadKnown` 读取。lookup、Span 和输出借用的有效期均由外层 `QueryScope` 覆盖。
+
+[BitmapRelationGenerator](../../../src/SomeEngine.ECS.SourceGen/BitmapRelationGenerator.cs) 生成接受语义与实现实例的 `Where`、`Except` 薄入口，返回具体 `BitmapFilter<TEnumerable,TRelation,TImplementation,TComponent,TPermission,TSelection>`。`WhereSelection`、`ExceptSelection` 通过静态 `RequiresMatch` 表达接受匹配结果或其余结果；枚举、语义、读取器、许可和输出类型在泛型组合中闭合。
 
 位筛选补充组件的可选读取，参与集合保持原有成员含义。某个位置缺少该组件时关系判断为 false，`Except` 因而保留该行。计数、存在性、结果输出和提前结束沿用统一关系流程。
 
@@ -52,11 +54,11 @@ var contactCounts = new int[entityCapacity];
 BitmapCollisionConsumption.CountContacts(bitmap.Pairs, contactCounts);
 ```
 
-单向例子分别使用 `OneWayContacts`、`OneWayContactBitmap`、`HandwrittenBitmapCollision.OneWay`，保留同一输入和消费流程。`HandwrittenBitmapCollision.cs` 在查询回调中直接读取业务组件字段并展开位运算循环；`BitmapCandidatePairs.cs` 保存候选身份及参与查询；`BitmapCollisionConsumption.cs` 提供 Span 输出和逐实体接触次数累加。调用方为每次完整执行提供相同成员与候选数据，统计查询进入、筛选、输出和消费成本。
+单向例子分别使用 `OneWayContacts`、`OneWayContactBitmap`、`HandwrittenBitmapCollision.OneWay`，保留同一输入和消费流程。`HandwrittenBitmapCollision.cs` 在原生查询读取范围中直接读取业务组件字段并展开位运算循环；`BitmapCandidatePairs.cs` 保存候选身份及参与查询；`BitmapCollisionConsumption.cs` 提供 Span 输出和逐实体接触次数累加。调用方为每次完整执行提供相同成员与候选数据，统计查询进入、筛选、输出和消费成本。
 
 固定候选来源属于这个业务例子的设计：调用方从参与集合形成有序身份数组，`FixedCandidatePairs` 直接转发其中身份；通用BitmapRelation在实际筛选时交错绑定两端组件。多层固定身份筛选各自在当前读取范围完成绑定，其成本进入完整公共调用。Within、键桶和空间等已经取得组件行的来源继续通过查询专用输出接口复用这些借用行。性能运行器的finite输入从当次成员实体数组形成候选，并在这类采样中保持该集合。
 
-身份绑定通过 `QueryCursor.TryReadRef<T>(Entity, out ComponentReference<T>)` 依次取得第一端组件引用和第二端组件引用，再由具体许可的 Evaluate 驱动原输出。手写固定候选使用相同两次公共点读取，直接执行业务位运算。组件读取和成员匹配的实际成本因此在双方完整调用中对应；已经持有 QueryRow 的来源继续复用行读取入口。
+固定身份来源通过 `ReadLookup<T>.Has(entity)` 与 `ReadKnown(entity)` 取得两个只读值；已经绑定的 Within、键桶和空间来源直接传递 chunk 及行号。手写对照通过相同原生读取范围消费业务组件，再展开对应位运算。两侧完整公共调用均包含成员判断、读取和输出。
 
 固定候选例子的薄入口向独立数组循环传入原pairs与当前具体输出，查询作用域的数据留在调用侧；筛选临时值直接形成Relation和Output字段。实际候选和过滤状态各由原数据持有，循环继续按数组顺序读取身份并转发提前结束。
 
@@ -64,6 +66,6 @@ BitmapCollisionConsumption.CountContacts(bitmap.Pairs, contactCounts);
 
 ## 空间摘要的位含义
 
-`SomeEngine.Physics` 的具体类别摘要使用同一读取器与语义实例读取两个标量，形成既有 CategoryBits 和相同节点布局。节点字段、覆盖数量、正反组证明以及与角色键的组合由 [空间筛选下推](Spatial-Filtering.md) 说明。
+`SomeEngine.ECS.Relationships` 的具体类别摘要使用同一读取器与语义实例读取两个标量，形成既有 CategoryBits 和相同节点布局。节点字段、覆盖数量、正反组证明以及与角色键的组合由 [空间筛选下推](Spatial-Filtering.md) 说明。
 
-实际编译产物中的直接位运算、受约束具体调用和生成入口见[bitmap 编译证据](../../../docs/ECS-Relations-Bitmap-IL-2026-10-19.md)。
+2026-10-19 的直接位运算、受约束调用与生成入口记录见[历史 bitmap 编译证据](../../../docs/ECS-Relations-Bitmap-IL-2026-10-19.md)。

@@ -5,7 +5,7 @@ public sealed class CleanupResourceTests
     [Fact]
     public void CleanupRestoresItsResourceAfterCancellation()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         var source = new TaskCompletionSource();
         JobHandle dependency = scheduler.CreateExternalFenceHandle(source.Task);
         JobHandleAwaiter result = dependency.GetAwaiter();
@@ -23,7 +23,7 @@ public sealed class CleanupResourceTests
     [Fact]
     public async Task CleanupCompletionIncludesItsChildWork()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         JobHandle dependency = scheduler.Schedule(new NoWork());
@@ -52,7 +52,7 @@ public sealed class CleanupResourceTests
     [Fact]
     public void CleanupKeepsTheDependencyFailureWhileWaitingForItsResource()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, MaxCompletionStates = 3 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0, MaxCompletionStates = 3 });
         var failure = new ApplicationException();
         JobHandle dependency = scheduler.Schedule(new Fail(failure));
         JobHandleAwaiter result = dependency.GetAwaiter();

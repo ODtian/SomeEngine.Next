@@ -1,4 +1,3 @@
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
@@ -11,8 +10,8 @@ public sealed class EdgeRelationTests
     public void AdjacencyQueriesKeepParallelEdgeIdentityAndRoleLocalOrder()
     {
         using var world = new World();
-        var source = world.CreateEntity();
-        var target = world.CreateEntity();
+        var source = world.Create();
+        var target = world.Create();
         world.SetRelationAdjacencyOrder<Shipment>(source, RelationAdjacencyRole.Outgoing, RelationAdjacencyOrderPolicy.Ordered);
         world.SetRelationAdjacencyOrder<Shipment>(target, RelationAdjacencyRole.Incoming, RelationAdjacencyOrderPolicy.Ordered);
         var first = world.CreateRelation(source, target, new Shipment());
@@ -35,11 +34,12 @@ public sealed class EdgeRelationTests
     [Fact]
     public void EndpointRulesKeepEdgeRowsAndForwardEarlyOutputState()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
-        using var world = WorldJobs.CreateWorld(scheduler: jobs);
-        var source = world.CreateEntity(new Score { Value = 1 });
-        var target = world.CreateEntity(new Weight { Value = 8 });
-        var heavy = world.CreateEntity(new Weight { Value = 12 });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        var worldJobs = new WorldJobs(jobs);
+        using var world = new World(execution: worldJobs);
+        var source = world.Create(new Score { Value = 1 });
+        var target = world.Create(new Weight { Value = 8 });
+        var heavy = world.Create(new Weight { Value = 12 });
         var first = world.CreateRelation(source, target, new Shipment());
         world.CreateRelation(source, target, new Shipment());
         world.CreateRelation(source, heavy, new Shipment());
@@ -81,12 +81,13 @@ public sealed class EdgeRelationTests
     [Fact]
     public void RetargetingAndMaintenanceUpdateEdgeMembershipAndCurrentEndpointRules()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
-        using var world = WorldJobs.CreateWorld(scheduler: jobs);
-        var source = world.CreateEntity(new Score { Value = 1 });
-        var target = world.CreateEntity(new Weight { Value = 8 });
-        var replacement = world.CreateEntity(new Weight { Value = 3 });
-        var otherSource = world.CreateEntity(new Score { Value = 0 });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        var worldJobs = new WorldJobs(jobs);
+        using var world = new World(execution: worldJobs);
+        var source = world.Create(new Score { Value = 1 });
+        var target = world.Create(new Weight { Value = 8 });
+        var replacement = world.Create(new Weight { Value = 3 });
+        var otherSource = world.Create(new Score { Value = 0 });
         var edge = world.CreateRelation(source, target, new Shipment());
         var oldPair = world.EdgesBetween<Shipment>(source, target);
         var single = world.Edge(edge);
@@ -97,7 +98,7 @@ public sealed class EdgeRelationTests
         Assert.Equal(0, oldPair.Where(new ScoreWeightGap(5)).Count());
         Assert.Equal(0, single.Where(new ScoreWeightGap(5)).Count());
 
-        RelationMaintenanceSystem<Shipment>.Schedule(world).Complete();
+        jobs.Schedule(new MaintainRelations<Shipment>(world), worldJobs.StructureWrite).Complete();
 
         Assert.Equal(0, oldPair.Count());
         Assert.Equal(1, world.EdgesBetween<Shipment>(source, replacement).Count());
@@ -117,8 +118,8 @@ public sealed class EdgeRelationTests
     public void IncidentRulesKeepUndirectedEndpointArgumentRoles()
     {
         using var world = new World();
-        var first = world.CreateEntity(new Score { Value = 1 });
-        var second = world.CreateEntity(new Weight { Value = 8 });
+        var first = world.Create(new Score { Value = 1 });
+        var second = world.Create(new Weight { Value = 8 });
         var forward = world.CreateRelation(first, second, new Connection());
         var reverse = world.CreateRelation(second, first, new Connection());
         var matching = new List<RelationEdge<Connection>>();
@@ -137,26 +138,33 @@ public sealed class EdgeRelationTests
     [Fact]
     public void EndpointProjectionsDeduplicateDeclaredPairOrderAfterMaintenance()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
-        using var world = WorldJobs.CreateWorld(scheduler: jobs);
-        var first = world.CreateEntity(new Score { Value = 1 });
-        var second = world.CreateEntity(new Weight { Value = 8 });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        var worldJobs = new WorldJobs(jobs);
+        using var world = new World(execution: worldJobs);
+        var first = world.Create(new Score { Value = 1 });
+        var second = world.Create(new Weight { Value = 8 });
         world.SetRelationAdjacencyOrder<Connection>(first, RelationAdjacencyRole.Incident, RelationAdjacencyOrderPolicy.Ordered);
-        world.CreateRelation(first, second, new Connection(), RelationMaintenanceTiming.Deferred);
-        world.CreateRelation(first, second, new Connection(), RelationMaintenanceTiming.Deferred);
-        world.CreateRelation(second, first, new Connection(), RelationMaintenanceTiming.Deferred);
+        Span<RelationEdge<Connection>> created = stackalloc RelationEdge<Connection>[3];
+        Relations<Connection>.Edit(world,
+            [EndpointEdit.Create(first, second), EndpointEdit.Create(first, second), EndpointEdit.Create(second, first)],
+            created, deferred: true);
         var pairs = new List<(Entity, Entity)>();
         var endpoints = world.IncidentEdges<Connection>(first).DistinctEndpoints();
 
-        var maintenance = RelationMaintenanceSystem<Connection>.Schedule(world);
+        var maintenance = jobs.Schedule(new MaintainRelations<Connection>(world), worldJobs.StructureWrite);
         var reader = new EndpointPairsReader(endpoints, pairs);
-        RelationJobAccess<Connection>.ScheduleEndpointsRead(world, reader, maintenance).Complete();
+        jobs.Schedule(reader, worldJobs.StructureRead, maintenance).Complete();
 
         Assert.Equal(new[] { (first, second), (second, first) }, pairs);
         Assert.Equal(3, world.IncidentEdges<Connection>(first).Count());
         Assert.Equal(2, endpoints.Count());
         Assert.Equal(1, endpoints.Where(new ScoreWeightGap(5)).Count());
         Assert.Equal(1, world.IncidentEdges<Connection>(first).DistinctUnorderedEndpoints().Count());
+    }
+
+    private readonly struct MaintainRelations<T>(World world) : IJob where T : struct
+    {
+        public void Execute() => Relations<T>.Maintain(world);
     }
 
     private readonly struct EndpointPairsReader(
@@ -190,8 +198,8 @@ public sealed class EdgeRelationTests
     }
 }
 
-[RelationSchema(RelationDirection.Directed)]
+[RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
 public struct Shipment : IComponent;
 
-[RelationSchema(RelationDirection.Undirected)]
+[RelationSchema(RelationDirection.Undirected, RelationCardinality.Parallel)]
 public struct Connection : IComponent;

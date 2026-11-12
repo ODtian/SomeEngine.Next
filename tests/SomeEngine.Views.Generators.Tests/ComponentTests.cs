@@ -29,12 +29,12 @@ public sealed class ComponentTests
                     Action content = [Composable] () => Components.Label(value.Value);
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Host(content));
                     frames.Frame();
-                    Entity component = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    Entity card = Hierarchy<ElementTree>.GetChildren(frames.World, component).Single();
+                    Entity component = ElementChildren.Read(frames.World, root).Single();
+                    Entity card = ElementChildren.Read(frames.World, component).Single();
                     value.Value = 7;
                     frames.Frame();
-                    return Hierarchy<ElementTree>.GetChildren(frames.World, root).Single() == component &&
-                        frames.World.ReadSparse<Card>(card).Title == "3";
+                    return ElementChildren.Read(frames.World, root).Single() == component &&
+                        frames.World.ReadComponentData<Card>(card).Title == "3";
                 }
             }
             public static partial class Components
@@ -105,14 +105,14 @@ public sealed class ComponentTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Host(3));
                     frames.Frame();
-                    Entity row = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    Entity component = Hierarchy<ElementTree>.GetChildren(frames.World, row).First();
-                    Entity card = Hierarchy<ElementTree>.GetChildren(frames.World, component).Single();
-                    frames.World.ReplaceSparse(root, new Host(7));
+                    Entity row = ElementChildren.Read(frames.World, root).Single();
+                    Entity component = ElementChildren.Read(frames.World, row).First();
+                    Entity card = ElementChildren.Read(frames.World, component).Single();
+                    frames.World.SetSparse(root, new Host(7));
                     frames.Frame();
-                    return Hierarchy<ElementTree>.GetChildren(frames.World, row).First() == component &&
-                        Hierarchy<ElementTree>.GetChildren(frames.World, component).Single() == card &&
-                        frames.World.ReadSparse<Card>(card).Title == "3";
+                    return ElementChildren.Read(frames.World, row).First() == component &&
+                        ElementChildren.Read(frames.World, component).Single() == card &&
+                        frames.World.ReadComponentData<Card>(card).Title == "3";
                 }
             }
             public static partial class Components
@@ -159,13 +159,13 @@ public sealed class ComponentTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Host(3));
                     frames.Frame();
-                    Entity component = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    Entity card = Hierarchy<ElementTree>.GetChildren(frames.World, component).Single();
-                    frames.World.ReplaceSparse(root, new Host(7));
+                    Entity component = ElementChildren.Read(frames.World, root).Single();
+                    Entity card = ElementChildren.Read(frames.World, component).Single();
+                    frames.World.SetSparse(root, new Host(7));
                     frames.Frame();
-                    return Hierarchy<ElementTree>.GetChildren(frames.World, root).Single() == component &&
-                        Hierarchy<ElementTree>.GetChildren(frames.World, component).Single() == card &&
-                        frames.World.ReadSparse<Card>(card).Title == "3";
+                    return ElementChildren.Read(frames.World, root).Single() == component &&
+                        ElementChildren.Read(frames.World, component).Single() == card &&
+                        frames.World.ReadComponentData<Card>(card).Title == "3";
                 }
             }
             public static partial class Components
@@ -203,14 +203,14 @@ public sealed class ComponentTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Host(3, "first"));
                     frames.Frame();
-                    Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-                    Entity[] cards = children.Select(child => Hierarchy<ElementTree>.GetChildren(frames.World, child).Single()).ToArray();
-                    if (!cards.Select(card => frames.World.ReadSparse<Card>(card).Title).SequenceEqual(new[] { "3 number", "first" }))
+                    Entity[] children = ElementChildren.Read(frames.World, root).ToArray();
+                    Entity[] cards = children.Select(child => ElementChildren.Read(frames.World, child).Single()).ToArray();
+                    if (!cards.Select(card => frames.World.ReadComponentData<Card>(card).Title).SequenceEqual(new[] { "3 number", "first" }))
                         return false;
-                    frames.World.ReplaceSparse(root, new Host(7, "latest"));
+                    frames.World.SetSparse(root, new Host(7, "latest"));
                     frames.Frame();
-                    return children.SequenceEqual(Hierarchy<ElementTree>.GetChildren(frames.World, root)) &&
-                        cards.Select(card => frames.World.ReadSparse<Card>(card).Title).SequenceEqual(new[] { "3 number", "first" });
+                    return children.SequenceEqual(ElementChildren.Read(frames.World, root)) &&
+                        cards.Select(card => frames.World.ReadComponentData<Card>(card).Title).SequenceEqual(new[] { "3 number", "first" });
                 }
             }
 

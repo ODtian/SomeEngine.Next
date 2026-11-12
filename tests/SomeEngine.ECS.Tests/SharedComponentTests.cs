@@ -1,14 +1,12 @@
-using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Registry;
 using Xunit;
 
 namespace SomeEngine.ECS.Tests;
 
 // 测试用 shared component 类型
-public struct SceneId : SomeEngine.ECS.Components.ISharedComponent, IEquatable<SceneId>
+public struct SceneId : SomeEngine.ECS.ISharedComponent, IEquatable<SceneId>, IAddedComponent
 {
     public int Value;
 
@@ -17,7 +15,7 @@ public struct SceneId : SomeEngine.ECS.Components.ISharedComponent, IEquatable<S
     public override int GetHashCode() => Value;
 }
 
-public struct RenderGroup : SomeEngine.ECS.Components.ISharedComponent, IEquatable<RenderGroup>
+public struct RenderGroup : SomeEngine.ECS.ISharedComponent, IEquatable<RenderGroup>, IAddedComponent
 {
     public int GroupId;
     public string Material;
@@ -35,35 +33,34 @@ public class SharedComponentTests
     public void SetShared_AddsToArchetype()
     {
         var world = new World();
-        var entity = world.CreateEntity();
+        var entity = world.Create();
 
-        world.AddShared(entity, new SceneId { Value = 1 });
+        world.SetShared(entity, new SceneId { Value = 1 });
 
-        Assert.True(world.HasShared<SceneId>(entity));
+        Assert.True(world.Has<SceneId>(entity));
     }
 
     [Fact]
     public void AddShared_ExistingSharedComponent_Throws()
     {
         var world = new World();
-        var entity = world.CreateEntity();
+        var entity = world.Create();
 
-        world.AddShared(entity, new SceneId { Value = 1 });
+        world.SetShared(entity, new SceneId { Value = 1 });
 
-        Assert.Throws<InvalidOperationException>(() =>
-            world.AddShared(entity, new SceneId { Value = 2 }));
-        Assert.Equal(1, world.GetShared<SceneId>(entity).Value);
+        Assert.Throws<InvalidOperationException>(() => world.Add(entity, new SceneId { Value = 2 }));
+        Assert.Equal(1, world.ReadShared<SceneId>(entity).Value);
     }
 
     [Fact]
     public void GetShared_ReturnsCorrectValue()
     {
         var world = new World();
-        var entity = world.CreateEntity();
+        var entity = world.Create();
 
-        world.AddShared(entity, new SceneId { Value = 42 });
+        world.SetShared(entity, new SceneId { Value = 42 });
 
-        var scene = world.GetShared<SceneId>(entity);
+        var scene = world.ReadShared<SceneId>(entity);
         Assert.Equal(42, scene.Value);
     }
 
@@ -71,21 +68,21 @@ public class SharedComponentTests
     public void SetShared_UpdatesValue()
     {
         var world = new World();
-        var entity = world.CreateEntity();
+        var entity = world.Create();
 
-        world.AddShared(entity, new SceneId { Value = 1 });
-        world.ReplaceShared(entity, new SceneId { Value = 2 });
+        world.SetShared(entity, new SceneId { Value = 1 });
+        world.SetShared(entity, new SceneId { Value = 2 });
 
-        Assert.Equal(2, world.GetShared<SceneId>(entity).Value);
+        Assert.Equal(2, world.ReadShared<SceneId>(entity).Value);
     }
 
     [Fact]
-    public void SharedComponent_DoesNotOccupyColumn()
+    public void SharedValuesPreserveOrdinaryComponentValues()
     {
         var world = new World();
-        var entity = world.CreateEntity<Position>(new Position { X = 1, Y = 2 });
+        var entity = world.Create<Position>(new Position { X = 1, Y = 2 });
 
-        world.AddShared(entity, new SceneId { Value = 10 });
+        world.SetShared(entity, new SceneId { Value = 10 });
 
         // Position 应该仍然可读
         Assert.Equal(1, world.Read<Position>(entity).X);
@@ -96,95 +93,95 @@ public class SharedComponentTests
     public void SharedComponent_PreservesComponentsOnMigration()
     {
         var world = new World();
-        var entity = world.CreateEntity<Position>(new Position { X = 5, Y = 10 });
+        var entity = world.Create<Position>(new Position { X = 5, Y = 10 });
 
-        world.AddShared(entity, new SceneId { Value = 1 });
+        world.SetShared(entity, new SceneId { Value = 1 });
         world.Add(entity, new Health { Value = 100 });
 
         Assert.Equal(5, world.Read<Position>(entity).X);
         Assert.Equal(100, world.Read<Health>(entity).Value);
-        Assert.Equal(1, world.GetShared<SceneId>(entity).Value);
+        Assert.Equal(1, world.ReadShared<SceneId>(entity).Value);
     }
 
     [Fact]
     public void SharedComponent_MultipleEntities_SameValue()
     {
         var world = new World();
-        var e1 = world.CreateEntity();
-        var e2 = world.CreateEntity();
+        var e1 = world.Create();
+        var e2 = world.Create();
 
-        world.AddShared(e1, new SceneId { Value = 1 });
-        world.AddShared(e2, new SceneId { Value = 1 });
+        world.SetShared(e1, new SceneId { Value = 1 });
+        world.SetShared(e2, new SceneId { Value = 1 });
 
-        Assert.Equal(1, world.GetShared<SceneId>(e1).Value);
-        Assert.Equal(1, world.GetShared<SceneId>(e2).Value);
+        Assert.Equal(1, world.ReadShared<SceneId>(e1).Value);
+        Assert.Equal(1, world.ReadShared<SceneId>(e2).Value);
     }
 
     [Fact]
     public void SharedComponent_MultipleEntities_DifferentValues()
     {
         var world = new World();
-        var e1 = world.CreateEntity();
-        var e2 = world.CreateEntity();
+        var e1 = world.Create();
+        var e2 = world.Create();
 
-        world.AddShared(e1, new SceneId { Value = 1 });
-        world.AddShared(e2, new SceneId { Value = 2 });
+        world.SetShared(e1, new SceneId { Value = 1 });
+        world.SetShared(e2, new SceneId { Value = 2 });
 
-        Assert.Equal(1, world.GetShared<SceneId>(e1).Value);
-        Assert.Equal(2, world.GetShared<SceneId>(e2).Value);
+        Assert.Equal(1, world.ReadShared<SceneId>(e1).Value);
+        Assert.Equal(2, world.ReadShared<SceneId>(e2).Value);
     }
 
     [Fact]
     public void GetShared_ThrowsIfNotPresent()
     {
         var world = new World();
-        var entity = world.CreateEntity();
+        var entity = world.Create();
 
-        Assert.Throws<InvalidOperationException>(() =>
-            world.GetShared<SceneId>(entity));
+        Assert.Throws<ArgumentException>(() =>
+            world.ReadShared<SceneId>(entity));
     }
 
     [Fact]
     public void SharedComponent_DestroyEntity_CleansUpIndex()
     {
         var world = new World();
-        var entity = world.CreateEntity();
-        world.AddShared(entity, new SceneId { Value = 42 });
+        var entity = world.Create();
+        world.SetShared(entity, new SceneId { Value = 42 });
 
-        world.DestroyEntity(entity);
+        world.Destroy(entity);
 
         // 创建新 entity（可能复用同一 index）
-        var newEntity = world.CreateEntity();
+        var newEntity = world.Create();
 
         // 新 entity 不应携带旧的 shared value
-        Assert.False(world.HasShared<SceneId>(newEntity));
+        Assert.False(world.Has<SceneId>(newEntity));
     }
 
     [Fact]
     public void HasShared_DeadEntity_ReturnsFalse()
     {
         var world = new World();
-        var entity = world.CreateEntity();
-        world.AddShared(entity, new SceneId { Value = 42 });
+        var entity = world.Create();
+        world.SetShared(entity, new SceneId { Value = 42 });
 
-        world.DestroyEntity(entity);
+        world.Destroy(entity);
 
-        Assert.False(world.HasShared<SceneId>(entity));
+        Assert.False(world.HasComponentData(entity, ComponentId<SceneId>.Value));
     }
 
     [Fact]
     public void SharedComponent_DestroyEntity_MultipleShared_CleansUpAll()
     {
         var world = new World();
-        var entity = world.CreateEntity();
-        world.AddShared(entity, new SceneId { Value = 1 });
-        world.AddShared(entity, new RenderGroup { GroupId = 5, Material = "metal" });
+        var entity = world.Create();
+        world.SetShared(entity, new SceneId { Value = 1 });
+        world.SetShared(entity, new RenderGroup { GroupId = 5, Material = "metal" });
 
-        world.DestroyEntity(entity);
+        world.Destroy(entity);
 
-        var newEntity = world.CreateEntity();
-        Assert.False(world.HasShared<SceneId>(newEntity));
-        Assert.False(world.HasShared<RenderGroup>(newEntity));
+        var newEntity = world.Create();
+        Assert.False(world.Has<SceneId>(newEntity));
+        Assert.False(world.Has<RenderGroup>(newEntity));
     }
 
 
@@ -193,28 +190,15 @@ public class SharedComponentTests
     [Fact]
     public void QueryWithSharedFilter_OnlyMatchingChunksIterated()
     {
-        var world = new World();
-        var e1 = world.CreateEntity<Position>(new Position { X = 1 });
-        var e2 = world.CreateEntity<Position>(new Position { X = 2 });
-        var e3 = world.CreateEntity<Position>(new Position { X = 3 });
-
-        world.AddShared(e1, new SceneId { Value = 10 });
-        world.AddShared(e2, new SceneId { Value = 20 });
-        world.AddShared(e3, new SceneId { Value = 10 });
-
-        // 查询 SceneId.Value == 10 的 entity
-        var query = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Shared<SceneId>());
-
+        using var world = new World();
+        Entity first = world.Create(new Position { X = 1 }, new SceneId { Value = 10 });
+        world.Create(new Position { X = 2 }, new SceneId { Value = 20 });
+        Entity third = world.Create(new Position { X = 3 }, new SceneId { Value = 10 });
+        Query query = world.Query(new QueryDescription().WithStored<Position>().WithShared(world.InternShared(new SceneId { Value = 10 })));
         var results = new List<float>();
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (var row in cursor.RowsWithShared(new SceneId { Value = 10 }))
-                results.Add(row.Read<Position>().X);
-        });
-
+        using (QueryScope scope = query.OpenRead())
+            foreach (QueryChunk chunk in scope)
+                foreach (ref readonly Position position in chunk.Read<Position>()) results.Add(position.X);
         Assert.Equal(2, results.Count);
         Assert.Contains(1f, results);
         Assert.Contains(3f, results);
@@ -224,59 +208,22 @@ public class SharedComponentTests
     [Fact]
     public void QueryWithSharedFilter_NoMatchingChunks_NoIteration()
     {
-        var world = new World();
-        var e1 = world.CreateEntity<Position>(new Position { X = 1 });
-        world.AddShared(e1, new SceneId { Value = 42 });
-
-        var query = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Shared<SceneId>());
-
-        int count = 0;
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (var _ in cursor.RowsWithShared(new SceneId { Value = 999 }))
-                count++;
-        });
-
-        Assert.Equal(0, count);
+        using var world = new World();
+        world.Create(new Position { X = 1 }, new SceneId { Value = 42 });
+        Query query = world.Query(new QueryDescription().WithStored<Position>().WithShared(world.InternShared(new SceneId { Value = 999 })));
+        Assert.Equal(0, query.Count);
     }
 
     [Fact]
     public void QueryRowsWithSharedValueReturnsMatchingEntities()
     {
-        var world = new World();
-        var e1 = world.CreateEntity<Position>(new Position { X = 1 });
-        var e2 = world.CreateEntity<Position>(new Position { X = 2 });
-        world.AddShared(e1, new SceneId { Value = 10 });
-        world.AddShared(e2, new SceneId { Value = 20 });
-
-        var query = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Shared<SceneId>());
-
-        int warmCount = CountSceneRows(world, query);
-        Assert.Equal(1, warmCount);
-
-        int count = CountSceneRows(world, query);
-
-        Assert.Equal(1, count);
+        using var world = new World();
+        Entity first = world.Create(new Position { X = 1 }, new SceneId { Value = 10 });
+        world.Create(new Position { X = 2 }, new SceneId { Value = 20 });
+        Query query = world.Query(new QueryDescription().WithStored<Position>().WithShared(world.InternShared(new SceneId { Value = 10 })));
+        Assert.Equal(1, query.Count);
+        Assert.Equal(1, query.Count);
+        using QueryScope scope = query.OpenRead();
+        Assert.True(scope.Contains(first));
     }
-
-
-
-
-    private static int CountSceneRows(World world, QueryHandle query)
-    {
-        int count = 0;
-        world.ExecuteQuery(query, ref count, static (scoped QueryCursor cursor, ref int state) =>
-        {
-            foreach (var _ in cursor.RowsWithShared(new SceneId { Value = 10 }))
-                state++;
-        });
-        return count;
-    }
-
 }

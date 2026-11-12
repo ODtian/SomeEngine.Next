@@ -14,18 +14,18 @@ internal static partial class FocusChecks
         using var frames = new FocusFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new FocusPanels());
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        var panels = Hierarchy<ElementTree>.GetChildren(frames.World, container);
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        var panels = ElementChildren.Read(frames.World, container);
         Gamepad.Navigate(frames.World, Direction.Right);
         frames.Frame();
-        Require(frames.World.Read<PanelDisplay>(root).Index == 0,
+        Require(frames.World.ReadComponentData<PanelDisplay>(root).Index == 0,
             "The caller displays focus on the left composition.");
         Gamepad.Navigate(frames.World, Direction.Right);
         Gamepad.Confirm(frames.World);
         frames.Frame();
-        Require(frames.World.HasSparse<Focused>(panels[1]) && frames.World.Read<Clicks>(panels[1]).Count == 1,
+        Require(frames.World.HasSparse<Focused>(panels[1]) && frames.World.ReadComponentData<Clicks>(panels[1]).Count == 1,
             "The right composition holds focus and receives confirmation on its own entity.");
-        Require(frames.World.Read<PanelDisplay>(root) == new PanelDisplay(1, 1),
+        Require(frames.World.ReadComponentData<PanelDisplay>(root) == new PanelDisplay(1, 1),
             "The caller displays the right composition's focus and confirmation.");
     }
 

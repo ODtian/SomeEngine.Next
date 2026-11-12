@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 
 namespace SomeEngine.Render.Materials;

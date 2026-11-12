@@ -11,7 +11,7 @@ public sealed class TypedPropertyAnimationTests
     {
         using var world = new World();
         var style = new PanelStyle();
-        Entity target = world.CreateEntity(new FieldPanel { Style = style });
+        Entity target = world.Create(new FieldPanel { Style = style });
         var tween = Spec.Tween<float, FloatOps, Linear>(1);
         PropertyAnimation.Declare(world, target, FieldPanelChannels.Radius, tween);
         using var systems = TweenSystems(world);
@@ -26,7 +26,7 @@ public sealed class TypedPropertyAnimationTests
     public void RepeatedTargetAndParametersKeepTheTweenProgress()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new FieldPanel());
+        Entity target = world.Create(new FieldPanel());
         var tween = Spec.Tween<float, FloatOps, Linear>(1);
         PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, tween);
         using var systems = TweenSystems(world);
@@ -36,14 +36,14 @@ public sealed class TypedPropertyAnimationTests
         PropertyAnimation.To(world, target, FieldPanelChannels.Opacity, 1f, tween);
         Tick(systems, world, 0.25);
 
-        Assert.Equal(0.5f, world.Read<FieldPanel>(target).Opacity);
+        Assert.Equal(0.5f, world.ReadComponentData<FieldPanel>(target).Opacity);
     }
 
     [Fact]
     public void ChangingOnlyParametersKeepsTheOriginalTweenStart()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new FieldPanel());
+        Entity target = world.Create(new FieldPanel());
         var tween = Spec.Tween<float, FloatOps, Linear>(1);
         PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, tween);
         using var systems = TweenSystems(world);
@@ -53,31 +53,31 @@ public sealed class TypedPropertyAnimationTests
         PropertyAnimation.To(world, target, FieldPanelChannels.Opacity, 1f, Spec.Tween<float, FloatOps, Linear>(2));
         Tick(systems, world, 0.25);
 
-        Assert.Equal(0.25f, world.Read<FieldPanel>(target).Opacity);
+        Assert.Equal(0.25f, world.ReadComponentData<FieldPanel>(target).Opacity);
     }
 
     [Fact]
     public void TypedDisplacementReturnsToTheCapturedFieldValue()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new FieldPanel { Opacity = 3 });
+        Entity target = world.Create(new FieldPanel { Opacity = 3 });
         var tween = Spec.Tween<float, FloatOps, Linear>(1);
         PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, tween);
         using var systems = TweenSystems(world);
         PropertyAnimation.By(world, target, FieldPanelChannels.Opacity, 4f, tween);
 
         Tick(systems, world, 0.5);
-        Assert.Equal(5f, world.Read<FieldPanel>(target).Opacity);
+        Assert.Equal(5f, world.ReadComponentData<FieldPanel>(target).Opacity);
         Tick(systems, world, 0.5);
 
-        Assert.Equal(3f, world.Read<FieldPanel>(target).Opacity);
+        Assert.Equal(3f, world.ReadComponentData<FieldPanel>(target).Opacity);
     }
 
     [Fact]
     public void RetargetRestartsTheDeclaredFixedBoundary()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new FieldPanel());
+        Entity target = world.Create(new FieldPanel());
         var spec = Spec.Tween<float, FloatOps, Linear>(1);
         PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, spec);
         using var systems = TweenSystems(world);
@@ -89,14 +89,14 @@ public sealed class TypedPropertyAnimationTests
         Assert.True(world.IsEnabled<Timeline>(target));
         Tick(systems, world, 0.25);
 
-        Assert.Equal(2f, world.Read<FieldPanel>(target).Opacity);
+        Assert.Equal(2f, world.ReadComponentData<FieldPanel>(target).Opacity);
     }
 
     [Fact]
     public void TypedSpringRetargetKeepsVelocity()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new FieldPanel());
+        Entity target = world.Create(new FieldPanel());
         var spring = Spec.Spring<float, FloatOps>();
         PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, spring);
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -109,14 +109,14 @@ public sealed class TypedPropertyAnimationTests
         PropertyAnimation.Retarget(world, target, FieldPanelChannels.Opacity, 2f);
         Tick(systems, world, 1d / 60);
 
-        Assert.Equal(0.13907372f, world.Read<FieldPanel>(target).Opacity, 6);
+        Assert.Equal(0.13907372f, world.ReadComponentData<FieldPanel>(target).Opacity, 6);
     }
 
     [Fact]
     public void ManagedUserStateKeepsHistoryWhenRetargeted()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new FieldPanel());
+        Entity target = world.Create(new FieldPanel());
         var history = new MotionHistory();
         var spec = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(history));
         PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, spec);
@@ -127,7 +127,7 @@ public sealed class TypedPropertyAnimationTests
         PropertyAnimation.Retarget(world, target, FieldPanelChannels.Opacity, 200f);
         Tick(systems, world, 0.1);
 
-        Assert.Equal(3f, world.Read<FieldPanel>(target).Opacity);
+        Assert.Equal(3f, world.ReadComponentData<FieldPanel>(target).Opacity);
         Assert.Equal(1, history.Retargets);
     }
 
@@ -137,7 +137,7 @@ public sealed class TypedPropertyAnimationTests
     public void ADeclaredTargetTakesOverAPooledUserSource(bool continueHistory)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new FieldPanel());
+        Entity target = world.Create(new FieldPanel());
         var history = new MotionHistory();
         var spec = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(history));
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -161,7 +161,7 @@ public sealed class TypedPropertyAnimationTests
 
         Assert.Equal(target, animation);
         Assert.False(world.IsEnabled<Timeline>(pooled));
-        Assert.Equal(continueHistory ? 3f : 1.5f, world.Read<FieldPanel>(target).Opacity);
+        Assert.Equal(continueHistory ? 3f : 1.5f, world.ReadComponentData<FieldPanel>(target).Opacity);
         Assert.Equal(continueHistory ? 1 : 0, history.Retargets);
         Assert.Equal(continueHistory ? 0 : 1, history.Releases);
     }
@@ -170,7 +170,7 @@ public sealed class TypedPropertyAnimationTests
     public void SwitchingDeclaredAlgorithmsReleasesThePreviousUserState()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new FieldPanel());
+        Entity target = world.Create(new FieldPanel());
         var history = new MotionHistory();
         var spec = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(history));
         var tween = Spec.Tween<float, FloatOps, Linear>(1);
@@ -183,22 +183,21 @@ public sealed class TypedPropertyAnimationTests
         PropertyAnimation.To(world, target, FieldPanelChannels.Opacity, 2f, tween);
 
         Assert.Equal(1, history.Releases);
-        Assert.Equal(1f, world.Read<FieldPanel>(target).Opacity);
+        Assert.Equal(1f, world.ReadComponentData<FieldPanel>(target).Opacity);
     }
 
     [Fact]
     public void OneHundredControlsUseTheDeclaredEntityAndComponentStructure()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new FieldPanel());
+        Entity target = world.Create(new FieldPanel());
         var tween = Spec.Tween<float, FloatOps, Linear>(1);
         var spring = Spec.Spring<float, FloatOps>();
         PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, tween);
         PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, spring);
-        var timelines = world.Query(world.QueryDefinition().Read<Timeline>());
-        uint members = world.MembershipVersion(timelines);
-        using var changes = world.ObserveEntityTables();
-        changes.Accept(changes.Read());
+        var timelines = world.Query(new QueryDescription().WithStored<Timeline>());
+        ulong members = timelines.MembershipVersion;
+        using var changes = world.WatchMembership(timelines);
         int count = world.EntityCount;
         using var systems = TweenSystems(world);
         for (int repeat = 0; repeat < 100; repeat++)
@@ -211,20 +210,21 @@ public sealed class TypedPropertyAnimationTests
         }
 
         Assert.Equal(count, world.EntityCount);
-        Assert.Equal(members, world.MembershipVersion(timelines));
-        Assert.Equal(target, Assert.Single(changes.Read().Entities));
+        Assert.Equal(members, timelines.MembershipVersion);
+        using var membership = changes.Open();
+        Assert.Equal(0, membership.Count);
         Assert.True(world.Has<Timeline>(target));
-        Assert.True(world.HasBuffer<MotionInstance<float, FloatOps, TweenParameters, TweenState, Tween<float, FloatOps, Linear>>>(target));
-        Assert.True(world.HasBuffer<MotionInstance<float, FloatOps, SpringParameters, SpringState<float>, Spring<float, FloatOps>>>(target));
-        world.ReleaseQuery(timelines);
+        Assert.True(world.Has<Buffer<MotionInstance<float, FloatOps, TweenParameters, TweenState, Tween<float, FloatOps, Linear>>>>(target));
+        Assert.True(world.Has<Buffer<MotionInstance<float, FloatOps, SpringParameters, SpringState<float>, Spring<float, FloatOps>>>>(target));
+
     }
 
     [Fact]
     public void CompletingAPooledTypedInstanceAllowsTheNextTargetToReuseIt()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new FieldPanel());
-        Entity second = world.CreateEntity(new FieldPanel());
+        Entity first = world.Create(new FieldPanel());
+        Entity second = world.Create(new FieldPanel());
         var tween = Spec.Tween<float, FloatOps, Linear>(1);
         using var systems = TweenSystems(world);
         Entity animation = PropertyAnimation.To(world, first, FieldPanelChannels.Opacity, 1f, tween);
@@ -234,14 +234,14 @@ public sealed class TypedPropertyAnimationTests
         Tick(systems, world, 1);
 
         Assert.Equal(animation, reused);
-        Assert.Equal(2f, world.Read<FieldPanel>(second).Opacity);
+        Assert.Equal(2f, world.ReadComponentData<FieldPanel>(second).Opacity);
     }
 
     [Fact]
     public void AnExternalMotionCompletesWhenItsDeclaredBoundaryIsAdvanced()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new FieldPanel());
+        Entity target = world.Create(new FieldPanel());
         var spec = Spec.Create<float, FloatOps, ExternalParameters, ExternalState, ExternalMotion>(new());
         PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, spec);
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -255,7 +255,7 @@ public sealed class TypedPropertyAnimationTests
         Animation.Advance(world, target);
         Tick(systems, world, 0);
 
-        Assert.Equal(1u, world.Read<Timeline>(target).Completions);
+        Assert.Equal(1u, world.ReadComponentData<Timeline>(target).Completions);
     }
 
     private static SystemGroup<ImmediateSystemContext> TweenSystems(World world)

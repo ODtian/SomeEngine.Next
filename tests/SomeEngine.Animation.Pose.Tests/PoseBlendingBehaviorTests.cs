@@ -12,7 +12,7 @@ public sealed class PoseBlendingBehaviorTests
     public void GraphWeightsBlendTranslationRotationAndScaleBeforeModelComposition()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var world = new World(execution: new WorldJobs(scheduler));
         Skeleton skeleton = CreateSkeleton();
         var storage = new PoseStorage();
         using SkeletonInstance instance = storage.CreateInstance(skeleton);
@@ -20,11 +20,14 @@ public sealed class PoseBlendingBehaviorTests
         PoseResultReference output = PoseAnimation.Resolve(world, target, new PoseResultId(2));
         AnimationClip first = MovingClip(skeleton, 1, new BoneTransform
         {
-            Rotation = Quaternion.Identity, Scale = Vector3.One,
+            Rotation = Quaternion.Identity,
+            Scale = Vector3.One,
         }, 2);
         AnimationClip second = MovingClip(skeleton, 2, new BoneTransform
         {
-            Translation = new(4, 2, 0), Rotation = new(0, 0, 1, 0), Scale = new(5, 3, 1),
+            Translation = new(4, 2, 0),
+            Rotation = new(0, 0, 1, 0),
+            Scale = new(5, 3, 1),
         }, 6);
         var blend = new PoseBlend([new(new PoseResultId(0), Parameter: 0), new(new PoseResultId(1), Parameter: 1)]);
         using var builder = new AnimationBuilder(world);
@@ -39,10 +42,10 @@ public sealed class PoseBlendingBehaviorTests
             builder.BlendPose(target, new PoseBlendParameters(blend, new PoseResultId(2), new(StageEnd.Duration, 1)));
         }
         Entity animation = builder.Play();
-        GraphParameters parameters = world.Read<GraphParameters>(animation);
+        GraphParameters parameters = world.ReadComponentData<GraphParameters>(animation);
         parameters.Values[0] = 3;
         parameters.Values[1] = 1;
-        world.Replace(animation, parameters);
+        world.Set(animation, parameters);
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         PoseAnimation.AddSystems(systems, static composition =>
             AnimationSystems.Add(composition, new PoseBlendSystem(), AnimationPhase.Composition));
@@ -59,7 +62,7 @@ public sealed class PoseBlendingBehaviorTests
 
         parameters.Values[0] = 1;
         parameters.Values[1] = 3;
-        world.Replace(animation, parameters);
+        world.Set(animation, parameters);
         Tick(systems, world, 0.5);
         Near(new Vector3(3, 1.5f, 0), instance.LocalPose[0].Translation);
         Near(new Vector3(4, 2.5f, 1), instance.LocalPose[0].Scale);
@@ -75,7 +78,7 @@ public sealed class PoseBlendingBehaviorTests
     public void SharedOneDimensionalSpaceKeepsEachInstancesCoordinateAndCyclePhase()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var world = new World(execution: new WorldJobs(scheduler));
         Skeleton skeleton = CreateSkeleton();
         var storage = new PoseStorage();
         using SkeletonInstance first = storage.CreateInstance(skeleton);
@@ -93,12 +96,12 @@ public sealed class PoseBlendingBehaviorTests
         using CompiledGraph graph = builder.Compile();
         Entity firstAnimation = graph.Play(world, firstTarget);
         Entity secondAnimation = graph.Play(world, secondTarget);
-        GraphParameters firstParameters = world.Read<GraphParameters>(firstAnimation);
-        GraphParameters secondParameters = world.Read<GraphParameters>(secondAnimation);
+        GraphParameters firstParameters = world.ReadComponentData<GraphParameters>(firstAnimation);
+        GraphParameters secondParameters = world.ReadComponentData<GraphParameters>(secondAnimation);
         firstParameters.Values[0] = 1;
         secondParameters.Values[0] = 4;
-        world.Replace(firstAnimation, firstParameters);
-        world.Replace(secondAnimation, secondParameters);
+        world.Set(firstAnimation, firstParameters);
+        world.Set(secondAnimation, secondParameters);
         PoseResultReference firstOutput = PoseAnimation.Resolve(world, firstTarget, new PoseResultId(0));
         PoseResultReference secondOutput = PoseAnimation.Resolve(world, secondTarget, new PoseResultId(0));
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -112,7 +115,7 @@ public sealed class PoseBlendingBehaviorTests
         Assert.Equal(0.125, PoseAnimation.ReadResult(world, in secondOutput).Phase);
 
         firstParameters.Values[0] = 3;
-        world.Replace(firstAnimation, firstParameters);
+        world.Set(firstAnimation, firstParameters);
         Tick(systems, world, 0.5);
         Near(new Vector3(5.25f, 1, 0), first.ModelPose.Transforms[1].Translation);
         Near(new Vector3(2.5f, 1, 0), second.ModelPose.Transforms[1].Translation);
@@ -140,9 +143,9 @@ public sealed class PoseBlendingBehaviorTests
         using var builder = new AnimationBuilder(world);
         builder.BlendPose2D(target, space, new PoseResultId(0), parameterX: 0, parameterY: 1);
         Entity animation = builder.Play();
-        GraphParameters parameters = world.Read<GraphParameters>(animation);
+        GraphParameters parameters = world.ReadComponentData<GraphParameters>(animation);
         parameters.Values[0] = parameters.Values[1] = 0.5f;
-        world.Replace(animation, parameters);
+        world.Set(animation, parameters);
         PoseResultReference output = PoseAnimation.Resolve(world, target, new PoseResultId(0));
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         PoseAnimation.AddSystems(systems, static composition =>
@@ -155,7 +158,7 @@ public sealed class PoseBlendingBehaviorTests
         Assert.Equal(0.34375, PoseAnimation.ReadResult(world, in output).Phase);
 
         parameters.Values[0] = parameters.Values[1] = 1.5f;
-        world.Replace(animation, parameters);
+        world.Set(animation, parameters);
         Tick(systems, world, 0.5);
         Near(new Vector3(9.3125f, 0, 0), instance.LocalPose[0].Translation);
         Near(new Vector3(8.6053934f, 0.7071068f, 0), instance.ModelPose.Transforms[1].Translation);

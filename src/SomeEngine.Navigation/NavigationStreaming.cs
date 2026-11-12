@@ -41,7 +41,6 @@ public sealed class NavigationStreaming(NavigationScene scene, Scheduler? schedu
 
     public void Update()
     {
-        if (!Applied.IsCompleted) return;
         Applied.Complete();
         NavigationSceneContent content = scene.Content;
         NavigationInterestData[] interests = NavigationStreamingRanges.CaptureInterests(Interests);

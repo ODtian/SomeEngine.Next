@@ -19,7 +19,7 @@ internal static class Program
 {
     public static int Main(string[] args)
     {
-        JobSystem.Initialize(new JobRuntimeConfig
+        JobSystem.Initialize(new JobConfiguration
         {
             WorkerCount = Math.Clamp(Environment.ProcessorCount - 1, 1, 4),
             SafetyMode = JobSafetyMode.Checked,
@@ -69,8 +69,8 @@ internal static class Program
         var registry = new SerializationRegistry();
         GameSerializationModule.RegisterAll(registry);
         registry
-            .RegisterHierarchyDomain<AotHierarchyDomain>()
-            .RegisterRelationTopology<AotLink>();
+            .RegisterHierarchy<AotHierarchyDomain>(new(new Guid("48bf45ee-0d2d-4c92-8820-322c2577dd47"), "AotHierarchy", 1))
+            .RegisterRelation<AotLink>();
 
         bool asyncJobRejected = false;
         try
@@ -107,15 +107,15 @@ internal static class Program
             Stamp = unchecked((long)0x13579BDF2468ACE0),
         };
 
-        var source = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
-        Entity root = source.CreateEntity(rootInitial);
+        using var source = new World(execution: new WorldJobs(JobSystem.Default));
+        Entity root = source.Create(rootInitial);
         source.Add(root, new AotVelocity { Value = 2 });
-        Entity child = source.CreateEntity(childInitial);
+        Entity child = source.Create(childInitial);
         source.Add(child, new AotVelocity { Value = 3 });
 
         using (var commands = new CommandBuffer(source))
         {
-            DeferredEntity deferred = commands.CreateEntity();
+            DeferredEntity deferred = commands.Create();
             commands.Add(deferred, deferredInitial);
             commands.Add(deferred, new AotVelocity { Value = 4 });
             commands.Playback();
@@ -127,50 +127,49 @@ internal static class Program
             child,
             new AotLink { Weight = 7 });
 
-        new AotIntegrateJob().ScheduleParallel(
-            source,
-            new JobEntityScheduleOptions(rowsPerPacket: 1)).Complete();
+        new SystemRunner(source, JobSystem.Default, rangeRows: 1)
+            .Schedule(new AotIntegrateJob(), parallel: true).Complete();
 
         AotPosition rootExpected = rootInitial;
         rootExpected.Value += 2;
         AotPosition childExpected = childInitial;
         childExpected.Value += 3;
-        RequirePackedEqual(source.Read<AotPosition>(root), rootExpected, "Generated root job result");
-        RequirePackedEqual(source.Read<AotPosition>(child), childExpected, "Generated child job result");
+        RequirePackedEqual(source.ReadComponentData<AotPosition>(root), rootExpected, "Generated root job result");
+        RequirePackedEqual(source.ReadComponentData<AotPosition>(child), childExpected, "Generated child job result");
         Require(source.IsAlive(edge.Entity), "Relation entity was not alive before serialization.");
 
         using var durable = new MemoryStream();
-        WorldSerializer.WriteDurableWorld(durable, source, registry);
+        new WorldSerializer(registry).Save(source, durable, SavePurpose.DurableSave);
         byte[] durableBytes = durable.ToArray();
         durable.Position = 0;
-        World loaded = WorldSerializer.ReadDurableWorld(durable, registry);
+        using World loaded = WorldSerializer.ReadWorld(durable, registry, new(RequiredPurpose: SavePurpose.DurableSave));
 
         RequirePackedEqual(
-            loaded.Read<AotPosition>(root),
+            loaded.ReadComponentData<AotPosition>(root),
             rootExpected,
             "Durable root packed component round-trip");
         RequirePackedEqual(
-            loaded.Read<AotPosition>(child),
+            loaded.ReadComponentData<AotPosition>(child),
             childExpected,
             "Durable child packed component round-trip");
         Require(
             Hierarchy<AotHierarchyDomain>.GetParent(loaded, child) == root,
             "Hierarchy topology did not round-trip.");
         Require(
-            loaded.GetOutgoingRelations<AotLink>(root).Count == 1,
+            CountOutgoing(loaded, root) == 1,
             "Relation adjacency did not round-trip.");
-        Require(loaded.Read<AotLink>(edge.Entity).Weight == 7, "Relation payload did not round-trip.");
+        Require(loaded.ReadComponentData<AotLink>(edge.Entity).Weight == 7, "Relation payload did not round-trip.");
 
         using var checkpoint = new MemoryStream();
-        WorldSerializer.WriteCheckpointWorld(checkpoint, source, registry);
+        new WorldSerializer(registry).Save(source, checkpoint, SavePurpose.RawCheckpoint);
         checkpoint.Position = 0;
-        World checkpointLoaded = WorldSerializer.ReadCheckpointWorld(checkpoint, registry);
+        using World checkpointLoaded = WorldSerializer.ReadWorld(checkpoint, registry, new(RequiredPurpose: SavePurpose.RawCheckpoint));
         RequirePackedEqual(
-            checkpointLoaded.Read<AotPosition>(root),
+            checkpointLoaded.ReadComponentData<AotPosition>(root),
             rootExpected,
             "Checkpoint root packed component round-trip");
         RequirePackedEqual(
-            checkpointLoaded.Read<AotPosition>(child),
+            checkpointLoaded.ReadComponentData<AotPosition>(child),
             childExpected,
             "Checkpoint child packed component round-trip");
 
@@ -185,29 +184,29 @@ internal static class Program
             indexedInfo.PayloadOffset + indexedInfo.PayloadLength == indexedInfo.TotalLength,
             "Canonical checkpoint envelope metadata did not match its payload.");
         indexedCheckpoint.Position = 0;
-        World indexedCheckpointLoaded = WorldCheckpointCodec.Read(indexedCheckpoint, registry);
+        using World indexedCheckpointLoaded = WorldCheckpointCodec.Read(indexedCheckpoint, registry);
         RequirePackedEqual(
-            indexedCheckpointLoaded.Read<AotPosition>(root),
+            indexedCheckpointLoaded.ReadComponentData<AotPosition>(root),
             rootExpected,
             "Canonical checkpoint root round-trip");
         RequirePackedEqual(
-            indexedCheckpointLoaded.Read<AotPosition>(child),
+            indexedCheckpointLoaded.ReadComponentData<AotPosition>(child),
             childExpected,
             "Canonical checkpoint child round-trip");
         Require(
             Hierarchy<AotHierarchyDomain>.GetParent(indexedCheckpointLoaded, child) == root,
             "Canonical checkpoint hierarchy topology did not round-trip.");
         Require(
-            indexedCheckpointLoaded.GetOutgoingRelations<AotLink>(root).Count == 1,
+            CountOutgoing(indexedCheckpointLoaded, root) == 1,
             "Section-indexed relation topology did not round-trip.");
 
         ulong durableGeneration = ExerciseDurableStore(source, registry, root, rootExpected);
         ExerciseRelationCleanupDispatch();
 
         long semanticChecksum =
-            loaded.Read<AotPosition>(root).Value * 31L +
-            loaded.Read<AotPosition>(child).Value * 17L +
-            loaded.Read<AotLink>(edge.Entity).Weight;
+            loaded.ReadComponentData<AotPosition>(root).Value * 31L +
+            loaded.ReadComponentData<AotPosition>(child).Value * 17L +
+            loaded.ReadComponentData<AotLink>(edge.Entity).Weight;
 
         return new AotSmokeResult(
             RuntimeInformation.FrameworkDescription,
@@ -234,13 +233,24 @@ internal static class Program
         var store = new DurableSaveStore(basePath);
         try
         {
-            DurableSaveCommit first = store.WriteWorld(source, registry);
-            DurableSaveCommit second = store.WriteWorld(source, registry);
-            World restored = store.ReadWorld(registry);
+            DurableSaveCommit first;
+            using (DurableSaveStore.SaveWrite write = store.BeginWrite())
+            {
+                new WorldSerializer(registry).Save(source, write.Stream, SavePurpose.DurableSave);
+                first = write.Commit();
+            }
+            DurableSaveCommit second;
+            using (DurableSaveStore.SaveWrite write = store.BeginWrite())
+            {
+                new WorldSerializer(registry).Save(source, write.Stream, SavePurpose.DurableSave);
+                second = write.Commit();
+            }
+            using DurableSaveStore.SaveRead read = store.BeginRead();
+            using World restored = WorldSerializer.ReadWorld(read.Stream, registry, new(RequiredPurpose: SavePurpose.DurableSave));
             Require(first.Generation == 1, "First durable file generation was not one.");
             Require(second.Generation == 2, "Second durable file generation was not two.");
             RequirePackedEqual(
-                restored.Read<AotPosition>(root),
+                restored.ReadComponentData<AotPosition>(root),
                 rootExpected,
                 "Durable two-generation file store packed component round-trip");
             return second.Generation;
@@ -255,28 +265,34 @@ internal static class Program
 
     private static void ExerciseRelationCleanupDispatch()
     {
-        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
+        using var world = new World(execution: new WorldJobs(JobSystem.Default));
+        Entity first = world.Create();
+        Entity second = world.Create();
 
         RelationEdge<AotLink> directlyDestroyed = world.CreateRelation(
             first,
             second,
             new AotLink { Weight = 1 });
-        world.DestroyEntity(directlyDestroyed.Entity);
+        world.Destroy(directlyDestroyed.Entity);
         Require(
-            !world.IsAlive(directlyDestroyed.Entity) &&
-            world.GetOutgoingRelations<AotLink>(first).Count == 0,
+            !world.Has<AotLink>(directlyDestroyed.Entity) &&
+            CountOutgoing(world, first) == 0,
             "Direct edge destruction did not clean relation state.");
 
         RelationEdge<AotLink> incident = world.CreateRelation(
             first,
             second,
             new AotLink { Weight = 2 });
-        world.DestroyEntity(first);
+        world.Destroy(first);
         Require(
-            !world.IsAlive(incident.Entity) && world.IsAlive(second),
+            !world.Has<AotLink>(incident.Entity) && world.IsAlive(second),
             "Endpoint destruction did not destroy its incident relation edge.");
+    }
+
+    private static int CountOutgoing(World world, Entity source)
+    {
+        using RelationRead relations = world.GetOutgoingRelations<AotLink>(source);
+        return relations.Count;
     }
 
     private static void Require(bool condition, string message)

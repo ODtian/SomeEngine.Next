@@ -5,7 +5,7 @@ public sealed class FaultedDependencyFanoutTests
     [Fact]
     public void ObservedDependencyFailureCancelsEveryDependentWhileOtherJobsComplete()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 4 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 4 });
         for (int round = 0; round < 256; round++)
         {
             using var started = new ManualResetEventSlim();

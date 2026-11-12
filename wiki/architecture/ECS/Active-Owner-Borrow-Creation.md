@@ -1,27 +1,11 @@
-# owner 活跃时创建  Parent: [[Borrow-and-Storable-Descriptions]] 
+# 活跃范围中的数据访问
 
-- `RefRO<T>` / `RefRW<T>`
-- checked borrowed row/range wrappers
-- generated callback 内的 `ReadOnlySpan<T>` / `Span<T>`
-- `DynamicBuffer<T>` / `BufferView<T>`
-- `ComponentLookupView<T>`
-- relation adjacency borrow
-- callback 内的 hierarchy current-generation traversal borrow
-- `QueryRow` / `QueryChunkView`
+调用方通过 `Query.OpenRead()` 或 `Query.Open()` 建立查询范围；`QueryScope` 持有结构读取期。范围内枚举原生 `QueryChunk`，通过 `Read<T>()`、`Write<T>()`、`ReadBuffer<T>(row)`、`WriteBuffer<T>(row)` 取得具体列与缓冲。筛选直接形成连续匹配行段，chunk 内行号对应当前段。
 
-这些类型形成完整 `ref struct` 链，并携带 owner id、borrow epoch 和 storage/snapshot generation。foreach convenience path 的 wrapper 每次 dereference 都执行不可关闭的 active-owner check；Fast 只可在 runtime 控制的 generated callback boundary 内把重复检查 hoist/elide，不能删除 admission、pins、generation lifetime 或 hazard ordering。
+随机访问通过 `World.OpenRead<T>()`、`OpenWrite<T>()` 建立类型范围。`ReadLookup<T>` 返回只读引用，`WriteLookup<T>` 返回可写引用并维护写版本。缓冲通过 `ReadBuffer<T>` 与 `GetBuffer<T>` 建立自己的读取或写入范围。层级遍历通过 `ChildrenRead` 持有读取期。
 
-C# 的 `ref struct` 不是 affine/linear type：它仍可复制，且无法在已经抽出的裸 ref/span 每次使用时重新检查。因此强安全、高性能入口是 runtime 调用的 generated `Execute` callback；runtime 自己持有并在 `finally` 释放 owner，用户拿不到 release capability，raw spans 只作为这个 callback 的 `scoped` 参数存在。
+引用、span、buffer 与 chunk 由所在范围保证存储寿命；结构修改在范围结束后执行。需要跨阶段保存成员时，调用方显式复制 Entity 数组；需要保存 World 内容时使用存档 Capture。
 
-当前`QueryChunkView`、`QueryRow`与child row cursor均为`ref struct`或只在其ref-struct链内可达。同步callback由runtime在`finally`中释放owner；raw Span只在callback词法生存期内出现，不能由普通public enumerable在owner外重新取得。
+接入 Job 的 World 由 `WorldJobs` 声明实际组件、结构及资源区间。生成 Job 在已获准的工作项中绑定列，范围动作采用具体 struct。调用链为：查询描述 → 访问登记与依赖 → QueryScope/工作项 → QueryChunk 列 → 具体算法 → 释放范围。
 
-`HierarchyChildrenSnapshot<D>` 是刻意的例外而不是 borrow：它只持有
-`ReadOnlyMemory<Entity>` 和 generation，publication 以后旧数组不再修改，所以该值可以存储。
-它暴露的 `ReadOnlySpan<Entity>` 仍不能脱离持有 snapshot 的词法使用；需要独立数组所有权时
-必须显式调用 `ToArray()`。旧名 `HierarchyChildrenView<D>` 已删除，防止调用者把可存储
-generation 错认成 callback-scope capability。
-
-copy-returning `World.Read<T>` 和 value/structural setter 可以是短同步 Execute boundary。独立 `World.Get<T>() -> ref T` 不能在 owner 外自动安全释放，因此只允许 ambient owner 内部使用或由 borrow view 替代。
-
-同步 `Rows/Chunks` 枚举本身也是 Execute scope：正常结束、break 或 exception 时先释放枚举 body 的 resource owner，再 join 枚举期间创建的 descendants。共享 owner state 令 Dispose 幂等，但复制后的另一个 enumerator不能继续使用；它的下一次 MoveNext/wrapper dereference在所有 modes 拒绝。无法接受 analyzer约束的调用方必须使用 generated `Execute`，不能把 foreach 当作裸 borrow primitive。
-
+源码：[查询范围](../../../src/SomeEngine.ECS/Queries/Query.cs)、[类型读取与写入](../../../src/SomeEngine.ECS/Queries/ReadLookup.cs)、[执行连接](../../../src/SomeEngine.ECS.Systems/WorldJobs.cs)。可存储描述见 [Storable Descriptions](Storable-Descriptions.md)。

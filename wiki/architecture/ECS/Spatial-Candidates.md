@@ -1,93 +1,40 @@
 # 空间候选
 
-`SomeEngine.Physics` 使用 Game World 的公开查询构建二叉 AABB 树，并通过 `Collision.Candidates` 进入 [关系查询](Relation-Queries.md)。`CollisionBounds` 保存世界坐标下的 Min、Max；两个范围在三个轴上均相交时产生空间候选，接触面相等也计为相交。
+`SomeEngine.ECS.Relationships` 的 `SomeEngine.ECS.Spatial` 命名空间持有空间范围、二叉 BVH、网格与配对入口。`SpatialBounds` 保存世界坐标下的 Min、Max；两个范围在三个轴上均相交时产生候选，接触面相等也计为相交。物理的接触计算与预测范围继续由物理持有。
 
-## 输入与树
+## 输入与读取范围
 
-`Collision.Candidates(world, bodies)` 从参与集合读取 `CollisionBounds`。终端在现有 ECS 查询作用域内构建当前输入，然后枚举实体对。复用同一个查询描述时，树继续使用已分配的节点数组。
+`SpatialQueries.Candidates(world, members)` 读取查询中的 `SpatialBounds`，返回具体 `RelationQuery<TreeCandidates<SpatialBounds,SpatialBoundsReader>,(Entity,Entity)>`。业务组件内持有几何时，使用具体 struct `ISpatialBoundsReader<TComponent>` 和 `Candidates<TComponent,TBoundsReader>`。
 
-业务组件内持有几何时，使用 `ICollisionBoundsReader<TComponent>` 的具体 struct 读取器和 `Candidates<TComponent,TBoundsReader>`。几何读取通过 `AddReads` 加入 Access 的可选读取并集；原集合的筛选条件继续由输入查询视图维护。范围读取和 `Where`、`Except` 的组件绑定发生在相同的外层读取范围中。
+终端依据 `AddReads` 把几何及筛选组件加入可选读取并集，在同一 `RelationQueryViews` 中打开实际成员 `QueryScope`。构建按 `QueryChunk.TryRead<TComponent>` 取得列，再按行的组件存在性读取范围与完整 Entity。原成员查询的 Required、Stored、启用、排除与变化条件继续决定参与集合。
 
-调用方持有树时，先调用 `Collision.Build(world, bodies)` 或其泛型重载，再把树传入 `Collision.Candidates(world, bodies, tree)`。此入口读取该树的范围并按当前输入查询筛选叶子实体。`tree.Rebuild<TComponent,TBoundsReader>(world, bodies, reader)` 将当前 World 输入重新构建到同一对象。初建、后续修改和候选读取由调用方的执行顺序连接。
+`SpatialQueries.Build(world,members)` 建立调用方持有的 `BoundsTree`；泛型重载使用业务范围读取器。把该树传入 `SpatialQueries.Candidates(world,members,tree)` 后，候选遍历直接读取同一棵树，并以本次范围的 `QueryScope.Contains(entity)` 筛选叶子。`tree.Rebuild<TComponent,TBoundsReader>(world,members,reader)` 在同一对象重用容量更新输入。
 
-`CollisionTree` 集中持有节点数组。节点记录范围、完整 Entity、父节点、两个子节点、子树成员数和高度；叶子按最长中心轴的中位数分割，分支范围由两个子节点合并。节点编号同时用于读取这棵树的附加摘要，父子编号为成员插入、移除和祖先范围更新提供连接。`Nodes` 公开已建树的只读节点范围，读取放在构建完成与下一次修改之间。
+## 树与候选顺序
 
-遍历使用值类型节点对的栈，从 `(root, root)` 开始。同一分支展开两个子树内部和两个子树之间的组合；不同分支先比较 AABB，再按树高细分，叶子对调用 `EntityOrder.OrderPair`。每个无序实体对访问一次，输出携带完整身份。`QueryCount` 为一个输入查询，其二元行使用 `(Entity, Entity)`。
+`BoundsTree` 集中持有节点数组与 Entity 到叶子的映射。节点保存范围、完整身份、父节点、两个子节点、子树成员数和高度。初建按中心轴分割，分支范围由子节点合并；维护使用同一节点编号更新范围及附加摘要。`Nodes` 在构建或维护完成后提供只读节点范围。
 
-类别与键摘要、逐条件组证明及显式摘要构建见 [空间筛选下推](Spatial-Filtering.md)。普通语义和具体实现入口均可继续组合为同一个空间遍历。
-
-## 完整业务例子
-
-下面的 `MotionKind`、`Body`、`Hair`、`BodyBoundsReader`、`DefaultContacts`、`SameCharacterHair`、`PairList` 是业务例子代码。`CollisionBounds`、`CollisionTree`、`Collision.Candidates` 和关系接口来自库。
+遍历从 `(root,root)` 开始：同一分支展开两个子树内部与两个子树之间的组合；不同分支先检查范围相交，再按树高细分。叶子输出按完整实体身份排序，每个无序实体对产生一次。过滤链在绑定的具体列与行号上执行；组级证明、类别和键摘要见 [空间筛选](Spatial-Filtering.md)。
 
 ```csharp
 using System.Numerics;
 using SomeEngine.ECS;
-using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Relations;
-using SomeEngine.Physics;
+using SomeEngine.ECS.Spatial;
 
 using var world = new World();
-var characterA = world.CreateEntity();
-var characterB = world.CreateEntity();
-var a1 = world.CreateEntity(new Body { Kind = MotionKind.Dynamic, Bounds = Box(0) });
-var a2 = world.CreateEntity(new Body { Kind = MotionKind.Dynamic, Bounds = Box(0.2f) });
-var b = world.CreateEntity(new Body { Kind = MotionKind.Dynamic, Bounds = Box(0.6f) });
-var s = world.CreateEntity(new Body { Kind = MotionKind.Static, Bounds = Box(1.4f) });
-var k = world.CreateEntity(new Body { Kind = MotionKind.Kinematic, Bounds = Box(1.7f) });
-var d = world.CreateEntity(new Body { Kind = MotionKind.Dynamic, Bounds = Box(1.8f) });
-world.Add(a1, new Hair { Character = characterA });
-world.Add(a2, new Hair { Character = characterA });
-world.Add(b, new Hair { Character = characterB });
-var bodies = world.Query(world.QueryDefinition().All<Body>());
-var tree = Collision.Build<Body, BodyBoundsReader>(world, bodies, default);
-var pairs = new List<(Entity, Entity)>();
-var output = new PairList(pairs);
-
-Collision.Candidates<Body, BodyBoundsReader>(world, bodies, tree, default)
-    .Where(default(DefaultContacts))
-    .Except(default(SameCharacterHair))
-    .Enumerate(ref output);
-
-world.ReleaseQuery(bodies);
-Console.WriteLine(pairs.Count); // 5
-
-static CollisionBounds Box(float x) => new(new Vector3(x, 0, 0), new Vector3(x + 1, 1, 1));
-
-public enum MotionKind { Dynamic, Static, Kinematic }
-public struct Body : IComponent
-{
-    public MotionKind Kind;
-    public CollisionBounds Bounds;
-}
-public struct Hair : IComponent { public Entity Character; }
-public readonly struct BodyBoundsReader : ICollisionBoundsReader<Body>
-{
-    public CollisionBounds Read(in Body component) => component.Bounds;
-}
-public readonly struct DefaultContacts : IRelation<Body, Body>
-{
-    public bool Matches(in Body first, in Body second) =>
-        first.Kind == MotionKind.Dynamic || second.Kind == MotionKind.Dynamic;
-}
-public readonly struct SameCharacterHair : IRelation<Hair, Hair>
-{
-    public bool Matches(in Hair first, in Hair second) => first.Character == second.Character;
-}
-public struct PairList(List<(Entity, Entity)> pairs) : IRelationOutput<(Entity, Entity)>
-{
-    public bool Add(in (Entity, Entity) pair) { pairs.Add(pair); return true; }
-}
+world.Create(new SpatialBounds(Vector3.Zero, Vector3.One));
+world.Create(new SpatialBounds(new Vector3(0.5f), new Vector3(1.5f)));
+Query members = world.Query<SpatialBounds>();
+BoundsTree tree = SpatialQueries.Build(world, members);
+int pairCount = SpatialQueries.Candidates(world, members, tree).Count();
 ```
 
-该业务输入输出 A1–B、A2–B、B–S、S–D、K–D。对应可执行调用位于 `tests/SomeEngine.Physics.Tests/CollisionCandidatesTests.cs`，同时覆盖当前查询对已有树的成员筛选。
+`pairCount` 为 1。完整的业务关系继续组合 `Where`、`Except` 与具体输出；调用链为成员查询 → 统一读取范围 → 树或网格候选 → 具体列筛选 → 身份对输出。
 
-## 手写宽相对照
+## 网格与增量维护
 
-`benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialCollision.cs` 提供同算法、同节点布局的实际手写遍历，动力学与角色键判断直接写在叶子对处理中。两侧分别调用 `Collision.Build` 持有自己的树，进入相同的 World 读取范围、当前集合成员检查和实体对输出。行为检查将两侧结果分别与上面的五个字面实体对比较。
+`SpatialQueries.CreateUniformGrid(cellSize)` 与 `CreateHierarchicalGrid(cellSize,levelCount)` 返回具体设置的 `SpatialGrid<TSettings>`。网格通过 `BeginUpdate`、`Update(entity,bounds)`、`EndUpdate` 维护当前成员与占用单元。`grid.Candidates(world.Within(query))` 从本次真实输入更新后枚举；`grid.ReadCandidates(world.Within(query))` 枚举调用方已更新的同一网格。Between 与 Product 的成员角色沿各自配对语义保留。
 
-这个夹具作为后续成对测量的输入：初建计入各自的 `Build`，持续成本计入各自的维护、查询准备、宽相、筛选与输出，接触消费使用同一步骤。性能证据按 [性能证据](../../harness/Harness-Performance-Evidence.md) 的公共队列形成。
+`SpatialMaintenance` 观察 `World.WatchMembership(query)`，结合组件行写版本更新同一 BVH 与摘要。维护及读取的 Job 依赖和访问声明见 [空间维护](Spatial-Maintenance.md)。并行枚举使用原生分区的 count/prefix/write 与 `ExecuteRanges`，见 [空间并行查询](Spatial-Parallel-Queries.md)。
 
-成员、范围及具体摘要的持续帧更新见 [碰撞树维护](Spatial-Maintenance.md)。
-
-真实三角形的最近命中、球形扫掠与支撑变换读取见 [场景表面查询](Scene-Surface-Queries.md)。
+源码：[树入口](../../../src/SomeEngine.ECS.Relationships/Spatial/TreeCandidates.cs)、[BVH](../../../src/SomeEngine.ECS.Relationships/Spatial/BoundsTree.cs)、[网格](../../../src/SomeEngine.ECS.Relationships/Spatial/SpatialGrid.cs)。公开行为由 `SomeEngine.Physics.Tests` 中的空间候选、筛选、维护与网格用例，以及 `SomeEngine.Navigation.Tests` 的实际邻居消费者覆盖。

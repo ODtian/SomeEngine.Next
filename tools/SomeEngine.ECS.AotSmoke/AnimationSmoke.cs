@@ -28,30 +28,30 @@ internal static class AnimationSmoke
     private static void CheckFieldReadsAndStages()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual { Opacity = 0.25f });
+        Entity target = world.Create(new Visual { Opacity = 0.25f });
         PropertyAnimation.Declare<float>(world, target);
         PropertyAnimation.Declare<Vector2>(world, target);
-        uint version = world.WriteVersion<Visual>(target);
+        ulong version = world.ComponentDataWriteVersion<Visual>(target);
         PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(1));
         PropertyAnimation.Pause(world, target);
         PropertyAnimation.Retarget(world, target, Opacity, 2f);
-        Require(world.Read<Visual>(target).Opacity == 0.25f && world.WriteVersion<Visual>(target) == version,
+        Require(world.Read<Visual>(target).Opacity == 0.25f && world.ComponentDataWriteVersion<Visual>(target) == version,
             "Starting and retargeting preserve the presented field and its write version.");
         PropertyAnimation.Resume(world, target);
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         AnimationSystems.AddDefaults(systems);
         Tick(systems, world, 0.5);
-        Require(world.Read<Visual>(target).Opacity == 1.125f && world.WriteVersion<Visual>(target) != version,
+        Require(world.Read<Visual>(target).Opacity == 1.125f && world.ComponentDataWriteVersion<Visual>(target) != version,
             "Sampling starts at the presented value and advances its write version.");
 
         PropertyAnimation.Stop(world, target);
-        world.Replace(target, new Visual());
-        world.AddBuffer<TimelineStage>(target);
-        world.ExecuteBufferWrite<TimelineStage>(target, static stages =>
+        world.Set(target, new Visual());
+        using (DynamicBuffer<TimelineStage> stages = world.GetBuffer<TimelineStage>(target))
         {
+            stages.Clear();
             stages.Add(new TimelineStage { End = StageEnd.Duration, Duration = 0.1f });
             stages.Add(new TimelineStage { End = StageEnd.Duration, Duration = 0.1f });
-        });
+        }
         PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(0.1f));
         PropertyAnimation.To(world, target, Position, new Vector2(1, 2), Spec.Tween(0.1f));
         uint starts = world.Read<Timeline>(target).Starts;
@@ -60,15 +60,13 @@ internal static class AnimationSmoke
             Channel = Opacity, From = 1, Current = 1, To = 2, Duration = 0.1f,
             Curve = Spec.Tween(0.1f).Curve, Stage = 1, StartId = starts,
         };
-        world.ExecuteBufferWrite<Track<float>, Track<float>>(target, ref scalar,
-            static (DynamicBuffer<Track<float>> tracks, ref Track<float> track) => tracks.Add(track));
+        using (DynamicBuffer<Track<float>> tracks = world.GetBuffer<Track<float>>(target)) tracks.Add(scalar);
         var vector = new Track<Vector2>
         {
             Channel = Position, From = new Vector2(1, 2), Current = new Vector2(1, 2), To = new Vector2(2, 4),
             Duration = 0.1f, Curve = Spec.Tween(0.1f).Curve, Stage = 1, StartId = starts,
         };
-        world.ExecuteBufferWrite<Track<Vector2>, Track<Vector2>>(target, ref vector,
-            static (DynamicBuffer<Track<Vector2>> tracks, ref Track<Vector2> track) => tracks.Add(track));
+        using (DynamicBuffer<Track<Vector2>> tracks = world.GetBuffer<Track<Vector2>>(target)) tracks.Add(vector);
         Tick(systems, world, 0.25);
         Visual result = world.Read<Visual>(target);
         Require(result.Opacity == 2 && result.Position == new Vector2(2, 4) && !world.IsEnabled<Timeline>(target),
@@ -78,7 +76,7 @@ internal static class AnimationSmoke
     private static void CheckLayerValues(bool inline, bool buffered)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual { Opacity = 10 });
+        Entity target = world.Create(new Visual { Opacity = 10 });
         var layers = new AnimationLayers { Count = 2 };
         layers.Items[0] = new AnimationLayer { Weight = 1 };
         layers.Items[1] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 0.25f };
@@ -105,7 +103,7 @@ internal static class AnimationSmoke
         Require(world.Read<Visual>(target).Opacity == 18, "The new To advances from the completed layer value.");
         Tick(systems, world, 0.5);
         layers.Items[1].Weight = 0.5f;
-        world.Replace(target, layers);
+        world.Set(target, layers);
         Tick(systems, world, 0);
         Require(world.Read<Visual>(target).Opacity == 15, "Completed values keep responding to explicit layer weight changes.");
         PropertyAnimation.To(world, target, Opacity, 24f, Spec.Tween(1), layer: 1);
@@ -118,14 +116,13 @@ internal static class AnimationSmoke
     private static void CheckDefaultFrames()
     {
         using var world = new World();
-        Entity inline = world.CreateEntity(new Visual());
-        Entity ordinary = world.CreateEntity(new Visual());
+        Entity inline = world.Create(new Visual());
+        Entity ordinary = world.Create(new Visual());
         PropertyAnimation.Declare<float>(world, inline);
         PropertyAnimation.To(world, inline, Opacity, 1f, Spec.Tween(10000));
         Entity pooled = PropertyAnimation.To(world, ordinary, Opacity, 1f, Spec.Tween(10000));
         int entities = world.EntityCount;
-        using var tables = world.ObserveEntityTables();
-        tables.Accept(tables.Read());
+        using var members = world.WatchMembership(world.Query(new QueryDescription()));
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         AnimationSystems.AddDefaults(systems);
         for (int frame = 0; frame < 512; frame++) Tick(systems, world, 1d / 60);
@@ -141,14 +138,15 @@ internal static class AnimationSmoke
         Require(PropertyAnimation.To(world, ordinary, Opacity, 2f, Spec.Tween(1)) == pooled,
             "Later animations reuse the completed pooled entity.");
         Tick(systems, world, 1);
-        Require(world.Read<Visual>(ordinary).Opacity == 2 && world.EntityCount == entities && tables.Read().Count == 0,
+        var changes = members.Open();
+        Require(world.Read<Visual>(ordinary).Opacity == 2 && world.EntityCount == entities && changes.First.IsEmpty && changes.Second.IsEmpty,
             "Reusing animation storage preserves entity count and table membership.");
     }
 
     private static void CheckCustomValues()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Reading { Value = new Meter(10) });
+        Entity target = world.Create(new Reading { Value = new Meter(10) });
         Channel<Meter> channel = Channel<Meter>.Of<Reading>(static (ref Reading reading) => ref reading.Value);
         PropertyAnimation.Declare<Meter>(world, target);
         PropertyAnimation.To(world, target, channel, new Meter(20), Spec.Tween(1));
@@ -170,8 +168,8 @@ internal static class AnimationSmoke
     private static void CheckGraphs()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new Visual());
-        Entity second = world.CreateEntity(new Visual());
+        Entity first = world.Create(new Visual());
+        Entity second = world.Create(new Visual());
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         AnimationSystems.AddDefaults(systems);
         using var graph = new AnimationBuilder(world);
@@ -199,7 +197,7 @@ internal static class AnimationSmoke
         compiled.Dispose();
         Tick(systems, world, 0);
         parameters.Values[0] = 1;
-        world.Replace(a, parameters);
+        world.Set(a, parameters);
         Tick(systems, world, 0.1);
         Require(world.Read<Visual>(first).Opacity == 1 && world.Read<Visual>(second).Opacity == 0,
             "Shared compiled state graphs retain data and advance their own parameters and fade weights.");
@@ -216,7 +214,7 @@ internal static class AnimationSmoke
         if (!condition) throw new InvalidOperationException(message);
     }
 
-    private struct Visual : IComponent
+    private struct Visual : IComponent, ITrackedComponent
     {
         public float Opacity;
         public Vector2 Position;

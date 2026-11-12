@@ -20,25 +20,25 @@ public sealed partial class BehaviorTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new SelectionTree(stop));
         frames.Frame();
-        Entity parent = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, parent)[0];
+        Entity parent = ElementChildren.Read(frames.World, root)[0];
+        Entity child = ElementChildren.Read(frames.World, parent)[0];
         Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 10));
         Click(frames);
         frames.Frame();
-        Assert.True(frames.World.Read<Selected>(child).Value);
-        Assert.Equal(!stop, frames.World.Read<Selected>(parent).Value);
+        Assert.True(frames.World.ReadComponentData<Selected>(child).Value);
+        Assert.Equal(!stop, frames.World.ReadComponentData<Selected>(parent).Value);
 
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         Pointer.Move(frames.World, frames.Canvas, new Vector2(12, 12));
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Assert.True(frames.World.Read<Selected>(child).Value);
-        Assert.Equal(!stop, frames.World.Read<Selected>(parent).Value);
+        Assert.True(frames.World.ReadComponentData<Selected>(child).Value);
+        Assert.Equal(!stop, frames.World.ReadComponentData<Selected>(parent).Value);
 
         Click(frames);
         frames.Frame();
-        Assert.False(frames.World.Read<Selected>(child).Value);
-        Assert.False(frames.World.Read<Selected>(parent).Value);
+        Assert.False(frames.World.ReadComponentData<Selected>(child).Value);
+        Assert.False(frames.World.ReadComponentData<Selected>(parent).Value);
     }
 
     [Fact]
@@ -47,17 +47,17 @@ public sealed partial class BehaviorTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new ScrollScene(new Size(240, 180)));
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity scroll = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        Entity scroll = ElementChildren.Read(frames.World, container)[0];
         Pointer.Move(frames.World, frames.Canvas, new Vector2(40, 30));
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(1000, 1000));
         frames.Frame();
-        uint version = frames.World.WriteVersion<ScrollOffset>(scroll);
+        ulong version = frames.World.ComponentDataWriteVersion<ScrollOffset>(scroll);
 
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(5, 5));
         frames.Frame();
-        Assert.Equal(new Vector2(160, 140), frames.World.Read<ScrollOffset>(scroll).Value);
-        Assert.Equal(version, frames.World.WriteVersion<ScrollOffset>(scroll));
+        Assert.Equal(new Vector2(160, 140), frames.World.ReadComponentData<ScrollOffset>(scroll).Value);
+        Assert.Equal(version, frames.World.ComponentDataWriteVersion<ScrollOffset>(scroll));
     }
 
 #if DEBUG
@@ -85,8 +85,8 @@ public sealed partial class BehaviorTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new DragScene());
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity node = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        Entity node = ElementChildren.Read(frames.World, container)[0];
         Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 10));
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         Pointer.Move(frames.World, frames.Canvas, new Vector2(20, 15));
@@ -100,7 +100,7 @@ public sealed partial class BehaviorTests
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
         AssertDrag(frames.World, node, false, Vector2.Zero, new Vector2(10, 5), 1);
-        Assert.Equal(0u, frames.World.Read<Clicks>(node).Count);
+        Assert.Equal(0u, frames.World.ReadComponentData<Clicks>(node).Count);
     }
 
     [Theory]
@@ -112,28 +112,28 @@ public sealed partial class BehaviorTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new NestedDragScene());
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity scroll = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
-        Entity content = Hierarchy<ElementTree>.GetChildren(frames.World, scroll)[0];
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        Entity scroll = ElementChildren.Read(frames.World, container)[0];
+        Entity content = ElementChildren.Read(frames.World, scroll)[0];
         Pointer.Move(frames.World, frames.Canvas, new Vector2(40, 40));
         Pointer.Press(frames.World, frames.Canvas, button);
         Pointer.Move(frames.World, frames.Canvas, new Vector2(40, 30));
         Pointer.Release(frames.World, frames.Canvas, button);
         frames.Frame();
 
-        Assert.Equal(Vector2.Zero, frames.World.Read<ScrollOffset>(scroll).Value);
+        Assert.Equal(Vector2.Zero, frames.World.ReadComponentData<ScrollOffset>(scroll).Value);
         AssertDrag(frames.World, scroll, false, Vector2.Zero, Vector2.Zero, 0);
         if (button == PointerButton.Primary)
         {
             AssertDrag(frames.World, content, false, new Vector2(0, -10), new Vector2(0, -10), 1);
-            Assert.False(frames.World.Read<Selected>(content).Value);
-            Assert.Equal(0u, frames.World.Read<Clicks>(content).Count);
+            Assert.False(frames.World.ReadComponentData<Selected>(content).Value);
+            Assert.Equal(0u, frames.World.ReadComponentData<Clicks>(content).Count);
         }
         else
         {
             AssertDrag(frames.World, content, false, Vector2.Zero, Vector2.Zero, 0);
-            Assert.True(frames.World.Read<Selected>(content).Value);
-            Assert.Equal(1u, frames.World.Read<Clicks>(content).Count);
+            Assert.True(frames.World.ReadComponentData<Selected>(content).Value);
+            Assert.Equal(1u, frames.World.ReadComponentData<Clicks>(content).Count);
         }
     }
 
@@ -148,9 +148,9 @@ public sealed partial class BehaviorTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new ScrollScene(new Size(240, 180)));
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity node = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
-        Entity content = Hierarchy<ElementTree>.GetChildren(frames.World, node)[0];
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        Entity node = ElementChildren.Read(frames.World, container)[0];
+        Entity content = ElementChildren.Read(frames.World, node)[0];
         Pointer.Move(frames.World, frames.Canvas, new Vector2(40, 30));
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(70, 80));
         frames.Frame();
@@ -158,25 +158,25 @@ public sealed partial class BehaviorTests
         using var layout = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(frames.World));
         layout.Add(new LayoutSystem());
         layout.Update();
-        Assert.Equal(new Vector2(70, 80), frames.World.Read<ScrollOffset>(node).Value);
+        Assert.Equal(new Vector2(70, 80), frames.World.ReadComponentData<ScrollOffset>(node).Value);
         AssertPosition(frames.World, content, -40, -60);
 
-        frames.World.Replace(root, new ScrollScene(new Size(110, 65)));
+        frames.World.Set(root, new ScrollScene(new Size(110, 65)));
         frames.Frame();
-        Assert.Equal(new Vector2(30, 25), frames.World.Read<ScrollOffset>(node).Max);
-        Assert.Equal(new Vector2(30, 25), frames.World.Read<ScrollOffset>(node).Value);
+        Assert.Equal(new Vector2(30, 25), frames.World.ReadComponentData<ScrollOffset>(node).Max);
+        Assert.Equal(new Vector2(30, 25), frames.World.ReadComponentData<ScrollOffset>(node).Value);
         AssertPosition(frames.World, content, 0, -5);
 
-        frames.World.Replace(node, new Box { Fixed = new Size(200, 120), Padding = new Thickness(10, 10, 10, 10) });
+        frames.World.Set(node, new Box { Fixed = new Size(200, 120), Padding = new Thickness(10, 10, 10, 10) });
         frames.Frame();
-        Assert.Equal(Vector2.Zero, frames.World.Read<ScrollOffset>(node).Max);
-        Assert.Equal(Vector2.Zero, frames.World.Read<ScrollOffset>(node).Value);
+        Assert.Equal(Vector2.Zero, frames.World.ReadComponentData<ScrollOffset>(node).Max);
+        Assert.Equal(Vector2.Zero, frames.World.ReadComponentData<ScrollOffset>(node).Value);
         AssertPosition(frames.World, content, 30, 20);
 
-        frames.World.Replace(root, new ScrollScene(new Size(40, 20)));
+        frames.World.Set(root, new ScrollScene(new Size(40, 20)));
         frames.Frame();
-        Assert.Equal(Vector2.Zero, frames.World.Read<ScrollOffset>(node).Max);
-        Assert.Equal(Vector2.Zero, frames.World.Read<ScrollOffset>(node).Value);
+        Assert.Equal(Vector2.Zero, frames.World.ReadComponentData<ScrollOffset>(node).Max);
+        Assert.Equal(Vector2.Zero, frames.World.ReadComponentData<ScrollOffset>(node).Value);
         AssertPosition(frames.World, content, 30, 20);
     }
 
@@ -186,25 +186,25 @@ public sealed partial class BehaviorTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new NestedScrollScene());
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity outer = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
-        Entity inner = Hierarchy<ElementTree>.GetChildren(frames.World, outer)[0];
-        Entity content = Hierarchy<ElementTree>.GetChildren(frames.World, inner)[0];
-        Assert.Equal(new Vector2(70, 50), frames.World.Read<ScrollOffset>(outer).Max);
-        Assert.Equal(new Vector2(50, 40), frames.World.Read<ScrollOffset>(inner).Max);
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        Entity outer = ElementChildren.Read(frames.World, container)[0];
+        Entity inner = ElementChildren.Read(frames.World, outer)[0];
+        Entity content = ElementChildren.Read(frames.World, inner)[0];
+        Assert.Equal(new Vector2(70, 50), frames.World.ReadComponentData<ScrollOffset>(outer).Max);
+        Assert.Equal(new Vector2(50, 40), frames.World.ReadComponentData<ScrollOffset>(inner).Max);
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(25, 15));
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(30, 20));
         frames.Frame();
-        Assert.Equal(new Vector2(30, 20), frames.World.Read<ScrollOffset>(outer).Value);
-        Assert.Equal(Vector2.Zero, frames.World.Read<ScrollOffset>(inner).Value);
+        Assert.Equal(new Vector2(30, 20), frames.World.ReadComponentData<ScrollOffset>(outer).Value);
+        Assert.Equal(Vector2.Zero, frames.World.ReadComponentData<ScrollOffset>(inner).Value);
         AssertPosition(frames.World, inner, 10, 0);
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(50, 30));
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(40, 30));
         frames.Frame();
-        Assert.Equal(new Vector2(30, 20), frames.World.Read<ScrollOffset>(outer).Value);
-        Assert.Equal(new Vector2(40, 30), frames.World.Read<ScrollOffset>(inner).Value);
+        Assert.Equal(new Vector2(30, 20), frames.World.ReadComponentData<ScrollOffset>(outer).Value);
+        Assert.Equal(new Vector2(40, 30), frames.World.ReadComponentData<ScrollOffset>(inner).Value);
         AssertPosition(frames.World, content, -30, -30);
     }
 
@@ -214,33 +214,33 @@ public sealed partial class BehaviorTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new ScrollButtonsScene());
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity node = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
-        Entity content = Hierarchy<ElementTree>.GetChildren(frames.World, node)[0];
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        Entity node = ElementChildren.Read(frames.World, container)[0];
+        Entity content = ElementChildren.Read(frames.World, node)[0];
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(180, 30));
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(0, 10));
         Click(frames);
         frames.Frame();
-        Assert.Equal(Vector2.Zero, frames.World.Read<ScrollOffset>(node).Value);
-        Assert.False(frames.World.Read<Selected>(content).Value);
+        Assert.Equal(Vector2.Zero, frames.World.ReadComponentData<ScrollOffset>(node).Value);
+        Assert.False(frames.World.ReadComponentData<Selected>(content).Value);
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(40, 30));
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(0, 20));
         frames.Frame();
-        Assert.Equal(new Vector2(0, 20), frames.World.Read<ScrollOffset>(node).Value);
+        Assert.Equal(new Vector2(0, 20), frames.World.ReadComponentData<ScrollOffset>(node).Value);
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         Pointer.Move(frames.World, frames.Canvas, new Vector2(40, 10));
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Assert.Equal(new Vector2(0, 40), frames.World.Read<ScrollOffset>(node).Value);
+        Assert.Equal(new Vector2(0, 40), frames.World.ReadComponentData<ScrollOffset>(node).Value);
         AssertDrag(frames.World, node, false, new Vector2(0, -20), new Vector2(0, -20), 1);
-        Assert.False(frames.World.Read<Selected>(content).Value);
-        Assert.Equal(0u, frames.World.Read<Clicks>(content).Count);
+        Assert.False(frames.World.ReadComponentData<Selected>(content).Value);
+        Assert.Equal(0u, frames.World.ReadComponentData<Clicks>(content).Count);
 
         Click(frames);
         frames.Frame();
-        Assert.True(frames.World.Read<Selected>(content).Value);
+        Assert.True(frames.World.ReadComponentData<Selected>(content).Value);
     }
 
     [Fact]
@@ -249,10 +249,10 @@ public sealed partial class BehaviorTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new ScrollCompositionScene());
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity node = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
-        Entity content = Hierarchy<ElementTree>.GetChildren(frames.World, node)[0];
-        Assert.Equal(new Vector2(160, 140), frames.World.Read<ScrollOffset>(node).Max);
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        Entity node = ElementChildren.Read(frames.World, container)[0];
+        Entity content = ElementChildren.Read(frames.World, node)[0];
+        Assert.Equal(new Vector2(160, 140), frames.World.ReadComponentData<ScrollOffset>(node).Max);
         AssertPosition(frames.World, content, 30, 20);
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(40, 30));
@@ -261,14 +261,14 @@ public sealed partial class BehaviorTests
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 0));
         frames.Frame();
-        Assert.Equal(new Vector2(60, 50), frames.World.Read<ScrollOffset>(node).Value);
+        Assert.Equal(new Vector2(60, 50), frames.World.ReadComponentData<ScrollOffset>(node).Value);
         AssertPosition(frames.World, content, -30, -30);
         AssertDrag(frames.World, node, true, new Vector2(-30, -30), new Vector2(-30, -30), 1);
 
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
         AssertDrag(frames.World, node, false, Vector2.Zero, new Vector2(-30, -30), 1);
-        Assert.Equal(new Vector2(60, 50), frames.World.Read<ScrollOffset>(node).Value);
+        Assert.Equal(new Vector2(60, 50), frames.World.ReadComponentData<ScrollOffset>(node).Value);
     }
 
     [Fact]
@@ -277,29 +277,29 @@ public sealed partial class BehaviorTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new ScrollScene(new Size(240, 180)));
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity node = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
-        Entity content = Hierarchy<ElementTree>.GetChildren(frames.World, node)[0];
-        Assert.Equal(new Vector2(160, 140), frames.World.Read<ScrollOffset>(node).Max);
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        Entity node = ElementChildren.Read(frames.World, container)[0];
+        Entity content = ElementChildren.Read(frames.World, node)[0];
+        Assert.Equal(new Vector2(160, 140), frames.World.ReadComponentData<ScrollOffset>(node).Max);
         AssertPosition(frames.World, content, 30, 20);
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(40, 30));
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(40, 30));
         frames.Frame();
-        Assert.Equal(new Vector2(40, 30), frames.World.Read<ScrollOffset>(node).Value);
+        Assert.Equal(new Vector2(40, 30), frames.World.ReadComponentData<ScrollOffset>(node).Value);
         AssertPosition(frames.World, content, -10, -10);
 
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(1000, 1000));
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(-20, -15));
         frames.Frame();
-        Assert.Equal(new Vector2(140, 125), frames.World.Read<ScrollOffset>(node).Value);
+        Assert.Equal(new Vector2(140, 125), frames.World.ReadComponentData<ScrollOffset>(node).Value);
         AssertPosition(frames.World, content, -110, -105);
         frames.Frame();
-        Assert.Equal(new Vector2(140, 125), frames.World.Read<ScrollOffset>(node).Value);
+        Assert.Equal(new Vector2(140, 125), frames.World.ReadComponentData<ScrollOffset>(node).Value);
 
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(-1000, -1000));
         frames.Frame();
-        Assert.Equal(Vector2.Zero, frames.World.Read<ScrollOffset>(node).Value);
+        Assert.Equal(Vector2.Zero, frames.World.ReadComponentData<ScrollOffset>(node).Value);
         AssertPosition(frames.World, content, 30, 20);
     }
 
@@ -309,27 +309,27 @@ public sealed partial class BehaviorTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new SelectionScene(0));
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity node = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
-        Assert.Equal("Off", frames.World.Read<SelectionLabel>(root).Value);
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        Entity node = ElementChildren.Read(frames.World, container)[0];
+        Assert.Equal("Off", frames.World.ReadComponentData<SelectionLabel>(root).Value);
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 10));
         Click(frames);
         frames.Frame();
-        Assert.True(frames.World.Read<Selected>(node).Value);
-        Assert.Equal("On", frames.World.Read<SelectionLabel>(root).Value);
+        Assert.True(frames.World.ReadComponentData<Selected>(node).Value);
+        Assert.Equal("On", frames.World.ReadComponentData<SelectionLabel>(root).Value);
 
-        frames.World.Replace(root, new SelectionScene(1));
+        frames.World.Set(root, new SelectionScene(1));
         frames.Frame();
-        Assert.True(frames.World.Read<Selected>(node).Value);
+        Assert.True(frames.World.ReadComponentData<Selected>(node).Value);
         Click(frames);
         Click(frames);
         frames.Frame();
-        Assert.True(frames.World.Read<Selected>(node).Value);
+        Assert.True(frames.World.ReadComponentData<Selected>(node).Value);
         Click(frames);
         frames.Frame();
-        Assert.False(frames.World.Read<Selected>(node).Value);
-        Assert.Equal("Off", frames.World.Read<SelectionLabel>(root).Value);
+        Assert.False(frames.World.ReadComponentData<Selected>(node).Value);
+        Assert.Equal("Off", frames.World.ReadComponentData<SelectionLabel>(root).Value);
     }
 
     [Fact]
@@ -338,8 +338,8 @@ public sealed partial class BehaviorTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new DragScene());
         frames.Frame();
-        Entity container = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity node = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
+        Entity container = ElementChildren.Read(frames.World, root)[0];
+        Entity node = ElementChildren.Read(frames.World, container)[0];
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(10, 10));
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
@@ -370,7 +370,7 @@ public sealed partial class BehaviorTests
 
     private static void AssertDrag(World world, Entity node, bool active, Vector2 delta, Vector2 total, uint count)
     {
-        Drag drag = world.Read<Drag>(node);
+        Drag drag = world.ReadComponentData<Drag>(node);
         Assert.Equal(active, drag.Active);
         Assert.Equal(delta, drag.Delta);
         Assert.Equal(total, drag.Total);
@@ -379,7 +379,7 @@ public sealed partial class BehaviorTests
 
     private static void AssertPosition(World world, Entity node, float x, float y)
     {
-        var rect = world.Read<LayoutRect>(node).Value;
+        var rect = world.ReadComponentData<LayoutRect>(node).Value;
         Assert.Equal(x, rect.X);
         Assert.Equal(y, rect.Y);
     }

@@ -13,7 +13,7 @@ public sealed partial class NavigationSaveTests
     [Fact]
     public async Task MotionAssetRestoreResumesSelectedVehicleSearchAndMppiFromActualFeedback()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var manifest = new AssetManifest();
         var resources = new NavigationSaveResources();
         var model = new NavigationVehicleModel(0.5f, allowReverse: true);
@@ -49,10 +49,10 @@ public sealed partial class NavigationSaveTests
         using var stream = new MemoryStream();
         Entity latticeActor, mppiActor;
         SaveMotion saved;
-        using (World world = WorldJobs.CreateWorld(scheduler: scheduler))
+        using (World world = new World(execution: new WorldJobs(scheduler)))
         {
-            latticeActor = world.CreateEntity(new SaveMotion(new(0.5f, 0, 0.5f), default, 0));
-            mppiActor = world.CreateEntity(new SaveMotion(new(1.5f, 0, 0.5f), default, MathF.PI / 2));
+            latticeActor = world.Create(new SaveMotion(new(0.5f, 0, 0.5f), default, 0));
+            mppiActor = world.Create(new SaveMotion(new(1.5f, 0, 0.5f), default, MathF.PI / 2));
             NavigationComponents.AddPath<NavigationVehicleSpace, StateLatticeSearchState>(world, latticeActor, space, profile, policy,
                 new(new Vector3(0.5f, 0, 2.5f), 0.05f, 0), 1);
             NavigationComponents.AddPath<NavigationVehicleSpace, HybridAStarSearchState>(world, mppiActor, space, profile, policy,
@@ -64,7 +64,7 @@ public sealed partial class NavigationSaveTests
             using var neighbors = new NavigationNeighborSystem<SaveMotion, SaveMotionReader>(world, scheduler);
             Action<float> move = Driver(world, model, neighbors);
             for (int step = 0; step < 5; step++) move(step * 0.1f);
-            saved = world.Read<SaveMotion>(mppiActor);
+            saved = world.ReadComponentData<SaveMotion>(mppiActor);
             NavigationSave.Write(stream, world, registry, resources);
         }
         stream.Position = 0;
@@ -72,9 +72,9 @@ public sealed partial class NavigationSaveTests
         await using (var loader = new AssetLoader(new LooseAssetStorage(_directory, manifest)))
             restored = await NavigationSave.ReadAsync(stream, registry, loader, scheduler);
         using World loaded = restored.World;
-        NavigationVehicleSpace restoredSpace = loaded.Read<PathNavigation<NavigationVehicleSpace>>(latticeActor).Space;
-        Assert.Same(restoredSpace, loaded.Read<PathNavigation<NavigationVehicleSpace>>(mppiActor).Space);
-        Assert.Equal(saved, loaded.Read<SaveMotion>(mppiActor));
+        NavigationVehicleSpace restoredSpace = loaded.ReadComponentData<PathNavigation<NavigationVehicleSpace>>(latticeActor).Space;
+        Assert.Same(restoredSpace, loaded.ReadComponentData<PathNavigation<NavigationVehicleSpace>>(mppiActor).Space);
+        Assert.Equal(saved, loaded.ReadComponentData<SaveMotion>(mppiActor));
         Assert.Equal(model, restoredSpace.Motions.Model);
         Assert.Equal(space.HybridSettings, restoredSpace.HybridSettings);
         Assert.True(NavigationComponents.HasPath<NavigationVehicleSpace, StateLatticeSearchState>(loaded, latticeActor));
@@ -84,14 +84,14 @@ public sealed partial class NavigationSaveTests
         Action<float> continued = Driver(loaded, restoredSpace.Motions.Model, loadedNeighbors);
         continued(0.5f);
         NavigationTrajectoryPoint[] trajectory = [];
-        loaded.ExecuteBufferRead<NavigationTrajectoryPoint>(mppiActor, buffer => trajectory = buffer.AsSpan().ToArray());
+        using (var buffer = loaded.ReadBuffer<NavigationTrajectoryPoint>(mppiActor)) trajectory = buffer.AsSpan().ToArray();
         Assert.Equal(1.3f, trajectory[^1].Time, 4);
-        Assert.InRange(Vector3.Distance(trajectory[1].Position, loaded.Read<SaveMotion>(mppiActor).Position), 0, 0.0001f);
-        for (int step = 6; step < 120 && new[] { latticeActor, mppiActor }.Any(actor => loaded.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived); step++)
+        Assert.InRange(Vector3.Distance(trajectory[1].Position, loaded.ReadComponentData<SaveMotion>(mppiActor).Position), 0, 0.0001f);
+        for (int step = 6; step < 120 && new[] { latticeActor, mppiActor }.Any(actor => loaded.ReadComponentData<NavigationProgress>(actor).Status != NavigationStatus.Arrived); step++)
             continued(step * 0.1f);
-        Assert.Equal(NavigationStatus.Arrived, loaded.Read<NavigationProgress>(latticeActor).Status);
-        Assert.InRange(loaded.Read<NavigationProgress>(mppiActor).Distance, 0, 0.2f);
-        Assert.True(loaded.Read<SaveMotion>(mppiActor).Position.X > saved.Position.X + 1.5f);
+        Assert.Equal(NavigationStatus.Arrived, loaded.ReadComponentData<NavigationProgress>(latticeActor).Status);
+        Assert.InRange(loaded.ReadComponentData<NavigationProgress>(mppiActor).Distance, 0, 0.2f);
+        Assert.True(loaded.ReadComponentData<SaveMotion>(mppiActor).Position.X > saved.Position.X + 1.5f);
 
         Action<float> Driver(World world, NavigationVehicleModel vehicleModel,
             NavigationNeighborSystem<SaveMotion, SaveMotionReader> neighbors)
@@ -103,7 +103,7 @@ public sealed partial class NavigationSaveTests
             return time =>
             {
                 JobHandle guidance = hybrid.ScheduleGuidance(0.1f, 256).Guidance;
-                JobHandle selected = WorldJobs.CombineDependencies(world, [lattice.Schedule(0.1f, 64).Steering, mppi.Schedule(time, guidance, neighbors.Schedule())]);
+                JobHandle selected = (world.Execution?.Scheduler ?? JobSystem.Current).CombineDependencies( [lattice.Schedule(0.1f, 64).Steering, mppi.Schedule(time, guidance, neighbors.Schedule())]);
                 JobHandle forecast = prediction.Schedule(time, selected);
                 JobHandle moved = new ConsumeSavedVehicle(0.1f, vehicleModel).ScheduleParallel(world, forecast);
                 lattice.ScheduleProgress(moved).Complete(); hybrid.ScheduleProgress(moved).Complete();

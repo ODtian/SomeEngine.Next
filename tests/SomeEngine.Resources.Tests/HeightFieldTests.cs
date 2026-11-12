@@ -7,7 +7,7 @@ public sealed class HeightFieldTests
     [Fact]
     public async Task CpuDeltaChangesTheRequestedSamplesAfterCompletion()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         HeightField height = terrain.CreateHeightField("ground", new HeightGrid(8, 6, 4), 2f);
 
@@ -25,7 +25,7 @@ public sealed class HeightFieldTests
     [Fact]
     public async Task SharedTerrainReadsFollowEditsWhileDuplicateAndEarlierReadKeepTheirData()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         HeightField height = terrain.CreateHeightField("ground", new HeightGrid(8, 6, 4), 2f);
         await height.EditCpu(new HeightDeltaBrush(height.Grid.Range, 3f)).WaitAsync();
@@ -50,7 +50,7 @@ public sealed class HeightFieldTests
     [Fact]
     public async Task SubmittedEditsUsePreviousValuesAndReadsCaptureTheirCallVersion()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         HeightField height = terrain.CreateHeightField("ground", new HeightGrid(8, 6, 4), 2f);
         var signal = new EditSignal();
@@ -74,7 +74,7 @@ public sealed class HeightFieldTests
     [Fact]
     public async Task NeighborBrushReadsOneInputVersionAcrossPageBoundaries()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         HeightField height = terrain.CreateHeightField("ground", new HeightGrid(8, 3, 4));
         height.EditCpu(new HeightDeltaBrush(new HeightRegion(3, 1, 1, 1), 10f));

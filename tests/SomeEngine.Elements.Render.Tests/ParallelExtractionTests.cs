@@ -35,13 +35,13 @@ public sealed class ParallelExtractionTests(SurfaceExtractionDevice graphics) : 
             {
                 Entity expected = serial.Extraction.RequireMirror(canvas);
                 Entity actual = parallel.Extraction.RequireMirror(canvas);
-                Assert.Equal(serial.Render.Read<RenderCanvas>(expected), parallel.Render.Read<RenderCanvas>(actual));
+                Assert.Equal(serial.Render.World.ReadComponentData<RenderCanvas>(expected), parallel.Render.World.ReadComponentData<RenderCanvas>(actual));
                 Assert.Equal(Read<SurfaceInstance>(serial.Render, expected), Read<SurfaceInstance>(parallel.Render, actual));
                 Assert.Equal(Read<ImageInstance>(serial.Render, expected), Read<ImageInstance>(parallel.Render, actual));
                 Assert.Equal(Read<GlyphInstance>(serial.Render, expected), Read<GlyphInstance>(parallel.Render, actual));
             }
-            RenderGlyphAtlas expectedAtlas = serial.Render.Read<RenderGlyphAtlas>(serial.Extraction.RequireMirror(serial.Atlas));
-            RenderGlyphAtlas actualAtlas = parallel.Render.Read<RenderGlyphAtlas>(parallel.Extraction.RequireMirror(parallel.Atlas));
+            RenderGlyphAtlas expectedAtlas = serial.Render.World.ReadComponentData<RenderGlyphAtlas>(serial.Extraction.RequireMirror(serial.Atlas));
+            RenderGlyphAtlas actualAtlas = parallel.Render.World.ReadComponentData<RenderGlyphAtlas>(parallel.Extraction.RequireMirror(parallel.Atlas));
             Assert.Equal(expectedAtlas.Version, actualAtlas.Version);
             Assert.Equal(expectedAtlas.DirtyRegions.ToArray(), actualAtlas.DirtyRegions.ToArray());
             Assert.Equal(expectedAtlas.Pages.Length, actualAtlas.Pages.Length);
@@ -53,7 +53,8 @@ public sealed class ParallelExtractionTests(SurfaceExtractionDevice graphics) : 
     private static T[] Read<T>(RenderWorld world, Entity canvas) where T : struct, IBufferElement
     {
         T[] values = [];
-        world.ExecuteBufferRead<T>(canvas, buffer => values = buffer.AsSpan().ToArray());
+        using (ReadOnlyBuffer<T> buffer = world.World.ReadBuffer<T>(canvas))
+            values = buffer.AsSpan().ToArray();
         return values;
     }
 
@@ -74,12 +75,12 @@ public sealed class ParallelExtractionTests(SurfaceExtractionDevice graphics) : 
             _systems.Add(new ViewRebuildSystem());
             _systems.Add(shaping);
             _systems.Add(new LayoutSystem(shaping) { Parallel = parallel });
-            Atlas = World.CreateEntity(new TextAtlas(new GlyphAtlas(128, 128)));
+            Atlas = World.Create(new TextAtlas(new GlyphAtlas(128, 128)));
             Extraction = new(Render, new CanvasRenderExtractor { Parallel = parallel },
                 new GlyphRenderExtractor(Atlas) { Parallel = parallel });
             for (int index = 0; index < Canvases.Length; index++)
             {
-                Canvases[index] = World.CreateEntity(new Canvas { Size = new Size(320, 240) });
+                Canvases[index] = World.Create(new Canvas { Size = new Size(320, 240) });
                 World.Add(Canvases[index], new TextTheme(new TextStyle { Font = font, Size = 18 }));
             }
             for (int index = 0; index < _nodes.Length; index++)
@@ -97,14 +98,14 @@ public sealed class ParallelExtractionTests(SurfaceExtractionDevice graphics) : 
             var random = new Random(seed);
             foreach (Entity node in _nodes)
             {
-                if (!World.IsAlive(node)) continue;
+                if (!World.Has<ViewType>(node)) continue;
                 if (random.Next(4) == 0) node.SetText(World, $"office {random.Next(10000)} next");
                 if (random.Next(5) == 0)
-                    World.Replace(node, new Surface { Fill = new Color((float)random.NextDouble(), 0.4f, 0.8f),
+                    World.Set(node, new Surface { Fill = new Color((float)random.NextDouble(), 0.4f, 0.8f),
                         CornerRadius = random.Next(8), Shadow = new DropShadow(new Color(0, 0, 0, 0.5f), new Vector2(2, 3), 4) });
             }
             if (frame == 3) Hierarchy<ElementTree>.SetParent(World, _nodes[0], Canvases[1]);
-            if (frame == 5) Hierarchy<ElementTree>.Reorder(World, _nodes[1], 0);
+            if (frame == 5) Hierarchy<ElementTree>.SetParent(World, _nodes[1], Canvases[1], 0);
             if (frame == 7) Hierarchy<ElementTree>.DestroySubtree(World, _nodes[2]);
         }
 

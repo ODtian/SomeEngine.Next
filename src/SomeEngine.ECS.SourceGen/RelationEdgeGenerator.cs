@@ -67,7 +67,7 @@ public sealed class RelationEdgeGenerator : IIncrementalGenerator
                     .Append("        ").Append(relation).AppendLine(" relation)")
                     .Append("        where ").Append(sourceType).Append(" : struct, global::").Append(RelationsNamespace)
                     .Append(".IQueryRelationEnumerable<").Append(row).AppendLine(">")
-                    .Append("        where ").Append(payloadType).AppendLine(" : struct, global::SomeEngine.ECS.IComponent");
+                    .Append("        where ").Append(payloadType).AppendLine(" : struct");
                 foreach (var parameter in parameters)
                     RelationTypeSyntax.AppendConstraints(text, parameter);
                 text.Append("        => new(new ").Append(binding).AppendLine("(source.Enumerable, relation));\n");

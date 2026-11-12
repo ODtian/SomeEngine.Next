@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
@@ -12,14 +13,6 @@ internal sealed class SourceTransformChanges
     internal void Clear() => _values.Clear();
 
     internal void Add(Entity source, in RenderTransform transform) => _values.Add((source, transform));
-
-    internal void Collect(ReadOnlyQueryPacket packet, uint lastSystemVersion)
-    {
-        ReadOnlySpan<WorldTransform> transforms = packet.Read<WorldTransform>();
-        for (int row = 0; row < packet.Count; row++)
-            if (packet.RowChangedSince<WorldTransform>(row, lastSystemVersion))
-                Add(packet.Entities[row], new RenderTransform(transforms[row].Qvvs));
-    }
 
     internal void Merge(RenderExtractionContext context)
     {

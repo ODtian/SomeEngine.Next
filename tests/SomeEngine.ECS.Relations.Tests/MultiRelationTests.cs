@@ -8,11 +8,11 @@ public sealed class MultiRelationTests
     public void ThreePositionsPreserveRepeatedSetsAndApplyBothRules()
     {
         using var world = new World();
-        world.CreateEntity(new Score { Value = 1 });
-        world.CreateEntity(new Score { Value = 4 });
-        world.CreateEntity(new Score { Value = 7 });
-        world.CreateEntity(new Score { Value = 10 });
-        var scores = world.Query(world.QueryDefinition().All<Score>());
+        world.Create(new Score { Value = 1 });
+        world.Create(new Score { Value = 4 });
+        world.Create(new Score { Value = 7 });
+        world.Create(new Score { Value = 10 });
+        var scores = world.Query(new QueryDescription().WithStored<Score>());
 
         Assert.Equal(1, world.Product(scores, scores, scores)
             .Where(default(IncreasingScores3))
@@ -24,15 +24,15 @@ public sealed class MultiRelationTests
     public void FourPositionsKeepTheRolesOfDifferentRepeatedSets()
     {
         using var world = new World();
-        var first = world.CreateEntity(new Score { Value = 1 });
-        var middle = world.CreateEntity(new Score { Value = 2 });
-        var last = world.CreateEntity(new Score { Value = 3 });
-        world.AddTag<LeftSet>(first);
-        world.AddTag<LeftSet>(middle);
-        world.AddTag<RightSet>(middle);
-        world.AddTag<RightSet>(last);
-        var left = world.Query(world.QueryDefinition().All<LeftSet>());
-        var right = world.Query(world.QueryDefinition().All<RightSet>());
+        var first = world.Create(new Score { Value = 1 });
+        var middle = world.Create(new Score { Value = 2 });
+        var last = world.Create(new Score { Value = 3 });
+        world.Add(first, new LeftSet());
+        world.Add(middle, new LeftSet());
+        world.Add(middle, new RightSet());
+        world.Add(last, new RightSet());
+        var left = world.Query(new QueryDescription().WithStored<LeftSet>());
+        var right = world.Query(new QueryDescription().WithStored<RightSet>());
         var rows = new List<(Entity, Entity, Entity, Entity)>();
         var output = new RowList<(Entity, Entity, Entity, Entity)>(rows);
 
@@ -48,12 +48,12 @@ public sealed class MultiRelationTests
     public void FivePositionsReadManagedComponentsAndApplyExclusion()
     {
         using var world = new World();
-        world.CreateEntity(new DisplayName { Value = "Iris" });
-        world.CreateEntity(new DisplayName { Value = "Rose" });
-        world.CreateEntity(new Score { Value = 1 });
-        world.CreateEntity(new Score { Value = 2 });
-        var names = world.Query(world.QueryDefinition().All<DisplayName>());
-        var scores = world.Query(world.QueryDefinition().All<Score>());
+        world.Create(new DisplayName { Value = "Iris" });
+        world.Create(new DisplayName { Value = "Rose" });
+        world.Create(new Score { Value = 1 });
+        world.Create(new Score { Value = 2 });
+        var names = world.Query(new QueryDescription().WithStored<DisplayName>());
+        var scores = world.Query(new QueryDescription().WithStored<Score>());
 
         Assert.Equal(1, world.Product(names, scores, scores, scores, scores)
             .Where(default(AlternatingNames5))
@@ -65,9 +65,9 @@ public sealed class MultiRelationTests
     public void SixPositionsCountTheRemainingOrderedRow()
     {
         using var world = new World();
-        world.CreateEntity(new Score { Value = 1 });
-        world.CreateEntity(new Score { Value = 2 });
-        var scores = world.Query(world.QueryDefinition().All<Score>());
+        world.Create(new Score { Value = 1 });
+        world.Create(new Score { Value = 2 });
+        var scores = world.Query(new QueryDescription().WithStored<Score>());
 
         Assert.Equal(1, world.Product(scores, scores, scores, scores, scores, scores)
             .Where(new ScoreSum6(11))
@@ -79,9 +79,9 @@ public sealed class MultiRelationTests
     public void SevenPositionsPreserveExistenceAfterExclusion()
     {
         using var world = new World();
-        world.CreateEntity(new Score { Value = 1 });
-        world.CreateEntity(new Score { Value = 2 });
-        var scores = world.Query(world.QueryDefinition().All<Score>());
+        world.Create(new Score { Value = 1 });
+        world.Create(new Score { Value = 2 });
+        var scores = world.Query(new QueryDescription().WithStored<Score>());
 
         Assert.True(world.Product(scores, scores, scores, scores, scores, scores, scores)
             .Where(new ScoreSum7(13))
@@ -93,12 +93,12 @@ public sealed class MultiRelationTests
     public void EightPositionsReturnTheEighthEntityAndForwardEarlyStopState()
     {
         using var world = new World();
-        world.CreateEntity(new Score { Value = 1 });
-        world.CreateEntity(new Score { Value = 2 });
-        var expected = world.CreateEntity(new Weight { Value = 12 });
-        world.CreateEntity(new Weight { Value = 20 });
-        var scores = world.Query(world.QueryDefinition().All<Score>());
-        var weights = world.Query(world.QueryDefinition().All<Weight>());
+        world.Create(new Score { Value = 1 });
+        world.Create(new Score { Value = 2 });
+        var expected = world.Create(new Weight { Value = 12 });
+        world.Create(new Weight { Value = 20 });
+        var scores = world.Query(new QueryDescription().WithStored<Score>());
+        var weights = world.Query(new QueryDescription().WithStored<Weight>());
         var selected = world.Product(scores, scores, scores, scores, scores, scores, scores, weights)
             .Where(new AlternatingScores8(10))
             .Except(new ExcludedWeight8(15));

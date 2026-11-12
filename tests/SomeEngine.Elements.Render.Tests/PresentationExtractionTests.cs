@@ -21,7 +21,7 @@ public sealed partial class SurfaceExtractionTests
         using var game = new World();
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor());
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(800, 600) });
         Entity panel = AddPanel(game, canvas, new Rect(10, 20, 120, 80), new Color(1, 0, 0));
         game.Add(panel, new ElementTransform { Matrix = Matrix3x2.CreateScale(2), Alpha = 0.8f });
         game.Add(panel, new PresentationOffset { Matrix = Matrix3x2.CreateTranslation(-4, 6), Alpha = 0.5f });
@@ -36,15 +36,15 @@ public sealed partial class SurfaceExtractionTests
         Assert.Equal(0.4f, before.Alpha);
         Assert.Equal(new Color(1, 0, 0), before.Fill);
 
-        game.Replace(panel, new PresentationOffset { Matrix = Matrix3x2.CreateTranslation(0, 2), Alpha = 1 });
+        game.Set(panel, new PresentationOffset { Matrix = Matrix3x2.CreateTranslation(0, 2), Alpha = 1 });
         extraction.Extract(game);
-        game.Replace(panel, PresentationOffset.Identity);
+        game.Set(panel, PresentationOffset.Identity);
         graphics.Apply(extraction, render);
         SurfaceInstance after = Assert.Single(ReadInstances(render, mirror));
         Assert.Equal(new Vector2(10, 22), Vector2.Transform(new Vector2(10, 20), after.Matrix));
         Assert.Equal(0.8f, after.Alpha);
         Assert.NotEqual(before.Version, after.Version);
-        Assert.Equal(new ElementTransform { Matrix = Matrix3x2.CreateScale(2), Alpha = 0.8f }, game.Read<ElementTransform>(panel));
+        Assert.Equal(new ElementTransform { Matrix = Matrix3x2.CreateScale(2), Alpha = 0.8f }, game.ReadComponentData<ElementTransform>(panel));
 
         extraction.Extract(game);
         graphics.Apply(extraction, render);
@@ -67,17 +67,17 @@ public sealed partial class GlyphExtractionTests
         using var game = new World();
         using var render = new RenderWorld();
         using var systems = TextSystems(game);
-        Entity atlasSource = game.CreateEntity(new TextAtlas(new GlyphAtlas(128, 128)));
+        Entity atlasSource = game.Create(new TextAtlas(new GlyphAtlas(128, 128)));
         using var extraction = new RenderExtractionSystems(render,
             new CanvasRenderExtractor(), new GlyphRenderExtractor(atlasSource));
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(320, 240) });
         game.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 48 }));
         Entity text = Views.Views.Spawn(game, canvas, new Text("A"));
         systems.Update();
         var rectangle = new Rect(10, 20, 120, 80);
-        game.Replace(text, new LayoutRect { Value = rectangle });
+        game.Set(text, new LayoutRect { Value = rectangle });
         game.Add(text, new Surface { Fill = new Color(1, 0, 0) });
-        Entity image = game.CreateEntity(new Image(default, ImageFit.Stretch));
+        Entity image = game.Create(new Image(default, ImageFit.Stretch));
         game.Add(image, new LayoutRect { Value = rectangle });
         Hierarchy<ElementTree>.SetParent(game, image, canvas);
         foreach (Entity node in new[] { text, image })
@@ -91,7 +91,7 @@ public sealed partial class GlyphExtractionTests
         SurfaceInstance surface = ReadSurface();
         GlyphInstance glyph = Assert.Single(ReadGlyphs(render, mirror));
         ImageInstance picture = ReadImage();
-        uint atlasVersion = render.Read<RenderGlyphAtlas>(extraction.RequireMirror(atlasSource)).Version;
+        uint atlasVersion = render.World.ReadComponentData<RenderGlyphAtlas>(extraction.RequireMirror(atlasSource)).Version;
         foreach (var value in new[] { (surface.Matrix, surface.Alpha), (glyph.Matrix, glyph.Alpha), (picture.Matrix, picture.Alpha) })
         {
             Assert.Equal(new Vector2(6, 26), Vector2.Transform(new Vector2(10, 20), value.Matrix));
@@ -103,9 +103,9 @@ public sealed partial class GlyphExtractionTests
         Assert.Equal(new Color(1, 1, 1), glyph.Color);
 
         foreach (Entity node in new[] { text, image })
-            game.Replace(node, new PresentationOffset { Matrix = Matrix3x2.CreateTranslation(0, 2), Alpha = 1 });
+            game.Set(node, new PresentationOffset { Matrix = Matrix3x2.CreateTranslation(0, 2), Alpha = 1 });
         extraction.Extract(game);
-        foreach (Entity node in new[] { text, image }) game.Replace(node, PresentationOffset.Identity);
+        foreach (Entity node in new[] { text, image }) game.Set(node, PresentationOffset.Identity);
         graphics.Apply(extraction, render);
         SurfaceInstance nextSurface = ReadSurface();
         GlyphInstance nextGlyph = Assert.Single(ReadGlyphs(render, mirror));
@@ -122,7 +122,7 @@ public sealed partial class GlyphExtractionTests
         Assert.Equal(glyph.UV0, nextGlyph.UV0);
         Assert.Equal(picture.Rectangle, nextPicture.Rectangle);
         Assert.Equal(picture.Uv, nextPicture.Uv);
-        Assert.Equal(atlasVersion, render.Read<RenderGlyphAtlas>(extraction.RequireMirror(atlasSource)).Version);
+        Assert.Equal(atlasVersion, render.World.ReadComponentData<RenderGlyphAtlas>(extraction.RequireMirror(atlasSource)).Version);
 
         extraction.Extract(game);
         graphics.Apply(extraction, render);
@@ -133,13 +133,15 @@ public sealed partial class GlyphExtractionTests
         SurfaceInstance ReadSurface()
         {
             SurfaceInstance[] values = [];
-            render.ExecuteBufferRead<SurfaceInstance>(mirror, buffer => values = buffer.AsSpan().ToArray());
+            using (ReadOnlyBuffer<SurfaceInstance> buffer = render.World.ReadBuffer<SurfaceInstance>(mirror))
+                values = buffer.AsSpan().ToArray();
             return Assert.Single(values);
         }
         ImageInstance ReadImage()
         {
             ImageInstance[] values = [];
-            render.ExecuteBufferRead<ImageInstance>(mirror, buffer => values = buffer.AsSpan().ToArray());
+            using (ReadOnlyBuffer<ImageInstance> buffer = render.World.ReadBuffer<ImageInstance>(mirror))
+                values = buffer.AsSpan().ToArray();
             return Assert.Single(values);
         }
     }

@@ -58,8 +58,8 @@ public sealed partial class FocusTests
     public void InputRequiresOneCaptureEntity()
     {
         using var world = new World();
-        world.CreateEntity(new InputCapture());
-        world.CreateEntity(new InputCapture());
+        world.Create(new InputCapture());
+        world.Create(new InputCapture());
         Assert.Throws<InvalidOperationException>(() => Gamepad.Confirm(world));
     }
 
@@ -69,9 +69,9 @@ public sealed partial class FocusTests
         using var frames = new FocusFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new FocusChecksForValidation());
         frames.Frame();
-        var nodes = Hierarchy<ElementTree>.GetChildren(frames.World, root);
-        frames.World.AddSparse(nodes[0], new Focused());
-        frames.World.AddSparse(nodes[1], new Focused());
+        var nodes = ElementChildren.Read(frames.World, root);
+        frames.World.SetSparse(nodes[0], new Focused());
+        frames.World.SetSparse(nodes[1], new Focused());
         Assert.Throws<InvalidOperationException>(frames.Frame);
     }
 

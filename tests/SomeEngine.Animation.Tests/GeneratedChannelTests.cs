@@ -10,28 +10,28 @@ public sealed class GeneratedChannelTests
     public void GeneratedOrdinaryFieldReachesThePlaybackTarget()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new FieldPanel { Style = new PanelStyle() });
+        Entity target = world.Create(new FieldPanel { Style = new PanelStyle() });
         using var systems = Systems(world);
         PropertyAnimation.To(world, target, FieldPanelChannels.Opacity, 1f, Spec.Tween(1));
 
         var frame = new ImmediateSystemContext(world, 0, 0, 1);
         systems.Update(ref frame);
 
-        Assert.Equal(1f, world.Read<FieldPanel>(target).Opacity);
+        Assert.Equal(1f, world.ReadComponentData<FieldPanel>(target).Opacity);
     }
 
     [Fact]
     public void GeneratedValuePathWritesBackItsIntermediateProperty()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new FieldPanel { Style = new PanelStyle() });
+        Entity target = world.Create(new FieldPanel { Style = new PanelStyle() });
         using var systems = Systems(world);
         PropertyAnimation.To(world, target, FieldPanelChannels.InnerWidth, 12f, Spec.Tween(1));
 
         var frame = new ImmediateSystemContext(world, 0, 0, 1);
         systems.Update(ref frame);
 
-        Assert.Equal(12f, world.Read<FieldPanel>(target).Inner.Width);
+        Assert.Equal(12f, world.ReadComponentData<FieldPanel>(target).Inner.Width);
     }
 
     [Fact]
@@ -39,44 +39,44 @@ public sealed class GeneratedChannelTests
     {
         using var world = new World();
         var style = new PanelStyle();
-        Entity target = world.CreateEntity(new FieldPanel { Style = style });
+        Entity target = world.Create(new FieldPanel { Style = style });
         using var systems = Systems(world);
         PropertyAnimation.To(world, target, FieldPanelChannels.Radius, 8f, Spec.Tween(1));
-        uint version = world.WriteVersion<FieldPanel>(target);
+        ulong version = world.ComponentDataWriteVersion<FieldPanel>(target);
 
         var frame = new ImmediateSystemContext(world, 0, 0, 1);
         systems.Update(ref frame);
 
         Assert.Equal(8f, style.Corner.Radius);
-        Assert.NotEqual(version, world.WriteVersion<FieldPanel>(target));
+        Assert.NotEqual(version, world.ComponentDataWriteVersion<FieldPanel>(target));
     }
 
     [Fact]
     public void GeneratedWritablePropertyReachesThePlaybackTarget()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new FieldPanel { Style = new PanelStyle() });
+        Entity target = world.Create(new FieldPanel { Style = new PanelStyle() });
         using var systems = Systems(world);
         PropertyAnimation.To(world, target, FieldPanelChannels.Height, 24f, Spec.Tween(1));
 
         var frame = new ImmediateSystemContext(world, 0, 0, 1);
         systems.Update(ref frame);
 
-        Assert.Equal(24f, world.Read<FieldPanel>(target).Height);
+        Assert.Equal(24f, world.ReadComponentData<FieldPanel>(target).Height);
     }
 
     [Fact]
     public void HandWrittenAccessUsesTheGeneratedChannelPlayback()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new FieldPanel { Style = new PanelStyle() });
+        Entity target = world.Create(new FieldPanel { Style = new PanelStyle() });
         using var systems = Systems(world);
         PropertyAnimation.To(world, target, FieldPanelChannels.Custom, 32f, Spec.Tween(1));
 
         var frame = new ImmediateSystemContext(world, 0, 0, 1);
         systems.Update(ref frame);
 
-        Assert.Equal(32f, world.Read<FieldPanel>(target).Style.Custom);
+        Assert.Equal(32f, world.ReadComponentData<FieldPanel>(target).Style.Custom);
     }
 
     private static SystemGroup<ImmediateSystemContext> Systems(World world)
@@ -93,7 +93,7 @@ public sealed class GeneratedChannelTests
 [ComponentField("Inner.Width", Name = "InnerWidth")]
 [ComponentField("Style.Corner.Radius", Name = "Radius")]
 [ComponentField(typeof(PanelCustomAccess), "Custom")]
-internal struct FieldPanel : IComponent
+internal struct FieldPanel : ITrackedComponent
 {
     public float Opacity;
     public PanelInner Inner { get; set; }

@@ -1,7 +1,6 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Registry;
 using Xunit;
 
@@ -12,103 +11,105 @@ public class ChangeTrackingTests
     [Fact]
     public void AcquireSystemTick_ReturnsThenIncrements()
     {
-        var world = new World();
-        uint firstVersion = world.AcquireSystemTick();
-        uint secondVersion = world.AcquireSystemTick();
+        using var world = new World();
+        ulong firstVersion = world.AcquireSystemVersion();
+        ulong secondVersion = world.AcquireSystemVersion();
         Assert.Equal(firstVersion + 1, secondVersion);
     }
 
     [Fact]
     public void AcquireSystemVersion_ReturnsTheNewlyAdvancedWriteVersion()
     {
-        var world = new World();
-        uint baseline = world.CurrentTick;
+        using var world = new World();
+        ulong baseline = world.Version;
 
-        uint version = world.AcquireSystemVersion();
+        ulong version = world.AcquireSystemVersion();
 
         Assert.True(version > baseline);
-        Assert.Equal(version, world.CurrentTick);
+        Assert.Equal(version, world.Version);
     }
 
     [Fact]
     public void AutomaticWritableQueryVersionIsNewerThanTheAdmittedPredecessor()
     {
-        var world = new World();
-        Entity entity = world.CreateEntity(new Position { X = 1 });
-        QueryHandle query = world.Query(
-            world.QueryDefinition().ReadWrite<Position>());
+        using var world = new World();
+        Entity entity = world.Create(new Position { X = 1 });
+        Query query = world.Query(
+            new QueryDescription().WithStored<Position>());
 
         _ = world.AcquireSystemVersion();
-        world.Replace(entity, new Position { X = 2 });
-        uint predecessorVersion = world.CurrentTick;
+        world.Set(entity, new Position { X = 2 });
+        ulong predecessorVersion = world.Version;
 
-        world.ExecuteQuery(query, lastSystemVersion: 0, cursor =>
         {
-            foreach (QueryRow row in cursor.Rows)
-                row.ReadWrite<Position>().X++;
-        });
+            using QueryScope cursor = query.Since(version: 0).Open();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                    rowChunk.Write<Position>(row).X++;
+
+        }
 
         Assert.Equal(3, world.Read<Position>(entity).X);
-        QueryHandle changed = world.Query(world.QueryDefinition().Changed<Position>());
-        Assert.Equal(1, CountRows(world, changed, predecessorVersion, world.CurrentTick));
+        Query changed = world.Query(new QueryDescription().WithChanged<Position>(0));
+        Assert.Equal(1, CountRows(world, changed, predecessorVersion, world.Version));
     }
 
     [Fact]
     public void AutomaticReadOnlyQueryDoesNotAcquireAWriteVersion()
     {
-        var world = new World();
-        _ = world.CreateEntity(new Position { X = 1 });
-        QueryHandle query = world.Query(world.QueryDefinition().Read<Position>());
-        uint tickBefore = world.CurrentTick;
+        using var world = new World();
+        _ = world.Create(new Position { X = 1 });
+        Query query = world.Query(new QueryDescription().WithStored<Position>());
+        ulong tickBefore = world.Version;
 
-        world.ExecuteQuery(query, lastSystemVersion: 0, cursor =>
         {
-            foreach (QueryRow row in cursor.Rows)
-                _ = row.Read<Position>();
-        });
+            using QueryScope cursor = query.Since(version: 0).OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                    _ = rowChunk.Read<Position>()[row];
 
-        Assert.Equal(tickBefore, world.CurrentTick);
+        }
+
+        Assert.Equal(tickBefore, world.Version);
     }
 
     [Fact]
     public void ReplacingComponentMakesItVisibleToChangedQuery()
     {
-        var world = new World();
-        Entity entity = world.CreateEntity(new Position { X = 1 });
-        uint before = world.AcquireSystemTick();
-        world.Replace(entity, new Position { X = 99 });
-        QueryHandle query = world.Query(world.QueryDefinition().Changed<Position>());
-        Assert.Equal(1, CountRows(world, query, before, world.CurrentTick));
+        using var world = new World();
+        Entity entity = world.Create(new Position { X = 1 });
+        ulong before = world.AcquireSystemVersion();
+        world.Set(entity, new Position { X = 99 });
+        Query query = world.Query(new QueryDescription().WithChanged<Position>(0));
+        Assert.Equal(1, CountRows(world, query, before, world.Version));
         Assert.Equal(99, world.Read<Position>(entity).X);
     }
 
     [Fact]
     public void AddingComponentMakesItVisibleToChangedQuery()
     {
-        var world = new World();
-        Entity entity = world.CreateEntity();
-        uint before = world.AcquireSystemTick();
+        using var world = new World();
+        Entity entity = world.Create();
+        ulong before = world.AcquireSystemVersion();
         world.Add(entity, new Position { X = 7 });
-        QueryHandle query = world.Query(world.QueryDefinition().Changed<Position>());
-        Assert.Equal(1, CountRows(world, query, before, world.CurrentTick));
+        Query query = world.Query(new QueryDescription().WithChanged<Position>(0));
+        Assert.Equal(1, CountRows(world, query, before, world.Version));
         Assert.Equal(7, world.Read<Position>(entity).X);
     }
 
     [Fact]
     public void Changed_Filter_SkipsUnchangedChunks()
     {
-        var world = new World();
-        world.CreateEntity(new Position { X = 1, Y = 2 });
+        using var world = new World();
+        world.Create(new Position { X = 1, Y = 2 });
 
-        uint lastVersion = world.AcquireSystemTick();
+        ulong lastVersion = world.AcquireSystemVersion();
 
         var query = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Changed<Position>());
+            new QueryDescription().WithStored<Position>().WithChanged<Position>(0));
 
         int count = 0;
-        world.ExecuteQuery(query, lastVersion, ref count, CountRows);
+        count = query.Since(lastVersion).Count;
 
         Assert.Equal(0, count);
     }
@@ -116,19 +117,17 @@ public class ChangeTrackingTests
     [Fact]
     public void Changed_Filter_IncludesRecentlyModified()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1, Y = 2 });
+        using var world = new World();
+        var entity = world.Create(new Position { X = 1, Y = 2 });
 
-        uint lastVersion = world.AcquireSystemTick();
-        world.Replace(entity, new Position { X = 99, Y = 100 });
+        ulong lastVersion = world.AcquireSystemVersion();
+        world.Set(entity, new Position { X = 99, Y = 100 });
 
         var query = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Changed<Position>());
+            new QueryDescription().WithStored<Position>().WithChanged<Position>(0));
 
         int count = 0;
-        world.ExecuteQuery(query, lastVersion, ref count, CountRows);
+        count = query.Since(lastVersion).Count;
 
         Assert.Equal(1, count);
     }
@@ -136,65 +135,63 @@ public class ChangeTrackingTests
     [Fact]
     public void ChangedSameRow()
     {
-        var world = new World();
-        var first = world.CreateEntity(new Position { X = 1, Y = 2 });
+        using var world = new World();
+        var first = world.Create(new Position { X = 1, Y = 2 });
         world.Add(first, new Velocity { X = 1, Y = 1 });
-        var second = world.CreateEntity(new Position { X = 3, Y = 4 });
+        var second = world.Create(new Position { X = 3, Y = 4 });
         world.Add(second, new Velocity { X = 2, Y = 2 });
 
-        uint lastVersion = world.AcquireSystemTick();
-        world.Replace(first, new Position { X = 9, Y = 9 });
-        world.Replace(second, new Velocity { X = 8, Y = 8 });
+        ulong lastVersion = world.AcquireSystemVersion();
+        world.Set(first, new Position { X = 9, Y = 9 });
+        world.Set(second, new Velocity { X = 8, Y = 8 });
 
         var query = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Read<Velocity>()
-                .Changed<Position>()
-                .Changed<Velocity>());
+            new QueryDescription().WithStored<Position>().WithStored<Velocity>().WithChanged<Position>(0).WithChanged<Velocity>(0));
 
-        Assert.Equal(0, CountRows(world, query, lastVersion, world.CurrentTick));
-        Assert.Equal(0, CountChunks(world, query, lastVersion, world.CurrentTick));
+        Assert.Equal(0, CountRows(world, query, lastVersion, world.Version));
+        Assert.Equal(0, CountChunks(world, query, lastVersion, world.Version));
 
-        world.Replace(first, new Velocity { X = 7, Y = 7 });
+        world.Set(first, new Velocity { X = 7, Y = 7 });
 
         int count = 0;
-        world.ExecuteQuery(query, lastVersion, cursor =>
         {
-            foreach (var row in cursor.Rows)
-            {
-                Assert.Equal(first, row.Entity);
-                count++;
-            }
-        });
+            using QueryScope cursor = query.Since(lastVersion).OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                {
+                    Assert.Equal(first, rowChunk.Entities[row]);
+                    count++;
+                }
+
+        }
 
         Assert.Equal(1, count);
-        Assert.Equal(1, CountChunks(world, query, lastVersion, world.CurrentTick));
+        Assert.Equal(1, CountChunks(world, query, lastVersion, world.Version));
     }
 
     [Fact]
     public void Added_Filter_IncludesRecentlyAdded()
     {
-        var world = new World();
-        var entity = world.CreateEntity();
+        using var world = new World();
+        var entity = world.Create();
 
-        uint lastVersion = world.AcquireSystemTick();
+        ulong lastVersion = world.AcquireSystemVersion();
         world.Add(entity, new Position { X = 1, Y = 2 });
 
         var query = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Added<Position>());
+            new QueryDescription().WithStored<Position>().WithAdded<Position>(0));
 
         int count = 0;
-        world.ExecuteQuery(query, lastVersion, cursor =>
         {
-            foreach (var row in cursor.Rows)
-            {
-                Assert.Equal(entity, row.Entity);
-                count++;
-            }
-        });
+            using QueryScope cursor = query.Since(lastVersion).OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                {
+                    Assert.Equal(entity, rowChunk.Entities[row]);
+                    count++;
+                }
+
+        }
 
         Assert.Equal(1, count);
     }
@@ -202,48 +199,44 @@ public class ChangeTrackingTests
     [Fact]
     public void ChunkWriteMarksRowsAndChunkChanged()
     {
-        var world = new World();
-        world.CreateEntity(new Position { X = 1, Y = 2 });
+        using var world = new World();
+        world.Create(new Position { X = 1, Y = 2 });
 
-        uint lastVersion = world.AcquireSystemTick();
-        var writeQuery = world.Query(world.QueryDefinition().ReadWrite<Position>());
-        world.ExecuteQuery(writeQuery, cursor =>
+        ulong lastVersion = world.AcquireSystemVersion();
+        var writeQuery = world.Query(new QueryDescription().WithStored<Position>());
         {
-            foreach (var chunk in cursor.Chunks)
-                chunk.ReadWrite<Position>()[0].X = 3;
-        });
+            using QueryScope cursor = writeQuery.Open();
+            foreach (var chunk in cursor)
+                chunk.Write<Position>()[0].X = 3;
+
+        }
 
         var changedQuery = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Changed<Position>());
+            new QueryDescription().WithStored<Position>().WithChanged<Position>(0));
         var chunkQuery = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .ChunkChanged<Position>());
+            new QueryDescription().WithStored<Position>()
+                .WithChanged<Position>(0));
 
-        Assert.Equal(1, CountRows(world, changedQuery, lastVersion, world.CurrentTick));
-        Assert.Equal(1, CountRows(world, chunkQuery, lastVersion, world.CurrentTick));
+        Assert.Equal(1, CountRows(world, changedQuery, lastVersion, world.Version));
+        Assert.Equal(1, CountRows(world, chunkQuery, lastVersion, world.Version));
     }
 
     [Fact]
-    public void ChunkSpanRejectsRowFilter()
+    public void FilteredChunkSpanContainsMatchingRows()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1, Y = 2 });
+        using var world = new World();
+        var entity = world.Create(new Position { X = 1, Y = 2 });
 
-        uint lastVersion = world.AcquireSystemTick();
-        world.Replace(entity, new Position { X = 3, Y = 4 });
+        ulong lastVersion = world.AcquireSystemVersion();
+        world.Set(entity, new Position { X = 3, Y = 4 });
 
         var query = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Changed<Position>());
+            new QueryDescription().WithStored<Position>().WithChanged<Position>(0));
 
         int count = 0;
-        world.ExecuteQuery(query, lastVersion, cursor =>
         {
-            foreach (var chunk in cursor.Chunks)
+            using QueryScope cursor = query.Since(lastVersion).OpenRead();
+            foreach (var chunk in cursor)
             {
                 InvalidOperationException? error = null;
                 try
@@ -254,14 +247,15 @@ public class ChangeTrackingTests
                 {
                     error = exception;
                 }
-                Assert.NotNull(error);
-                foreach (var row in chunk.Rows)
+                Assert.Null(error);
+                foreach (Entity row in chunk.Entities)
                 {
-                    Assert.Equal(entity, row.Entity);
+                    Assert.Equal(entity, row);
                     count++;
                 }
             }
-        });
+
+        }
 
         Assert.Equal(1, count);
     }
@@ -269,59 +263,61 @@ public class ChangeTrackingTests
     [Fact]
     public void ChunkFiltersAnd()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1, Y = 2 });
+        using var world = new World();
+        var entity = world.Create(new Position { X = 1, Y = 2 });
         world.Add(entity, new Velocity { X = 3, Y = 4 });
 
-        uint lastVersion = world.AcquireSystemTick();
-        var positionQuery = world.Query(world.QueryDefinition().ReadWrite<Position>());
-        world.ExecuteQuery(positionQuery, cursor =>
+        ulong lastVersion = world.AcquireSystemVersion();
+        var positionQuery = world.Query(new QueryDescription().WithStored<Position>());
         {
-            foreach (var chunk in cursor.Chunks)
-                chunk.ReadWrite<Position>()[0].X = 5;
-        });
+            using QueryScope cursor = positionQuery.Open();
+            foreach (var chunk in cursor)
+                chunk.Write<Position>()[0].X = 5;
+
+        }
 
         var query = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Read<Velocity>()
-                .ChunkChanged<Position>()
-                .ChunkChanged<Velocity>());
+            new QueryDescription().WithStored<Position>().WithStored<Velocity>()
+                .WithChanged<Position>(0)
+                .WithChanged<Velocity>(0));
 
-        Assert.Equal(0, CountChunks(world, query, lastVersion, world.CurrentTick));
+        Assert.Equal(0, CountChunks(world, query, lastVersion, world.Version));
 
-        var velocityQuery = world.Query(world.QueryDefinition().ReadWrite<Velocity>());
-        world.ExecuteQuery(velocityQuery, cursor =>
+        var velocityQuery = world.Query(new QueryDescription().WithStored<Velocity>());
         {
-            foreach (var chunk in cursor.Chunks)
-                chunk.ReadWrite<Velocity>()[0].X = 6;
-        });
+            using QueryScope cursor = velocityQuery.Open();
+            foreach (var chunk in cursor)
+                chunk.Write<Velocity>()[0].X = 6;
 
-        Assert.Equal(1, CountChunks(world, query, lastVersion, world.CurrentTick));
+        }
+
+        Assert.Equal(1, CountChunks(world, query, lastVersion, world.Version));
     }
 
     [Fact]
     public void Remove_WritesRemovedFact()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new Position { X = 4, Y = 5 });
+        using var world = new World();
+        var entity = world.Create(new RecordedPosition { X = 4, Y = 5 });
 
-        world.Remove<Position>(entity);
+        world.Remove<RecordedPosition>(entity);
 
-        var query = world.Query(world.QueryDefinition().Removed<Position>());
+        var query = world.Query(new QueryDescription().WithStored<Removed<RecordedPosition>>());
 
         int count = 0;
-        world.ExecuteQuery(query, cursor =>
         {
-            foreach (var row in cursor.Rows)
-            {
-                var removed = row.Read<Removed<Position>>();
-                Assert.Equal(entity, row.Entity);
-                Assert.Equal(4, removed.Value.X);
-                Assert.Equal(5, removed.Value.Y);
-                count++;
-            }
-        });
+            using QueryScope cursor = query.OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                {
+                    var removed = rowChunk.Read<Removed<RecordedPosition>>()[row];
+                    Assert.Equal(entity, rowChunk.Entities[row]);
+                    Assert.Equal(4, removed.Value.X);
+                    Assert.Equal(5, removed.Value.Y);
+                    count++;
+                }
+
+        }
 
         Assert.Equal(1, count);
     }
@@ -329,80 +325,85 @@ public class ChangeTrackingTests
     [Fact]
     public void RemoveReaddRemoveBeforeClear_RefreshesOneRemovedFact()
     {
-        var world = new World();
-        Entity entity = world.CreateEntity(new Position { X = 1, Y = 2 });
+        using var world = new World();
+        Entity entity = world.Create(new RecordedPosition { X = 1, Y = 2 });
 
-        world.Remove<Position>(entity);
-        world.AcquireSystemTick();
-        world.Add(entity, new Position { X = 8, Y = 9 });
-        world.AcquireSystemTick();
-        uint secondRemovalVersion = world.CurrentTick;
-        world.Remove<Position>(entity);
+        world.Remove<RecordedPosition>(entity);
+        world.AcquireSystemVersion();
+        world.Add(entity, new RecordedPosition { X = 8, Y = 9 });
+        world.AcquireSystemVersion();
+        ulong secondRemovalVersion = world.Version;
+        world.Remove<RecordedPosition>(entity);
 
-        Removed<Position> removed = world.Read<Removed<Position>>(entity);
+        Removed<RecordedPosition> removed = world.Read<Removed<RecordedPosition>>(entity);
         Assert.Equal(8, removed.Value.X);
         Assert.Equal(9, removed.Value.Y);
-        Assert.Equal(secondRemovalVersion, removed.Version);
-        Assert.False(world.Has<Position>(entity));
-        var query = world.Query(world.QueryDefinition().Read<Removed<Position>>());
+        Assert.True(removed.Version > secondRemovalVersion);
+        Assert.False(world.Has<RecordedPosition>(entity));
+        var query = world.Query(new QueryDescription().WithStored<Removed<RecordedPosition>>());
         int count = 0;
-        world.ExecuteQuery(query, cursor =>
         {
-            foreach (var row in cursor.Rows)
-            {
-                Assert.Equal(entity, row.Entity);
-                count++;
-            }
-        });
+            using QueryScope cursor = query.OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                {
+                    Assert.Equal(entity, rowChunk.Entities[row]);
+                    count++;
+                }
+
+        }
         Assert.Equal(1, count);
     }
 
     [Fact]
     public void ClearRemoved_ReleasesFactWithoutDestroyingLiveEntity()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new Position { X = 6, Y = 7 });
+        using var world = new World();
+        var entity = world.Create(new RecordedPosition { X = 6, Y = 7 });
 
-        world.Remove<Position>(entity);
-        world.ClearRemoved<Position>(world.CurrentTick);
+        world.Remove<RecordedPosition>(entity);
+        Assert.True(world.Has<Removed<RecordedPosition>>(entity));
+        world.ClearRemoved<RecordedPosition>(world.Version);
 
         Assert.True(world.IsAlive(entity));
         Assert.False(world.IsPendingCleanup(entity));
-        Assert.False(world.Has<Removed<Position>>(entity));
-        Assert.False(world.Has<Position>(entity));
+        Assert.False(world.Has<Removed<RecordedPosition>>(entity));
+        Assert.False(world.Has<RecordedPosition>(entity));
     }
 
     [Fact]
     public void QueryReadWriteRef_BumpsChangeVersion()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1, Y = 2 });
+        using var world = new World();
+        var entity = world.Create(new Position { X = 1, Y = 2 });
 
-        uint lastVersion = world.AcquireSystemTick();
-        var writeQuery = world.Query(world.QueryDefinition().ReadWrite<Position>());
-        world.ExecuteQuery(writeQuery, cursor =>
+        ulong lastVersion = world.AcquireSystemVersion();
+        var writeQuery = world.Query(new QueryDescription().WithStored<Position>());
         {
-            foreach (var row in cursor.Rows)
-            {
-                if (row.Entity == entity)
-                    row.ReadWrite<Position>().X = 42;
-            }
-        });
+            using QueryScope cursor = writeQuery.Open();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                {
+                    if (rowChunk.Entities[row] == entity)
+                        rowChunk.Write<Position>(row).X = 42;
+                }
+
+        }
 
         var query = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Changed<Position>());
+            new QueryDescription().WithStored<Position>().WithChanged<Position>(0));
 
         int count = 0;
-        world.ExecuteQuery(query, lastVersion, cursor =>
         {
-            foreach (var row in cursor.Rows)
-            {
-                Assert.Equal(42, row.Read<Position>().X);
-                count++;
-            }
-        });
+            using QueryScope cursor = query.Since(lastVersion).OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                {
+                    Assert.Equal(42, rowChunk.Read<Position>()[row].X);
+                    count++;
+                }
+
+        }
 
         Assert.Equal(1, count);
     }
@@ -410,58 +411,32 @@ public class ChangeTrackingTests
     [Fact]
     public async Task ConcurrentChangesRemainVisibleToChangedQuery()
     {
-        var world = new World();
-        Entity first = world.CreateEntity(new Position { X = 1 });
-        Entity second = world.CreateEntity(new Position { X = 2 });
-        uint before = world.AcquireSystemTick();
+        using var world = new World();
+        Entity first = world.Create(new Position { X = 1 });
+        Entity second = world.Create(new Position { X = 2 });
+        ulong before = world.AcquireSystemVersion();
         await Task.WhenAll(
-            Task.Run(() => world.Replace(first, new Position { X = 11 })),
-            Task.Run(() => world.Replace(second, new Position { X = 22 }))).WaitAsync(TimeSpan.FromSeconds(10));
-        QueryHandle query = world.Query(world.QueryDefinition().Changed<Position>());
-        Assert.Equal(2, CountRows(world, query, before, world.CurrentTick));
+            Task.Run(() => world.Set(first, new Position { X = 11 })),
+            Task.Run(() => world.Set(second, new Position { X = 22 }))).WaitAsync(TimeSpan.FromSeconds(10));
+        Query query = world.Query(new QueryDescription().WithChanged<Position>(0));
+        Assert.Equal(2, CountRows(world, query, before, world.Version));
         Assert.Equal(11, world.Read<Position>(first).X);
         Assert.Equal(22, world.Read<Position>(second).X);
     }
 
-    private static int CountRows(
-        World world,
-        QueryHandle query,
-        uint lastSystemVersion,
-        uint currentSystemVersion)
+    private struct RecordedPosition : IAddedComponent, IRemovedComponent
     {
-        int count = 0;
-        world.ExecuteQuery(
-            query,
-            lastSystemVersion,
-            ref count,
-            CountRows);
-
-        return count;
+        public float X, Y;
     }
 
-    private static void CountRows(scoped QueryCursor cursor, ref int count)
-    {
-        foreach (var _ in cursor.Rows)
-            count++;
-    }
+    private static int CountRows(World world, Query query, ulong lastSystemVersion, ulong currentSystemVersion)
+        => query.Since(lastSystemVersion).Count;
 
-    private static int CountChunks(
-        World world,
-        QueryHandle query,
-        uint lastSystemVersion,
-        uint currentSystemVersion)
+    private static int CountChunks(World world, Query query, ulong lastSystemVersion, ulong currentSystemVersion)
     {
         int count = 0;
-        world.ExecuteQuery(
-            query,
-            lastSystemVersion,
-            ref count,
-            static (scoped QueryCursor cursor, ref int state) =>
-            {
-                foreach (var _ in cursor.Chunks)
-                    state++;
-            });
-
+        using QueryScope scope = query.Since(lastSystemVersion).OpenRead();
+        foreach (QueryChunk chunk in scope) count++;
         return count;
     }
 }

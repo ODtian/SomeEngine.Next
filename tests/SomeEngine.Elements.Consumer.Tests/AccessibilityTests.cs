@@ -17,16 +17,16 @@ public sealed partial class AccessibilityTests
         systems.Add(new ViewRebuildSystem());
         Entity root = Views.Views.Spawn(world, Entity.Null, new UserControl(Role.Button, "Inventory"));
         systems.Update();
-        Entity node = Assert.Single(Hierarchy<ElementTree>.GetChildren(world, root));
-        uint roleVersion = world.WriteVersion<AccessibleRole>(node);
-        uint nameVersion = world.WriteVersion<AccessibleName>(node);
+        Entity node = Assert.Single(ElementChildren.Read(world, root));
+        ulong roleVersion = world.ComponentDataWriteVersion<AccessibleRole>(node);
+        ulong nameVersion = world.ComponentDataWriteVersion<AccessibleName>(node);
 
-        world.Replace(root, new UserControl(Role.Button, new string("Inventory".ToCharArray())));
+        world.Set(root, new UserControl(Role.Button, new string("Inventory".ToCharArray())));
         systems.Update();
 
-        Assert.Equal("Inventory", world.Read<AccessibleName>(node).Value);
-        Assert.Equal(roleVersion, world.WriteVersion<AccessibleRole>(node));
-        Assert.Equal(nameVersion, world.WriteVersion<AccessibleName>(node));
+        Assert.Equal("Inventory", world.ReadComponentData<AccessibleName>(node).Value);
+        Assert.Equal(roleVersion, world.ComponentDataWriteVersion<AccessibleRole>(node));
+        Assert.Equal(nameVersion, world.ComponentDataWriteVersion<AccessibleName>(node));
     }
 
     [Fact]
@@ -37,14 +37,14 @@ public sealed partial class AccessibilityTests
         systems.Add(new ViewRebuildSystem());
         Entity root = Views.Views.Spawn(world, Entity.Null, new FormattedLabel(12.5m));
         systems.Update();
-        Entity node = Assert.Single(Hierarchy<ElementTree>.GetChildren(world, root));
-        Assert.Equal(Role.Text, world.Read<AccessibleRole>(node).Value);
-        Assert.Equal("12.50", world.Read<AccessibleName>(node).Value);
+        Entity node = Assert.Single(ElementChildren.Read(world, root));
+        Assert.Equal(Role.Text, world.ReadComponentData<AccessibleRole>(node).Value);
+        Assert.Equal("12.50", world.ReadComponentData<AccessibleName>(node).Value);
 
-        world.Replace(root, new FormattedLabel(7.5m));
+        world.Set(root, new FormattedLabel(7.5m));
         systems.Update();
 
-        Assert.Equal("7.50", world.Read<AccessibleName>(node).Value);
+        Assert.Equal("7.50", world.ReadComponentData<AccessibleName>(node).Value);
     }
 
 #if DEBUG
@@ -64,16 +64,16 @@ public sealed partial class AccessibilityTests
         systems.Add(new ViewRebuildSystem());
         Entity root = Views.Views.Spawn(world, Entity.Null, new UserControl(Role.Button, "Inventory"));
         systems.Update();
-        Entity node = Assert.Single(Hierarchy<ElementTree>.GetChildren(world, root));
+        Entity node = Assert.Single(ElementChildren.Read(world, root));
 
-        world.Replace(root, nullName
+        world.Set(root, nullName
             ? new UserControl(Role.Button, null!)
             : new UserControl((Role)byte.MaxValue, "Changed"));
         systems.Update();
 
-        Assert.IsType<InvalidOperationException>(world.ReadSparse<BuildError>(root).Exception);
-        Assert.Equal(Role.Button, world.Read<AccessibleRole>(node).Value);
-        Assert.Equal("Inventory", world.Read<AccessibleName>(node).Value);
+        Assert.IsType<InvalidOperationException>(world.ReadComponentData<BuildError>(root).Exception);
+        Assert.Equal(Role.Button, world.ReadComponentData<AccessibleRole>(node).Value);
+        Assert.Equal("Inventory", world.ReadComponentData<AccessibleName>(node).Value);
     }
 #endif
 
@@ -88,34 +88,34 @@ public sealed partial class AccessibilityTests
             : Views.Views.Spawn(frames.World, frames.Canvas, new TextField("Ada", "Name"));
         frames.Frame();
 
-        Assert.Equal(Role.TextField, frames.World.Read<AccessibleRole>(node).Value);
-        Assert.Equal("Name", frames.World.Read<AccessibleName>(node).Value);
+        Assert.Equal(Role.TextField, frames.World.ReadComponentData<AccessibleRole>(node).Value);
+        Assert.Equal("Name", frames.World.ReadComponentData<AccessibleName>(node).Value);
 
         Gamepad.Navigate(frames.World, Direction.Right);
         Keyboard.Text(frames.World, "!");
         frames.Frame();
 
-        Assert.Equal("Ada!", frames.World.Read<EditableText>(node).Text);
-        Assert.Equal("Name", frames.World.Read<AccessibleName>(node).Value);
+        Assert.Equal("Ada!", frames.World.ReadComponentData<EditableText>(node).Text);
+        Assert.Equal("Name", frames.World.ReadComponentData<AccessibleName>(node).Value);
 
         if (rewritten)
-            frames.World.ReplaceSparse(node, new Rewrites.TextField("Bob", "Name"));
+            frames.World.SetSparse(node, new Rewrites.TextField("Bob", "Name"));
         else
-            frames.World.ReplaceSparse(node, new TextField("Bob", "Name"));
+            frames.World.SetSparse(node, new TextField("Bob", "Name"));
         frames.Frame();
 
-        Assert.Equal("Bob", frames.World.Read<EditableText>(node).Text);
-        Assert.Equal("Name", frames.World.Read<AccessibleName>(node).Value);
+        Assert.Equal("Bob", frames.World.ReadComponentData<EditableText>(node).Text);
+        Assert.Equal("Name", frames.World.ReadComponentData<AccessibleName>(node).Value);
 
         if (rewritten)
-            frames.World.ReplaceSparse(node, new Rewrites.TextField("Bob", "Account"));
+            frames.World.SetSparse(node, new Rewrites.TextField("Bob", "Account"));
         else
-            frames.World.ReplaceSparse(node, new TextField("Bob", "Account"));
+            frames.World.SetSparse(node, new TextField("Bob", "Account"));
         frames.Frame();
 
-        Assert.Equal(Role.TextField, frames.World.Read<AccessibleRole>(node).Value);
-        Assert.Equal("Bob", frames.World.Read<EditableText>(node).Text);
-        Assert.Equal("Account", frames.World.Read<AccessibleName>(node).Value);
+        Assert.Equal(Role.TextField, frames.World.ReadComponentData<AccessibleRole>(node).Value);
+        Assert.Equal("Bob", frames.World.ReadComponentData<EditableText>(node).Text);
+        Assert.Equal("Account", frames.World.ReadComponentData<AccessibleName>(node).Value);
     }
 
     [Theory]
@@ -145,16 +145,16 @@ public sealed partial class AccessibilityTests
         Entity root = Views.Views.Spawn(world, Entity.Null, new ControlExample(control, "Settings"));
         systems.Update();
 
-        Entity node = Assert.Single(Hierarchy<ElementTree>.GetChildren(world, root));
-        Assert.Equal(role, world.Read<AccessibleRole>(node).Value);
-        Assert.Equal(name, world.Read<AccessibleName>(node).Value);
+        Entity node = Assert.Single(ElementChildren.Read(world, root));
+        Assert.Equal(role, world.ReadComponentData<AccessibleRole>(node).Value);
+        Assert.Equal(name, world.ReadComponentData<AccessibleName>(node).Value);
 
-        world.Replace(root, new ControlExample(control, "Inventory"));
+        world.Set(root, new ControlExample(control, "Inventory"));
         systems.Update();
 
-        Assert.Equal(node, Assert.Single(Hierarchy<ElementTree>.GetChildren(world, root)));
-        Assert.Equal(role, world.Read<AccessibleRole>(node).Value);
-        Assert.Equal(changedName, world.Read<AccessibleName>(node).Value);
+        Assert.Equal(node, Assert.Single(ElementChildren.Read(world, root)));
+        Assert.Equal(role, world.ReadComponentData<AccessibleRole>(node).Value);
+        Assert.Equal(changedName, world.ReadComponentData<AccessibleName>(node).Value);
     }
 
     [Fact]
@@ -166,14 +166,14 @@ public sealed partial class AccessibilityTests
         Entity node = Views.Views.Spawn(world, Entity.Null, new Text("Inventory"));
         systems.Update();
 
-        Assert.Equal(Role.Text, world.Read<AccessibleRole>(node).Value);
-        Assert.Equal("Inventory", world.Read<AccessibleName>(node).Value);
+        Assert.Equal(Role.Text, world.ReadComponentData<AccessibleRole>(node).Value);
+        Assert.Equal("Inventory", world.ReadComponentData<AccessibleName>(node).Value);
 
         node.SetText(world, "Quest log");
         systems.Update();
 
-        Assert.Equal(Role.Text, world.Read<AccessibleRole>(node).Value);
-        Assert.Equal("Quest log", world.Read<AccessibleName>(node).Value);
+        Assert.Equal(Role.Text, world.ReadComponentData<AccessibleRole>(node).Value);
+        Assert.Equal("Quest log", world.ReadComponentData<AccessibleName>(node).Value);
     }
 
     [Fact]
@@ -185,17 +185,17 @@ public sealed partial class AccessibilityTests
         Entity root = Views.Views.Spawn(world, Entity.Null, new UserControl(Role.Button, "Open inventory"));
         systems.Update();
 
-        Entity node = Assert.Single(Hierarchy<ElementTree>.GetChildren(world, root));
-        Assert.Equal(Role.Button, world.Read<AccessibleRole>(node).Value);
-        Assert.Equal("Open inventory", world.Read<AccessibleName>(node).Value);
-        Assert.Equal(node, world.Read<ModifiedNode>(root).Value);
+        Entity node = Assert.Single(ElementChildren.Read(world, root));
+        Assert.Equal(Role.Button, world.ReadComponentData<AccessibleRole>(node).Value);
+        Assert.Equal("Open inventory", world.ReadComponentData<AccessibleName>(node).Value);
+        Assert.Equal(node, world.ReadComponentData<ModifiedNode>(root).Value);
 
-        world.Replace(root, new UserControl(Role.Group, "Inventory"));
+        world.Set(root, new UserControl(Role.Group, "Inventory"));
         systems.Update();
 
-        Assert.Equal(node, Assert.Single(Hierarchy<ElementTree>.GetChildren(world, root)));
-        Assert.Equal(Role.Group, world.Read<AccessibleRole>(node).Value);
-        Assert.Equal("Inventory", world.Read<AccessibleName>(node).Value);
+        Assert.Equal(node, Assert.Single(ElementChildren.Read(world, root)));
+        Assert.Equal(Role.Group, world.ReadComponentData<AccessibleRole>(node).Value);
+        Assert.Equal("Inventory", world.ReadComponentData<AccessibleName>(node).Value);
     }
 
     private readonly record struct UserControl(Role Role, string Name) : IView, IComponent

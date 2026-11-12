@@ -1,80 +1,60 @@
+using System.Runtime.CompilerServices;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Registry;
+using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS;
 
-public partial class World
+public sealed partial class World
 {
-    /// <summary>Acquires typed component roots for one caller-defined batch, including sparse roots.</summary>
-    /// <remarks>References obtained from the batch are used within this callback. Exposed roots receive one shared write version.</remarks>
-    public unsafe void ExecuteComponentWrite<TComponent, TState>(ref TState state,
-        delegate* managed<ComponentWriteBatch<TComponent>, ref TState, void> execution)
-        where TComponent : struct, IComponent
-        where TState : allows ref struct
-    {
-        DevelopmentCheck.Require(ComponentMetadata<TComponent>.AllowsPublicValueMutation,
-            "Component batches require a component that permits direct value writes.");
-        bool sparse = ComponentMetadata<TComponent>.Storage == StoragePath.Sparse;
-        using WorldJobAdmissionScope admission = EnterJobAdmission(
-            WorldJobAdmissionRequest.ForStorage(
-                sparse ? WorldStorageKind.Sparse : WorldStorageKind.Table,
-                ComponentMetadata<TComponent>.Id,
-                WorldStorageAccess.Write));
-        BeginStorageBorrow();
-        try
-        {
-            execution(new ComponentWriteBatch<TComponent>(this, sparse, AcquireAdmittedSystemVersion()), ref state);
-        }
-        catch (Exception bodyFault)
-        {
-            EndStorageBorrowAfterFault(bodyFault);
-        }
-        EndStorageBorrow();
-    }
-
-    /// <summary>Reads a field through its typed component access, including reference-bearing roots.</summary>
     public TValue ReadField<TComponent, TValue, TAccess>(Entity entity)
-        where TComponent : struct, IComponent
-        where TValue : unmanaged
+        where TComponent : struct, IComponent where TValue : unmanaged
+        where TAccess : struct, IFieldAccess<TComponent, TValue>
+        => TAccess.Read(in ReadComponentReference<TComponent>(entity));
+
+    public void WriteField<TComponent, TValue, TAccess>(Entity entity, in TValue value)
+        where TComponent : struct, IComponent where TValue : unmanaged
         where TAccess : struct, IFieldAccess<TComponent, TValue>
     {
-        int component = ComponentMetadata<TComponent>.Id;
-        bool sparse = ComponentMetadata<TComponent>.Storage == StoragePath.Sparse;
-        using WorldJobAdmissionScope admission = EnterJobAdmission(
-            WorldJobAdmissionRequest.ForStorage(
-                sparse ? WorldStorageKind.Sparse : WorldStorageKind.Table,
-                component,
-                WorldStorageAccess.Read));
-        if (sparse)
-            return TAccess.Read(in _sparse.ReadRef<TComponent>(entity));
-
-        return TAccess.Read(in _components.ReadRef<TComponent>(entity));
+        using WorldAccess access = OpenValues([new(ComponentType<TComponent>.TypeId,
+            ComponentType<TComponent>.IsSparseType ? WorldValueKind.Sparse : WorldValueKind.Table, true,
+            ComponentType<TComponent>.TracksWritesType)]);
+        if (ComponentType<TComponent>.IsSparseType) TAccess.Write(ref GetSparse<TComponent>(entity), in value);
+        else TAccess.Write(ref Get<TComponent>(entity), in value);
     }
 
-    /// <summary>Writes a typed field and advances the root component's write version.</summary>
-    /// <remarks>The access resolves the current root and object path during this call.</remarks>
-    public void WriteField<TComponent, TValue, TAccess>(Entity entity, in TValue value)
-        where TComponent : struct, IComponent
-        where TValue : unmanaged
-        where TAccess : struct, IFieldAccess<TComponent, TValue>
-    {
-        int component = ComponentMetadata<TComponent>.Id;
-        DevelopmentCheck.Require(ComponentMetadata<TComponent>.AllowsPublicValueMutation,
-            "Field writes require a component that permits direct value writes.");
-        bool sparse = ComponentMetadata<TComponent>.Storage == StoragePath.Sparse;
-        using WorldJobAdmissionScope admission = EnterJobAdmission(
-            WorldJobAdmissionRequest.ForStorage(
-                sparse ? WorldStorageKind.Sparse : WorldStorageKind.Table,
-                component,
-                WorldStorageAccess.Write));
-        uint version = AcquireAdmittedSystemVersion();
-        if (sparse)
-        {
-            TAccess.Write(ref _sparse.WriteRef<TComponent>(entity, version), in value);
-            return;
-        }
+    public ref readonly byte ReadBytes(Entity entity, int component)
+        => ref ComponentBytes(entity, component, 0, ComponentTypes.Get(component).Size, false);
+    public ref readonly byte ReadBytes(Entity entity, int component, int offset, int length)
+        => ref ComponentBytes(entity, component, offset, length, false);
+    public ref byte WriteBytes(Entity entity, int component)
+        => ref ComponentBytes(entity, component, 0, ComponentTypes.Get(component).Size, true);
+    public ref byte WriteBytes(Entity entity, int component, int offset, int length)
+        => ref ComponentBytes(entity, component, offset, length, true);
 
-        TAccess.Write(ref _components.WriteRef<TComponent>(entity, version), in value);
+    private unsafe ref byte ComponentBytes(Entity entity, int component, int offset, int length, bool write)
+    {
+        ComponentType type = ComponentTypes.Get(component);
+        DevelopmentCheck.Require(!type.ContainsReferences && !type.IsTag && !type.IsShared,
+            "Component byte access requires a stored value without managed references.");
+        DevelopmentCheck.Require(offset >= 0 && length >= 0 && offset <= type.Size && length <= type.Size - offset,
+            "The byte region fits within the component value.");
+        DevelopmentCheck.Require(!write || !type.UsesStructureWrites,
+            "Component byte writes use values with direct field mutation.");
+        using WorldAccess access = OpenValues([new(component,
+            type.IsSparse ? WorldValueKind.Sparse : WorldValueKind.Table, write, type.TracksWrites)]);
+        if (type.IsSparse)
+            return ref Unsafe.Add(ref _sparse!.Types[component]!.Bytes(entity,
+                write && type.TracksWrites ? NextVersion() : 0), offset);
+        ref EntityRecord record = ref Resolve(entity);
+        Chunk chunk = record.Chunk!;
+        ref ColumnEntry column = ref chunk.Columns[component];
+        if (write)
+        {
+            RequireWriteRow(chunk, record.Row);
+            if (type.TracksWrites)
+                chunk.Changes![column.ColumnPlusOne - 1].Stamp(record.Row, NextVersion(), false, type.TracksAdded);
+        }
+        return ref Unsafe.AsRef<byte>((void*)(column.Rows + (nint)record.Row * type.Size + offset));
     }
 }

@@ -8,6 +8,13 @@ public sealed partial class Scheduler
     internal WorkItemExecutionResult ExecuteStreamItem<TItem>(ref TItem item)
         where TItem : struct, IWorkStreamItem<TItem>
     {
+        if (TItem.IsSynchronous)
+        {
+            WorkItemExecutionResult synchronousResult = TItem.Execute(ref item, this);
+            TItem.Release(ref item);
+            return synchronousResult;
+        }
+
         JobHandle handle = TItem.GetState(item);
         if (!_execution.CanExecute(handle))
         {
@@ -25,13 +32,13 @@ public sealed partial class Scheduler
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(JobTrace.Execute);
         ScopeToken previousScope = s_currentScope;
         ScopeToken nextScope = ScopeToken.FromHandle(handle);
-        JobExecutionContext.Enter();
+        JobThreads.Enter();
         s_currentScope = nextScope;
         WorkItemExecutionResult result;
 
         try
         {
-            result = TItem.Execute(ref item);
+            result = TItem.Execute(ref item, this);
         }
         catch (Exception ex)
         {
@@ -51,7 +58,7 @@ public sealed partial class Scheduler
             }
             finally
             {
-                JobExecutionContext.Exit();
+                JobThreads.Exit();
             }
         }
 
@@ -61,7 +68,7 @@ public sealed partial class Scheduler
         if (result.Retire)
             TItem.Release(ref item);
         int completionCount = result.CompletedWorkItems + (result.Retire ? TItem.CompletionCountOnRetire : 0);
-        if (completionCount > 0)
+        if (!TItem.ManagesCompletion && completionCount > 0)
             CompleteStreamItems(handle, completionCount, result.Fault);
         return result;
     }
@@ -90,7 +97,10 @@ public sealed partial class Scheduler
             return;
         }
 
-        ReleaseAccessesIfRegistered(release.Accesses);
+        AccessBuilder<ResourceAccessRegistration> registrations = release.Accesses;
+        for (int index = 0; index < registrations.Count; index++)
+            _resources.ReleaseAccesses(registrations.Get(index), handle);
+        registrations.Clear();
         WorkCallbacks callbacks = _execution.EndWork(handle);
         if (callbacks.Continuations is null)
         {
@@ -116,6 +126,9 @@ public sealed partial class Scheduler
             _resources.ReleaseScopeOwned(release.Resources);
             release.Resources.Clear();
         }
+
+        try { release.JobData?.Release(); }
+        catch (Exception exception) { RecordFault(handle, ExceptionDispatchInfo.Capture(exception)); }
 
         CompleteCallbacks callbacks = _execution.EndDispatch(handle);
         if (callbacks.Completed)

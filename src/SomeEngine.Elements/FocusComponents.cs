@@ -7,7 +7,7 @@ namespace SomeEngine.Elements;
 public struct Focusable : IComponent;
 
 /// <summary>The single focused node in a World, written by its focus system.</summary>
-public struct Focused : ISparseComponent;
+public struct Focused : ISparseComponent, ICleanupComponent;
 
 public enum Direction : byte { Left, Right, Up, Down }
 

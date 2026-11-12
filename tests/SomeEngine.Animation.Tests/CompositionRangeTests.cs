@@ -13,23 +13,27 @@ public sealed class CompositionRangeTests
     [Fact]
     public void IndependentTargetsComposeTogetherBeforeTheirFieldsAreRead()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        using var world = new World(execution: new WorldJobs(scheduler));
         using var reached = new CountdownEvent(2);
         GCHandle signal = GCHandle.Alloc(reached);
         try
         {
-            var first = world.CreateEntity(new ValueComponent());
-            var second = world.CreateEntity(new ValueComponent());
+            var first = world.Create(new ValueComponent());
+            var second = world.Create(new ValueComponent());
             PropertyAnimation.DeclareContributions<TogetherValue>(world, first);
             PropertyAnimation.DeclareContributions<TogetherValue>(world, second);
             PropertyAnimation.Contribute(world, first, new Contribution<TogetherValue>
             {
-                Channel = Value, Source = first, Value = new(3, GCHandle.ToIntPtr(signal)),
+                Channel = Value,
+                Source = first,
+                Value = new(3, GCHandle.ToIntPtr(signal)),
             });
             PropertyAnimation.Contribute(world, second, new Contribution<TogetherValue>
             {
-                Channel = Value, Source = second, Value = new(7, GCHandle.ToIntPtr(signal)),
+                Channel = Value,
+                Source = second,
+                Value = new(7, GCHandle.ToIntPtr(signal)),
             });
             using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
             systems.Add(new ComposeSystem<TogetherValue, TogetherOps>());
@@ -37,8 +41,8 @@ public sealed class CompositionRangeTests
 
             systems.Update(ref frame);
 
-            Assert.Equal(3f, world.Read<ValueComponent>(first).Value.Amount);
-            Assert.Equal(7f, world.Read<ValueComponent>(second).Value.Amount);
+            Assert.Equal(3f, world.ReadComponentData<ValueComponent>(first).Value.Amount);
+            Assert.Equal(7f, world.ReadComponentData<ValueComponent>(second).Value.Amount);
         }
         finally
         {
@@ -51,16 +55,16 @@ public sealed class CompositionRangeTests
     [Fact]
     public void DeclaredTargetsComposeTogetherInTheCommonAnimationUpdate()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        using var world = new World(execution: new WorldJobs(scheduler));
         using var reached = new CountdownEvent(2);
         GCHandle signal = GCHandle.Alloc(reached);
         try
         {
             var layers = new AnimationLayers { Count = 1 };
             layers.Items[0] = new() { Weight = 1 };
-            var first = world.CreateEntity(new ValueComponent());
-            var second = world.CreateEntity(new ValueComponent());
+            var first = world.Create(new ValueComponent());
+            var second = world.Create(new ValueComponent());
             world.Add(first, layers);
             world.Add(second, layers);
             var spec = Spec.Create<TogetherValue, TogetherOps, ValueParameters, ValueState, ValueMotion>(new());
@@ -74,8 +78,8 @@ public sealed class CompositionRangeTests
 
             systems.Update(ref frame);
 
-            Assert.Equal(3f, world.Read<ValueComponent>(first).Value.Amount);
-            Assert.Equal(7f, world.Read<ValueComponent>(second).Value.Amount);
+            Assert.Equal(3f, world.ReadComponentData<ValueComponent>(first).Value.Amount);
+            Assert.Equal(7f, world.ReadComponentData<ValueComponent>(second).Value.Amount);
         }
         finally
         {

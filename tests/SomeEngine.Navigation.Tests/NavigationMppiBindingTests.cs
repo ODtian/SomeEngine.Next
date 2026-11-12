@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using SomeEngine.ECS;
 using System.Numerics;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
@@ -7,13 +9,14 @@ namespace SomeEngine.Navigation.Tests;
 public sealed class NavigationMppiBindingTests
 {
     [Fact]
-    public void ReplacingSpaceDataBetweenCandidateAndReductionKeepsTheActualReadsProtected()
+    public async Task ReplacingSpaceDataBetweenCandidateAndReductionKeepsTheActualReadsProtected()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var world = new World(execution: new WorldJobs(scheduler));
         var space = new RebindingSpace(scheduler);
+        using var checkpoints = space.Checkpoints;
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
-        var actor = world.CreateEntity(new TestMotion());
+        var actor = world.Create(new TestMotion());
         world.Add(actor, new NavigationAgent(profile, new NavigationPolicy(), 1));
         world.Add(actor, new NavigationGoal(new Vector3(0, 0, 5)));
         world.Add(actor, default(NavigationPathResult));
@@ -24,14 +27,32 @@ public sealed class NavigationMppiBindingTests
         using var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
         var mppi = new NavigationAvoidanceSystem<RebindingSpace, RebindingModel, TestMotion, TestMotionReader>(world, neighbors);
 
-        mppi.Schedule(0, default, neighbors.Schedule()).Complete();
+        JobHandle selected = mppi.Schedule(0, default, neighbors.Schedule());
+        var coordinations = new List<Task>();
+        Task completed = Task.Run(() =>
+        {
+            try { selected.Complete(); }
+            finally { space.Checkpoints.CompleteAdding(); }
+        });
+        foreach ((int read, ManualResetEventSlim release) in space.Checkpoints.GetConsumingEnumerable())
+        {
+            JobHandle checkpoint = scheduler.Schedule(new ReadCheckpoint(), new JobScheduleOptions(JobPriority.Low));
+            coordinations.Add(Task.Run(() =>
+            {
+                try { checkpoint.Complete(); }
+                finally { release.Set(); }
+            }));
+        }
+        await completed;
+        await Task.WhenAll(coordinations);
         scheduler.CombineDependencies(space.Writes.Append(space.Replacement).ToArray()).Complete();
 
-        Assert.Equal(NavigationMppiStatus.Ready, world.Read<NavigationMppiResult>(actor).Status);
+        Assert.Equal(NavigationMppiStatus.Ready, world.ReadValue<NavigationMppiResult>(actor).Status);
         Assert.Contains(space.Reads, values => ReferenceEquals(values, space.ReplacedValues));
-        Assert.True(space.Events.IndexOf("replace") < space.Events.LastIndexOf($"read {space.Reads.Count - 1}"));
+        string[] events = space.Events.ToArray();
+        Assert.True(Array.IndexOf(events, "replace") < Array.LastIndexOf(events, $"read {space.Reads.Count - 1}"));
         for (int read = 0; read < space.Reads.Count; read++)
-            Assert.True(space.Events.IndexOf($"read {read}") < space.Events.IndexOf($"write {read}"));
+            Assert.True(Array.IndexOf(events, $"read {read}") < Array.IndexOf(events, $"write {read}"));
     }
 
     // Array replacement is an example of a mutable game space's ordinary binding update.
@@ -44,7 +65,8 @@ public sealed class NavigationMppiBindingTests
         public JobHandle Replacement;
         public List<float[]> Reads { get; } = [];
         public List<JobHandle> Writes { get; } = [];
-        public List<string> Events { get; } = [];
+        public ConcurrentQueue<string> Events { get; } = new();
+        public BlockingCollection<(int Read, ManualResetEventSlim Release)> Checkpoints { get; } = new();
         public static long GetVersion(RebindingSpace space) => Volatile.Read(ref space._data).Version;
         public static void CollectResources(RebindingSpace space, ref JobResourceAccessBuilder resources)
         {
@@ -54,7 +76,7 @@ public sealed class NavigationMppiBindingTests
         public void Replace()
         {
             Volatile.Write(ref _data, new(ReplacedValues, _data.Version + 1));
-            Events.Add("replace");
+            Events.Enqueue("replace");
         }
         private sealed record SpaceData(float[] Values, long Version);
     }
@@ -73,9 +95,11 @@ public sealed class NavigationMppiBindingTests
             space.Reads.Add(values);
             space.Writes.Add(Task.Run(() => space.Scheduler.Schedule(new WriteValue(space, values, read),
                 JobResourceAccess.Write(space.Scheduler.GetResourceToken(values)), new JobScheduleOptions(JobPriority.High))).GetAwaiter().GetResult());
-            space.Scheduler.Schedule(new ReadCheckpoint(), new JobScheduleOptions(JobPriority.Low)).Complete();
+            using var release = new ManualResetEventSlim();
+            space.Checkpoints.Add((read, release));
+            release.Wait();
             cost = values[0];
-            space.Events.Add($"read {read}");
+            space.Events.Enqueue($"read {read}");
             if (read == 0)
                 space.Replacement = Task.Run(() => space.Scheduler.Schedule(new ReplaceValues(space),
                     JobResourceAccess.Write(space.Scheduler.GetResourceToken(space)), new JobScheduleOptions(JobPriority.High))).GetAwaiter().GetResult();
@@ -88,7 +112,7 @@ public sealed class NavigationMppiBindingTests
 
     private readonly struct WriteValue(RebindingSpace space, float[] values, int read) : IJob
     {
-        public void Execute() { values[0]++; space.Events.Add($"write {read}"); }
+        public void Execute() { values[0]++; space.Events.Enqueue($"write {read}"); }
     }
     private readonly struct ReplaceValues(RebindingSpace space) : IJob { public void Execute() => space.Replace(); }
     private readonly struct ReadCheckpoint : IJob { public void Execute() { } }

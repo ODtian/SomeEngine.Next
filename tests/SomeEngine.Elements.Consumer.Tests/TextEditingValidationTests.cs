@@ -46,9 +46,9 @@ public sealed partial class TextEditingTests
     public void EditableTextRequiresCompleteTextElementPositions(int caret, int selectionStart)
     {
         using var world = new World();
-        Entity node = world.CreateEntity(new EditableText { Text = "😀a", Caret = caret, SelectionStart = selectionStart });
+        Entity node = world.Create(new EditableText { Text = "😀a", Caret = caret, SelectionStart = selectionStart });
         world.Add(node, new Focusable());
-        world.AddSparse(node, new Focused());
+        world.SetSparse(node, new Focused());
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new FocusNavigationSystem());
         Keyboard.Key(world, Key.Home, true);

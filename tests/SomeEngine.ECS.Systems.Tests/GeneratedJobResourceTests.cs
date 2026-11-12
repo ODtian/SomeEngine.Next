@@ -10,18 +10,15 @@ public sealed class GeneratedJobResourceTests : JobTest
     public void ScheduleSamplesJobResourceAfterItsDeclaredWriter()
     {
         World world = CreateJobWorld();
-        Entity entity = world.CreateEntity(new ResourceSample { Index = 1 });
+        Entity entity = world.Create(new ResourceSample { Index = 1 });
         var heights = new HeightSamples([2, 5, 8]);
         JobHandle written = Jobs.Schedule(
             new SetHeight(heights.Values, 1, 13),
             JobResourceAccess.Write(Jobs, heights.Values.AsMemory(1, 1)));
 
-        new SampleHeight(heights).Schedule(
-            world,
-            [JobResourceAccess.Read(Jobs, heights.Values, 1, 1)],
-            written).Complete();
+        new SampleHeight(heights, 1, 1).Schedule(world, written).Complete();
 
-        Assert.Equal(13, world.Read<ResourceSample>(entity).Value);
+        Assert.Equal(13, world.ReadComponentData<ResourceSample>(entity).Value);
     }
 
     [Fact]
@@ -29,16 +26,13 @@ public sealed class GeneratedJobResourceTests : JobTest
     {
         World world = CreateJobWorld();
         Entity[] entities = Enumerable.Range(0, 4)
-            .Select(index => world.CreateEntity(new ResourceSample { Index = index }))
+            .Select(index => world.Create(new ResourceSample { Index = index }))
             .ToArray();
         var heights = new HeightSamples([11, 22, 33, 44]);
 
-        new SampleHeight(heights).ScheduleParallel(
-            world,
-            [JobResourceAccess.Read(Jobs, heights.Values)],
-            new JobEntityScheduleOptions(rowsPerPacket: 1)).Complete();
+        new SystemRunner(world, rangeRows: 1).Schedule(new SampleHeight(heights), parallel: true).Complete();
 
-        Assert.Equal([11, 22, 33, 44], entities.Select(entity => world.Read<ResourceSample>(entity).Value));
+        Assert.Equal([11, 22, 33, 44], entities.Select(entity => world.ReadComponentData<ResourceSample>(entity).Value));
     }
 
     [Fact]
@@ -46,24 +40,20 @@ public sealed class GeneratedJobResourceTests : JobTest
     {
         World firstWorld = CreateJobWorld();
         World secondWorld = CreateJobWorld();
-        Entity first = firstWorld.CreateEntity(new ResourceSample { Index = 0 });
-        Entity second = secondWorld.CreateEntity(new ResourceSample { Index = 1 });
+        Entity first = firstWorld.Create(new ResourceSample { Index = 0 });
+        Entity second = secondWorld.Create(new ResourceSample { Index = 1 });
         int[] values = new int[2];
         using var together = new Barrier(2);
 
-        JobHandle firstWritten = new WriteHeightRange(values, together, 11).ScheduleParallel(
-            firstWorld,
-            [JobResourceAccess.Write(Jobs, values, 0, 1)]);
-        JobHandle secondWritten = new WriteHeightRange(values, together, 22).ScheduleParallel(
-            secondWorld,
-            [JobResourceAccess.Write(Jobs, values, 1, 1)]);
+        JobHandle firstWritten = new WriteHeightRange(values, together, 11, 0).ScheduleParallel(firstWorld);
+        JobHandle secondWritten = new WriteHeightRange(values, together, 22, 1).ScheduleParallel(secondWorld);
         firstWritten.Complete();
         secondWritten.Complete();
 
         Assert.Equal([11, 22], new[]
         {
-            firstWorld.Read<ResourceSample>(first).Value,
-            secondWorld.Read<ResourceSample>(second).Value,
+            firstWorld.ReadComponentData<ResourceSample>(first).Value,
+            secondWorld.ReadComponentData<ResourceSample>(second).Value,
         });
     }
 
@@ -71,13 +61,13 @@ public sealed class GeneratedJobResourceTests : JobTest
     public void JobResourceStaysAliveUntilItsAttachedChildCompletes()
     {
         World world = CreateJobWorld();
-        Entity entity = world.CreateEntity(new ResourceSample());
+        Entity entity = world.Create(new ResourceSample());
         using var fence = new ResourceChildFence();
         (JobHandle handle, WeakReference resource) = ScheduleResourceChild(world, fence);
         try
         {
             Assert.True(fence.Registered.Wait(TimeSpan.FromSeconds(5)));
-            _ = world.Read<ResourceSample>(entity);
+            _ = world.ReadComponentData<ResourceSample>(entity);
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
@@ -96,9 +86,7 @@ public sealed class GeneratedJobResourceTests : JobTest
     {
         var heights = new HeightSamples([17]);
         var resource = new WeakReference(heights);
-        JobHandle handle = new SampleHeightWithChild(heights, fence).ScheduleParallel(
-            world,
-            [JobResourceAccess.Read(Jobs, heights.Values)]);
+        JobHandle handle = new SampleHeightWithChild(heights, fence).ScheduleParallel(world);
         return (handle, resource);
     }
 
@@ -108,11 +96,12 @@ public sealed class GeneratedJobResourceTests : JobTest
     }
 }
 
-internal partial struct WriteHeightRange(int[] values, Barrier together, int value) : IJobEntity
+internal partial struct WriteHeightRange(int[] values, Barrier together, int value, int index) : IJobEntity
 {
     private readonly int[] _values = values;
     private readonly Barrier _together = together;
     private readonly int _value = value;
+    public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(_values.AsMemory(index, 1));
 
     public void Execute(ref ResourceSample sample)
     {
@@ -146,6 +135,7 @@ internal partial struct SampleHeightWithChild(HeightSamples heights, ResourceChi
 {
     private readonly HeightSamples _heights = heights;
     private readonly ResourceChildFence _fence = fence;
+    public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Read(_heights.Values.AsMemory());
 
     public void Execute(ref ResourceSample sample)
     {
@@ -165,9 +155,11 @@ public struct ResourceSample : IComponent
     public int Value;
 }
 
-public partial struct SampleHeight(HeightSamples heights) : IJobEntity
+public partial struct SampleHeight(HeightSamples heights, int start = 0, int count = -1) : IJobEntity
 {
     private readonly HeightSamples _heights = heights;
+    public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) =>
+        resources.Read(_heights.Values.AsMemory(start, count < 0 ? _heights.Values.Length - start : count));
 
     public void Execute(ref ResourceSample sample)
     {

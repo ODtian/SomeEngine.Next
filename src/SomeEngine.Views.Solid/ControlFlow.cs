@@ -63,12 +63,13 @@ public static partial class Solid
             return;
 
         ulong key = 0;
-        var previous = Hierarchy<ElementTree>.GetChildren(Scope.World, Scope.Entity);
-        if (previous.Count > 0)
+        Entity[] previous;
+        using (ChildrenRead childRead = Hierarchy<ElementTree>.GetChildren(Scope.World, Scope.Entity)) previous = childRead.Entities.ToArray();
+        if (previous.Length > 0)
         {
             Entity branch = previous[0];
-            key = Scope.World.Read<ElementKey>(branch).Key;
-            T previousValue = Scope.World.Read<BranchContent<T>>(branch).Value;
+            key = Scope.World.ReadComponentData<ElementKey>(branch).Key;
+            T previousValue = Scope.World.ReadComponentData<BranchContent<T>>(branch).Value;
             bool changed = keyed
                 ? !EqualityComparer<T>.Default.Equals(previousValue, value)
                 : (previousValue is null) != (value is null);
@@ -100,7 +101,8 @@ public static partial class Solid
             {
                 Func<Func<T?>> current = Memo(() => Scope.Read<ShowValue<T>>(condition).When);
                 children(() => current()()!);
-            } : Fallback;
+            }
+            : Fallback;
             DeclareBranch(value, content, Keyed);
             return default;
         }

@@ -11,7 +11,7 @@ public sealed class JobTraceTests
     public void DeferredJobKeepsItsOriginWhileNestedInAnotherFramesWait()
     {
         string path = Path.Combine(Path.GetTempPath(), $"someengine-job-{Guid.NewGuid():N}.setrace");
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         try
         {
             using (EngineTrace.Start(path))

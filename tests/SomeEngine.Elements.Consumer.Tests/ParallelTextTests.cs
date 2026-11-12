@@ -35,8 +35,8 @@ public sealed class ParallelTextTests
             parallel.Update();
             for (int index = 0; index < serial.Nodes.Length; index++)
             {
-                ShapedText expected = serial.World.Read<ShapedText>(serial.Nodes[index]);
-                ShapedText actual = parallel.World.Read<ShapedText>(parallel.Nodes[index]);
+                ShapedText expected = serial.World.ReadComponentData<ShapedText>(serial.Nodes[index]);
+                ShapedText actual = parallel.World.ReadComponentData<ShapedText>(parallel.Nodes[index]);
                 Assert.Equal(expected.Size, actual.Size);
                 Assert.Equal(expected.Style, actual.Style);
                 Assert.Equal(expected.Version, actual.Version);
@@ -61,9 +61,13 @@ public sealed class ParallelTextTests
             _systems.Add(new LayoutSystem(shaping));
             for (int index = 0; index < Nodes.Length; index++)
             {
-                Entity canvas = World.CreateEntity(new Canvas { Size = new Size(80 + index % 5 * 20, 200) });
-                World.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 16 + index % 3,
-                    Color = new Color(0.4f, 0.7f, 0.9f) }));
+                Entity canvas = World.Create(new Canvas { Size = new Size(80 + index % 5 * 20, 200) });
+                World.Add(canvas, new TextTheme(new TextStyle
+                {
+                    Font = font,
+                    Size = 16 + index % 3,
+                    Color = new Color(0.4f, 0.7f, 0.9f)
+                }));
                 Nodes[index] = Views.Views.Spawn(World, canvas, new Text("office AV"));
             }
         }

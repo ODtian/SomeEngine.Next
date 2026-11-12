@@ -24,8 +24,8 @@ public sealed class LightEncodingRenderingTests(SceneContentFixture content)
                 Initialize = frame =>
                 {
                     point = frame.Scene.PointLights.Single();
-                    directional = frame.World.CreateEntity(new DirectionalLight(new(0, 0, 2), Vector3.One, 1));
-                    spot = frame.World.CreateEntity(new SpotLight(new(-2, 2, 3), 20, new(2, -2, 5), .95f, .7f,
+                    directional = frame.World.Create(new DirectionalLight(new(0, 0, 2), Vector3.One, 1));
+                    spot = frame.World.Create(new SpotLight(new(-2, 2, 3), 20, new(2, -2, 5), .95f, .7f,
                         new(0, 1, 0), 30));
                 },
                 UpdateFrame = frame =>
@@ -33,7 +33,7 @@ public sealed class LightEncodingRenderingTests(SceneContentFixture content)
                     if (frame.Index == 1) frame.Scene.CaptureImage(image => before = image);
                     if (frame.Index == 2)
                     {
-                        frame.World.DestroyEntity(directional);
+                        frame.World.Destroy(directional);
                         SetFinalLights(frame, point, spot);
                     }
                     if (frame.Index == 3) frame.Scene.CaptureImage(image => changed = image);
@@ -46,7 +46,7 @@ public sealed class LightEncodingRenderingTests(SceneContentFixture content)
                 Options = scene.Options,
                 Initialize = frame =>
                 {
-                    Entity target = frame.World.CreateEntity(FinalSpot());
+                    Entity target = frame.World.Create(FinalSpot());
                     SetFinalLights(frame, frame.Scene.PointLights.Single(), target);
                 },
                 UpdateFrame = frame => { if (frame.Index == 3) frame.Scene.CaptureImage(image => expected = image); },
@@ -63,7 +63,7 @@ public sealed class LightEncodingRenderingTests(SceneContentFixture content)
 
     private static void SetFinalLights(ApplicationFrame frame, Entity point, Entity spot)
     {
-        frame.World.Replace(point, new PointLight(new(-4, 2, 3), 20, new(.2f, .4f, 1), 30));
-        frame.World.Replace(spot, FinalSpot());
+        frame.World.Set(point, new PointLight(new(-4, 2, 3), 20, new(.2f, .4f, 1), 30));
+        frame.World.Set(spot, FinalSpot());
     }
 }

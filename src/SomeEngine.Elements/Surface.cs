@@ -5,7 +5,7 @@ namespace SomeEngine.Elements;
 
 /// <summary>The fill, rounded corners, border, and shadow on a layout node.</summary>
 [GenerateFields]
-public record struct Surface : IComponent
+public record struct Surface : ITrackedComponent
 {
     public Color Fill;
     public float CornerRadius;

@@ -7,7 +7,6 @@ namespace SomeEngine.Animation.Pose;
 
 public readonly record struct MotionWarpParameters(RootMotionWarp Warp, PoseResultId Source, PoseResultId Output);
 
-[BufferCapacity(1)]
 public struct MotionWarpInstance : IBufferElement
 {
     public AnimationLeafBatch<MotionWarpParameters> Definition;
@@ -30,19 +29,29 @@ public readonly struct MotionWarpLeaf : IAnimationLeaf<MotionWarpParameters>
     public static void Install(World world, Entity animation, Entity target,
         AnimationLeafBatch<MotionWarpParameters> definitions, int index, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<MotionWarpInstance>(animation)) world.AddBuffer<MotionWarpInstance>(animation);
+        if (!world.Has<Buffer<MotionWarpInstance>>(animation)) world.AddBuffer<MotionWarpInstance>(animation);
         MotionWarpParameters parameters = definitions.Parameters[index];
         var instance = new MotionWarpInstance
         {
-            Definition = definitions, Index = index, Placement = placement,
+            Definition = definitions,
+            Index = index,
+            Placement = placement,
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
             Input = parameters.Warp.Bind(Matrix4x4.Identity, parameters.Warp.Source.Sample(parameters.Warp.Window.End)),
             PreviousMotion = Matrix4x4.Identity,
         };
         instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement);
-        world.ExecuteBufferWrite<MotionWarpInstance, MotionWarpInstance>(animation, ref instance,
-            static (instances, ref instance) => instances.Add(instance));
+        {
+            using var instances = world.GetBuffer<MotionWarpInstance>(animation);
+            Visit(instances, ref instance);
+
+            static void Visit(DynamicBuffer<MotionWarpInstance> instances, ref MotionWarpInstance instance)
+            {
+                instances.Add(instance);
+
+            }
+        }
     }
 
     public static void Complete(World world, Entity animation) =>
@@ -50,7 +59,11 @@ public readonly struct MotionWarpLeaf : IAnimationLeaf<MotionWarpParameters>
 
     public static void Release(World world, Entity animation)
     {
-        world.ExecuteBufferWrite<MotionWarpInstance>(animation, static instances => instances.Clear());
+        {
+            using var instances = world.GetBuffer<MotionWarpInstance>(animation);
+            instances.Clear();
+
+        }
         PoseAnimation.ReleaseNodes(world, animation);
     }
 }

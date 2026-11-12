@@ -23,7 +23,7 @@ public sealed class DirectSlangShaderTests
             new SessionDesc { Targets = CreateTargets(), SearchPaths = [files.Path] }, "metadata");
         Shader shader = compiled.Shader;
         var location = Assert.Single(shader.GetSlangUsedParameters(0, 0));
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         try
         {
             IMetadata metadata = await shader.GetSlangEntryMetadataAsync(0, 0).WaitAsync(TimeSpan.FromSeconds(10));
@@ -32,7 +32,7 @@ public sealed class DirectSlangShaderTests
                 checked((nuint)location.Register), out bool used).Failed);
             Assert.True(used);
         }
-        finally { JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 }); }
+        finally { JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 }); }
     }
 
     [Fact]

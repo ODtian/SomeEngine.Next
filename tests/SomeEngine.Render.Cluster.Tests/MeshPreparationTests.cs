@@ -24,8 +24,8 @@ public sealed class MeshPreparationTests
         using var secondBytes = new BvhBytes(original.Bvh.ToArray());
         Mesh first = CopyWithBvh(original, firstBytes.Memory);
         Mesh second = CopyWithBvh(original, secondBytes.Memory);
-        context.World.CreateEntity(new RenderMesh(first, 0));
-        context.World.CreateEntity(new RenderMesh(second, 0));
+        context.World.World.Create(new RenderMesh(first, 0));
+        context.World.World.Create(new RenderMesh(second, 0));
         firstBytes.OnRead = () => { firstEntered.Set(); release.Wait(); };
         secondBytes.OnRead = () => { secondEntered.Set(); release.Wait(); };
         Task<ClusterMeshPrepareResult> preparation = Task.Run(async () => await context.Resources.PrepareMeshesAsync());
@@ -53,8 +53,8 @@ public sealed class MeshPreparationTests
         Mesh original = CreateTriangle();
         using var firstBytes = new BvhBytes(original.Bvh.ToArray());
         using var secondBytes = new BvhBytes(original.Bvh.ToArray());
-        context.World.CreateEntity(new RenderMesh(CopyWithBvh(original, firstBytes.Memory), 0));
-        context.World.CreateEntity(new RenderMesh(CopyWithBvh(original, secondBytes.Memory), 0));
+        context.World.World.Create(new RenderMesh(CopyWithBvh(original, firstBytes.Memory), 0));
+        context.World.World.Create(new RenderMesh(CopyWithBvh(original, secondBytes.Memory), 0));
         firstBytes.OnRead = () =>
         {
             if (cancel)
@@ -115,7 +115,7 @@ public sealed class MeshPreparationTests
 
         internal PreparationContext()
         {
-            JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+            JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
             _device = new();
             _instances = new RenderInstanceStorageSystem(_device.Backend, _device.Device, _device.Coordinator,
                 World, ClusterRenderFeature.GeometryLayout, new RenderInstanceOptions { RowCapacity = 4, BatchCapacity = 1 });

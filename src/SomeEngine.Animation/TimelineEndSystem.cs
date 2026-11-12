@@ -1,6 +1,5 @@
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation;
@@ -8,35 +7,35 @@ namespace SomeEngine.Animation;
 /// <summary>Runs after evaluators: completes timelines with an empty running mask.</summary>
 public struct TimelineEndSystem : ISystem<ImmediateSystemContext>
 {
-    private QueryHandle _timelines;
+    private Query _timelines;
+    private List<SomeEngine.ECS.Entities.Entity> _completed;
 
-    public void OnCreate(ref ImmediateSystemContext context) =>
-        _timelines = context.World.Query(context.World.QueryDefinition()
-            .ReadWrite<Timeline>().Enabled<Timeline>()
-            .OptionalBuffer<TimelineStage>(QueryAccess.Read));
+    public void OnCreate(ref ImmediateSystemContext context)
+    {
+        _completed = [];
+        _timelines = context.World.Query(new QueryDescription().With<Timeline>().Optional<Buffer<TimelineStage>>());
+    }
 
-    public void OnUpdate(ref ImmediateSystemContext context) =>
-        context.World.ExecuteQuery(_timelines, context.LastSystemVersion, static rows =>
-        {
-            foreach (QueryChunkView chunk in rows.Chunks)
+    public void OnUpdate(ref ImmediateSystemContext context)
+    {
+        _completed.Clear();
+        using (QueryScope rows = _timelines.Since(context.LastSystemVersion).Open())
+            foreach (QueryChunk chunk in rows)
             {
-                var timelines = chunk.ReadWriteColumn<Timeline>();
-                bool hasStages = chunk.HasBuffer<TimelineStage>();
-                var stages = hasStages ? chunk.ReadBufferColumn<TimelineStage>() : default;
-                foreach (int row in chunk.RowIndices)
+                Span<Timeline> timelines = chunk.Write<Timeline>();
+                bool hasStages = chunk.Has<Buffer<TimelineStage>>();
+                for (int row = 0; row < chunk.Count; row++)
                 {
                     ref Timeline timeline = ref timelines[row];
-                    if (timeline.Paused)
-                        continue;
-                    if (hasStages && ContinueStages(ref timeline, stages[row].AsSpan()))
-                        continue;
-                    if (timeline.Running != 0)
-                        continue;
+                    if (timeline.Paused) continue;
+                    if (hasStages && ContinueStages(ref timeline, chunk.ReadBuffer<TimelineStage>(row).AsSpan())) continue;
+                    if (timeline.Running != 0) continue;
                     timeline.Completions++;
-                    chunk.SetComponentEnabled<Timeline>(row, false);
+                    _completed.Add(chunk.Entities[row]);
                 }
             }
-        });
+        foreach (var entity in _completed) context.World.Disable<Timeline>(entity);
+    }
 
     internal static bool ContinueStages(ref Timeline timeline, ReadOnlySpan<TimelineStage> stages)
     {
@@ -74,5 +73,5 @@ public struct TimelineEndSystem : ISystem<ImmediateSystemContext>
         return false;
     }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_timelines);
+    public void OnDestroy(ref ImmediateSystemContext context) { }
 }

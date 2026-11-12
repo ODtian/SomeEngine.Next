@@ -5,7 +5,7 @@ using SomeEngine.ECS;
 namespace SomeEngine.Elements;
 
 /// <summary>The temporary canvas-coordinate transform and opacity used to continue a FLIP transition.</summary>
-public struct PresentationOffset : IComponent
+public struct PresentationOffset : IComponent, ITrackedComponent
 {
     public Matrix3x2 Matrix;
     public float Alpha;

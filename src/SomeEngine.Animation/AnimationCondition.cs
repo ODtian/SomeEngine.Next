@@ -2,7 +2,6 @@ using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Animation;
 
@@ -20,17 +19,17 @@ public readonly struct GraphCondition<TParameters, TState, TCondition>
     where TState : struct
     where TCondition : struct, IAnimationCondition<TParameters, TState>
 {
-    public GraphCondition(in TParameters parameters, QueryDefinition? inputs = null) =>
-        (Parameters, Inputs) = (parameters, inputs ?? QueryDefinition.Empty);
+    public GraphCondition(in TParameters parameters, QueryDescription? inputs = null) =>
+        (Parameters, Inputs) = (parameters, inputs);
 
     public TParameters Parameters { get; }
-    public QueryDefinition Inputs { get; }
+    public QueryDescription? Inputs { get; }
 }
 
 public readonly partial struct GraphCondition
 {
     public static GraphCondition<TParameters, TState, TCondition> Create<TParameters, TState, TCondition>(
-        in TParameters parameters, QueryDefinition? inputs = null)
+        in TParameters parameters, QueryDescription? inputs = null)
         where TParameters : struct
         where TState : struct
         where TCondition : struct, IAnimationCondition<TParameters, TState> => new(in parameters, inputs);
@@ -56,14 +55,16 @@ public ref partial struct StateMachineScope
         DevelopmentCheck.Require(float.IsFinite(crossfade) && crossfade >= 0, "Crossfade duration must be finite and nonnegative.");
         GraphBuilding.Add(_data, new GraphNode
         {
-            Kind = GraphNodeKind.Transition, StateId = from, NextState = to, FadeDuration = crossfade,
+            Kind = GraphNodeKind.Transition,
+            StateId = from,
+            NextState = to,
+            FadeDuration = crossfade,
             ConditionData = new GraphConditionData<TParameters, TState, TCondition>(condition.Parameters, condition.Inputs),
             Matches = &GraphConditionEvaluation<TParameters, TState, TCondition>.Matches,
         });
     }
 }
 
-[BufferCapacity(1)]
 internal struct GraphConditionState<TParameters, TState, TCondition> : IBufferElement
     where TParameters : struct
     where TState : struct
@@ -72,15 +73,15 @@ internal struct GraphConditionState<TParameters, TState, TCondition> : IBufferEl
     internal TState Value;
 }
 
-internal abstract class GraphConditionData(QueryDefinition inputs)
+internal abstract class GraphConditionData(QueryDescription? inputs)
 {
-    internal QueryDefinition Inputs { get; } = inputs;
+    internal QueryDescription? Inputs { get; } = inputs;
     internal abstract Type Type { get; }
     internal abstract void Initialize(World world, Entity animation, int index);
     internal abstract void Release(World world, Entity animation, int index);
 }
 
-internal sealed class GraphConditionData<TParameters, TState, TCondition>(in TParameters parameters, QueryDefinition inputs) : GraphConditionData(inputs)
+internal sealed class GraphConditionData<TParameters, TState, TCondition>(in TParameters parameters, QueryDescription? inputs) : GraphConditionData(inputs)
     where TParameters : struct
     where TState : struct
     where TCondition : struct, IAnimationCondition<TParameters, TState>
@@ -92,22 +93,23 @@ internal sealed class GraphConditionData<TParameters, TState, TCondition>(in TPa
 
     internal override void Initialize(World world, Entity animation, int index)
     {
-        if (!world.HasBuffer<GraphConditionState<TParameters, TState, TCondition>>(animation))
+        if (!world.Has<Buffer<GraphConditionState<TParameters, TState, TCondition>>>(animation))
             world.AddBuffer<GraphConditionState<TParameters, TState, TCondition>>(animation);
         var initialization = (Index: index, Parameters: Parameters);
-        world.ExecuteBufferWrite<GraphConditionState<TParameters, TState, TCondition>, (int Index, TParameters Parameters)>(
-            animation, ref initialization, static (states, ref initialization) =>
-            {
-                while (states.Count <= initialization.Index)
-                    states.Add(default);
-                TCondition.Initialize(in initialization.Parameters, ref states[initialization.Index].Value);
-            });
+        {
+            using var states = world.GetBuffer<GraphConditionState<TParameters, TState, TCondition>>(animation);
+            while (states.Count <= initialization.Index)
+                states.Add(default);
+            TCondition.Initialize(in initialization.Parameters, ref states[initialization.Index].Value);
+        }
     }
 
     internal override void Release(World world, Entity animation, int index)
     {
-        world.ExecuteBufferWrite<GraphConditionState<TParameters, TState, TCondition>, int>(animation, ref index,
-            static (states, ref index) => TCondition.Release(ref states[index].Value));
+        {
+            using var states = world.GetBuffer<GraphConditionState<TParameters, TState, TCondition>>(animation);
+            TCondition.Release(ref states[index].Value);
+        }
     }
 }
 
@@ -117,18 +119,18 @@ internal static unsafe class GraphConditionAccess<TParameters, TState, TConditio
     where TCondition : struct, IAnimationCondition<TParameters, TState>
 {
     internal static readonly int Id = GraphConditionAccesses.Add(&Declare);
-    private static void Declare(QueryDefinitionBuilder query) =>
-        query.OptionalBuffer<GraphConditionState<TParameters, TState, TCondition>>(QueryAccess.ReadWrite);
+    private static void Declare(QueryDescription query) =>
+        query.Optional<Buffer<GraphConditionState<TParameters, TState, TCondition>>>();
 }
 
 internal static unsafe class GraphConditionAccesses
 {
     private static readonly List<Entry> Entries = new();
-    private static readonly List<QueryDefinition> Inputs = new();
+    private static readonly List<QueryDescription> Inputs = new();
     private static readonly object Gate = new();
     internal static int Version { get; private set; }
 
-    internal static int Add(delegate* managed<QueryDefinitionBuilder, void> declare)
+    internal static int Add(delegate* managed<QueryDescription, void> declare)
     {
         lock (Gate)
         {
@@ -137,34 +139,34 @@ internal static unsafe class GraphConditionAccesses
         }
     }
 
-    internal static void Declare(QueryDefinitionBuilder query)
+    internal static void Declare(QueryDescription query)
     {
         lock (Gate)
         {
             foreach (Entry entry in Entries)
                 entry.Declare(query);
-            foreach (QueryDefinition inputs in Inputs)
+            foreach (QueryDescription inputs in Inputs)
                 query.WithAccess(inputs);
         }
     }
 
-    internal static int AddInputs(QueryDefinition inputs)
+    internal static int AddInputs(QueryDescription? inputs)
     {
         lock (Gate)
         {
-            if (inputs == QueryDefinition.Empty)
+            if (inputs is null)
                 return Version;
-            foreach (QueryDefinition previous in Inputs)
-                if (previous.Key.Equals(inputs.Key))
+            foreach (QueryDescription previous in Inputs)
+                if (ReferenceEquals(previous, inputs))
                     return Version;
             Inputs.Add(inputs);
             return ++Version;
         }
     }
 
-    private readonly struct Entry(delegate* managed<QueryDefinitionBuilder, void> declare)
+    private readonly struct Entry(delegate* managed<QueryDescription, void> declare)
     {
-        internal readonly delegate* managed<QueryDefinitionBuilder, void> Declare = declare;
+        internal readonly delegate* managed<QueryDescription, void> Declare = declare;
     }
 }
 
@@ -177,13 +179,11 @@ internal static class GraphConditionEvaluation<TParameters, TState, TCondition>
     {
         var evaluation = (Definition: (GraphConditionData<TParameters, TState, TCondition>)node.ConditionData!,
             Index: node.ConditionIndex, Inputs: inputs, Matches: false);
-        world.ExecuteBufferWrite<GraphConditionState<TParameters, TState, TCondition>,
-            (GraphConditionData<TParameters, TState, TCondition> Definition, int Index, GraphParameters Inputs, bool Matches)>(
-            animation, ref evaluation, static (states, ref evaluation) =>
-            {
-                evaluation.Matches = TCondition.Matches(in evaluation.Definition.Parameters, in evaluation.Inputs,
-                    ref states[evaluation.Index].Value);
-            });
+        {
+            using var states = world.GetBuffer<GraphConditionState<TParameters, TState, TCondition>>(animation);
+            evaluation.Matches = TCondition.Matches(in evaluation.Definition.Parameters, in evaluation.Inputs,
+                ref states[evaluation.Index].Value);
+        }
         return evaluation.Matches;
     }
 }

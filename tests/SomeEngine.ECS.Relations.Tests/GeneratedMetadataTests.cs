@@ -1,7 +1,4 @@
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
-using SomeEngine.ECS.Registry;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -12,73 +9,69 @@ public sealed class GeneratedMetadataTests
     [Fact]
     public void RegisteredSchemaAndStorageDriveOrdinaryEdgeAndQueryJobAccess()
     {
-        GeneratedEcsTypes.RegisterRelationSchema<RegisteredLink<int>>(
+        RelationSchema.Register<RegisteredLink<int>>(
             new RelationSchema(RelationDirection.Directed, RelationCardinality.UniquePair, false));
         GeneratedEcsTypes.RegisterJobStorage<RegisteredValue<int>>(true);
-        GeneratedEcsTypes.RegisterJobStorage<DirectedRelationEndpoints<RegisteredLink<int>>>(true);
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
-        using var world = WorldJobs.CreateWorld(scheduler: jobs);
-        var source = world.CreateEntity(new RegisteredValue<int> { Value = 4 });
-        var target = world.CreateEntity();
+        GeneratedEcsTypes.RegisterJobStorage<RelationEndpoints<RegisteredLink<int>>>(true);
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        var worldJobs = new WorldJobs(jobs);
+        using var world = new World(execution: worldJobs);
+        var source = world.Create(new RegisteredValue<int> { Value = 4 });
+        var target = world.Create();
         var edge = world.CreateRelation(source, target, new RegisteredLink<int>());
-        var values = world.QueryDefinition().Read<RegisteredValue<int>>().Build();
-        Span<JobResourceAccess> accesses = stackalloc JobResourceAccess[QueryJobAccess.Count(values)];
+        Query values = world.Query(new QueryDescription().WithStored<RegisteredValue<int>>());
+        JobResourceAccess[] accesses = worldJobs.CollectReadAccess(values);
+        var observed = new List<(Entity, int)>();
+        var job = new ReadRegisteredEdge(world, source, edge, observed);
+        jobs.Schedule(job, accesses).Complete();
 
-        int count = QueryJobAccess.CopyAccesses(world, values, accesses);
-        var observed = new List<Entity>();
-        var job = new ReadRegisteredEdge(world, edge, observed);
-        RelationJobAccess<RegisteredLink<int>>.ScheduleEndpointsRead(world, job).Complete();
-
-        Assert.Equal(2, count);
-        Assert.Equal(new[] { target }, observed);
+        Assert.Equal(new[] { (target, 4) }, observed);
         Assert.Throws<InvalidOperationException>(() => world.CreateRelation(source, target, new RegisteredLink<int>()));
     }
 
-    private readonly struct ReadRegisteredEdge(World world, RelationEdge<RegisteredLink<int>> edge,
-        List<Entity> observed) : IJob
+    private readonly struct ReadRegisteredEdge(World world, Entity source, RelationEdge<RegisteredLink<int>> edge,
+        List<(Entity, int)> observed) : IJob
     {
-        public void Execute() => observed.Add(world.GetDirectedRelationEndpoints(edge).Target);
+        public void Execute() => observed.Add((world.Read<RelationEndpoints<RegisteredLink<int>>>(edge.Entity).Target,
+            world.Read<RegisteredValue<int>>(source).Value));
     }
 
     [Fact]
     public void ClosedComponentsUseOrdinaryAndGeneratedJobStorageChecks()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
-        using var world = WorldJobs.CreateWorld(scheduler: jobs);
-        var entity = world.CreateEntity(new RegisteredValue<int> { Value = 4 });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        var worldJobs = new WorldJobs(jobs);
+        using var world = new World(execution: worldJobs);
+        var entity = world.Create(new RegisteredValue<int> { Value = 4 });
 
         new IncreaseRegisteredValues().Schedule(world).Complete();
 
-        Assert.Equal(5, world.Read<RegisteredValue<int>>(entity).Value);
-        Assert.Throws<InvalidOperationException>(() => ComponentJobAccess<NativeAddress<int>>.Read(world));
-        var definition = world.QueryDefinition().Read<NativeAddress<int>>().Build();
-        Assert.Throws<InvalidOperationException>(() =>
-        {
-            var accesses = new JobResourceAccess[QueryJobAccess.Count(definition)];
-            QueryJobAccess.CopyAccesses(world, definition, accesses);
-        });
+        Assert.Equal(5, world.ReadValue<RegisteredValue<int>>(entity).Value);
+        Assert.Throws<InvalidOperationException>(() => worldJobs.Read<NativeAddress<int>>());
+        Query query = world.Query(new QueryDescription().WithStored<NativeAddress<int>>());
+        Assert.Throws<InvalidOperationException>(() => worldJobs.CollectReadAccess(query));
     }
 
     [Fact]
     public void ClosedSchemaPreservesUndirectedEndpointRoles()
     {
         using var world = new World();
-        var first = world.CreateEntity();
-        var second = world.CreateEntity();
+        var first = world.Create();
+        var second = world.Create();
 
         var edge = world.CreateRelation(second, first, new KnownLink<int>());
-        var endpoints = world.GetUndirectedRelationEndpoints(edge);
+        var endpoints = world.ReadValue<RelationEndpoints<KnownLink<int>>>(edge.Entity);
 
-        Assert.Equal(second, endpoints.EndpointA);
-        Assert.Equal(first, endpoints.EndpointB);
+        Assert.Equal(second, endpoints.Source);
+        Assert.Equal(first, endpoints.Target);
     }
 
     [Fact]
     public void ClosedSchemaEnforcesSelfEdgePolicy()
     {
         using var world = new World();
-        var first = world.CreateEntity();
-        var second = world.CreateEntity();
+        var first = world.Create();
+        var second = world.Create();
         world.CreateRelation(second, first, new KnownLink<int>());
 
         Assert.Throws<InvalidOperationException>(() => world.CreateRelation(first, first, new KnownLink<int>()));
@@ -103,7 +96,7 @@ public struct NativeAddress<T> : IComponent where T : unmanaged
     public nint Address { get; set; }
 }
 
-public struct IncreaseRegisteredValues : IJobEntity
+public partial struct IncreaseRegisteredValues : IJobEntity
 {
     public void Execute(ref RegisteredValue<int> value) => value.Value++;
 }

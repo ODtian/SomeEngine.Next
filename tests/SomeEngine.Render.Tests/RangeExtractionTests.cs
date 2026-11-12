@@ -1,6 +1,5 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 using SomeEngine.Render.Systems;
@@ -12,30 +11,30 @@ public sealed class RangeExtractionTests(RenderTestDevice graphics) : IClassFixt
     [Fact]
     public void RangeCollectorPublishesSourceChangesThroughExistingRenderBoundary()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
-        using World source = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        using World source = new World(execution: new WorldJobs(scheduler));
         using var destination = new RenderWorld();
         using var extraction = new RenderExtractionSystems(destination, new ValueExtractor());
-        Entity first = source.CreateEntity(new SourceValue(37));
-        Entity second = source.CreateEntity(new SourceValue(53));
+        Entity first = source.Create(new SourceValue(37));
+        Entity second = source.Create(new SourceValue(53));
         source.Add(second, new OtherGroup());
 
         extraction.Extract(source);
         graphics.Apply(extraction, destination);
         Entity firstMirror = extraction.RequireMirror(first);
         Entity secondMirror = extraction.RequireMirror(second);
-        Assert.Equal(37, destination.Read<RenderValue>(firstMirror).Value);
-        Assert.Equal(53, destination.Read<RenderValue>(secondMirror).Value);
+        Assert.Equal(37, destination.World.ReadComponentData<RenderValue>(firstMirror).Value);
+        Assert.Equal(53, destination.World.ReadComponentData<RenderValue>(secondMirror).Value);
 
-        source.Replace(first, new SourceValue(71));
+        source.Set(first, new SourceValue(71));
         extraction.Extract(source);
         graphics.Apply(extraction, destination);
         Assert.Equal(firstMirror, extraction.RequireMirror(first));
-        Assert.Equal(71, destination.Read<RenderValue>(firstMirror).Value);
-        Assert.Equal(53, destination.Read<RenderValue>(secondMirror).Value);
+        Assert.Equal(71, destination.World.ReadComponentData<RenderValue>(firstMirror).Value);
+        Assert.Equal(53, destination.World.ReadComponentData<RenderValue>(secondMirror).Value);
     }
 
-    private readonly record struct SourceValue(int Value) : IComponent;
+    private readonly record struct SourceValue(int Value) : IComponent, ITrackedComponent;
     private readonly record struct RenderValue(int Value) : IComponent;
     private readonly record struct OtherGroup : IComponent;
 
@@ -59,8 +58,8 @@ public sealed class RangeExtractionTests(RenderTestDevice graphics) : IClassFixt
             return values.Values.Count != 0;
         }
 
-        public void Collect(QueryChunkView chunk) => throw new NotSupportedException("This feature collects source ranges.");
-        public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context) =>
+        public void Collect(QueryChunk chunk) => throw new NotSupportedException("This feature collects source ranges.");
+        public bool CollectChanges(QueryChunk chunk, ulong since, RenderExtractionContext context) =>
             throw new NotSupportedException("This feature collects source ranges.");
 
         public void Apply(RenderExtractionContext context)
@@ -82,11 +81,11 @@ public sealed class RangeExtractionTests(RenderTestDevice graphics) : IClassFixt
         public void Reset() => Values.Clear();
         public void Dispose() => Values.Clear();
 
-        public void Collect(ReadOnlyQueryPacket packet, uint lastSystemVersion, bool fullCollection)
+        public void Collect(QueryChunk packet, ulong lastSystemVersion, bool fullCollection)
         {
             if (!packet.TryRead<SourceValue>(out var values)) return;
             for (int index = 0; index < packet.Count; index++)
-                if (fullCollection || packet.ChangedSince<SourceValue>(lastSystemVersion))
+                if (fullCollection || packet.WasWritten<SourceValue>(lastSystemVersion))
                     Values.Add((packet.Entities[index], values[index].Value));
         }
     }

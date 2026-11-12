@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using System.Numerics;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS.Components;
@@ -38,7 +39,7 @@ public record struct VirtualList(float RowHeight) : IView, ISparseComponent, ILa
     }
 }
 
-internal readonly record struct ListRows(int Count, int First) : ISparseComponent;
+internal readonly record struct ListRows(int Count, int First) : ISparseComponent, ITrackedComponent;
 
 public static partial class VirtualListFunctions
 {

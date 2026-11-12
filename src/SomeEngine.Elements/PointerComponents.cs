@@ -3,7 +3,7 @@ using SomeEngine.ECS;
 namespace SomeEngine.Elements;
 
 /// <summary>Pointer hover, held-press, and subtree state written by HitTestSystem.</summary>
-public struct Hover : IComponent
+public struct Hover : ITrackedComponent
 {
     public bool Hovered;
     public bool Pressed;
@@ -11,7 +11,7 @@ public struct Hover : IComponent
 }
 
 /// <summary>The number of pointer clicks and focus confirmations written by the input stage.</summary>
-public struct Clicks : IComponent
+public struct Clicks : ITrackedComponent
 {
     public uint Count;
 }

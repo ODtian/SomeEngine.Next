@@ -1,3 +1,4 @@
+using SomeEngine.Core.ECS.Components;
 using System.Numerics;
 using SomeEngine.Animation.Pose;
 using SomeEngine.Core.Math;
@@ -35,7 +36,7 @@ public sealed class SceneScript
     }
 
     public ClusterShadingPath? ShadingPath { get; init; }
-    public uint GeometryMemoryBytes { get; init; } = 256u * 1024 * 1024;
+    public uint GeometryMemoryBytes { get; init; } = 512u * 1024 * 1024;
     /// <summary>Maximum hierarchy, candidate and deferred entries retained by the geometry pipeline.</summary>
     public uint ClusterWorkCapacity { get; init; } = 1_048_576;
     public uint BlendTriangleCapacity { get; init; } = ClusterPipelineOptions.DefaultBlendTriangleCapacity;

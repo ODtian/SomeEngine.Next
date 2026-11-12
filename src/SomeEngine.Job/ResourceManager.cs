@@ -6,8 +6,8 @@ namespace SomeEngine.Job;
 
 internal sealed partial class ResourceManager
 {
-    private readonly JobRuntimeConfig _config;
-    private readonly RuntimeCounters _counters;
+    private readonly JobConfiguration _config;
+    private readonly JobCounters _counters;
     private readonly long _generation;
     private readonly Lock _sync = new();
     private readonly List<ResourceState?> _states = [null];
@@ -18,7 +18,7 @@ internal sealed partial class ResourceManager
     private readonly Stack<HashSet<ResourceDependencyKey>> _freeResourceDependencySets = new();
     private JobSafetyMode _safetyMode = JobSafetyMode.Checked;
 
-    internal ResourceManager(JobRuntimeConfig config, RuntimeCounters counters, long generation)
+    internal ResourceManager(JobConfiguration config, JobCounters counters, long generation)
     {
         _config = config;
         _counters = counters;

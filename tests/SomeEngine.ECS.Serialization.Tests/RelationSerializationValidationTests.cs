@@ -14,13 +14,13 @@ public sealed class RelationSerializationValidationTests
     {
         var registry = new SerializationRegistry()
             .Register<HighFanoutRelation>()
-            .RegisterRelationTopology<HighFanoutRelation>();
+            .RegisterRelation<HighFanoutRelation>();
         using var sourceWorld = new World();
-        Entity source = sourceWorld.CreateEntity();
+        Entity source = sourceWorld.Create();
         var expectedTargets = new HashSet<Entity>();
         for (int i = 0; i < fanout; i++)
         {
-            Entity target = sourceWorld.CreateEntity();
+            Entity target = sourceWorld.Create();
             expectedTargets.Add(target);
             sourceWorld.CreateRelation(
                 source,
@@ -29,24 +29,23 @@ public sealed class RelationSerializationValidationTests
         }
 
         using var stream = new MemoryStream();
-        WorldSerializer.WriteWorld(stream, sourceWorld, registry);
+        new WorldSerializer(registry).Save(sourceWorld, stream);
 
         stream.Position = 0;
         using World loaded = WorldSerializer.ReadWorld(stream, registry);
-        RelationAdjacencySnapshot<HighFanoutRelation> outgoing =
+        using RelationRead outgoing =
             loaded.GetOutgoingRelations<HighFanoutRelation>(source);
         Assert.Equal(fanout, outgoing.Count);
 
         var seenValues = new bool[fanout];
         for (int i = 0; i < outgoing.Count; i++)
         {
-            RelationAdjacencyEntry<HighFanoutRelation> entry = outgoing.Entries[i];
-            Assert.Contains(entry.OtherEndpoint, expectedTargets);
-            Assert.Equal(
-                1,
-                loaded.GetIncomingRelations<HighFanoutRelation>(entry.OtherEndpoint).Count);
+            RelationEntry entry = outgoing.Entries[i];
+            Assert.Contains(entry.Other, expectedTargets);
+            using RelationRead incoming = loaded.GetIncomingRelations<HighFanoutRelation>(entry.Other);
+            Assert.Equal(1, incoming.Count);
 
-            int value = loaded.Read<HighFanoutRelation>(entry.Edge.Entity).Value;
+            int value = loaded.Read<HighFanoutRelation>(entry.Edge).Value;
             Assert.InRange(value, 0, fanout - 1);
             Assert.False(seenValues[value]);
             seenValues[value] = true;

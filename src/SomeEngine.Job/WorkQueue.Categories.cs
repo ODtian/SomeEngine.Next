@@ -25,13 +25,13 @@ internal sealed partial class WorkQueue
 
     public void CategoryExecutionFinished() => WakeWorkers(1);
 
-    private bool TryDequeueByCategory(int workerIndex, out QueuedWork stream,
-        out long publishedAt, out bool stole, out int priorityIndex)
+    private bool TryDequeueByCategory(int workerIndex, out ReadyTicket ticket,
+        out bool stole, out int priorityIndex, out JobCategory? category)
     {
-        stream = null!;
-        publishedAt = 0;
+        ticket = default;
         stole = false;
         priorityIndex = 0;
+        category = null;
         lock (_categoryLock)
         {
             int choices = _categoryOrder.Count + 1;
@@ -41,22 +41,16 @@ internal sealed partial class WorkQueue
                 if (_serviceRemaining == 0)
                     _serviceRemaining = defaultCategory ? 1 : _categoryOrder[_serviceIndex].Category.Config.ServiceShare;
                 bool found;
-                if (defaultCategory)
-                    found = TryDequeueDefault(workerIndex, out stream, out publishedAt, out stole, out priorityIndex);
+                if (defaultCategory) found = TryDequeueDefault(workerIndex, out ticket, out stole, out priorityIndex);
                 else
                 {
-                    found = TryDequeueCategory(_categoryOrder[_serviceIndex], out ReadyTicket ticket, out priorityIndex);
-                    if (found)
-                    {
-                        stream = ticket.Stream;
-                        publishedAt = ticket.PublishedAt;
-                        stole = false;
-                    }
+                    CategoryReadyQueues queues = _categoryOrder[_serviceIndex];
+                    found = TryDequeueCategory(queues, out ticket, out priorityIndex);
+                    if (found) category = queues.Category;
                 }
                 if (found)
                 {
-                    if (--_serviceRemaining == 0)
-                        _serviceIndex = (_serviceIndex + 1) % choices;
+                    if (--_serviceRemaining == 0) _serviceIndex = (_serviceIndex + 1) % choices;
                     return true;
                 }
                 _serviceRemaining = 0;
@@ -90,10 +84,10 @@ internal sealed partial class WorkQueue
             return Volatile.Read(ref _readyTicketCount) > 0;
         for (int priority = 0; priority < JobPriorityOrder.Count; priority++)
         {
-            if (!_injectors[priority].IsEmpty || !_injectorOverflow[priority].IsEmpty)
+            if (Volatile.Read(ref _injectors[priority]) is { IsEmpty: false } || !_injectorOverflow[priority].IsEmpty)
                 return true;
             for (int worker = 0; worker < _workers.Length; worker++)
-                if (!_localQueues[worker, priority].IsEmpty)
+                if (Volatile.Read(ref _localQueues[worker, priority]) is { IsEmpty: false })
                     return true;
         }
         lock (_categoryLock)

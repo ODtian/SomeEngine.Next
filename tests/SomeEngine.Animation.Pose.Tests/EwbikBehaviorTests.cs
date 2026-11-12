@@ -26,7 +26,7 @@ public sealed class EwbikBehaviorTests
         var rig = new EwbikRig(skeleton, 0, [new(4), new(8), new(2), new(4)],
             bones: [new(0, DampingScale: 0)], settings: new(Damping: .35f, Iterations: 192, PositionTolerance: .002f, OrientationTolerance: .002f));
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var world = new World(execution: new WorldJobs(scheduler));
         var storage = new PoseStorage();
         using SkeletonInstance fast = storage.CreateInstance(skeleton), slow = storage.CreateInstance(skeleton);
         Entity fastTarget = PoseAnimation.CreateTarget(world, fast, 3, new(2));
@@ -40,8 +40,11 @@ public sealed class EwbikBehaviorTests
         }
         using CompiledGraph graph = builder.Compile();
         Entity fastAnimation = graph.Play(world, fastTarget), slowAnimation = graph.Play(world, slowTarget);
-        world.ExecuteBufferWrite<EwbikInstance>(slowAnimation, static instances =>
-            instances[0].Settings = new(Damping: .12f, Iterations: 576, PositionTolerance: .002f, OrientationTolerance: .002f));
+        {
+            using var instances = world.GetBuffer<EwbikInstance>(slowAnimation);
+            instances[0].Settings = new(Damping: .12f, Iterations: 576, PositionTolerance: .002f, OrientationTolerance: .002f);
+
+        }
         Quaternion left = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2);
         Quaternion right = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, -MathF.PI / 2);
         EwbikTarget[] goals =
@@ -110,6 +113,15 @@ public sealed class EwbikBehaviorTests
     private static BoneTransform Bone(Vector3 translation) => new() { Translation = translation, Rotation = Quaternion.Identity, Scale = Vector3.One };
     private static Vector3 Direction(SkeletonInstance instance, int bone, Vector3 axis) => Vector3.Normalize(Vector3.TransformNormal(axis, instance.ModelPose.GetBone(bone).Transform));
     private static void Near(Vector3 expected, Vector3 actual) => Assert.True(Vector3.Distance(expected, actual) < .004f, $"Expected {expected}; actual {actual}.");
-    private static void SetGoals(World world, Entity animation, EwbikTarget[] goals) => world.ExecuteBufferWrite<EwbikInstance, EwbikTarget[]>(animation, ref goals,
-        static (instances, ref goals) => goals.CopyTo(instances[0].Targets, 0));
+    private static void SetGoals(World world, Entity animation, EwbikTarget[] goals)
+    {
+        using var instances = world.GetBuffer<EwbikInstance>(animation);
+        Visit(instances, ref goals);
+
+        static void Visit(DynamicBuffer<EwbikInstance> instances, ref EwbikTarget[] goals)
+        {
+            goals.CopyTo(instances[0].Targets, 0);
+
+        }
+    }
 }

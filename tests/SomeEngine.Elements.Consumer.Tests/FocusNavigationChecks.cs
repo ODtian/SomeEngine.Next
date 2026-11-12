@@ -1,6 +1,5 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Layout;
 using SomeEngine.Views;
@@ -30,16 +29,16 @@ internal static partial class FocusChecks
 
     private sealed class CornerNavigation : ISystem<ImmediateSystemContext>
     {
-        private QueryHandle _inputsQuery;
-        private QueryHandle _nodesQuery;
+        private Query _inputsQuery;
+        private Query _nodesQuery;
         private readonly List<Entity> _inputs = new();
         private readonly List<FocusInput> _events = new();
 
         public void OnCreate(ref ImmediateSystemContext context)
         {
             World world = context.World;
-            _inputsQuery = world.Query(world.QueryDefinition().All<InputCapture>());
-            _nodesQuery = world.Query(world.QueryDefinition().All<Focusable>().Read<LayoutRect>());
+            _inputsQuery = world.Query(new QueryDescription().With<InputCapture>());
+            _nodesQuery = world.Query(new QueryDescription().With<Focusable>().With<LayoutRect>());
         }
 
         public void OnUpdate(ref ImmediateSystemContext context)
@@ -47,49 +46,42 @@ internal static partial class FocusChecks
             World world = context.World;
             List<Entity> inputs = _inputs;
             inputs.Clear();
-            world.ExecuteQuery(_inputsQuery, ref inputs, static (rows, ref values) =>
-            {
-                foreach (var row in rows.Rows)
-                    values.Add(row.Entity);
-            });
+            using (QueryScope range = _inputsQuery.OpenRead())
+                foreach (QueryChunk chunk in range)
+                    foreach (Entity entity in chunk.Entities) inputs.Add(entity);
             (Entity First, Entity Last, float Minimum, float Maximum) corners =
                 (Entity.Null, Entity.Null, float.PositiveInfinity, float.NegativeInfinity);
-            world.ExecuteQuery(_nodesQuery, ref corners, static (rows, ref result) =>
-            {
-                foreach (var row in rows.Rows)
-                {
-                    var rect = row.Read<LayoutRect>().Value;
-                    float position = rect.X + rect.Width / 2 + rect.Y + rect.Height / 2;
-                    if (position < result.Minimum)
+            using (QueryScope range = _nodesQuery.OpenRead())
+                foreach (QueryChunk chunk in range)
+                    foreach (Entity entity in chunk.Entities)
                     {
-                        result.First = row.Entity;
-                        result.Minimum = position;
+                        var rect = world.ReadComponentData<LayoutRect>(entity).Value;
+                        float position = rect.X + rect.Width / 2 + rect.Y + rect.Height / 2;
+                        if (position < corners.Minimum)
+                        {
+                            corners.First = entity;
+                            corners.Minimum = position;
+                        }
+                        if (position > corners.Maximum)
+                        {
+                            corners.Last = entity;
+                            corners.Maximum = position;
+                        }
                     }
-                    if (position > result.Maximum)
-                    {
-                        result.Last = row.Entity;
-                        result.Maximum = position;
-                    }
-                }
-            });
-            Entity focused = Entity.Null;
-            world.ExecuteSparseRead<Focused, Entity>(ref focused, static (entities, values, ref result) =>
-            {
-                if (entities.Length > 0)
-                    result = entities[0];
-            });
+            Entity focused;
+            using (SparseReadScope<Focused> focus = world.OpenSparseRead<Focused>())
+                focused = focus.Count == 0 ? Entity.Null : focus.Entities[0];
             foreach (Entity inputEntity in inputs)
             {
-                if (!world.HasBuffer<FocusInput>(inputEntity))
+                if (!world.Has<Buffer<FocusInput>>(inputEntity))
                     continue;
                 List<FocusInput> events = _events;
                 events.Clear();
-                world.ExecuteBufferWrite<FocusInput, List<FocusInput>>(inputEntity, ref events, static (buffer, ref values) =>
                 {
-                    foreach (FocusInput input in buffer.ReadSpan())
-                        values.Add(input);
+                    using DynamicBuffer<FocusInput> buffer = world.GetBuffer<FocusInput>(inputEntity);
+                    foreach (FocusInput input in buffer.AsSpan()) events.Add(input);
                     buffer.Clear();
-                });
+                }
                 foreach (FocusInput input in events)
                 {
                     bool navigation = input.Kind == FocusInputKind.Navigate ||
@@ -106,27 +98,27 @@ internal static partial class FocusChecks
                         {
                             if (focused != Entity.Null)
                                 world.RemoveSparse<Focused>(focused);
-                            world.AddSparse(next, new Focused());
+                            world.SetSparse(next, new Focused());
                             focused = next;
                         }
                     }
                     if (confirm && focused != Entity.Null)
                     {
-                        Clicks clicks = world.Read<Clicks>(focused);
+                        Clicks clicks = world.ReadComponentData<Clicks>(focused);
                         clicks.Count = unchecked(clicks.Count + 1);
-                        world.Replace(focused, clicks);
+                        world.Set(focused, clicks);
                     }
                 }
-                InputCapture capture = world.Read<InputCapture>(inputEntity);
+                InputCapture capture = world.ReadComponentData<InputCapture>(inputEntity);
                 capture.Keyboard = focused != Entity.Null;
-                world.Replace(inputEntity, capture);
+                world.Set(inputEntity, capture);
             }
         }
 
         public void OnDestroy(ref ImmediateSystemContext context)
         {
-            context.World.ReleaseQuery(_inputsQuery);
-            context.World.ReleaseQuery(_nodesQuery);
+
+
         }
     }
 }

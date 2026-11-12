@@ -9,9 +9,9 @@ public sealed partial class Scheduler
     private readonly struct WorkRelease
     {
         internal readonly bool Started;
-        internal readonly ResourceAccessRegistration Accesses;
+        internal readonly AccessBuilder<ResourceAccessRegistration> Accesses;
 
-        internal WorkRelease(bool started, ResourceAccessRegistration accesses)
+        internal WorkRelease(bool started, AccessBuilder<ResourceAccessRegistration> accesses)
         {
             Started = started;
             Accesses = accesses;
@@ -36,11 +36,13 @@ public sealed partial class Scheduler
     {
         internal readonly bool Started;
         internal readonly List<ScopeOwnedResource>? Resources;
+        internal readonly ICompletionData? JobData;
 
-        internal CompleteRelease(bool started, List<ScopeOwnedResource>? resources)
+        internal CompleteRelease(bool started, List<ScopeOwnedResource>? resources, ICompletionData? jobData)
         {
             Started = started;
             Resources = resources;
+            JobData = jobData;
         }
     }
 
@@ -175,8 +177,8 @@ public sealed partial class Scheduler
                 }
 
                 state.WorkDependencyReleaseInProgress = true;
-                ResourceAccessRegistration accesses = state.ResourceAccesses;
-                state.ResourceAccesses = ResourceAccessRegistration.Empty;
+                AccessBuilder<ResourceAccessRegistration> accesses = state.ResourceAccesses;
+                state.ResourceAccesses = default;
                 return new WorkRelease(started: true, accesses);
             }
         }
@@ -234,15 +236,17 @@ public sealed partial class Scheduler
                 }
 
                 state.CompletionDispatchInProgress = true;
+                ICompletionData? jobData = state.JobData;
+                state.JobData = null;
                 if (state.ScopeOwnedResources.Count == 0)
                 {
-                    return new CompleteRelease(started: true, resources: null);
+                    return new CompleteRelease(started: true, resources: null, jobData);
                 }
 
                 List<ScopeOwnedResource> resources = state.ScopeOwnedResourceDispatchBuffer;
                 resources.AddRange(state.ScopeOwnedResources);
                 state.ScopeOwnedResources.Clear();
-                return new CompleteRelease(started: true, resources);
+                return new CompleteRelease(started: true, resources, jobData);
             }
         }
 
@@ -319,12 +323,13 @@ public sealed partial class Scheduler
 
             lock (state.Sync)
             {
-                if (!state.InUse || state.Version != handle.Version || state.Completed)
+                if (!state.InUse || state.Version != handle.Version || state.Completed
+                    || state.WorkDependenciesReleased || state.WorkDependencyReleaseInProgress)
                 {
                     return false;
                 }
 
-                state.ResourceAccesses = registration;
+                state.ResourceAccesses.Add(registration);
                 return true;
             }
         }
@@ -349,9 +354,35 @@ public sealed partial class Scheduler
                 }
 
                 mayExecuteConcurrently = state.MayExecuteConcurrently;
-                ResourceAccessRegistration registration = state.ResourceAccesses;
-                return registration.Covers(required);
+                return CoversAccess(state.ResourceAccesses, required);
             }
+        }
+
+        private static bool CoversAccess(in AccessBuilder<ResourceAccessRegistration> registrations, JobResourceAccess required)
+        {
+            for (int batch = 0; batch < registrations.Count; batch++)
+                if (registrations.Get(batch).Covers(required)) return true;
+            if (!required.HasRange) return false;
+            long end = required.RangeStart + required.RangeLength;
+            long covered = required.RangeStart;
+            while (covered < end)
+            {
+                long next = covered;
+                for (int batch = 0; batch < registrations.Count; batch++)
+                {
+                    ResourceAccessRegistration registration = registrations.Get(batch);
+                    for (int index = 0; index < registration.AccessCount; index++)
+                    {
+                        JobResourceAccess declared = registration.GetAccess(index).Access;
+                        if (declared.HasRange && declared.CoversIdentityAndMode(required)
+                            && declared.RangeStart <= covered)
+                            next = Math.Max(next, declared.RangeStart + declared.RangeLength);
+                    }
+                }
+                if (next == covered) return false;
+                covered = next;
+            }
+            return true;
         }
     }
 }

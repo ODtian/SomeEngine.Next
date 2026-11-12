@@ -5,7 +5,7 @@ public sealed class SchedulerResourceBindingTests
     [Fact]
     public void ArraySliceWriterAndMemoryReaderShareTheirSchedulerData()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         int[] values = [3, 5, 7];
         int[] result = [0];
         using var entered = new ManualResetEventSlim();
@@ -35,8 +35,8 @@ public sealed class SchedulerResourceBindingTests
     [Fact]
     public void DotsAndResourceProvidersUseEachSelectedScheduler()
     {
-        using var first = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
-        using var second = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var first = new Scheduler(new JobConfiguration { WorkerCount = 0 });
+        using var second = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         var firstData = new CounterData([2, 3]);
         var secondData = new CounterData([5, 7]);
         int[] result = new int[2];

@@ -1,8 +1,11 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using SomeEngine.Job;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation;
@@ -12,12 +15,12 @@ public delegate ref TValue FieldRef<TComponent, TValue>(ref TComponent component
 /// <summary>A component field identified by its component number and generated field number.</summary>
 public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unmanaged
 {
-    public readonly ushort Component;
+    public readonly int Component;
     public readonly uint Field;
     public readonly ushort Offset;
     private readonly int _access;
 
-    private Channel(ushort component, ushort offset,
+    private Channel(int component, ushort offset,
         delegate* managed<World, Channel<T>, ReadOnlySpan<FieldWrite<T>>, void> writeBatch)
     {
         Component = component;
@@ -26,7 +29,7 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
         _access = FieldDescriptions<T>.Add(component, Field, new(null, null, null, null, writeBatch, false));
     }
 
-    private Channel(ushort component, ushort field,
+    private Channel(int component, ushort field,
         delegate* managed<World, SomeEngine.ECS.Entities.Entity, T> read,
         delegate* managed<World, SomeEngine.ECS.Entities.Entity, in T, void> write,
         delegate* managed<ref byte, T> readRoot,
@@ -112,8 +115,24 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
     private static void WriteFields<TComponent, TAccess>(World world, Channel<T> channel, ReadOnlySpan<FieldWrite<T>> writes)
         where TComponent : struct, IComponent where TAccess : struct, IFieldAccess<TComponent, T>
     {
-        var fields = new FieldBatch(channel, writes);
-        world.ExecuteComponentWrite<TComponent, FieldBatch>(ref fields, &WriteRoots<TComponent, TAccess>);
+        if (typeof(ISparseComponent).IsAssignableFrom(typeof(TComponent)))
+        {
+            var sparse = world.OpenSparseWrite<TComponent>();
+            try
+            {
+                foreach (ref readonly FieldWrite<T> write in writes)
+                    if (write.Channel == channel) TAccess.Write(ref sparse.Get(write.Target), in write.Value);
+            }
+            finally { sparse.Dispose(); }
+            return;
+        }
+        var roots = world.OpenWrite<TComponent>();
+        try
+        {
+            foreach (ref readonly FieldWrite<T> write in writes)
+                if (write.Channel == channel) TAccess.Write(ref roots.Get(write.Target), in write.Value);
+        }
+        finally { roots.Dispose(); }
     }
 
     private static void WriteResourceFields<TComponent, TAccess, TResources>(World world, Channel<T> channel,
@@ -122,75 +141,84 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
         where TAccess : struct, IFieldAccess<TComponent, T>
         where TResources : struct, IJobComponentResources<TComponent>
     {
-        var fields = new FieldBatch(channel, writes);
-        world.ExecuteComponentWrite<TComponent, FieldBatch>(ref fields, &WriteResourceRoots<TComponent, TAccess, TResources>);
-    }
-
-    private static void WriteResourceRoots<TComponent, TAccess, TResources>(ComponentWriteBatch<TComponent> roots,
-        ref FieldBatch fields)
-        where TComponent : struct, IComponent
-        where TAccess : struct, IFieldAccess<TComponent, T>
-        where TResources : struct, IJobComponentResources<TComponent>
-    {
+        if (!channel.ThroughReference)
+        {
+            WriteFields<TComponent, TAccess>(world, channel, writes);
+            return;
+        }
         int count = 0;
-        foreach (ref readonly FieldWrite<T> write in fields.Writes)
-            if (write.Channel == fields.Channel) count++;
+        foreach (ref readonly FieldWrite<T> write in writes) if (write.Channel == channel) count++;
         if (count == 0) return;
-        Entity[] targets = ArrayPool<Entity>.Shared.Rent(count);
+        TComponent[] components = ArrayPool<TComponent>.Shared.Rent(count);
         FieldWrite<T>[] values = ArrayPool<FieldWrite<T>>.Shared.Rent(count);
+        Scheduler scheduler = world.Execution?.Scheduler ?? JobSystem.Current;
+        int batchSize = Math.Max(1, (count + scheduler.WorkerCount * 4) / (scheduler.WorkerCount * 4 + 1));
+        int batchCount = (count + batchSize - 1) / batchSize;
+        JobHandle[] handles = ArrayPool<JobHandle>.Shared.Rent(batchCount);
+        var roots = world.OpenWrite<TComponent>();
         try
         {
             int index = 0;
-            foreach (ref readonly FieldWrite<T> write in fields.Writes)
+            foreach (ref readonly FieldWrite<T> write in writes)
             {
-                if (write.Channel != fields.Channel) continue;
-                targets[index] = write.Target;
+                if (write.Channel != channel) continue;
+                components[index] = roots.Get(write.Target);
                 values[index++] = write;
             }
-            var work = new ResourceFieldWrite<TComponent, TAccess>(values);
-            ComponentWriteJobs.ExecuteParallel<TComponent, ResourceFieldWrite<TComponent, TAccess>, TResources>(
-                roots, targets.AsSpan(0, count), work);
+            var accesses = new List<JobResourceAccess>();
+            var resources = new JobResourceAccessBuilder(scheduler, accesses);
+            for (int batch = 0; batch < batchCount; batch++)
+            {
+                int first = batch * batchSize, length = Math.Min(batchSize, count - first);
+                accesses.Clear();
+                ComponentResources.CollectRange<TComponent, TResources>(components.AsSpan(first, length), ref resources);
+                handles[batch] = scheduler.Schedule(new ReferenceFieldWrites<TComponent, TAccess>(components, values, first, length),
+                    CollectionsMarshal.AsSpan(accesses));
+            }
+            scheduler.CombineDependencies(handles.AsSpan(0, batchCount)).Complete();
         }
         finally
         {
-            ArrayPool<Entity>.Shared.Return(targets);
+            roots.Dispose();
+            ArrayPool<JobHandle>.Shared.Return(handles);
+            ArrayPool<TComponent>.Shared.Return(components, clearArray: RuntimeHelpers.IsReferenceOrContainsReferences<TComponent>());
             ArrayPool<FieldWrite<T>>.Shared.Return(values);
         }
     }
 
-    private readonly struct ResourceFieldWrite<TComponent, TAccess>(FieldWrite<T>[] values) : IComponentWriteJob<TComponent>
-        where TComponent : struct, IComponent
-        where TAccess : struct, IFieldAccess<TComponent, T>
-    {
-        public void Execute(int index, ref TComponent component) => TAccess.Write(ref component, in values[index].Value);
-    }
-
-    private readonly ref struct FieldBatch(Channel<T> channel, ReadOnlySpan<FieldWrite<T>> writes)
-    {
-        internal readonly Channel<T> Channel = channel;
-        internal readonly ReadOnlySpan<FieldWrite<T>> Writes = writes;
-    }
-
-    private static void WriteRoots<TComponent, TAccess>(ComponentWriteBatch<TComponent> roots, ref FieldBatch fields)
+    private readonly struct ReferenceFieldWrites<TComponent, TAccess>(TComponent[] components, FieldWrite<T>[] values,
+        int first, int count) : IJob
         where TComponent : struct, IComponent where TAccess : struct, IFieldAccess<TComponent, T>
     {
-        foreach (ref readonly FieldWrite<T> write in fields.Writes)
-            if (write.Channel == fields.Channel) TAccess.Write(ref roots.Write(write.Target), in write.Value);
+        public void Execute()
+        {
+            for (int index = first; index < first + count; index++) TAccess.Write(ref components[index], in values[index].Value);
+        }
     }
 
     private static void WriteOffsetFields<TComponent>(World world, Channel<T> channel, ReadOnlySpan<FieldWrite<T>> writes)
         where TComponent : unmanaged, IComponent
     {
-        var fields = new FieldBatch(channel, writes);
-        world.ExecuteComponentWrite<TComponent, FieldBatch>(ref fields, &WriteOffsetRoots<TComponent>);
-    }
-
-    private static void WriteOffsetRoots<TComponent>(ComponentWriteBatch<TComponent> roots, ref FieldBatch fields)
-        where TComponent : unmanaged, IComponent
-    {
-        foreach (ref readonly FieldWrite<T> write in fields.Writes)
-            if (write.Channel == fields.Channel)
-                Unsafe.WriteUnaligned(ref Unsafe.Add(ref Unsafe.As<TComponent, byte>(ref roots.Write(write.Target)), fields.Channel.Offset), write.Value);
+        if (typeof(ISparseComponent).IsAssignableFrom(typeof(TComponent)))
+        {
+            var sparse = world.OpenSparseWrite<TComponent>();
+            try
+            {
+                foreach (ref readonly FieldWrite<T> write in writes)
+                    if (write.Channel == channel)
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref Unsafe.As<TComponent, byte>(ref sparse.Get(write.Target)), channel.Offset), write.Value);
+            }
+            finally { sparse.Dispose(); }
+            return;
+        }
+        var roots = world.OpenWrite<TComponent>();
+        try
+        {
+            foreach (ref readonly FieldWrite<T> write in writes)
+                if (write.Channel == channel)
+                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref Unsafe.As<TComponent, byte>(ref roots.Get(write.Target)), channel.Offset), write.Value);
+        }
+        finally { roots.Dispose(); }
     }
 
     /// <summary>Computes a field location once; callers can keep the result in a static readonly field.</summary>
@@ -231,11 +259,11 @@ internal readonly unsafe struct FieldDescription<T>(
 internal static class FieldDescriptions<T> where T : unmanaged
 {
     internal static FieldDescription<T>[] Items = new FieldDescription<T>[16];
-    private static (ushort Component, uint Field)[] _identities = new (ushort, uint)[16];
+    private static (int Component, uint Field)[] _identities = new (int, uint)[16];
     private static int _count;
     private static readonly object Gate = new();
 
-    internal static int Add(ushort component, uint field, FieldDescription<T> description)
+    internal static int Add(int component, uint field, FieldDescription<T> description)
     {
         lock (Gate)
         {

@@ -5,7 +5,7 @@ using SomeEngine.ECS;
 namespace SomeEngine.Elements;
 
 /// <summary>The nearest dialog appearance and spacing; omitted properties use the default dialog style.</summary>
-public struct DialogTheme : IComponent
+public struct DialogTheme : ITrackedComponent
 {
     private Color? _fill;
     private float? _cornerRadius;

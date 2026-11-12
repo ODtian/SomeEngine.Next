@@ -1,4 +1,3 @@
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Relations;
 using SomeEngine.Job;
@@ -8,438 +7,192 @@ namespace SomeEngine.ECS.Systems.Tests;
 public sealed class RelationMaintenanceSystemTests : JobTest
 {
     [Fact]
-    public void RelaxedReaderSeesLastApplied_AndFreshReaderDependsOnMaintenanceHandle()
+    public void CapturedIncomingEntriesKeepTheirAppliedValuesAndFreshReadsFollowMaintenance()
     {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity source = world.CreateEntity();
-            Entity oldTarget = world.CreateEntity();
-            Entity newTarget = world.CreateEntity();
-            RelationEdge<DirectedA> edge = world.CreateRelation(source, oldTarget, new DirectedA());
-
-            using var endpointsWritten = new ManualResetEventSlim();
-            using var releaseWriter = new ManualResetEventSlim();
-            JobHandle writerHandle = default;
-            try
-            {
-                var writer = new DeferredEndpointWriter<DirectedA>(
-                    world,
-                    edge,
-                    source,
-                    newTarget,
-                    endpointsWritten,
-                    releaseWriter);
-                writerHandle = RelationJobAccess<DirectedA>.ScheduleEndpointsWrite(
-                    world,
-                    writer);
-
-                Assert.True(endpointsWritten.Wait(TimeSpan.FromSeconds(2)));
-
-                var relaxedCapture = new EdgeCapture<DirectedA>();
-                JobHandle relaxed = Jobs.Schedule(
-                    new CaptureIncomingJob<DirectedA>(world, oldTarget, relaxedCapture));
-                relaxed.Complete();
-
-                Assert.Equal([edge], relaxedCapture.Edges);
-                // Canonical endpoint reads participate in TopologyRead and therefore cannot race
-                // the still-running endpoint writer. The relaxed immutable inverse remains safe
-                // and intentionally observable while that writer owns canonical topology.
-                Assert.False(writerHandle.IsCompleted);
-                Assert.Equal(
-                    [edge],
-                    world.GetIncomingRelations<DirectedA>(oldTarget)
-                        .Entries.ToArray().Select(static entry => entry.Edge));
-                Assert.Empty(world.GetIncomingRelations<DirectedA>(newTarget).Entries.ToArray());
-
-                JobHandle maintenance = RelationMaintenanceSystem<DirectedA>.Schedule(world);
-                var freshCapture = new EdgeCapture<DirectedA>();
-                JobHandle fresh = Jobs.Schedule(
-                    new CaptureIncomingJob<DirectedA>(world, newTarget, freshCapture),
-                    maintenance);
-
-                Assert.False(maintenance.IsCompleted);
-                Assert.False(fresh.IsCompleted);
-
-                releaseWriter.Set();
-                fresh.Complete();
-                writerHandle.Complete();
-                maintenance.Complete();
-
-                Assert.Equal(newTarget, world.GetDirectedRelationEndpoints(edge).Target);
-                Assert.Equal([edge], freshCapture.Edges);
-                Assert.Empty(world.GetIncomingRelations<DirectedA>(oldTarget).Entries.ToArray());
-                Assert.Equal(
-                    [edge],
-                    world.GetIncomingRelations<DirectedA>(newTarget)
-                        .Entries.ToArray().Select(static entry => entry.Edge));
-            }
-            finally
-            {
-                releaseWriter.Set();
-                writerHandle.Complete();
-            }
-        });
+        World world = CreateJobWorld();
+        Entity source = world.Create(), oldTarget = world.Create(), newTarget = world.Create();
+        RelationEdge<DirectedA> edge = world.CreateRelation(source, oldTarget, default(DirectedA));
+        Entity[] earlier = Incoming<DirectedA>(world, oldTarget);
+        Jobs.Schedule(new Retarget(world, edge, source, newTarget), world.Execution!.StructureWrite).Complete();
+        Assert.Equal(newTarget, world.ReadComponentData<RelationEndpoints<DirectedA>>(edge.Entity).Target);
+        Assert.Equal([edge.Entity], Incoming<DirectedA>(world, oldTarget));
+        Assert.Empty(Incoming<DirectedA>(world, newTarget));
+        var relaxed = new EdgeResult();
+        var fresh = new EdgeResult();
+        JobHandle copied = Jobs.Schedule(new DeliverEdges(earlier, relaxed));
+        JobHandle maintained = Jobs.Schedule(new Maintain<DirectedA>(world), world.Execution.StructureWrite);
+        Jobs.Schedule(new ReadIncoming(world, newTarget, fresh), world.Execution.StructureRead, maintained).Complete();
+        copied.Complete();
+        Assert.Equal([edge.Entity], relaxed.Values);
+        Assert.Equal([edge.Entity], fresh.Values);
+        Assert.Empty(Incoming<DirectedA>(world, oldTarget));
     }
 
     [Fact]
-    public void PinnedAdjacencyReader_DoesNotBlockNextMaintenancePublication()
+    public void CapturedAdjacencyCanBeReadWhileTheNextMaintenanceFinishes()
     {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            using var readerStarted = new ManualResetEventSlim();
-            using var releaseReader = new ManualResetEventSlim();
-            JobHandle reader = default;
-            try
-            {
-                reader = Jobs.Schedule(
-                    new BlockingJob(readerStarted, releaseReader));
-                Assert.True(readerStarted.Wait(TimeSpan.FromSeconds(2)));
-
-                JobHandle maintenance = RelationMaintenanceSystem<DirectedA>.Schedule(world);
-                maintenance.Complete();
-                Assert.True(maintenance.IsCompleted);
-                releaseReader.Set();
-                maintenance.Complete();
-                reader.Complete();
-            }
-            finally
-            {
-                releaseReader.Set();
-                reader.Complete();
-            }
-        });
-    }
-
-    [Fact]
-    public void TopologyWrites_SerializeAcrossPayloadsButNotWorlds()
-    {
-        WithJobRuntime(() =>
-        {
-            var worldA = CreateJobWorld();
-            var worldB = CreateJobWorld();
-            using var blockerStarted = new ManualResetEventSlim();
-            using var releaseBlocker = new ManualResetEventSlim();
-            JobHandle blocker = default;
-            try
-            {
-                blocker = RelationJobAccess<DirectedA>.ScheduleEndpointsWrite(
-                    worldA,
-                    new BlockingJob(blockerStarted, releaseBlocker));
-                Assert.True(blockerStarted.Wait(TimeSpan.FromSeconds(2)));
-
-                JobHandle otherPayload = RelationMaintenanceSystem<DirectedB>.Schedule(worldA);
-                JobHandle otherWorld = RelationMaintenanceSystem<DirectedA>.Schedule(worldB);
-
-                otherWorld.Complete();
-                Assert.False(otherPayload.IsCompleted);
-                Assert.False(blocker.IsCompleted);
-
-                releaseBlocker.Set();
-                otherPayload.Complete();
-                blocker.Complete();
-            }
-            finally
-            {
-                releaseBlocker.Set();
-                blocker.Complete();
-            }
-        });
-    }
-
-    [Fact]
-    public void OwnerBoundEndpointMutation_RejectsMissingOrReadOnlyCapability()
-    {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity source = world.CreateEntity();
-            Entity oldTarget = world.CreateEntity();
-            Entity newTarget = world.CreateEntity();
-            RelationEdge<DirectedA> edge = world.CreateRelation(source, oldTarget, new DirectedA());
-            var mutation = new RetargetJob<DirectedA>(world, edge, source, newTarget);
-
-            JobHandle undeclared = Jobs.Schedule(mutation);
-            Assert.Throws<JobResourceSafetyException>(() => undeclared.Complete());
-            Assert.Equal(oldTarget, world.GetDirectedRelationEndpoints(edge).Target);
-
-            JobHandle missingWorldGate = Jobs.Schedule(
-                mutation,
-                RelationJobAccess<DirectedA>.EndpointsWrite(world));
-            Assert.Throws<JobResourceSafetyException>(() => missingWorldGate.Complete());
-            Assert.Equal(oldTarget, world.GetDirectedRelationEndpoints(edge).Target);
-
-            JobResourceAccess[] readOnly =
-            [
-                RelationJobAccess<DirectedA>.EndpointsRead(world),
-                RelationshipJobAccess.TopologyWrite(world),
-            ];
-            JobHandle insufficient = Jobs.Schedule(mutation, readOnly);
-            Assert.Throws<JobResourceSafetyException>(() => insufficient.Complete());
-            Assert.Equal(oldTarget, world.GetDirectedRelationEndpoints(edge).Target);
-
-            RelationJobAccess<DirectedA>.ScheduleEndpointsWrite(world, mutation).Complete();
-            Assert.Equal(newTarget, world.GetDirectedRelationEndpoints(edge).Target);
-        });
-    }
-
-    [Fact]
-    public void OwnerBoundEndpointMutation_RejectsMultiBatchParallelOwner()
-    {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity source = world.CreateEntity();
-            Entity oldTarget = world.CreateEntity();
-            Entity newTarget = world.CreateEntity();
-            RelationEdge<DirectedA> edge = world.CreateRelation(source, oldTarget, new DirectedA());
-            JobResourceAccess[] accesses =
-            [
-                RelationJobAccess<DirectedA>.EndpointsWrite(world),
-                RelationshipJobAccess.TopologyWrite(world),
-            ];
-
-            JobHandle parallel = Jobs.ScheduleParallel(
-                new ParallelRetargetJob<DirectedA>(world, edge, source, newTarget),
-                length: 2,
-                batchSize: 1,
-                accesses);
-
-            Assert.Throws<JobResourceSafetyException>(() => parallel.Complete());
-            Assert.Equal(oldTarget, world.GetDirectedRelationEndpoints(edge).Target);
-        });
-    }
-
-    [Fact]
-    public void ImmutableAdjacencySnapshot_IsSafeWithoutALifetimeResourceOwner()
-    {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity endpoint = world.CreateEntity();
-            var capture = new EdgeCapture<DirectedA>();
-
-            JobHandle reader = Jobs.Schedule(
-                new CaptureIncomingJob<DirectedA>(world, endpoint, capture));
-
-            reader.Complete();
-            Assert.Empty(capture.Edges);
-        });
-    }
-
-    [Fact]
-    public void ReplacingTheDefaultSchedulerDoesNotRebindAnExplicitWorld()
-    {
-        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = Jobs.SafetyMode;
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
-        using var world = CreateJobWorld(scheduler: scheduler);
-        Entity source = world.CreateEntity();
-        Entity target = world.CreateEntity();
+        World world = CreateJobWorld();
+        Entity source = world.Create(), oldTarget = world.Create(), newTarget = world.Create();
+        RelationEdge<DirectedA> edge = world.CreateRelation(source, oldTarget, default(DirectedA));
+        Entity[] earlier = Incoming<DirectedA>(world, oldTarget);
+        world.RetargetRelationDeferred(edge, source, newTarget);
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var result = new EdgeResult();
+        JobHandle reading = Jobs.Schedule(new HoldEdges(earlier, result, entered, release));
         try
         {
-            world.CreateRelation(source, target, new DirectedA(), timing: RelationMaintenanceTiming.Deferred);
-            InitializeJobRuntime(previousSafety);
-            RelationMaintenanceSystem<DirectedA>.Schedule(world).Complete();
-            Assert.Equal(1, world.GetOutgoingRelations<DirectedA>(source).Count);
-            InitializeJobRuntime(previousSafety);
-            RelationMaintenanceSystem<DirectedA>.Schedule(world).Complete();
-            Assert.Equal(1, world.GetOutgoingRelations<DirectedA>(source).Count);
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            Jobs.Schedule(new Maintain<DirectedA>(world), world.Execution!.StructureWrite).Complete();
+            Assert.Empty(Incoming<DirectedA>(world, oldTarget));
+            Assert.Equal([edge.Entity], Incoming<DirectedA>(world, newTarget));
+            release.Set();
+            reading.Complete();
+            Assert.Equal([edge.Entity], result.Values);
         }
-        finally
-        {
-            RestoreJobRuntime(previousPolicy, previousSafety);
-        }
+        finally { release.Set(); reading.Complete(); }
     }
 
     [Fact]
-    public void RejectManagedPayloadPolicy_IsHonoredAndNotMutatedBySchedule()
+    public void StructureWritesSerializePayloadsWithinAWorldAndAllowAnotherWorldToRun()
     {
-        ManagedPayloadPolicy previous = Jobs.ManagedPayloadPolicy;
+        World first = CreateJobWorld(), second = CreateJobWorld();
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        JobHandle holding = Jobs.Schedule(new Hold(entered, release, events), first.Execution!.StructureWrite);
+        JobHandle same = default;
         try
         {
-            Jobs.ManagedPayloadPolicy = ManagedPayloadPolicy.Reject;
-            var world = CreateJobWorld();
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            same = Jobs.Schedule(new RecordMaintenance<DirectedB>(first, events, "first maintained"), first.Execution.StructureWrite);
+            Jobs.Schedule(new RecordMaintenance<DirectedA>(second, events, "second maintained"), second.Execution!.StructureWrite).Complete();
+            release.Set();
+            same.Complete();
+            holding.Complete();
+            Assert.Equal(["second maintained", "first write ended", "first maintained"], events);
+        }
+        finally { release.Set(); holding.Complete(); same.Complete(); }
+    }
 
-            var error = Assert.Throws<InvalidOperationException>(
-                () => RelationMaintenanceSystem<DirectedA>.Schedule(world));
+    [Fact]
+    public void EndpointMutationRequiresWriteAccessToItsOwnWorld()
+    {
+        World world = CreateJobWorld(), other = CreateJobWorld();
+        Entity source = world.Create(), oldTarget = world.Create(), newTarget = world.Create();
+        RelationEdge<DirectedA> edge = world.CreateRelation(source, oldTarget, default(DirectedA));
+        var mutation = new Retarget(world, edge, source, newTarget);
+        Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(mutation).Complete());
+        Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(mutation, other.Execution!.StructureWrite).Complete());
+        Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(mutation, world.Execution!.StructureRead).Complete());
+        Assert.Equal(oldTarget, world.ReadComponentData<RelationEndpoints<DirectedA>>(edge.Entity).Target);
+        Jobs.Schedule(mutation, world.Execution!.StructureWrite).Complete();
+        Assert.Equal(newTarget, world.ReadComponentData<RelationEndpoints<DirectedA>>(edge.Entity).Target);
+    }
 
+    [Fact]
+    public void EndpointMutationRejectsAWholeWorldWriteSharedByParallelWorkItems()
+    {
+        World world = CreateJobWorld();
+        Entity source = world.Create(), oldTarget = world.Create(), newTarget = world.Create();
+        RelationEdge<DirectedA> edge = world.CreateRelation(source, oldTarget, default(DirectedA));
+        JobHandle work = Jobs.ScheduleParallel(new ParallelRetarget(world, edge, source, newTarget), 2, 1, world.Execution!.StructureWrite);
+        Assert.Throws<JobResourceSafetyException>(work.Complete);
+        Assert.Equal(oldTarget, world.ReadComponentData<RelationEndpoints<DirectedA>>(edge.Entity).Target);
+    }
+
+    [Fact]
+    public void CapturedIncomingEntriesCanBeConsumedAfterTheWorldChanges()
+    {
+        World world = CreateJobWorld();
+        Entity source = world.Create(), first = world.Create(), second = world.Create();
+        RelationEdge<DirectedA> edge = world.CreateRelation(source, first, default(DirectedA));
+        Entity[] captured = Incoming<DirectedA>(world, first);
+        world.RetargetRelationImmediate(edge, source, second);
+        var result = new EdgeResult();
+        Jobs.Schedule(new DeliverEdges(captured, result)).Complete();
+        Assert.Equal([edge.Entity], result.Values);
+        Assert.Empty(Incoming<DirectedA>(world, first));
+        Assert.Equal([edge.Entity], Incoming<DirectedA>(world, second));
+    }
+
+    [Fact]
+    public void ReplacingTheDefaultSchedulerKeepsTheWorldsExplicitScheduler()
+    {
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
+        using var world = new World(execution: new WorldJobs(scheduler));
+        Entity source = world.Create(), target = world.Create();
+        Span<RelationEdge<DirectedA>> created = stackalloc RelationEdge<DirectedA>[1];
+        Relations<DirectedA>.Edit(world, [EndpointEdit.Create(source, target)], created, deferred: true);
+        int workers = JobSystem.WorkerCount;
+        JobSafetyMode safety = JobSystem.SafetyMode;
+        ManagedPayloadPolicy payload = JobSystem.ManagedPayloadPolicy;
+        try
+        {
+            JobSystem.Initialize(new JobConfiguration { WorkerCount = 1 });
+            world.Execution!.Scheduler!.Schedule(new Maintain<DirectedA>(world), world.Execution.StructureWrite).Complete();
+            Assert.Same(scheduler, world.Execution.Scheduler);
+            Assert.Equal([created[0].Entity], Incoming<DirectedA>(world, target));
+            JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
+            world.Execution.Scheduler!.Schedule(new Maintain<DirectedA>(world), world.Execution.StructureWrite).Complete();
+            Assert.Same(scheduler, world.Execution.Scheduler);
+            Assert.Equal([created[0].Entity], Incoming<DirectedA>(world, target));
+        }
+        finally { JobSystem.Initialize(new JobConfiguration { WorkerCount = workers, SafetyMode = safety, ManagedPayloadPolicy = payload }); }
+    }
+
+    [Fact]
+    public void TheManagedPayloadPolicyAppliesToConcreteMaintenanceJobs()
+    {
+        World world = CreateJobWorld();
+        Jobs.ManagedPayloadPolicy = ManagedPayloadPolicy.Reject;
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(new Maintain<DirectedA>(world), world.Execution!.StructureWrite));
             Assert.Equal(ManagedPayloadPolicy.Reject, Jobs.ManagedPayloadPolicy);
         }
-        finally
-        {
-            Jobs.ManagedPayloadPolicy = previous;
-        }
+        finally { Jobs.ManagedPayloadPolicy = ManagedPayloadPolicy.Allow; }
     }
 
-    private void WithJobRuntime(Action action)
+    private static Entity[] Incoming<T>(World world, Entity target) where T : struct
     {
-        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = Jobs.SafetyMode;
-        InitializeJobRuntime(previousSafety);
-        try
-        {
-            action();
-        }
-        finally
-        {
-            RestoreJobRuntime(previousPolicy, previousSafety);
-        }
+        using RelationRead entries = Relations<T>.Incoming(world, target);
+        Entity[] values = new Entity[entries.Count];
+        for (int index = 0; index < values.Length; index++) values[index] = entries.Entries[index].Edge;
+        return values;
     }
-
-    private void InitializeJobRuntime(JobSafetyMode safetyMode)
+    private sealed class EdgeResult { internal Entity[] Values = []; }
+    private readonly struct DeliverEdges(Entity[] values, EdgeResult result) : IJob
+    { public void Execute() => result.Values = values; }
+    private readonly struct ReadIncoming(World world, Entity target, EdgeResult result) : IJob
+    { public void Execute() => result.Values = Incoming<DirectedA>(world, target); }
+    private readonly struct Maintain<T>(World world) : IJob where T : struct
+    { public void Execute() => Relations<T>.Maintain(world); }
+    private readonly struct Retarget(World world, RelationEdge<DirectedA> edge, Entity source, Entity target) : IJob
+    { public void Execute() => Relations<DirectedA>.RetargetDeferred(world, edge, source, target); }
+    private readonly struct ParallelRetarget(World world, RelationEdge<DirectedA> edge, Entity source, Entity target) : IJobParallelFor
+    { public void Execute(int index) => Relations<DirectedA>.RetargetDeferred(world, edge, source, target); }
+    private readonly struct HoldEdges(Entity[] values, EdgeResult result, ManualResetEventSlim entered, ManualResetEventSlim release) : IJob
     {
-        ConfigureJobs(new JobRuntimeConfig
-        {
-            WorkerCount = 4,
-            SafetyMode = safetyMode,
-            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-        });
-    }
-
-    private void RestoreJobRuntime(
-        ManagedPayloadPolicy payloadPolicy,
-        JobSafetyMode safetyMode)
-    {
-        ConfigureJobs(new JobRuntimeConfig
-        {
-            SafetyMode = safetyMode,
-            ManagedPayloadPolicy = payloadPolicy,
-        });
-    }
-
-    private sealed class EdgeCapture<T>
-        where T : struct, IComponent
-    {
-        public RelationEdge<T>[] Edges { get; set; } = [];
-    }
-
-    private readonly struct DeferredEndpointWriter<T> : IJob
-        where T : struct, IComponent
-    {
-        private readonly World _world;
-        private readonly RelationEdge<T> _edge;
-        private readonly Entity _source;
-        private readonly Entity _target;
-        private readonly ManualResetEventSlim _written;
-        private readonly ManualResetEventSlim _release;
-
-        public DeferredEndpointWriter(
-            World world,
-            RelationEdge<T> edge,
-            Entity source,
-            Entity target,
-            ManualResetEventSlim written,
-            ManualResetEventSlim release)
-        {
-            _world = world;
-            _edge = edge;
-            _source = source;
-            _target = target;
-            _written = written;
-            _release = release;
-        }
-
         public void Execute()
         {
-            RelationJobAccess<T>.RetargetDeferred(_world, _edge, _source, _target);
-            _written.Set();
-            _release.Wait();
+            entered.Set();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+            result.Values = values;
         }
     }
-
-    private readonly struct CaptureIncomingJob<T> : IJob
-        where T : struct, IComponent
+    private readonly struct Hold(ManualResetEventSlim entered, ManualResetEventSlim release,
+        System.Collections.Concurrent.ConcurrentQueue<string> events) : IJob
     {
-        private readonly World _world;
-        private readonly Entity _target;
-        private readonly EdgeCapture<T> _capture;
-
-        public CaptureIncomingJob(World world, Entity target, EdgeCapture<T> capture)
-        {
-            _world = world;
-            _target = target;
-            _capture = capture;
-        }
-
         public void Execute()
         {
-            _capture.Edges = RelationJobAccess<T>.GetIncoming(_world, _target)
-                .Entries.ToArray().Select(static entry => entry.Edge).ToArray();
+            entered.Set();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+            events.Enqueue("first write ended");
         }
     }
-
-    private readonly struct RetargetJob<T> : IJob
-        where T : struct, IComponent
-    {
-        private readonly World _world;
-        private readonly RelationEdge<T> _edge;
-        private readonly Entity _source;
-        private readonly Entity _target;
-
-        internal RetargetJob(World world, RelationEdge<T> edge, Entity source, Entity target)
-        {
-            _world = world;
-            _edge = edge;
-            _source = source;
-            _target = target;
-        }
-
-        public void Execute()
-        {
-            RelationJobAccess<T>.RetargetDeferred(_world, _edge, _source, _target);
-        }
-    }
-
-    private readonly struct ParallelRetargetJob<T> : IJobParallelFor
-        where T : struct, IComponent
-    {
-        private readonly World _world;
-        private readonly RelationEdge<T> _edge;
-        private readonly Entity _source;
-        private readonly Entity _target;
-
-        internal ParallelRetargetJob(
-            World world,
-            RelationEdge<T> edge,
-            Entity source,
-            Entity target)
-        {
-            _world = world;
-            _edge = edge;
-            _source = source;
-            _target = target;
-        }
-
-        public void Execute(int index)
-        {
-            _ = index;
-            RelationJobAccess<T>.RetargetDeferred(_world, _edge, _source, _target);
-        }
-    }
-
-    private readonly struct BlockingJob : IJob
-    {
-        private readonly ManualResetEventSlim _started;
-        private readonly ManualResetEventSlim _release;
-
-        public BlockingJob(ManualResetEventSlim started, ManualResetEventSlim release)
-        {
-            _started = started;
-            _release = release;
-        }
-
-        public void Execute()
-        {
-            _started.Set();
-            _release.Wait();
-        }
-    }
-
-    [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
-    private struct DirectedA : IComponent;
-
-    [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
-    private struct DirectedB : IComponent;
+    private readonly struct RecordMaintenance<T>(World world, System.Collections.Concurrent.ConcurrentQueue<string> events, string value) : IJob where T : struct
+    { public void Execute() { Relations<T>.Maintain(world); events.Enqueue(value); } }
+    [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)] private struct DirectedA : IComponent;
+    [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)] private struct DirectedB : IComponent;
 }

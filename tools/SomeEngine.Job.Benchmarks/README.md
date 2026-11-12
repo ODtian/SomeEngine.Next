@@ -10,6 +10,18 @@ Options:
 
 - `--auto` uses `JobScheduleOptions.AutomaticBatchSize` for parallel jobs.
 - `--workers N` selects the worker count.
+- `--component-ranges --length 1000001` captures the selected component bindings, then
+  measures from the completed capture to the first instruction of their buffer-writing Job.
+  `CollectReadAccess<TComponent, TResources>` collects one contiguous buffer range per chunk;
+  resource registration and scheduling stay inside `capture_to_write_ms`. Creation, capture,
+  the actual buffer writes and final per-element checks stay outside this interval. The queue
+  checks each emitted sample against the declared target. `--chunk-capacity` defaults to 1024
+  to exercise adjacent ranges across chunks; 0 selects the engine's growing primary chunk.
+- `--world-edits --length 1000` compares the same N entity additions with per-entity
+  structure access and one explicit `World.OpenStructureWrite()` range. Entity creation
+  and component removal occur outside the measured interval. Every measured batch emits
+  `world_add ... batch_ms=...` for the queue's sample target check, followed by p50/p95;
+  the resulting entity count and values are checked after each row.
 - `--spin N` and `--busy-spin N` compare wait policies.
 - `--counters` includes the default runtime diagnostics path.
 - `--synchronous` compares `ScheduleParallel(...).Complete()` and `ExecuteParallel(...)` with the

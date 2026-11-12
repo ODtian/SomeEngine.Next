@@ -8,7 +8,7 @@ public sealed class NavigationRegionBuildTests
     [Fact]
     public void DensePortsKeepTheirDirectedLocalCostsAndEdgeOrder()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var mesh = new NavigationMesh([new(0, 0, 0), new(10, 0, 0), new(10, 0, 10), new(0, 0, 10)],
             [0, 1, 2, 3], [new(0, 4, 0, 0)], []);
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);

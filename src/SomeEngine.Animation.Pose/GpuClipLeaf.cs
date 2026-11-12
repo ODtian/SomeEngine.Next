@@ -1,14 +1,13 @@
 using System.Numerics;
-using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation.Pose;
 
 /// <summary>A GPU pose producer's controls, copied through normal render extraction.</summary>
-public struct GpuPoseTarget : IComponent
+public struct GpuPoseTarget : ITrackedComponent
 {
     public SkeletonInstance Skeleton;
     public QuantizedClipData? Clip;
@@ -39,7 +38,6 @@ public struct GpuPoseTarget : IComponent
 public readonly record struct GpuClipParameters(QuantizedClipData Clip, bool Loop = false,
     RootMotionMode RootMotion = RootMotionMode.SourcePose);
 
-[BufferCapacity(1)]
 public struct GpuClipInstance : IBufferElement
 {
     public AnimationLeafBatch<GpuClipParameters> Definition;
@@ -66,27 +64,44 @@ public readonly struct GpuClipLeaf : IAnimationLeaf<GpuClipParameters>
     public static void Install(World world, Entity animation, Entity target,
         AnimationLeafBatch<GpuClipParameters> definitions, int index, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<GpuClipInstance>(animation)) world.AddBuffer<GpuClipInstance>(animation);
-        var instance = new GpuClipInstance { Definition = definitions, Index = index, Placement = placement, Target = target,
-            Signals = ((GpuClipSignalDefinition[])definitions.Data!)[index].Bind(world.Read<GpuPoseTarget>(target).Skeleton.Skeleton) };
-        if (!world.HasBuffer<TimelineEvent>(animation)) world.AddBuffer<TimelineEvent>(animation);
-        AnimationClip signalClip = instance.Signals.Definition.Clip;
-        world.ExecuteBufferWrite<TimelineEvent, AnimationClip>(animation, ref signalClip, static (events, ref clip) =>
+        if (!world.Has<Buffer<GpuClipInstance>>(animation)) world.AddBuffer<GpuClipInstance>(animation);
+        var instance = new GpuClipInstance
         {
-            foreach (ClipEvent marker in clip.Events)
+            Definition = definitions,
+            Index = index,
+            Placement = placement,
+            Target = target,
+            Signals = ((GpuClipSignalDefinition[])definitions.Data!)[index].Bind(world.ReadComponentData<GpuPoseTarget>(target).Skeleton.Skeleton)
+        };
+        if (!world.Has<Buffer<TimelineEvent>>(animation)) world.AddBuffer<TimelineEvent>(animation);
+        AnimationClip signalClip = instance.Signals.Definition.Clip;
+        {
+            using var events = world.GetBuffer<TimelineEvent>(animation);
+            Visit(events, ref signalClip);
+
+            static void Visit(DynamicBuffer<TimelineEvent> events, ref AnimationClip clip)
             {
-                bool found = false;
-                foreach (TimelineEvent current in events.AsSpan()) found |= current.Id == marker.Id;
-                if (!found) events.Add(new TimelineEvent { Id = marker.Id });
+                foreach (ClipEvent marker in clip.Events)
+                {
+                    bool found = false;
+                    foreach (TimelineEvent current in events.AsSpan()) found |= current.Id == marker.Id;
+                    if (!found) events.Add(new TimelineEvent { Id = marker.Id });
+                }
+
             }
-        });
-        world.ExecuteBufferWrite<GpuClipInstance, GpuClipInstance>(animation, ref instance,
-            static (instances, ref instance) =>
+        }
+        {
+            using var instances = world.GetBuffer<GpuClipInstance>(animation);
+            Visit(instances, ref instance);
+
+            static void Visit(DynamicBuffer<GpuClipInstance> instances, ref GpuClipInstance instance)
             {
-                if (instances.Count > 0 && instances.Read(0).Placement.Starts != instance.Placement.Starts) instances.Clear();
+                if (instances.Count > 0 && instances[0].Placement.Starts != instance.Placement.Starts) instances.Clear();
                 instances.Add(instance);
-            });
-        GpuPoseTarget output = world.Read<GpuPoseTarget>(target);
+
+            }
+        }
+        GpuPoseTarget output = world.ReadComponentData<GpuPoseTarget>(target);
         output.Clip = definitions.Parameters[index].Clip;
         output.StateMachine = null;
         output.Blend = null;
@@ -94,18 +109,22 @@ public readonly struct GpuClipLeaf : IAnimationLeaf<GpuClipParameters>
         output.SampleTime = 0;
         output.Starts = placement.Starts;
         output.AnimationStarts = placement.Starts;
-        world.Replace(target, output);
+        world.Set(target, output);
     }
 
-    public static void Release(World world, Entity animation) =>
-        world.ExecuteBufferWrite<GpuClipInstance>(animation, static instances => instances.Clear());
+    public static void Release(World world, Entity animation)
+    {
+        using var instances = world.GetBuffer<GpuClipInstance>(animation);
+        instances.Clear();
+
+    }
 }
 
 public static partial class GpuPoseAnimation
 {
     public static Entity CreateTarget(World world, SkeletonInstance skeleton)
     {
-        Entity target = world.CreateEntity(new GpuPoseTarget { Skeleton = skeleton, ModelToWorld = Matrix4x4.Identity });
+        Entity target = world.Create(new GpuPoseTarget { Skeleton = skeleton, ModelToWorld = Matrix4x4.Identity });
         CpuBoneDemands.For(world).Changed = true;
         return target;
     }
@@ -123,72 +142,84 @@ public static partial class GpuPoseAnimation
 
 internal struct GpuPoseFrameSystem : ISystem<ImmediateSystemContext>
 {
-    private QueryHandle _targets;
+    private Query _targets;
     private double _time;
     public void OnCreate(ref ImmediateSystemContext context) =>
-        _targets = context.World.Query(new QueryDefinitionBuilder().ReadWrite<GpuPoseTarget>());
+        _targets = context.World.Query(new QueryDescription().WithStored<GpuPoseTarget>());
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         _time += context.DeltaTime;
-        context.World.ExecuteQuery(_targets, ref _time, static (QueryCursor rows, ref double time) =>
         {
-            foreach (QueryChunkView chunk in rows.Chunks)
-            foreach (ref GpuPoseTarget target in chunk.ReadWrite<GpuPoseTarget>())
+            using QueryScope read = _targets.Open();
+            Visit(in read, ref _time);
+
+            static void Visit(scoped in QueryScope rows, ref double time)
             {
-                target.CalculationTime = time;
-                target.InputNumber++;
-                target.Playing = false;
-                target.RootMotion = RootMotionDelta.Identity;
+                foreach (QueryChunk chunk in rows)
+                    foreach (ref GpuPoseTarget target in chunk.Write<GpuPoseTarget>())
+                    {
+                        target.CalculationTime = time;
+                        target.InputNumber++;
+                        target.Playing = false;
+                        target.RootMotion = RootMotionDelta.Identity;
+                    }
+
             }
-        });
+        }
     }
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_targets);
+    public void OnDestroy(ref ImmediateSystemContext context) { }
 }
 
 internal struct GpuClipSystem : ISystem<ImmediateSystemContext>
 {
-    private QueryHandle _clips;
+    private Query _clips;
     public void OnCreate(ref ImmediateSystemContext context) =>
-        _clips = context.World.Query(AnimationGraph.WithTimeAccess(context.World.QueryDefinition()
-            .ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<GpuClipInstance>()
-            .Optional<GpuPoseTarget>(QueryAccess.ReadWrite).OptionalBuffer<TimelineEvent>(QueryAccess.ReadWrite)));
+        _clips = context.World.Query(AnimationGraph.WithTimeAccess(new QueryDescription()
+            .WithStored<Timeline>().With<Timeline>().WithStored<Buffer<GpuClipInstance>>()
+            .Optional<GpuPoseTarget>().Optional<Buffer<TimelineEvent>>()));
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
-        world.ExecuteQuery(_clips, ref world, static (QueryCursor rows, ref World world) =>
         {
-            foreach (QueryChunkView chunk in rows.Chunks)
+            using QueryScope read = _clips.Open();
+            Visit(in read, ref world);
+
+            static void Visit(scoped in QueryScope rows, ref World world)
             {
-                var timelines = chunk.ReadWriteColumn<Timeline>();
-                var clips = chunk.WriteBufferColumn<GpuClipInstance>();
-                var times = AnimationGraph.ReadTimeColumn(chunk);
-                foreach (int row in chunk.RowIndices)
+                foreach (QueryChunk chunk in rows)
                 {
-                    ref Timeline timeline = ref timelines[row];
-                    foreach (ref GpuClipInstance instance in clips[row].AsSpan())
+                    var timelines = chunk.Write<Timeline>();
+                    var clips = chunk.GetBuffers<GpuClipInstance>();
+                    var times = AnimationGraph.ReadTimeColumn(chunk);
+                    for (int row = 0; row < chunk.Count; row++)
                     {
-                        AnimationLeafTime time = times.Read(row, in timeline, in instance.Placement);
-                        if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; instance.Signals.Reset(); }
-                        if (!time.Active || instance.Finished) continue;
-                        GpuClipParameters parameters = instance.Definition.Parameters[instance.Index];
-                        float elapsed = parameters.Loop ? time.Time.Time : Math.Min(time.Time.Time, parameters.Clip.Duration);
-                        GpuPoseTarget output = world.Read<GpuPoseTarget>(instance.Target);
-                        output.Clip = parameters.Clip;
-                        output.StateMachine = null;
-                        output.Blend = null;
-                        output.Rig = null;
-                        output.SampleTime = parameters.Loop ? elapsed % parameters.Clip.Duration : elapsed;
-                        output.Starts = time.Starts;
-                        instance.Signals.Update(world, chunk.GetEntity(row), in parameters, elapsed, ref output);
-                        world.Replace(instance.Target, output);
-                        instance.Finished = !parameters.Loop && elapsed >= parameters.Clip.Duration;
-                        times.Submit(row, ref timeline, in instance.Placement, !instance.Finished);
+                        ref Timeline timeline = ref timelines[row];
+                        foreach (ref GpuClipInstance instance in clips[row].AsSpan())
+                        {
+                            AnimationLeafTime time = times.Read(row, in timeline, in instance.Placement);
+                            if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; instance.Signals.Reset(); }
+                            if (!time.Active || instance.Finished) continue;
+                            GpuClipParameters parameters = instance.Definition.Parameters[instance.Index];
+                            float elapsed = parameters.Loop ? time.Time.Time : Math.Min(time.Time.Time, parameters.Clip.Duration);
+                            GpuPoseTarget output = world.ReadComponentData<GpuPoseTarget>(instance.Target);
+                            output.Clip = parameters.Clip;
+                            output.StateMachine = null;
+                            output.Blend = null;
+                            output.Rig = null;
+                            output.SampleTime = parameters.Loop ? elapsed % parameters.Clip.Duration : elapsed;
+                            output.Starts = time.Starts;
+                            instance.Signals.Update(world, chunk.Entities[row], in parameters, elapsed, ref output);
+                            world.Set(instance.Target, output);
+                            instance.Finished = !parameters.Loop && elapsed >= parameters.Clip.Duration;
+                            times.Submit(row, ref timeline, in instance.Placement, !instance.Finished);
+                        }
                     }
                 }
+
             }
-        });
+        }
     }
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_clips);
+    public void OnDestroy(ref ImmediateSystemContext context) { }
 }

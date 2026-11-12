@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Components;
@@ -821,22 +821,22 @@ public sealed partial class ClusterRenderResources : IDisposable
         public RenderInstancePropertyLayout Properties => ClusterRenderFeature.GeometryLayout;
 
         public RenderInstanceChanges GetChanges(
-            ReadOnlyQueryPacket packet,
-            uint lastSystemVersion) =>
-            packet.ChangedSince<RenderTransform>(lastSystemVersion)
-            || packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)
+            QueryChunk packet,
+            ulong lastSystemVersion) =>
+            packet.WasWritten<RenderTransform>(lastSystemVersion)
+            || packet.WasWritten<RenderPreviousTransform>(lastSystemVersion)
             || MeshChanged(packet, lastSystemVersion)
             || XrayChanged(packet, lastSystemVersion)
                 ? RenderInstanceChanges.Values
                 : RenderInstanceChanges.None;
 
-        internal static bool MeshChanged(ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
-            packet.ChangedSince<RenderClusterGeometry>(lastSystemVersion)
-            || packet.Has<RenderMesh>() && packet.ChangedSince<RenderMesh>(lastSystemVersion)
-            || packet.Has<RenderDeformBounds>() && packet.ChangedSince<RenderDeformBounds>(lastSystemVersion);
+        internal static bool MeshChanged(QueryChunk packet, ulong lastSystemVersion) =>
+            packet.WasWritten<RenderClusterGeometry>(lastSystemVersion)
+            || packet.Has<RenderMesh>() && packet.WasWritten<RenderMesh>(lastSystemVersion)
+            || packet.Has<RenderDeformBounds>() && packet.WasWritten<RenderDeformBounds>(lastSystemVersion);
 
-        internal static bool XrayChanged(ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
-            packet.Has<RenderXray>() && packet.ChangedSince<RenderXray>(lastSystemVersion);
+        internal static bool XrayChanged(QueryChunk packet, ulong lastSystemVersion) =>
+            packet.Has<RenderXray>() && packet.WasWritten<RenderXray>(lastSystemVersion);
 
         public void Bind(RenderInstanceWriteSlice destination)
             => Bind(destination, true, true, true);
@@ -856,25 +856,26 @@ public sealed partial class ClusterRenderResources : IDisposable
             }
         }
 
-        public void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet)
+        public void Write(RenderInstanceWriteSlice destination, QueryChunk packet)
             => Write(destination, packet, true, true, true);
 
-        internal void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet,
+        internal void Write(RenderInstanceWriteSlice destination, QueryChunk packet,
             bool current, bool previous, bool mesh, bool xray = true)
         {
             if (current) destination.Write(_currentTransform, packet.Read<RenderTransform>());
             if (previous) destination.Write(_previousTransform, packet.Read<RenderPreviousTransform>());
             if (xray)
             {
-                if (packet.TryRead<RenderXray>(out var effects)) destination.Write(_xray, effects);
-                else for (int row = 0; row < packet.Count; row++) destination.Write(_xray, row, default(RenderXray));
+                bool hasXray = packet.TryRead<RenderXray>(out var effects);
+                for (int row = 0; row < packet.Count; row++)
+                    destination.Write(_xray, row, hasXray && packet.Has<RenderXray>(row) ? effects[row] : default);
             }
             if (!mesh) return;
             bool hasMesh = packet.TryRead<RenderMesh>(out var meshes);
             for (int row = 0; row < packet.Count; row++)
             {
-                destination.Write(_depthCacheClass, row, hasMesh ? (uint)meshes[row].DepthCacheClass : 0u);
-                destination.Write(_firstPerson, row, hasMesh ? meshes[row].FirstPerson : default);
+                destination.Write(_depthCacheClass, row, hasMesh && packet.Has<RenderMesh>(row) ? (uint)meshes[row].DepthCacheClass : 0u);
+                destination.Write(_firstPerson, row, hasMesh && packet.Has<RenderMesh>(row) ? meshes[row].FirstPerson : default);
             }
 
             ReadOnlySpan<RenderClusterGeometry> geometries = packet.Read<RenderClusterGeometry>();
@@ -903,9 +904,9 @@ public sealed partial class ClusterRenderResources : IDisposable
                 }
                 destination.Write(_bvhRoot, roots);
                 destination.Write(_boundsExpansion, expansions);
-                if (packet.TryRead<RenderDeformBounds>(out var bounds)) destination.Write(_deformBounds, bounds);
-                else
-                    for (int row = 0; row < packet.Count; row++) destination.Write(_deformBounds, row, default(RenderDeformBounds));
+                bool hasBounds = packet.TryRead<RenderDeformBounds>(out var bounds);
+                for (int row = 0; row < packet.Count; row++)
+                    destination.Write(_deformBounds, row, hasBounds && packet.Has<RenderDeformBounds>(row) ? bounds[row] : default);
             }
             finally
             {

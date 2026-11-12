@@ -22,14 +22,14 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../samples/DefaultGame/DefaultGame.csproj" AdditionalProperties="SomeEngineDevelopment=true;PublishAot=false" />
-    <ProjectReference Include="../../tools/SomeEngine.SceneContent/SomeEngine.SceneContent.csproj" />
-    <ProjectReference Include="../../tools/SomeEngine.Transparency.Research/SomeEngine.Transparency.Research.csproj" />
-    <ProjectReference Include="..\..\src\SomeEngine.Core\SomeEngine.Core.csproj" />
-    <ProjectReference Include="../../src/SomeEngine.Animation.Pose.Importers/SomeEngine.Animation.Pose.Importers.csproj" />
-    <ProjectReference Include="..\..\src\SomeEngine.Runtime\SomeEngine.Runtime.csproj" />
+    <ProjectReference Include="../../tools/SomeEngine.SceneContent/SomeEngine.SceneContent.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
+    <ProjectReference Include="../../tools/SomeEngine.Transparency.Research/SomeEngine.Transparency.Research.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
+    <ProjectReference Include="..\..\src\SomeEngine.Core\SomeEngine.Core.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
+    <ProjectReference Include="../../src/SomeEngine.Animation.Pose.Importers/SomeEngine.Animation.Pose.Importers.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
+    <ProjectReference Include="..\..\src\SomeEngine.Runtime\SomeEngine.Runtime.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../SomeEngine.Assets.Tests/AssetImportTestSetup.cs" Link="AssetImportTestSetup.cs" />

@@ -1,8 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
-using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -11,7 +10,7 @@ namespace SomeEngine.Animation.Pose;
 /// <summary>Completes concrete weighted bone jobs before publishing their dependent pose results.</summary>
 public struct PoseBlendSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNodeContext>
 {
-    private QueryHandle _blends;
+    private Query _blends;
     private List<PoseBlendSamples> _work;
     private List<JobResourceAccess> _accesses;
 
@@ -19,10 +18,10 @@ public struct PoseBlendSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNod
     {
         _work = [];
         _accesses = [];
-        _blends = context.World.Query(AnimationGraph.WithTimeAccess(context.World.QueryDefinition()
-            .ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<PoseBlendInstance>()
-            .Optional<GraphParameters>(QueryAccess.Read).Optional<AnimationLayers>(QueryAccess.Read)
-            .OptionalBuffer<LocalPose>(QueryAccess.ReadWrite).OptionalBuffer<PoseResult>(QueryAccess.ReadWrite)));
+        _blends = context.World.Query(AnimationGraph.WithTimeAccess(new QueryDescription()
+            .WithStored<Timeline>().With<Timeline>().WithStored<Buffer<PoseBlendInstance>>()
+            .Optional<GraphParameters>().Optional<AnimationLayers>()
+            .Optional<Buffer<LocalPose>>().Optional<Buffer<PoseResult>>()));
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)
@@ -52,55 +51,92 @@ public struct PoseBlendSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNod
         _work.Clear();
         _accesses.Clear();
         frame.NextLevel = int.MaxValue;
-        frame.World.ExecuteQuery(_blends, ref frame, static (scoped QueryCursor rows, ref BlendFrame frame) =>
         {
-            foreach (QueryRow row in rows.Rows)
-                foreach (ref PoseBlendInstance blend in row.Buffer<PoseBlendInstance>().AsSpan())
+            using QueryScope read = _blends.Open();
+            Visit(in read, ref frame);
+
+            static void Visit(scoped in QueryScope rows, ref BlendFrame frame)
+            {
+                foreach (QueryChunk chunk in rows)
                 {
-                    if (blend.Node.Level > frame.Level) frame.NextLevel = Math.Min(frame.NextLevel, blend.Node.Level);
-                    if (blend.Node.Level == frame.Level) Gather(frame.World, in row, ref blend, frame.Work, frame.Accesses);
+                    var buffers0 = chunk.Has<Buffer<PoseBlendInstance>>() ? chunk.GetBuffers<PoseBlendInstance>() : default;
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+                        foreach (ref PoseBlendInstance blend in buffers0[rowIndex].AsSpan())
+                        {
+                            if (blend.Node.Level > frame.Level) frame.NextLevel = Math.Min(frame.NextLevel, blend.Node.Level);
+                            if (blend.Node.Level == frame.Level) Gather(frame.World, chunk, rowIndex, ref blend, frame.Work, frame.Accesses);
+                        }
+                    }
                 }
-        });
+
+            }
+        }
         if (_work.Count > 0)
             PoseAnimation.GetScheduler(frame.World).ScheduleParallel(new BlendBones(_work), _work.Count, 8, CollectionsMarshal.AsSpan(_accesses)).Complete();
-        frame.World.ExecuteQuery(_blends, ref frame, static (scoped QueryCursor rows, ref BlendFrame frame) =>
         {
-            World world = frame.World;
-            foreach (QueryRow row in rows.Rows)
-                foreach (ref PoseBlendInstance blend in row.Buffer<PoseBlendInstance>().AsSpan())
+            using QueryScope read = _blends.Open();
+            Visit(in read, ref frame);
+
+            static void Visit(scoped in QueryScope rows, ref BlendFrame frame)
+            {
+                World world = frame.World;
+                foreach (QueryChunk chunk in rows)
                 {
-                    if (!blend.Active || blend.Node.Level != frame.Level) continue;
-                    if (blend.Sampled)
+                    var buffers0 = chunk.Has<Buffer<PoseBlendInstance>>() ? chunk.GetBuffers<PoseBlendInstance>() : default;
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
                     {
-                        var copy = (Values: blend.Samples.Output, Range: blend.Output.Range);
-                        world.ExecuteBufferWrite<LocalPose, (BoneTransform[] Values, PoseRange Range)>(blend.Output.Entity,
-                            ref copy, static (poses, ref copy) => copy.Values.AsSpan(0, copy.Range.Count)
-                                .CopyTo(LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count))));
-                    }
-                    var value = (Index: blend.Output.Index, Time: blend.Time, Phase: blend.Phase, Weight: blend.Weight,
-                        Starts: blend.Starts, Sampled: blend.Sampled, Motion: blend.Samples.Output[^1]);
-                    world.ExecuteBufferWrite<PoseResult, (int Index, double Time, double Phase, float Weight,
-                        uint Starts, bool Sampled, BoneTransform Motion)>(blend.Output.Entity, ref value,
-                        static (results, ref value) =>
+                        foreach (ref PoseBlendInstance blend in buffers0[rowIndex].AsSpan())
                         {
-                            ref PoseResult result = ref results[value.Index];
-                            result.Weight = value.Weight;
-                            if (!value.Sampled) return;
-                            result.Time = value.Time;
-                            result.Phase = value.Phase;
-                            result.Starts = value.Starts;
-                            result.RootMotion = new(value.Motion.ToMatrix() * result.RootMotion.Transform);
-                            result.Version++;
-                        });
-                    AnimationGraph.Submit(in row, in blend.Placement, blend.Running);
+                            if (!blend.Active || blend.Node.Level != frame.Level) continue;
+                            if (blend.Sampled)
+                            {
+                                var copy = (Values: blend.Samples.Output, Range: blend.Output.Range);
+                                {
+                                    using var poses = world.GetBuffer<LocalPose>(blend.Output.Entity);
+                                    Visit(poses, ref copy);
+
+                                    static void Visit(DynamicBuffer<LocalPose> poses, ref (BoneTransform[] Values, PoseRange Range) copy)
+                                    {
+                                        copy.Values.AsSpan(0, copy.Range.Count)
+                                                                        .CopyTo(LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count)));
+
+                                    }
+                                }
+                            }
+                            var value = (Index: blend.Output.Index, Time: blend.Time, Phase: blend.Phase, Weight: blend.Weight,
+                                Starts: blend.Starts, Sampled: blend.Sampled, Motion: blend.Samples.Output[^1]);
+                            {
+                                using var results = world.GetBuffer<PoseResult>(blend.Output.Entity);
+                                Visit(results, ref value);
+
+                                static void Visit(DynamicBuffer<PoseResult> results, ref (int Index, double Time, double Phase, float Weight,
+                                uint Starts, bool Sampled, BoneTransform Motion) value)
+                                {
+                                    ref PoseResult result = ref results[value.Index];
+                                    result.Weight = value.Weight;
+                                    if (!value.Sampled) return;
+                                    result.Time = value.Time;
+                                    result.Phase = value.Phase;
+                                    result.Starts = value.Starts;
+                                    result.RootMotion = new(value.Motion.ToMatrix() * result.RootMotion.Transform);
+                                    result.Version++;
+
+                                }
+                            }
+                            AnimationGraph.Submit(chunk, rowIndex, in blend.Placement, blend.Running);
+                        }
+                    }
                 }
-        });
+
+            }
+        }
     }
 
-    private static void Gather(World world, scoped in QueryRow row, ref PoseBlendInstance blend,
+    private static void Gather(World world, QueryChunk chunk, int rowIndex, ref PoseBlendInstance blend,
         List<PoseBlendSamples> work, List<JobResourceAccess> accesses)
     {
-        AnimationLeafTime time = AnimationGraph.ReadTime(in row, in blend.Placement);
+        AnimationLeafTime time = AnimationGraph.ReadTime(chunk, rowIndex, in blend.Placement);
         blend.Active = time.Active;
         blend.Sampled = false;
         if (blend.Starts != time.Starts)
@@ -112,12 +148,12 @@ public struct PoseBlendSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNod
         blend.Weight = time.Weight;
         if (world.Has<AnimationLayers>(blend.Output.Entity))
         {
-            AnimationLayers layers = world.Read<AnimationLayers>(blend.Output.Entity);
+            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(blend.Output.Entity);
             if (blend.Placement.Layer < layers.Count) blend.Weight *= layers.Items[blend.Placement.Layer].Weight;
         }
         if (blend.Finished) return;
         PoseBlendParameters parameters = blend.Definition.Parameters[blend.Index];
-        GraphParameters graph = row.Read<GraphParameters>();
+        GraphParameters graph = chunk.Read<GraphParameters>()[rowIndex];
         float total = 0;
         blend.Time = 0;
         blend.Phase = 0;
@@ -135,12 +171,22 @@ public struct PoseBlendSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNod
             if (weight == 0) continue;
             int start = input * blend.Samples.Stride;
             var copy = (Values: blend.Samples.Inputs, Start: start, Range: reference.Range);
-            world.ExecuteBufferRead<LocalPose, (BoneTransform[] Values, int Start, PoseRange Range)>(reference.Entity,
-                ref copy, static (poses, ref copy) => LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count))
-                    .CopyTo(copy.Values.AsSpan(copy.Start, copy.Range.Count)));
+            {
+                using var poses = world.ReadBuffer<LocalPose>(reference.Entity);
+                Visit(poses, ref copy);
+
+                static void Visit(ReadOnlyBuffer<LocalPose> poses, ref (BoneTransform[] Values, int Start, PoseRange Range) copy)
+                {
+                    LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count))
+                                        .CopyTo(copy.Values.AsSpan(copy.Start, copy.Range.Count));
+
+                }
+            }
             blend.Samples.Inputs[start + reference.Range.Count] = new BoneTransform
             {
-                Translation = result.RootMotion.Translation, Rotation = result.RootMotion.Rotation, Scale = Vector3.One,
+                Translation = result.RootMotion.Translation,
+                Rotation = result.RootMotion.Rotation,
+                Scale = Vector3.One,
             };
         }
         blend.Finished = parameters.Boundary.End == StageEnd.Duration && time.Time.Time >= parameters.Boundary.Duration;
@@ -157,9 +203,9 @@ public struct PoseBlendSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNod
         accesses.AddRange(blend.Samples.Accesses);
     }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_blends);
+    public void OnDestroy(ref ImmediateSystemContext context) { }
 
-    public void OnDestroy(ref PoseNodeContext context) => context.Frame.World.ReleaseQuery(_blends);
+    public void OnDestroy(ref PoseNodeContext context) { }
 
     private struct BlendFrame
     {

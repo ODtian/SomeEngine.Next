@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
@@ -39,42 +40,43 @@ public partial class CanvasRenderExtractor : IRenderExtractionRangeSystem
 
         public void Dispose() => Reset();
 
-        public void Collect(ReadOnlyQueryPacket packet, uint lastSystemVersion, bool fullCollection)
+        public void Collect(QueryChunk packet, ulong lastSystemVersion, bool fullCollection)
         {
             if (fullCollection) Collect(packet);
             else CollectChanges(packet, lastSystemVersion);
         }
 
-        private void Collect(ReadOnlyQueryPacket chunk)
+        public void Collect(QueryChunk chunk)
         {
-            if (chunk.Has<Canvas>() || chunk.Has<Surface>() || chunk.Has<LayoutRect>() ||
-                chunk.Has<Parent<ElementTree>>() || chunk.Has<Children<ElementTree>>())
-                foreach (Entity entity in chunk.Entities) TreeNodes.Add(entity);
+            for (int row = 0; row < chunk.Count; row++)
+                if (chunk.Has<Canvas>(row) || chunk.Has<Surface>(row) || chunk.Has<LayoutRect>(row) ||
+                    chunk.Has<Parent<ElementTree>>(row) || chunk.Has<Children<ElementTree>>(row))
+                    TreeNodes.Add(chunk.Entities[row]);
         }
 
-        private bool CollectChanges(ReadOnlyQueryPacket chunk, uint lastSystemVersion)
+        private bool CollectChanges(QueryChunk chunk, ulong lastSystemVersion)
         {
             bool surfaceChanged = chunk.Has<Surface>() && chunk.Has<LayoutRect>() &&
-                chunk.ChangedSince<Surface>(lastSystemVersion);
+                chunk.WasWritten<Surface>(lastSystemVersion);
             bool rectangleChanged = chunk.Has<Surface>() && chunk.Has<LayoutRect>() &&
-                chunk.ChangedSince<LayoutRect>(lastSystemVersion);
+                chunk.WasWritten<LayoutRect>(lastSystemVersion);
             bool viewportChanged = chunk.Has<ScrollOffset>() && chunk.Has<LayoutRect>() &&
-                chunk.ChangedSince<LayoutRect>(lastSystemVersion);
-            bool canvasChanged = chunk.Has<Canvas>() && chunk.ChangedSince<Canvas>(lastSystemVersion);
+                chunk.WasWritten<LayoutRect>(lastSystemVersion);
+            bool canvasChanged = chunk.Has<Canvas>() && chunk.WasWritten<Canvas>(lastSystemVersion);
             bool parentChanged = chunk.Has<Parent<ElementTree>>() &&
-                chunk.ChangedSince<Parent<ElementTree>>(lastSystemVersion);
+                chunk.WasWritten<Parent<ElementTree>>(lastSystemVersion);
             bool childrenChanged = chunk.Has<Children<ElementTree>>() &&
-                chunk.ChangedSince<Children<ElementTree>>(lastSystemVersion);
+                chunk.WasWritten<Children<ElementTree>>(lastSystemVersion);
             bool transformChanged = chunk.Has<WorldTransform>() &&
-                chunk.ChangedSince<WorldTransform>(lastSystemVersion);
+                chunk.WasWritten<WorldTransform>(lastSystemVersion);
             bool imageChanged = chunk.Has<Image>() && chunk.Has<LayoutRect>() &&
-                (chunk.ChangedSince<Image>(lastSystemVersion) ||
-                 chunk.ChangedSince<LayoutRect>(lastSystemVersion) ||
-                 (chunk.Has<ImageTexture>() && chunk.ChangedSince<ImageTexture>(lastSystemVersion)) ||
-                 (chunk.Has<Box>() && chunk.ChangedSince<Box>(lastSystemVersion)));
+                (chunk.WasWritten<Image>(lastSystemVersion) ||
+                 chunk.WasWritten<LayoutRect>(lastSystemVersion) ||
+                 (chunk.Has<ImageTexture>() && chunk.WasWritten<ImageTexture>(lastSystemVersion)) ||
+                 (chunk.Has<Box>() && chunk.WasWritten<Box>(lastSystemVersion)));
             bool presentationChanged = chunk.Has<LayoutRect>() &&
-                ((chunk.Has<ElementTransform>() && chunk.ChangedSince<ElementTransform>(lastSystemVersion)) ||
-                 (chunk.Has<PresentationOffset>() && chunk.ChangedSince<PresentationOffset>(lastSystemVersion)));
+                ((chunk.Has<ElementTransform>() && chunk.WasWritten<ElementTransform>(lastSystemVersion)) ||
+                 (chunk.Has<PresentationOffset>() && chunk.WasWritten<PresentationOffset>(lastSystemVersion)));
             if (!surfaceChanged && !rectangleChanged && !viewportChanged && !canvasChanged &&
                 !parentChanged && !childrenChanged && !imageChanged && !transformChanged && !presentationChanged)
                 return false;
@@ -83,24 +85,25 @@ public partial class CanvasRenderExtractor : IRenderExtractionRangeSystem
             {
                 Entity entity = chunk.Entities[row];
                 bool presentation = presentationChanged &&
-                    ((chunk.Has<ElementTransform>() && chunk.RowChangedSince<ElementTransform>(row, lastSystemVersion)) ||
-                     (chunk.Has<PresentationOffset>() && chunk.RowChangedSince<PresentationOffset>(row, lastSystemVersion)));
-                if (transformChanged && chunk.RowChangedSince<WorldTransform>(row, lastSystemVersion))
+                    ((chunk.Has<ElementTransform>() && chunk.WasWritten<ElementTransform>(row, lastSystemVersion)) ||
+                     (chunk.Has<PresentationOffset>() && chunk.WasWritten<PresentationOffset>(row, lastSystemVersion)));
+                if (transformChanged && chunk.WasWritten<WorldTransform>(row, lastSystemVersion))
                     Targets.Add(entity);
-                if ((canvasChanged && chunk.RowChangedSince<Canvas>(row, lastSystemVersion)) ||
-                    (viewportChanged && chunk.RowChangedSince<LayoutRect>(row, lastSystemVersion)) ||
-                    (parentChanged && chunk.RowChangedSince<Parent<ElementTree>>(row, lastSystemVersion)) ||
-                    (childrenChanged && chunk.RowChangedSince<Children<ElementTree>>(row, lastSystemVersion)))
+                if ((canvasChanged && chunk.WasWritten<Canvas>(row, lastSystemVersion)) ||
+                    (viewportChanged && chunk.WasWritten<LayoutRect>(row, lastSystemVersion)) ||
+                    (parentChanged && chunk.WasWritten<Parent<ElementTree>>(row, lastSystemVersion)) ||
+                    (childrenChanged && chunk.WasWritten<Children<ElementTree>>(row, lastSystemVersion)))
                     TreeNodes.Add(entity);
-                if ((surfaceChanged && chunk.RowChangedSince<Surface>(row, lastSystemVersion)) ||
-                    (rectangleChanged && chunk.RowChangedSince<LayoutRect>(row, lastSystemVersion)) ||
-                    (presentation && chunk.Has<Surface>()))
+                if (chunk.Has<Surface>(row) && chunk.Has<LayoutRect>(row) &&
+                    ((surfaceChanged && chunk.WasWritten<Surface>(row, lastSystemVersion)) ||
+                     (rectangleChanged && chunk.WasWritten<LayoutRect>(row, lastSystemVersion)) || presentation))
                     SurfaceNodes.Add(entity);
-                if ((imageChanged && (chunk.RowChangedSince<Image>(row, lastSystemVersion) ||
-                    chunk.RowChangedSince<LayoutRect>(row, lastSystemVersion) ||
-                    (chunk.Has<ImageTexture>() && chunk.RowChangedSince<ImageTexture>(row, lastSystemVersion)) ||
-                    (chunk.Has<Box>() && chunk.RowChangedSince<Box>(row, lastSystemVersion)))) ||
-                    (presentation && chunk.Has<Image>()))
+                if (chunk.Has<Image>(row) && chunk.Has<LayoutRect>(row) &&
+                    ((imageChanged && (chunk.WasWritten<Image>(row, lastSystemVersion) ||
+                    chunk.WasWritten<LayoutRect>(row, lastSystemVersion) ||
+                    (chunk.Has<ImageTexture>() && chunk.WasWritten<ImageTexture>(row, lastSystemVersion)) ||
+                    (chunk.Has<Box>() && chunk.WasWritten<Box>(row, lastSystemVersion)))) ||
+                    presentation))
                     ImageNodes.Add(entity);
             }
             // Source collection resolves the canvas and supplies the detached drawing values.

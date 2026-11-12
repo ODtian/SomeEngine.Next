@@ -1,12 +1,13 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Hooks;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 using Xunit;
 
 namespace SomeEngine.ECS.Tests;
 
-public struct IndexedName : SomeEngine.ECS.Components.IIndexedComponent<string>
+public struct IndexedName : SomeEngine.ECS.IIndexedComponent<string>, IAddedComponent
 {
     public string Value;
 
@@ -16,87 +17,76 @@ public struct IndexedName : SomeEngine.ECS.Components.IIndexedComponent<string>
 public class IndexedComponentTests
 {
     [Fact]
-    public void CapturedBucketGeneration_SurvivesAddReplaceAndRemove()
+    public void CopiedIndexMembersSurviveAddReplaceAndRemove()
     {
         var world = new World();
-        var first = world.CreateEntity(new IndexedName { Value = "shared" });
+        var first = world.Create(new IndexedName { Value = "shared" });
 
         ReadOnlySpan<Entity> beforeAdd =
-            world.GetByIndex<IndexedName, string>("shared");
-        var second = world.CreateEntity(new IndexedName { Value = "shared" });
+            ReadIndexedEntities<IndexedName, string>(world, "shared");
+        var second = world.Create(new IndexedName { Value = "shared" });
 
         Assert.Equal(new[] { first }, beforeAdd.ToArray());
         Assert.Equal(
             new[] { first, second },
-            world.GetByIndex<IndexedName, string>("shared").ToArray());
+            ReadIndexedEntities<IndexedName, string>(world, "shared").ToArray());
 
         ReadOnlySpan<Entity> beforeReplace =
-            world.GetByIndex<IndexedName, string>("shared");
-        world.Replace(first, new IndexedName { Value = "moved" });
+            ReadIndexedEntities<IndexedName, string>(world, "shared");
+        world.Set(first, new IndexedName { Value = "moved" });
 
         Assert.Equal(new[] { first, second }, beforeReplace.ToArray());
         Assert.Equal(
             new[] { second },
-            world.GetByIndex<IndexedName, string>("shared").ToArray());
+            ReadIndexedEntities<IndexedName, string>(world, "shared").ToArray());
         Assert.Equal(
             new[] { first },
-            world.GetByIndex<IndexedName, string>("moved").ToArray());
+            ReadIndexedEntities<IndexedName, string>(world, "moved").ToArray());
 
         ReadOnlySpan<Entity> beforeRemove =
-            world.GetByIndex<IndexedName, string>("shared");
+            ReadIndexedEntities<IndexedName, string>(world, "shared");
         world.Remove<IndexedName>(second);
 
         Assert.Equal(new[] { second }, beforeRemove.ToArray());
-        Assert.Empty(world.GetByIndex<IndexedName, string>("shared").ToArray());
+        Assert.Empty(ReadIndexedEntities<IndexedName, string>(world, "shared").ToArray());
     }
 
     [Fact]
-    public void CapturedBucketGeneration_SurvivesDirtyRebuild()
+    public void CopiedIndexMembersSurviveTypedIndexUpdates()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new IndexedName { Value = "before" });
-        ReadOnlySpan<Entity> captured =
-            world.GetByIndex<IndexedName, string>("before");
-
-        var query = world.Query(world.QueryDefinition().ReadWrite<IndexedName>());
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (var row in cursor.Rows)
-                row.ReadWrite<IndexedName>().Value = "after";
-        });
-
-        Assert.Equal(
-            new[] { entity },
-            world.GetByIndex<IndexedName, string>("after").ToArray());
-        Assert.Equal(new[] { entity }, captured.ToArray());
+        using var world = new World();
+        Entity entity = world.Create(new IndexedName { Value = "before" });
+        Entity[] captured = ReadIndexedEntities<IndexedName, string>(world, "before");
+        world.Set(entity, new IndexedName { Value = "after" });
+        Assert.Equal([entity], ReadIndexedEntities<IndexedName, string>(world, "after"));
+        Assert.Equal([entity], captured);
     }
 
     [Fact]
     public void RepeatedIndexLookupsReturnMatchingEntities()
     {
         var world = new World();
-        world.CreateEntity(new IndexedName { Value = "warm" });
+        world.Create(new IndexedName { Value = "warm" });
 
         int observed = 0;
         for (int i = 0; i < 32; i++)
-            observed += world.GetByIndex<IndexedName, string>("warm").Length;
+            observed += ReadIndexedEntities<IndexedName, string>(world, "warm").Length;
 
         for (int i = 0; i < 10_000; i++)
-            observed += world.GetByIndex<IndexedName, string>("warm").Length;
+            observed += ReadIndexedEntities<IndexedName, string>(world, "warm").Length;
 
         Assert.Equal(10_032, observed);
     }
 
     [Fact]
-    public async Task ConcurrentReadersAndSingleReplaceWriter_ObserveImmutableBuckets()
+    public async Task ConcurrentReadersAndSingleReplaceWriterObserveCompleteIndexMembers()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new IndexedName { Value = "alpha" });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
+        using var world = new World(execution: new WorldJobs(scheduler));
+        var entity = world.Create(new IndexedName { Value = "alpha" });
 
-        // Materialize both keys before concurrency so the test exercises only
-        // COW publication, not live-chunk backfill during an active writer.
-        _ = world.GetByIndex<IndexedName, string>("alpha").Length;
-        _ = world.GetByIndex<IndexedName, string>("beta").Length;
+        _ = ReadIndexedEntities<IndexedName, string>(world, "alpha").Length;
+        _ = ReadIndexedEntities<IndexedName, string>(world, "beta").Length;
 
         const int replacements = 10_000;
         using var start = new ManualResetEventSlim(false);
@@ -105,7 +95,7 @@ public class IndexedComponentTests
             start.Wait();
             for (int i = 0; i < replacements; i++)
             {
-                world.Replace(
+                world.Set(
                     entity,
                     new IndexedName { Value = (i & 1) == 0 ? "beta" : "alpha" });
             }
@@ -116,8 +106,8 @@ public class IndexedComponentTests
             start.Wait();
             for (int iteration = 0; iteration < replacements; iteration++)
             {
-                VerifyBucket(world.GetByIndex<IndexedName, string>("alpha"), entity);
-                VerifyBucket(world.GetByIndex<IndexedName, string>("beta"), entity);
+                VerifyBucket(ReadIndexedEntities<IndexedName, string>(world, "alpha"), entity);
+                VerifyBucket(ReadIndexedEntities<IndexedName, string>(world, "beta"), entity);
             }
         })).ToArray();
 
@@ -126,19 +116,19 @@ public class IndexedComponentTests
 
         Assert.Equal(
             new[] { entity },
-            world.GetByIndex<IndexedName, string>("alpha").ToArray());
-        Assert.Empty(world.GetByIndex<IndexedName, string>("beta").ToArray());
+            ReadIndexedEntities<IndexedName, string>(world, "alpha").ToArray());
+        Assert.Empty(ReadIndexedEntities<IndexedName, string>(world, "beta").ToArray());
     }
 
     [Fact]
     public void LazyIndexBackfills()
     {
         var world = new World();
-        var entity1 = world.CreateEntity(new IndexedName { Value = "alpha" });
-        var entity2 = world.CreateEntity(new IndexedName { Value = "beta" });
+        var entity1 = world.Create(new IndexedName { Value = "alpha" });
+        var entity2 = world.Create(new IndexedName { Value = "beta" });
 
-        Assert.Equal(new[] { entity1 }, world.GetByIndex<IndexedName, string>("alpha").ToArray());
-        Assert.Equal(new[] { entity2 }, world.GetByIndex<IndexedName, string>("beta").ToArray());
+        Assert.Equal(new[] { entity1 }, ReadIndexedEntities<IndexedName, string>(world, "alpha").ToArray());
+        Assert.Equal(new[] { entity2 }, ReadIndexedEntities<IndexedName, string>(world, "beta").ToArray());
     }
 
     [Fact]
@@ -146,147 +136,111 @@ public class IndexedComponentTests
     {
         var world = new World();
 
-        Assert.Equal(0, world.GetByIndex<IndexedName, string>("late").Length);
+        Assert.Empty(ReadIndexedEntities<IndexedName, string>(world, "late"));
 
-        var entity = world.CreateEntity(new IndexedName { Value = "late" });
+        var entity = world.Create(new IndexedName { Value = "late" });
 
-        Assert.Equal(new[] { entity }, world.GetByIndex<IndexedName, string>("late").ToArray());
+        Assert.Equal(new[] { entity }, ReadIndexedEntities<IndexedName, string>(world, "late").ToArray());
     }
 
     [Fact]
     public void SharedKeyBucket()
     {
         var world = new World();
-        var entity1 = world.CreateEntity(new IndexedName { Value = "shared" });
-        var entity2 = world.CreateEntity(new IndexedName { Value = "shared" });
+        var entity1 = world.Create(new IndexedName { Value = "shared" });
+        var entity2 = world.Create(new IndexedName { Value = "shared" });
 
         Assert.Equal(
             new[] { entity1, entity2 },
-            world.GetByIndex<IndexedName, string>("shared").ToArray());
+            ReadIndexedEntities<IndexedName, string>(world, "shared").ToArray());
     }
 
     [Fact]
     public void IndexTracksMutations()
     {
         var world = new World();
-        var entity = world.CreateEntity();
+        var entity = world.Create();
 
-        Assert.Equal(0, world.GetByIndex<IndexedName, string>("start").Length);
+        Assert.Empty(ReadIndexedEntities<IndexedName, string>(world, "start"));
 
         world.Add(entity, new IndexedName { Value = "start" });
-        Assert.Equal(new[] { entity }, world.GetByIndex<IndexedName, string>("start").ToArray());
+        Assert.Equal(new[] { entity }, ReadIndexedEntities<IndexedName, string>(world, "start").ToArray());
 
-        world.Replace(entity, new IndexedName { Value = "next" });
-        Assert.Equal(0, world.GetByIndex<IndexedName, string>("start").Length);
-        Assert.Equal(new[] { entity }, world.GetByIndex<IndexedName, string>("next").ToArray());
+        world.Set(entity, new IndexedName { Value = "next" });
+        Assert.Empty(ReadIndexedEntities<IndexedName, string>(world, "start"));
+        Assert.Equal(new[] { entity }, ReadIndexedEntities<IndexedName, string>(world, "next").ToArray());
 
         world.Remove<IndexedName>(entity);
-        Assert.Equal(0, world.GetByIndex<IndexedName, string>("next").Length);
+        Assert.Empty(ReadIndexedEntities<IndexedName, string>(world, "next"));
     }
 
     [Fact]
     public void DestroyDropsIndex()
     {
         var world = new World();
-        var entity = world.CreateEntity(new IndexedName { Value = "gone" });
+        var entity = world.Create(new IndexedName { Value = "gone" });
 
-        Assert.Equal(new[] { entity }, world.GetByIndex<IndexedName, string>("gone").ToArray());
+        Assert.Equal(new[] { entity }, ReadIndexedEntities<IndexedName, string>(world, "gone").ToArray());
 
-        world.DestroyEntity(entity);
+        world.Destroy(entity);
 
-        Assert.Equal(0, world.GetByIndex<IndexedName, string>("gone").Length);
+        Assert.Empty(ReadIndexedEntities<IndexedName, string>(world, "gone"));
     }
 
     [Fact]
     public void ReplaceRefreshesIndex()
     {
         var world = new World();
-        var entity = world.CreateEntity(new IndexedName { Value = "old" });
+        var entity = world.Create(new IndexedName { Value = "old" });
 
-        Assert.Equal(new[] { entity }, world.GetByIndex<IndexedName, string>("old").ToArray());
+        Assert.Equal(new[] { entity }, ReadIndexedEntities<IndexedName, string>(world, "old").ToArray());
 
         IndexedName component = world.Read<IndexedName>(entity);
         component.Value = "new";
-        world.Replace(entity, component);
+        world.Set(entity, component);
 
-        Assert.Empty(world.GetByIndex<IndexedName, string>("old").ToArray());
-        Assert.Equal(new[] { entity }, world.GetByIndex<IndexedName, string>("new").ToArray());
+        Assert.Empty(ReadIndexedEntities<IndexedName, string>(world, "old").ToArray());
+        Assert.Equal(new[] { entity }, ReadIndexedEntities<IndexedName, string>(world, "new").ToArray());
     }
 
     [Fact]
-    public void QueryRowRefWriteRefreshesIndex()
+    public void IndexedColumnWritesUseTheTypedIndexSetter()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new IndexedName { Value = "old" });
-        Assert.Equal(new[] { entity }, world.GetByIndex<IndexedName, string>("old").ToArray());
-
-        var query = world.Query(world.QueryDefinition().ReadWrite<IndexedName>());
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (var row in cursor.Rows)
-                row.ReadWrite<IndexedName>().Value = "row";
-        });
-
-        Assert.Empty(world.GetByIndex<IndexedName, string>("old").ToArray());
-        Assert.Equal(new[] { entity }, world.GetByIndex<IndexedName, string>("row").ToArray());
+        using var world = new World();
+        Entity entity = world.Create(new IndexedName { Value = "old" });
+        ValueIndex<IndexedName, string> index = world.Index<IndexedName, string>();
+        using (QueryScope scope = world.Query<IndexedName>().Open())
+            foreach (QueryChunk chunk in scope)
+                Assert.Throws<InvalidOperationException>(() => chunk.Write<IndexedName>(0).Value = "direct");
+        world.Set(entity, new IndexedName { Value = "row" });
+        Assert.Empty(ReadIndexedEntities<IndexedName, string>(world, "old"));
+        Assert.Equal([entity], ReadIndexedEntities<IndexedName, string>(world, "row"));
     }
 
     [Fact]
-    public void QueryChunkSpanWriteRefreshesIndex()
+    public void IndexedChunkReadsKeepTheirValuesBeforeFollowingTypedUpdates()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new IndexedName { Value = "old" });
-        Assert.Equal(new[] { entity }, world.GetByIndex<IndexedName, string>("old").ToArray());
-
-        var query = world.Query(world.QueryDefinition().ReadWrite<IndexedName>());
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (var chunk in cursor.Chunks)
-                chunk.ReadWrite<IndexedName>()[0].Value = "chunk";
-        });
-
-        Assert.Empty(world.GetByIndex<IndexedName, string>("old").ToArray());
-        Assert.Equal(new[] { entity }, world.GetByIndex<IndexedName, string>("chunk").ToArray());
+        using var world = new World();
+        Entity entity = world.Create(new IndexedName { Value = "old" });
+        Assert.Equal([entity], ReadIndexedEntities<IndexedName, string>(world, "old"));
+        using (QueryScope scope = world.Query<IndexedName>().OpenRead())
+            foreach (QueryChunk chunk in scope) Assert.Equal("old", chunk.Read<IndexedName>()[0].Value);
+        world.Set(entity, new IndexedName { Value = "chunk" });
+        Assert.Empty(ReadIndexedEntities<IndexedName, string>(world, "old"));
+        Assert.Equal([entity], ReadIndexedEntities<IndexedName, string>(world, "chunk"));
     }
 
     [Fact]
-    public void QueryPairSpanWriteRefreshesIndex()
+    public void TypedIndexUpdatesPreserveOtherComponentsFromTheSameEntity()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new IndexedName { Value = "old" });
-        world.Add(entity, new Position { X = 1, Y = 2 });
-        Assert.Equal(new[] { entity }, world.GetByIndex<IndexedName, string>("old").ToArray());
-
-        var query = world.Query(
-            world.QueryDefinition()
-                .ReadWrite<IndexedName>()
-                .Read<Position>());
-        world.ExecuteReadWrite<IndexedName, Position>(query, chunks =>
-        {
-            foreach (var chunk in chunks)
-                chunk.Write[0].Value = "pair";
-        });
-
-        Assert.Empty(world.GetByIndex<IndexedName, string>("old").ToArray());
-        Assert.Equal(new[] { entity }, world.GetByIndex<IndexedName, string>("pair").ToArray());
-    }
-
-    [Fact]
-    public void HookSeesIndex()
-    {
-        var world = new World();
-        var entity = world.CreateEntity();
-        bool indexed = false;
-
-        Assert.Equal(0, world.GetByIndex<IndexedName, string>("hook").Length);
-        world.Hooks<IndexedName>().OnInsert((DeferredWorld worldArg, Entity entityArg, in IndexedName component) =>
-        {
-            indexed = worldArg.GetByIndex<IndexedName, string>(component.Value).ToArray().Contains(entityArg);
-        });
-
-        world.Add(entity, new IndexedName { Value = "hook" });
-
-        Assert.True(indexed);
+        using var world = new World();
+        Entity entity = world.Create(new IndexedName { Value = "old" }, new Position { X = 1, Y = 2 });
+        ValueIndex<IndexedName, string> index = world.Index<IndexedName, string>();
+        world.Set(entity, new IndexedName { Value = "pair" });
+        Assert.Empty(ReadIndexedEntities<IndexedName, string>(world, "old"));
+        Assert.Equal([entity], ReadIndexedEntities<IndexedName, string>(world, "pair"));
+        Assert.Equal(1, world.Read<Position>(entity).X);
+        Assert.Equal(2, world.Read<Position>(entity).Y);
     }
 
     private static void VerifyBucket(ReadOnlySpan<Entity> bucket, Entity expected)

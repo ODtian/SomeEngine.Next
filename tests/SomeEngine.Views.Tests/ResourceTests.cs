@@ -117,7 +117,7 @@ public sealed partial class ResourceTests
     }
 
     private static string Text(HeadlessFrameDriver frames, Entity root) =>
-        frames.World.Read<Label>(Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root))).Value;
+        frames.World.ReadComponentData<Label>(Assert.Single(ElementChildren.Read(frames.World, root))).Value;
 
     private static void Complete(TaskCompletionSource<string> result, string value)
     {
@@ -140,7 +140,7 @@ public sealed partial class ResourceTests
         }
     }
 
-    private readonly record struct Content(State<int> Source, Requests Requests) : IView, IComponent
+    private readonly record struct Content(State<int> Source, Requests Requests) : IView, ITrackedComponent
     {
         public BuildTask Build()
         {

@@ -10,7 +10,7 @@ internal static partial class JobBuildChecks
 {
     internal static void VerifyResult(bool completed)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         using var frames = new HeadlessFrameDriver();
         var number = new NumberData();
         JobHandle handle = scheduler.Schedule(new WriteNumberJob(number));
@@ -20,26 +20,26 @@ internal static partial class JobBuildChecks
 
         Entity root = Views.Spawn(frames.World, Entity.Null, new NumberView(handle, number));
         frames.Frame();
-        var children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
-        Require(children.Count == 1, "The view declares its number label in the first frame.");
+        var children = ElementChildren.Read(frames.World, root);
+        Require(children.Length == 1, "The view declares its number label in the first frame.");
         Entity label = children[0];
-        Require(frames.World.Read<NumberLabel>(label).Value == (completed ? 42 : 0),
+        Require(frames.World.ReadComponentData<NumberLabel>(label).Value == (completed ? 42 : 0),
             "The first frame displays the available Job result or its loading value.");
 
         if (!completed)
         {
             CompleteOnWorker(handle);
-            Require(frames.World.Read<NumberLabel>(label).Value == 0,
+            Require(frames.World.ReadComponentData<NumberLabel>(label).Value == 0,
                 "The loading value remains visible until the rebuild phase.");
             frames.Frame();
         }
 
         Require(number.ThreadId != rebuildThread, "The Job writes its data on a worker thread.");
-        Require(frames.World.Read<NumberLabel>(label).Value == 42,
+        Require(frames.World.ReadComponentData<NumberLabel>(label).Value == 42,
             "The rebuilt label displays the value written by the Job.");
-        Require(frames.World.Read<DisplayedThread>(root).Id == rebuildThread,
+        Require(frames.World.ReadComponentData<DisplayedThread>(root).Id == rebuildThread,
             "The result is displayed on the thread driving the rebuild phase.");
-        Require(Hierarchy<ElementTree>.GetChildren(frames.World, root)[0] == label,
+        Require(ElementChildren.Read(frames.World, root)[0] == label,
             "The result updates the label declared before the await.");
     }
 
@@ -82,7 +82,7 @@ internal static partial class JobBuildChecks
         }
     }
 
-    private readonly record struct NumberLabel(int Value) : IView, IComponent
+    private readonly record struct NumberLabel(int Value) : IView, ITrackedComponent
     {
         public BuildTask Build() => default;
     }

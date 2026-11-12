@@ -1,401 +1,494 @@
-using SomeEngine.ECS.Commands;
-using SomeEngine.ECS.Hooks;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Storage;
+using SomeEngine.Job;
 
 namespace SomeEngine.ECS;
 
-/// <summary>
-/// ECS World——实体生命周期与组件操作的公开门面。
-/// 内部组合领域 owner，并把领域规则交给对应 owner。
-/// </summary>
-/// <remarks>
-/// 设计引用：docs/DESIGN.md §1.3, §5.3, §5.4, §5.5
-/// </remarks>
-public partial class World : IDisposable
+public sealed partial class World : IDisposable
 {
-    private readonly Owners.Hooks _hooks;
-    private readonly Owners.Commands _commands;
-    private readonly WorldStructuralMetricsState _structuralMetrics;
-    private WorldStructurePublication _publishedStructure;
-    private int _structuralTransactionActive;
-    private long _topologyRevision = 1;
-    private long _lastStructuralCandidatePublicationEpoch;
+    internal EntityRecord[] Records;
+    internal int Used;
+    private int _free;
+    private int _count;
+    private int _readers;
+    private bool _disposed;
+    private bool _hasRetainedTypes;
+    private bool _hasOwnedValues;
+    private readonly Dictionary<TypeSet, Archetype> _types = new();
+    private Archetype?[] _combinations = [];
+    internal Archetype[] Archetypes = new Archetype[4];
+    internal int ArchetypeCount;
+    internal int QueryVersion;
+    internal int QueryMatchVersion;
+    private readonly bool _retainRemovedColumns;
+    public int ChunkCapacity { get; }
+    internal bool HasMultipleChunks;
+    private static readonly TypeSet EmptyTypes = new();
 
-    [ThreadStatic]
-    private static StructuralCandidateContext? t_candidateContext;
-
-    private Owners.Entities _entities => CurrentStructureRoot.Entities;
-    private Owners.Tables _tables => CurrentStructureRoot.Tables;
-    private Owners.Sparse _sparse => CurrentStructureRoot.Sparse;
-    private Owners.Indices _indices => CurrentStructureRoot.Indices;
-    private Owners.RelationGraph _relationGraph => CurrentStructureRoot.RelationGraph;
-    private Owners.Components _components => CurrentStructureRoot.Components;
-    private Queries.QueryRegistry _queries => CurrentStructureRoot.Queries;
-    private Owners.Buffers _buffers => CurrentStructureRoot.Buffers;
-    private Owners.Bundles _bundles => CurrentStructureRoot.Bundles;
-    private Owners.Copy _copy => CurrentStructureRoot.Copy;
-    private Owners.Shared _shared => CurrentStructureRoot.Shared;
-    private Owners.Clock _clock => CurrentStructureRoot.Clock;
-    private readonly Owners.Iteration _iteration = new();
-
-    internal Owners.Iteration QueryExecutions => _iteration;
-    private Owners.Hierarchy _hierarchy => CurrentStructureRoot.Hierarchy;
-
-    public World(int initialEntityCapacity = 256, WorldExecution? execution = null)
+    public World(int capacity = 16, bool retainRemovedColumns = true, int chunkCapacity = 0, WorldExecution? execution = null)
     {
-        _hooks = new Owners.Hooks();
-        _hooks.Bind(this);
-        _commands = new Owners.Commands();
-        _structuralMetrics = new WorldStructuralMetricsState();
-        WorldStructureRoot root = WorldStructureRoot.Create(
-            this,
-            initialEntityCapacity,
-            _hooks);
-        _publishedStructure = new WorldStructurePublication(root, epoch: 0);
-        _execution = execution;
+        Records = new EntityRecord[capacity + 1];
+        _retainRemovedColumns = retainRemovedColumns;
+        ChunkCapacity = chunkCapacity;
+        Execution = execution;
         execution?.Attach(this);
     }
 
-    private WorldStructureRoot CurrentStructureRoot
+    public int EntityCount
     {
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         get
         {
-            StructuralCandidateContext? context = t_candidateContext;
-            if (context is null)
-                return Volatile.Read(ref _publishedStructure).Root;
-            if (ReferenceEquals(context.World, this))
-                return context.Root;
-
-            context = FindStructuralCandidate(this, context.Previous);
-            return context is null
-                ? Volatile.Read(ref _publishedStructure).Root
-                : context.Root;
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            RequireCallingThread();
+            Execution?.CheckActive();
+            return _count;
         }
     }
 
-    internal WorldStructureRoot PublishedStructureRoot =>
-        Volatile.Read(ref _publishedStructure).Root;
-
-    internal WorldStructureRoot ActiveStructureRoot => CurrentStructureRoot;
-
-    internal bool OwnsStructureRoot(WorldStructureRoot root) =>
-        ReferenceEquals(CurrentStructureRoot, root);
-
-    internal long PublishedStructureEpoch =>
-        Volatile.Read(ref _publishedStructure).Epoch;
-
-    /// <summary>
-    /// Monotonic fact version for every admitted topology-write boundary. Unlike the detached-root
-    /// publication epoch this also covers immediate structural mutation paths.
-    /// </summary>
-    public long PublishedTopologyRevision => Volatile.Read(ref _topologyRevision);
-
-    /// <summary>
-    /// Returns a lock-free snapshot of structural candidate prepare, publication, and rollback
-    /// costs. Sampling occurs only at structural transaction boundaries.
-    /// </summary>
-    public WorldStructuralMetrics GetStructuralMetrics() => _structuralMetrics.Snapshot();
-
-    internal WorldStructuralMetricsState StructuralMetrics => _structuralMetrics;
-
-    internal long BumpTopologyRevision()
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal ref EntityRecord Resolve(Entity entity)
     {
-        long revision = Interlocked.Increment(ref _topologyRevision);
-        return revision > 0
-            ? revision
-            : throw new InvalidOperationException("World topology revision space was exhausted.");
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        RequireCallingThread();
+        if ((uint)(entity.Id - 1) >= (uint)Used) throw new ArgumentException("Entity id is outside this world.");
+        ref EntityRecord record = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Records), entity.Id);
+        if (record.Generation != entity.Generation) throw new ArgumentException("Entity generation has expired.");
+        return ref record;
     }
 
-    internal StructuralTransactionScope BeginStructuralTransaction()
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool IsAlive(Entity entity)
     {
-        // Unbound World mutations and structural root preparation share this reentrant monitor.
-        // A candidate owner may call ordinary World write APIs while preparing, but another thread
-        // cannot mutate the still-published source backing until the candidate commits or aborts.
-        Monitor.Enter(_unboundMutationGate);
-        if (Interlocked.CompareExchange(ref _structuralTransactionActive, 1, 0) != 0)
+        if (Execution is not null) return IsAliveWithExecution(entity);
+        return IsAliveCore(entity);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool IsAliveCore(Entity entity)
+    {
+        return (uint)(entity.Id - 1) < (uint)Used && Records[entity.Id].Generation == entity.Generation
+            && Records[entity.Id].Chunk is not null;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ref readonly T Read<T>(Entity entity) where T : struct
+    {
+        RequireValue<T>(false);
+        if (ComponentType<T>.IsSharedType) return ref ReadSharedValue<T>(entity);
+        return ref Access<T>(entity, false);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ref T Get<T>(Entity entity) where T : struct
+    {
+        RequireValue<T>(true);
+        if (ComponentType<T>.IsControlledType || ComponentType<T>.IsIndexedType || ComponentType<T>.IsGroupedType) throw new InvalidOperationException("Use the component's typed write view or Set entry.");
+        return ref Access<T>(entity, true);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private ref T Access<T>(Entity entity, bool write) where T : struct
+    {
+        ref EntityRecord record = ref Resolve(entity);
+        ColumnEntry[] columns = record.Chunk!.Columns;
+        int type = ComponentType<T>.TypeId;
+        if ((uint)type >= (uint)columns.Length || !columns[type].Has(record.Row))
+            throw new ArgumentException("Entity does not have this component.");
+        if (write) RequireWriteRow(record.Chunk, record.Row);
+        if (write && ComponentType<T>.TracksWritesType) Stamp<T>(record.Chunk, record.Row, NextVersion());
+        return ref ColumnEntry.At<T>(ref columns[type], record.Row);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool Has<T>(Entity entity) where T : struct
+    {
+        if (Execution is not null) return HasWithExecution<T>(entity);
+        return HasCore<T>(entity);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool HasCore<T>(Entity entity) where T : struct
+    {
+        RequireCallingThread();
+        if (!IsAliveCore(entity)) return false;
+        ref EntityRecord record = ref Records[entity.Id];
+        ColumnEntry[] columns = record.Chunk!.Columns;
+        int type = ComponentType<T>.TypeId;
+        return (uint)type < (uint)columns.Length && columns[type].Has(record.Row);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Set<T>(Entity entity, in T value) where T : struct
+    {
+        if (Execution is not null) { SetWithExecution(entity, value); return; }
+        SetComponent(entity, value);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void SetComponent<T>(Entity entity, in T value) where T : struct
+    {
+        ComponentValues.Bind<T>();
+        ref EntityRecord record = ref Resolve(entity);
+        RequireActiveWrite<T>(in record);
+        using MembershipEdit membership = BeginMembershipEdit(entity);
+        if (ComponentType<T>.IsIndexedType && ActiveIndex<T>() is { } index) { index.Set(entity, value); return; }
+        if (ComponentType<T>.IsGroupedType && ActiveGrouping<T>() is { } grouping) { grouping.Set(entity, value); return; }
+        SetValue(entity, value);
+    }
+
+    private static void RequireActiveWrite<T>(in EntityRecord record) where T : struct
+    {
+        if (!ComponentType<T>.IsCleanupType && HasDestroyed(in record))
+            throw new InvalidOperationException("Write ordinary component values on an active entity.");
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void SetValue<T>(Entity entity, in T value) where T : struct
+    {
+        using MembershipEdit membership = BeginMembershipEdit(entity);
+        if (ComponentType<T>.IsSharedType) { SetSharedValue(entity, value); return; }
+        if (ComponentType<T>.IsControlledType) throw new InvalidOperationException("Use the component's typed write view.");
+        ref EntityRecord record = ref Resolve(entity);
+        SetValueKnown(entity, ref record, value);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void SetValueKnown<T>(Entity entity, ref EntityRecord record, in T value) where T : struct
+    {
+        ColumnEntry[] columns = record.Chunk!.Columns;
+        int type = ComponentType<T>.TypeId;
+        if ((uint)type < (uint)columns.Length && columns[type].Has(record.Row))
+            ReplacePresentValue(record.Chunk, record.Row, value);
+        else AddKnown(entity, ref record, value);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void ReplacePresentValue<T>(Chunk chunk, int row, in T value, ulong version = 0) where T : struct
+    {
+        RequireWriteRow(chunk, row);
+        ref ColumnEntry column = ref chunk.Columns[ComponentType<T>.TypeId];
+        if (ComponentType<T>.HasValueOperationsType) ComponentType<T>.ReleaseValue(this, ref ColumnEntry.At<T>(ref column, row));
+        if (!ComponentType<T>.IsTagType) ColumnEntry.At<T>(ref column, row) = value;
+        if (ComponentType<T>.TracksWritesType) Stamp<T>(chunk, row, version != 0 ? version : NextVersion());
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void RequireStructure()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        RequireCallingThread();
+        if (_readers != 0) throw new InvalidOperationException("Finish the current read scope before changing entity layout.");
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void RequireCallingThread()
+    {
+        if (Execution is null && JobThreads.IsActive)
+            throw new InvalidOperationException("Connect WorldJobs before accessing World from a Job.");
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal Archetype Find(TypeSet types)
+    {
+        Archetype?[] combinations = _combinations;
+        if (types.Id != 0 && (uint)types.Id < (uint)combinations.Length && combinations[types.Id] is { } found)
+            return found;
+        return Bind(types);
+    }
+
+    private Archetype Bind(TypeSet types)
+    {
+        RequireStructure();
+        if (!_types.TryGetValue(types, out Archetype? archetype))
         {
-            Monitor.Exit(_unboundMutationGate);
-            throw new InvalidOperationException(
-                "Another structural transaction is already active for this World.");
+            archetype = new Archetype(this, ArchetypeCount, types, 16);
+            _hasRetainedTypes |= archetype.RetainsOnDestroy;
+            _hasOwnedValues |= archetype.OwnedValues.Length != 0;
+            RegisterCachedComponents(archetype);
+            _types.Add(types, archetype);
+            if (ArchetypeCount == Archetypes.Length) Array.Resize(ref Archetypes, ArchetypeCount * 2);
+            Archetypes[ArchetypeCount++] = archetype;
+            RefreshQueryMatches();
         }
-
-        return new StructuralTransactionScope(this, Environment.CurrentManagedThreadId);
+        if (types.Id == 0) return archetype;
+        if (types.Id >= _combinations.Length)
+            Array.Resize(ref _combinations, Math.Max(types.Id + 1, Math.Max(16, _combinations.Length * 2)));
+        _combinations[types.Id] = archetype;
+        return archetype;
     }
 
-    internal long NextStructureEpoch()
+    internal void ReserveEntities(int needed)
     {
-        long current = Volatile.Read(ref _publishedStructure).Epoch;
-        if (current == long.MaxValue)
-            throw new InvalidOperationException("World structural publication epoch is exhausted.");
-        return current + 1;
-    }
-
-    internal bool IsStructureEpochPublished(long epoch) =>
-        epoch > 0 &&
-        Volatile.Read(ref _lastStructuralCandidatePublicationEpoch) >= epoch;
-
-    internal WorldStructurePublication PrepareStructurePublication(
-        WorldStructureRoot candidate,
-        long epoch)
-    {
-        ArgumentNullException.ThrowIfNull(candidate);
-        if (epoch != NextStructureEpoch())
-            throw new InvalidOperationException("Structural candidate publication epoch is stale.");
-        return new WorldStructurePublication(candidate, epoch);
-    }
-
-    internal void ThrowIfStructuralTransactionActive()
-    {
-        if (Volatile.Read(ref _structuralTransactionActive) != 0)
+        if (needed >= Records.Length)
         {
-            throw new InvalidOperationException(
-                "Stable World registrations cannot be changed during a structural transaction.");
+            Array.Resize(ref Records, Math.Max(needed + 1, Records.Length * 2));
+            foreach (CachedComponent data in _cachedTypes) data.Reserve(Records.Length);
+            foreach (IValueIndex? index in _valueIndexes) index?.Reserve(Records.Length);
+            foreach (Shared.SharedValues? values in _shared) values?.Groups.ReserveEntities(Records.Length);
+            _sparse?.ReserveEntities(Records.Length);
         }
     }
 
-    internal StructuralCandidateScope EnterStructuralCandidate(WorldStructureRoot candidate)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private Entity CreateKnown(ref Chunk chunk, ulong version = 0)
     {
-        ArgumentNullException.ThrowIfNull(candidate);
-        if (FindStructuralCandidate(this, t_candidateContext) is not null)
+        RequireStructure();
+        chunk = chunk.EnsureRow();
+        int id, generation;
+        if (_free != 0)
         {
-            throw new InvalidOperationException(
-                "Another structural candidate is already active for this World.");
+            id = _free;
+            ref EntityRecord free = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Records), id);
+            _free = free.Row;
+            generation = free.Generation;
         }
-
-        var context = new StructuralCandidateContext(this, candidate, t_candidateContext);
-        t_candidateContext = context;
-        return new StructuralCandidateScope(
-            this,
-            context,
-            Environment.CurrentManagedThreadId);
-    }
-
-    internal void PublishStructuralCandidate(WorldStructurePublication publication)
-    {
-        ArgumentNullException.ThrowIfNull(publication);
-        StructuralCandidateContext? context = t_candidateContext;
-        if (context is null ||
-            !ReferenceEquals(context.World, this) ||
-            !ReferenceEquals(context.Root, publication.Root))
+        else
         {
-            throw new InvalidOperationException(
-                "Only the innermost active structural candidate owner may publish its root.");
+            id = Used + 1;
+            if (id >= Records.Length) ReserveEntities(id);
+            Used = id;
+            generation = 1;
         }
-        if (publication.Epoch != NextStructureEpoch())
-            throw new InvalidOperationException("Structural candidate publication epoch is stale.");
-
-        // Root identity and epoch become visible through one release-write. A deferred handle can
-        // therefore never resolve against the old root, and readers cannot observe an epoch/root
-        // pair assembled from different structural generations.
-        Volatile.Write(ref _publishedStructure, publication);
-        Volatile.Write(
-            ref _lastStructuralCandidatePublicationEpoch,
-            publication.Epoch);
-        BumpTopologyRevision();
+        int row = chunk.Count++;
+        Entity entity = new(id, generation);
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Records), id) = new(chunk, row, generation);
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(chunk.Entities), row) = entity;
+        if ((chunk.Archetype.TransferKinds & 4) != 0) chunk.InitializePresence(row);
+        if (chunk.Changes is not null) StampCreated(chunk, row, 1, version);
+        if (chunk.Archetype.Cached is { } cached)
+            foreach (CachedComponent data in cached) data.Bind(entity, chunk, row);
+        _count++;
+        return entity;
     }
 
-    private void ExitStructuralCandidate(
-        StructuralCandidateContext context,
-        int ownerThreadId)
+    public Entity Create()
     {
-        if (ownerThreadId != Environment.CurrentManagedThreadId ||
-            !ReferenceEquals(t_candidateContext, context) ||
-            !ReferenceEquals(context.World, this))
+        if (Execution is not null) return CreateWithExecution();
+        return CreateCore();
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private Entity CreateCore()
+    {
+        Chunk chunk = Find(EmptyTypes).WritableChunk;
+        Entity entity = CreateKnown(ref chunk);
+        using MembershipEdit membership = BeginMembershipEdit(entity, created: true);
+        return entity;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public Entity Create<T>(in T value) where T : struct
+    {
+        if (Execution is not null) return CreateWithExecution(value);
+        return CreateCore(value);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private Entity CreateCore<T>(in T value) where T : struct
+    {
+        if (ComponentType<T>.HasInitializerType) ComponentType<T>.ValidateCreate(this, value);
+        Chunk chunk = Find(TypeSet<T>.Value).WritableChunk;
+        Entity entity = CreateKnown(ref chunk);
+        using MembershipEdit membership = BeginMembershipEdit(entity, created: true);
+        WriteCreatedValue(entity, chunk, chunk.Count - 1, value);
+        if (ComponentType<T>.IsIndexedType) IndexCreated(entity, value);
+        if (ComponentType<T>.IsGroupedType) ArrangeCreatedGroups(entity);
+        if (ComponentType<T>.HasInitializerType) ComponentType<T>.Initialize(this, entity);
+        return entity;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public Entity Create<T1, T2, T3>(in T1 first, in T2 second, in T3 third)
+        where T1 : struct where T2 : struct where T3 : struct
+    {
+        if (Execution is not null) return CreateWithExecution(first, second, third);
+        return CreateCore(first, second, third);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private Entity CreateWithExecution<T1, T2, T3>(in T1 first, in T2 second, in T3 third)
+        where T1 : struct where T2 : struct where T3 : struct
+    {
+        using WorldAccess access = OpenStructure();
+        return CreateCore(first, second, third);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private Entity CreateCore<T1, T2, T3>(in T1 first, in T2 second, in T3 third)
+        where T1 : struct where T2 : struct where T3 : struct
+    {
+        if (ComponentType<T1>.HasInitializerType) ComponentType<T1>.ValidateCreate(this, first);
+        if (ComponentType<T2>.HasInitializerType) ComponentType<T2>.ValidateCreate(this, second);
+        if (ComponentType<T3>.HasInitializerType) ComponentType<T3>.ValidateCreate(this, third);
+        Chunk chunk = Find(TypeSet<T1, T2, T3>.Value).WritableChunk;
+        Entity entity = CreateKnown(ref chunk);
+        using MembershipEdit membership = BeginMembershipEdit(entity, created: true);
+        int row = chunk.Count - 1;
+        WriteCreatedValue(entity, chunk, row, first);
+        WriteCreatedValue(entity, chunk, row, second);
+        WriteCreatedValue(entity, chunk, row, third);
+        if (ComponentType<T1>.IsIndexedType) IndexCreated(entity, first);
+        if (ComponentType<T2>.IsIndexedType) IndexCreated(entity, second);
+        if (ComponentType<T3>.IsIndexedType) IndexCreated(entity, third);
+        if (ComponentType<T1>.IsGroupedType || ComponentType<T2>.IsGroupedType || ComponentType<T3>.IsGroupedType)
+            ArrangeCreatedGroups(entity);
+        if (ComponentType<T1>.HasInitializerType) ComponentType<T1>.Initialize(this, entity);
+        if (ComponentType<T2>.HasInitializerType) ComponentType<T2>.Initialize(this, entity);
+        if (ComponentType<T3>.HasInitializerType) ComponentType<T3>.Initialize(this, entity);
+        return entity;
+    }
+
+    public void Reserve<T>(int capacity) where T : struct
+        => ReserveTypes(TypeSet<T>.Value, capacity);
+
+    public void Reserve<T1, T2, T3>(int capacity)
+        where T1 : struct where T2 : struct where T3 : struct
+        => ReserveTypes(TypeSet<T1, T2, T3>.Value, capacity);
+
+    internal void BeginRead()
+        => BeginRead(Execution is not null);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void BeginRead(bool withExecution)
+    {
+        RequireCallingThread();
+        if (!withExecution) _readers++;
+        else Interlocked.Increment(ref _readers);
+    }
+    internal void EndRead()
+        => EndRead(Execution is not null);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void EndRead(bool withExecution)
+    {
+        if (!withExecution) _readers--;
+        else Interlocked.Decrement(ref _readers);
+    }
+
+    public void Clear()
+    {
+        Execution?.BeginClear();
+        try
         {
-            throw new InvalidOperationException(
-                "Structural candidate scope must be released in nesting order by its owning " +
-                "thread.");
+            using WorldAccess access = OpenStructure();
+            ClearValues();
         }
-
-        t_candidateContext = context.Previous;
+        finally { Execution?.EndClear(); }
     }
 
-    private void EndStructuralTransaction(int ownerThreadId)
+    internal void ClearValues()
     {
-        if (ownerThreadId != Environment.CurrentManagedThreadId)
+        RequireStructure();
+        DataGeneration++;
+        ClearLifecycle();
+        ReserveBufferReturns();
+        ReleaseOwnedValues();
+        ReleaseResources();
+        ClearIndexes();
+        foreach (Shared.SharedValues? values in _shared) values?.Groups.Clear();
+        _sparse?.Clear(Used);
+        for (int i = 0; i < ArchetypeCount; i++)
         {
-            throw new InvalidOperationException(
-                "Structural transaction must be released by its owning thread.");
-        }
-        if (FindStructuralCandidate(this, t_candidateContext) is not null)
-        {
-            throw new InvalidOperationException(
-                "Structural transaction cannot end while its candidate scope is active.");
-        }
-        if (!Monitor.IsEntered(_unboundMutationGate))
-        {
-            throw new InvalidOperationException(
-                "Structural transaction lost its unbound mutation gate.");
-        }
-        if (Interlocked.Exchange(ref _structuralTransactionActive, 0) != 1)
-            throw new InvalidOperationException("Structural transaction scope is not active.");
-        Monitor.Exit(_unboundMutationGate);
-    }
-
-    private static StructuralCandidateContext? FindStructuralCandidate(
-        World world,
-        StructuralCandidateContext? context)
-    {
-        while (context is not null)
-        {
-            if (ReferenceEquals(context.World, world))
-                return context;
-            context = context.Previous;
-        }
-
-        return null;
-    }
-
-    internal Owners.Entities Entities => _entities;
-
-    internal Owners.Tables Tables => _tables;
-
-    internal Owners.Sparse Sparse => _sparse;
-
-    internal Owners.Components Components => _components;
-
-    internal Owners.Buffers Buffers => _buffers;
-
-    internal Owners.Indices Indices => _indices;
-
-    internal Owners.RelationGraph RelationGraph => _relationGraph;
-
-    internal Owners.Bundles Bundles => _bundles;
-
-    internal Owners.Copy Copy => _copy;
-
-    internal Owners.Shared Shared => _shared;
-
-    internal Owners.Hierarchy Hierarchy => _hierarchy;
-
-    internal Owners.Clock Clock => _clock;
-
-    internal Owners.Hooks HookStore => _hooks;
-
-    internal object CommandGate => _commands.Gate;
-
-    public CommandBuffer Commands()
-    {
-        ThrowIfUnavailable();
-        ThrowIfJobCommandBufferAccess();
-        return _commands.Get(this);
-    }
-
-    internal DeferredCommandWriter CommandsFromHook(HookCommandToken token)
-    {
-        ThrowIfRestrictedWorldApi();
-        return _commands.GetHookWriter(this, token);
-    }
-
-    internal void EndHookCommandWriter(HookCommandToken token)
-    {
-        _commands.EndHookWriter(token);
-    }
-
-    public void Flush()
-    {
-        ThrowIfUnavailable();
-        ThrowIfJobCommandBufferAccess();
-        _hooks.ThrowIfReentrantWorldMutation(writeAccess: true);
-        _bundles.ThrowIfReentrantWorldMutation(writeAccess: true);
-        lock (_commands.FlushGate)
-        {
-            if (!_commands.TryReserveNextPlayback(out CommandBuffer? playback))
-                return;
-
-            try
+            Archetype archetype = Archetypes[i];
+            foreach (Chunk chunk in archetype.AllChunks)
             {
-                // Do not hold the command gate while admission may wait. The exact wave remains
-                // reserved while immediate hooks are free to publish later waves.
-                using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
-                _commands.PlaybackReservedUnderExistingTopologyAdmission(playback!);
+                foreach (ComponentType type in archetype.Managed)
+                    if (!type.HasColumnRelease || chunk.Columns[type.Id].Presence is not null)
+                        Array.Clear(chunk.Columns[type.Id].Values!, 0, chunk.Count);
+                chunk.Count = 0;
+                if (chunk.DisabledCounts is { } disabled) Array.Clear(disabled);
+                if (chunk.Changes is { } changes)
+                    foreach (ComponentType type in archetype.Tracked)
+                    {
+                        ref ComponentChanges values = ref changes[chunk.Columns[type.Id].ColumnPlusOne - 1];
+                        Array.Clear(values.Rows);
+                        Array.Clear(values.Words);
+                        Array.Clear(values.Blocks);
+                        values.LastWrite = 0;
+                    }
             }
-            catch
+            archetype.ResetWritableChunks();
+        }
+        int free = 0;
+        ref EntityRecord firstRecord = ref MemoryMarshal.GetArrayDataReference(Records);
+        for (int id = Used; id > 0; id--)
+        {
+            ref EntityRecord record = ref Unsafe.Add(ref firstRecord, id);
+            record = new(null, free, record.Generation + 1);
+            free = id;
+        }
+        _free = free;
+        _count = 0;
+        foreach (CachedComponent data in _cachedTypes) data.Clear();
+    }
+
+    public void ValidateDisposePreconditions()
+    {
+        if (_disposed) return;
+        RequireStructure();
+        Execution?.ValidateDisposePreconditions();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        Execution?.BeginDispose();
+        using (WorldAccess access = OpenStructure()) DisposeValues();
+        DisposeEventLogs();
+        Execution?.Release();
+    }
+
+    private void DisposeValues()
+    {
+        RequireStructure();
+        RecyclesBuffers = false;
+        DataGeneration++;
+        DisposeLifecycle();
+        ReleaseQueryBindings();
+        ReleaseOwnedValues();
+        ReleaseResources();
+        ClearIndexes();
+        _types.Clear();
+        _copies = null;
+        _sparse?.ReleaseData();
+        foreach (CachedComponent? data in _cachedByType) data?.ReleaseData();
+        Records = [];
+        Archetypes = [];
+        _combinations = [];
+        _cachedByType = [];
+        _cachedTypes.Clear();
+        _sparse = null;
+        _bufferPools = [];
+        foreach (PodColumnBuffer? buffer in _podBuffers) buffer?.Release();
+        _podBuffers = [];
+        _resources = default;
+        _valueIndexes = [];
+        _groupings = [];
+        _groupedTypes = default;
+        _groupTables.Clear();
+        foreach (Shared.SharedValues? values in _shared) values?.Release(this);
+        _shared = [];
+        Used = _count = _free = ArchetypeCount = 0;
+        HasMultipleChunks = false;
+        _disposed = true;
+    }
+
+    internal bool RecyclesBuffers = true;
+
+    private void ReleaseOwnedValues()
+    {
+        if (!_hasOwnedValues) return;
+        for (int i = 0; i < ArchetypeCount; i++)
+        {
+            Archetype archetype = Archetypes[i];
+            foreach (Chunk chunk in archetype.AllChunks)
             {
-                _commands.CancelPlaybackReservation(playback!);
-                throw;
+                if (chunk.Count == 0) continue;
+                foreach (ComponentType type in archetype.OwnedValues)
+                    type.ReleaseRows(this, ref chunk.Columns[type.Id], 0, chunk.Count);
             }
-        }
-    }
-
-    internal void BeginCommandOverlay()
-    {
-        _commands.BeginCandidate();
-    }
-
-    internal void EndCommandOverlay(bool published)
-    {
-        _commands.EndCandidate(published);
-    }
-
-    internal void PrepareCommandOverlayPublication()
-    {
-        _commands.PrepareCandidatePublication();
-    }
-
-    internal StructuralMutationScope BeginStructuralMutation()
-    {
-        return StructuralMutationScope.Begin(this);
-    }
-
-    internal sealed class StructuralCandidateContext
-    {
-        internal StructuralCandidateContext(
-            World world,
-            WorldStructureRoot root,
-            StructuralCandidateContext? previous)
-        {
-            World = world;
-            Root = root;
-            Previous = previous;
-        }
-
-        internal World World { get; }
-
-        internal WorldStructureRoot Root { get; }
-
-        internal StructuralCandidateContext? Previous { get; }
-    }
-
-    internal readonly struct StructuralCandidateScope : IDisposable
-    {
-        private readonly World? _world;
-        private readonly StructuralCandidateContext? _context;
-        private readonly int _ownerThreadId;
-
-        internal StructuralCandidateScope(
-            World world,
-            StructuralCandidateContext context,
-            int ownerThreadId)
-        {
-            _world = world;
-            _context = context;
-            _ownerThreadId = ownerThreadId;
-        }
-
-        public void Dispose()
-        {
-            if (_world is not null)
-                _world.ExitStructuralCandidate(_context!, _ownerThreadId);
-        }
-    }
-
-    internal readonly struct StructuralTransactionScope : IDisposable
-    {
-        private readonly World? _world;
-        private readonly int _ownerThreadId;
-
-        internal StructuralTransactionScope(World world, int ownerThreadId)
-        {
-            _world = world;
-            _ownerThreadId = ownerThreadId;
-        }
-
-        public void Dispose()
-        {
-            _world?.EndStructuralTransaction(_ownerThreadId);
         }
     }
 }
-

@@ -1,8 +1,7 @@
 using System.Numerics;
-using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation.Pose.Tests;
@@ -38,7 +37,7 @@ public sealed class ClipPlaybackBehaviorTests
         Tick(systems, world, 0.5);
         Assert.Equal(new Vector3(2, 1, 0), first.ModelPose.Transforms[1].Translation);
         Assert.Equal(new Vector3(1, 1, 0), second.ModelPose.Transforms[1].Translation);
-        Assert.Equal(1u, world.Read<Timeline>(firstAnimation).Completions);
+        Assert.Equal(1u, world.ReadComponentData<Timeline>(firstAnimation).Completions);
         Assert.True(world.IsEnabled<Timeline>(secondAnimation));
         Assert.Equal(1, first.ModelPose.Time);
     }
@@ -109,7 +108,7 @@ public sealed class ClipPlaybackBehaviorTests
         Assert.Equal(new Vector3(3, 3, 0), instance.ModelPose.Transforms[1].Translation);
         Assert.Equal(0.5, instance.ModelPose.SampleTime);
         Assert.Equal(1.5, instance.ModelPose.Time);
-        Assert.Equal(1u, world.Read<Timeline>(animation).Completions);
+        Assert.Equal(1u, world.ReadComponentData<Timeline>(animation).Completions);
     }
 
     private static Skeleton CreateSkeleton() => new([-1, 0],
@@ -124,12 +123,17 @@ public sealed class ClipPlaybackBehaviorTests
     private static uint EventCount(World world, Entity animation, ushort id)
     {
         var count = (Id: id, Value: 0u);
-        world.ExecuteBufferRead<TimelineEvent, (ushort Id, uint Value)>(animation, ref count,
-            static (events, ref count) =>
+        {
+            using var events = world.ReadBuffer<TimelineEvent>(animation);
+            Visit(events, ref count);
+
+            static void Visit(ReadOnlyBuffer<TimelineEvent> events, ref (ushort Id, uint Value) count)
             {
                 foreach (TimelineEvent marker in events.AsSpan())
                     if (marker.Id == count.Id) count.Value = marker.Count;
-            });
+
+            }
+        }
         return count.Value;
     }
 
@@ -159,7 +163,6 @@ public sealed class ClipPlaybackBehaviorTests
 public readonly record struct PoseSourceParameters(PoseResultId Output, float Duration);
 public readonly record struct PoseOffsetParameters(PoseResultId Input, PoseResultId Output, float Duration);
 
-[BufferCapacity(1)]
 public struct PoseSourceInstance : IBufferElement
 {
     public AnimationLeafBatch<PoseSourceParameters> Definition;
@@ -170,7 +173,6 @@ public struct PoseSourceInstance : IBufferElement
     public float Time;
 }
 
-[BufferCapacity(1)]
 public struct PoseOffsetInstance : IBufferElement
 {
     public AnimationLeafBatch<PoseOffsetParameters> Definition;
@@ -187,17 +189,31 @@ public readonly struct PoseSourceLeaf : IAnimationLeaf<PoseSourceParameters>
     public static void Install(World world, Entity animation, Entity target,
         AnimationLeafBatch<PoseSourceParameters> definitions, int index, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<PoseSourceInstance>(animation)) world.AddBuffer<PoseSourceInstance>(animation);
+        if (!world.Has<Buffer<PoseSourceInstance>>(animation)) world.AddBuffer<PoseSourceInstance>(animation);
         var source = new PoseSourceInstance
         {
-            Definition = definitions, Index = index, Placement = placement,
+            Definition = definitions,
+            Index = index,
+            Placement = placement,
             Output = PoseAnimation.Resolve(world, target, definitions.Parameters[index].Output),
         };
-        world.ExecuteBufferWrite<PoseSourceInstance, PoseSourceInstance>(animation, ref source,
-            static (sources, ref source) => sources.Add(source));
+        {
+            using var sources = world.GetBuffer<PoseSourceInstance>(animation);
+            Visit(sources, ref source);
+
+            static void Visit(DynamicBuffer<PoseSourceInstance> sources, ref PoseSourceInstance source)
+            {
+                sources.Add(source);
+
+            }
+        }
     }
-    public static void Release(World world, Entity animation) =>
-        world.ExecuteBufferWrite<PoseSourceInstance>(animation, static sources => sources.Clear());
+    public static void Release(World world, Entity animation)
+    {
+        using var sources = world.GetBuffer<PoseSourceInstance>(animation);
+        sources.Clear();
+
+    }
 }
 
 public readonly struct PoseOffsetLeaf : IAnimationLeaf<PoseOffsetParameters>
@@ -206,41 +222,65 @@ public readonly struct PoseOffsetLeaf : IAnimationLeaf<PoseOffsetParameters>
     public static void Install(World world, Entity animation, Entity target,
         AnimationLeafBatch<PoseOffsetParameters> definitions, int index, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<PoseOffsetInstance>(animation)) world.AddBuffer<PoseOffsetInstance>(animation);
+        if (!world.Has<Buffer<PoseOffsetInstance>>(animation)) world.AddBuffer<PoseOffsetInstance>(animation);
         var offset = new PoseOffsetInstance
         {
-            Definition = definitions, Index = index, Placement = placement, Target = target,
+            Definition = definitions,
+            Index = index,
+            Placement = placement,
+            Target = target,
             Output = PoseAnimation.Resolve(world, target, definitions.Parameters[index].Output),
         };
-        world.ExecuteBufferWrite<PoseOffsetInstance, PoseOffsetInstance>(animation, ref offset,
-            static (offsets, ref offset) => offsets.Add(offset));
+        {
+            using var offsets = world.GetBuffer<PoseOffsetInstance>(animation);
+            Visit(offsets, ref offset);
+
+            static void Visit(DynamicBuffer<PoseOffsetInstance> offsets, ref PoseOffsetInstance offset)
+            {
+                offsets.Add(offset);
+
+            }
+        }
     }
-    public static void Complete(World world, Entity animation) =>
-        world.ExecuteBufferWrite<PoseOffsetInstance, World>(animation, ref world, static (offsets, ref world) =>
+    public static void Complete(World world, Entity animation)
+    {
+        using var offsets = world.GetBuffer<PoseOffsetInstance>(animation);
+        Visit(offsets, ref world);
+
+        static void Visit(DynamicBuffer<PoseOffsetInstance> offsets, ref World world)
         {
             foreach (ref PoseOffsetInstance offset in offsets.AsSpan())
                 offset.Input = PoseAnimation.Resolve(world, offset.Target, offset.Definition.Parameters[offset.Index].Input);
-        });
-    public static void Release(World world, Entity animation) =>
-        world.ExecuteBufferWrite<PoseOffsetInstance>(animation, static offsets => offsets.Clear());
+
+        }
+    }
+    public static void Release(World world, Entity animation)
+    {
+        using var offsets = world.GetBuffer<PoseOffsetInstance>(animation);
+        offsets.Clear();
+
+    }
 }
 
 public struct PoseSourceSystem : ISystem<ImmediateSystemContext>
 {
-    private QueryHandle _sources;
+    private Query _sources;
     public void OnCreate(ref ImmediateSystemContext context) =>
-        _sources = context.World.Query(AnimationGraph.WithTimeAccess(context.World.QueryDefinition()
-            .ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<PoseSourceInstance>()
-            .OptionalBuffer<LocalPose>(QueryAccess.ReadWrite).OptionalBuffer<PoseResult>(QueryAccess.ReadWrite)));
+        _sources = context.World.Query(AnimationGraph.WithTimeAccess(new QueryDescription()
+            .WithStored<Timeline>().With<Timeline>().WithStored<Buffer<PoseSourceInstance>>()
+            .Optional<Buffer<LocalPose>>().Optional<Buffer<PoseResult>>()));
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
-        world.ExecuteQuery(_sources, ref world, static (QueryCursor rows, ref World world) =>
+        using QueryScope rows = _sources.Open();
+        foreach (QueryChunk chunk in rows)
         {
-            foreach (QueryRow row in rows.Rows)
-                foreach (ref PoseSourceInstance source in row.Buffer<PoseSourceInstance>().AsSpan())
+            var sources = chunk.GetBuffers<PoseSourceInstance>();
+
+            for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                foreach (ref PoseSourceInstance source in sources[rowIndex].AsSpan())
                 {
-                    AnimationLeafTime time = AnimationGraph.ReadTime(world, row.Entity, in source.Placement);
+                    AnimationLeafTime time = AnimationGraph.ReadTime(world, chunk.Entities[rowIndex], in source.Placement);
                     if (!time.Active) continue;
                     if (source.Starts != time.Starts)
                     {
@@ -251,49 +291,69 @@ public struct PoseSourceSystem : ISystem<ImmediateSystemContext>
                     float duration = source.Definition.Parameters[source.Index].Duration;
                     float elapsed = Math.Min(time.Time.Time, duration);
                     var value = (Start: source.Output.Range.Start, X: 3 * source.Time);
-                    world.ExecuteBufferWrite<LocalPose, (int Start, float X)>(source.Output.Entity, ref value,
-                        static (values, ref value) => values[value.Start].Transform.Translation = new(value.X, 0, 0));
+                    {
+                        using var values = world.GetBuffer<LocalPose>(source.Output.Entity);
+                        Visit(values, ref value);
+
+                        static void Visit(DynamicBuffer<LocalPose> values, ref (int Start, float X) value)
+                        {
+                            values[value.Start].Transform.Translation = new(value.X, 0, 0);
+
+                        }
+                    }
                     PoseNodeResults.Write(world, in source.Output, elapsed, in time);
-                    AnimationGraph.Submit(world, row.Entity, in source.Placement, elapsed < duration);
+                    AnimationGraph.Submit(world, chunk.Entities[rowIndex], in source.Placement, elapsed < duration);
                 }
-        });
+
+        }
     }
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_sources);
+    public void OnDestroy(ref ImmediateSystemContext context) { }
+
 }
 
 public struct PoseOffsetSystem : ISystem<ImmediateSystemContext>
 {
-    private QueryHandle _offsets;
+    private Query _offsets;
     public void OnCreate(ref ImmediateSystemContext context) =>
-        _offsets = context.World.Query(AnimationGraph.WithTimeAccess(context.World.QueryDefinition()
-            .ReadWrite<Timeline>().Enabled<Timeline>().ReadBuffer<PoseOffsetInstance>()
-            .OptionalBuffer<LocalPose>(QueryAccess.ReadWrite).OptionalBuffer<PoseResult>(QueryAccess.ReadWrite)));
+        _offsets = context.World.Query(AnimationGraph.WithTimeAccess(new QueryDescription()
+            .WithStored<Timeline>().With<Timeline>().WithStored<Buffer<PoseOffsetInstance>>()
+            .Optional<Buffer<LocalPose>>().Optional<Buffer<PoseResult>>()));
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
-        world.ExecuteQuery(_offsets, ref world, static (QueryCursor rows, ref World world) =>
+        using QueryScope rows = _offsets.Open();
+        foreach (QueryChunk chunk in rows)
         {
-            foreach (QueryRow row in rows.Rows)
-                foreach (PoseOffsetInstance offset in row.ReadBuffer<PoseOffsetInstance>().AsSpan())
+
+
+            for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                foreach (PoseOffsetInstance offset in chunk.ReadBuffer<PoseOffsetInstance>(rowIndex).AsSpan())
                 {
-                    AnimationLeafTime time = AnimationGraph.ReadTime(world, row.Entity, in offset.Placement);
+                    AnimationLeafTime time = AnimationGraph.ReadTime(world, chunk.Entities[rowIndex], in offset.Placement);
                     if (!time.Active) continue;
                     float duration = offset.Definition.Parameters[offset.Index].Duration;
                     float elapsed = Math.Min(time.Time.Time, duration);
                     var copy = (Input: offset.Input.Range, Output: offset.Output.Range, Y: 4 * elapsed);
-                    world.ExecuteBufferWrite<LocalPose, (PoseRange Input, PoseRange Output, float Y)>(offset.Output.Entity, ref copy,
-                        static (values, ref copy) =>
+                    {
+                        using var values = world.GetBuffer<LocalPose>(offset.Output.Entity);
+                        Visit(values, ref copy);
+
+                        static void Visit(DynamicBuffer<LocalPose> values, ref (PoseRange Input, PoseRange Output, float Y) copy)
                         {
                             Span<LocalPose> poses = values.AsSpan();
                             poses.Slice(copy.Input.Start, copy.Input.Count).CopyTo(poses.Slice(copy.Output.Start, copy.Output.Count));
                             poses[copy.Output.Start].Transform.Translation.Y += copy.Y;
-                        });
+
+                        }
+                    }
                     PoseNodeResults.Write(world, in offset.Output, elapsed, in time);
-                    AnimationGraph.Submit(world, row.Entity, in offset.Placement, elapsed < duration);
+                    AnimationGraph.Submit(world, chunk.Entities[rowIndex], in offset.Placement, elapsed < duration);
                 }
-        });
+
+        }
     }
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_offsets);
+    public void OnDestroy(ref ImmediateSystemContext context) { }
+
 }
 
 internal static class PoseNodeResults
@@ -301,14 +361,19 @@ internal static class PoseNodeResults
     internal static void Write(World world, in PoseResultReference output, float elapsed, in AnimationLeafTime time)
     {
         var value = (Index: output.Index, Time: elapsed, Weight: time.Weight, Starts: time.Starts);
-        world.ExecuteBufferWrite<PoseResult, (int Index, float Time, float Weight, uint Starts)>(output.Entity, ref value,
-            static (results, ref value) =>
+        {
+            using var results = world.GetBuffer<PoseResult>(output.Entity);
+            Visit(results, ref value);
+
+            static void Visit(DynamicBuffer<PoseResult> results, ref (int Index, float Time, float Weight, uint Starts) value)
             {
                 ref PoseResult result = ref results[value.Index];
                 result.Time = value.Time;
                 result.Weight = value.Weight;
                 result.Starts = value.Starts;
                 result.Version++;
-            });
+
+            }
+        }
     }
 }

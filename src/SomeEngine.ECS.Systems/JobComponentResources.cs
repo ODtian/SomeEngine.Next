@@ -1,4 +1,5 @@
 using SomeEngine.Job;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Systems;
 
@@ -23,36 +24,39 @@ public sealed class JobResourcesAttribute(Type resourceType) : Attribute
 /// bindings change while the component value stays in place.
 /// </summary>
 public interface IJobComponentResources<TComponent>
-    where TComponent : struct, IComponent
+    where TComponent : struct
 {
     static abstract void Collect(in TComponent component, ref JobResourceAccessBuilder resources);
 
     static virtual long GetVersion(in TComponent component) => 0;
+
+    static virtual void CollectRange<TResources>(ReadOnlySpan<TComponent> components, ref JobResourceAccessBuilder resources)
+        where TResources : struct, IJobComponentResources<TComponent>
+    {
+        foreach (ref readonly TComponent component in components) TResources.Collect(in component, ref resources);
+    }
 }
 
 /// <summary>Collects accesses to actual objects and array ranges for the current scheduler.</summary>
 public readonly ref struct JobResourceAccessBuilder
 {
     private readonly Scheduler _scheduler;
-    private readonly List<ComponentResourceUse>? _accesses;
-    private readonly List<object>? _references;
     private readonly List<JobResourceAccess>? _jobAccesses;
+    private readonly ref AccessBuilder<JobResourceAccess> _resources;
 
     /// <summary>Reuses component and space descriptions for an explicitly scheduled Job.</summary>
     public JobResourceAccessBuilder(Scheduler scheduler, List<JobResourceAccess> accesses)
     {
         _scheduler = scheduler;
         _jobAccesses = accesses;
+        _resources = ref Unsafe.NullRef<AccessBuilder<JobResourceAccess>>();
     }
 
-    internal JobResourceAccessBuilder(
-        Scheduler scheduler,
-        List<ComponentResourceUse> accesses,
-        List<object> references)
+    internal JobResourceAccessBuilder(Scheduler scheduler, ref AccessBuilder<JobResourceAccess> resources)
     {
         _scheduler = scheduler;
-        _accesses = accesses;
-        _references = references;
+        _jobAccesses = null;
+        _resources = ref resources;
     }
 
     public void Read(object data) =>
@@ -98,33 +102,15 @@ public readonly ref struct JobResourceAccessBuilder
 
     private void Add(object data, JobResourceAccess access)
     {
-        if (_jobAccesses is { } jobs)
-            jobs.Add(access);
-        else
-            _accesses!.Add(new ComponentResourceUse(data, access));
+        if (_jobAccesses is { } list) list.Add(access);
+        else _resources.Add(access);
     }
-
-    internal void Retain<T>(in T component) where T : struct => _references!.Add(component);
 }
 
-internal readonly record struct ComponentResourceUse(object Data, JobResourceAccess Access);
-
-internal interface IComponentResourceBinding
+public static class ComponentResources
 {
-    long GetVersion(ref JobEntityRow row);
-    void Collect(ref JobEntityRow row, ref JobResourceAccessBuilder resources);
-}
-
-internal sealed class ComponentResourceBinding<TComponent, TResources> : IComponentResourceBinding
-    where TComponent : struct, IComponent
-    where TResources : struct, IJobComponentResources<TComponent>
-{
-    public long GetVersion(ref JobEntityRow row) => TResources.GetVersion(in row.Read<TComponent>());
-
-    public void Collect(ref JobEntityRow row, ref JobResourceAccessBuilder resources)
-    {
-        ref readonly TComponent component = ref row.Read<TComponent>();
-        resources.Retain(in component);
-        TResources.Collect(in component, ref resources);
-    }
+    public static void CollectRange<TComponent, TResources>(ReadOnlySpan<TComponent> components,
+        ref JobResourceAccessBuilder resources)
+        where TComponent : struct where TResources : struct, IJobComponentResources<TComponent>
+        => TResources.CollectRange<TResources>(components, ref resources);
 }

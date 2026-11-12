@@ -44,23 +44,23 @@ public sealed partial class ButtonTests
 
         Entity surface = Assert.Single(DescendantsWith<Surface>(frames.World, root));
         Entity label = Assert.Single(DescendantsWith<Text>(frames.World, root),
-            node => frames.World.Read<Text>(node).Value == "AV");
-        Assert.Equal(new Color(0.2f, 0.2f, 0.2f), frames.World.Read<Surface>(surface).Fill);
-        Assert.Equal(4, frames.World.Read<Surface>(surface).CornerRadius);
-        Assert.Equal(new Thickness(8, 8, 8, 8), frames.World.Read<Box>(surface).Padding);
-        Assert.Equal("AV", frames.World.Read<Text>(label).Value);
-        Assert.Equal(new Color(1, 1, 1), frames.World.Read<ShapedText>(label).Style.Color);
+            node => frames.World.ReadComponentData<Text>(node).Value == "AV");
+        Assert.Equal(new Color(0.2f, 0.2f, 0.2f), frames.World.ReadComponentData<Surface>(surface).Fill);
+        Assert.Equal(4, frames.World.ReadComponentData<Surface>(surface).CornerRadius);
+        Assert.Equal(new Thickness(8, 8, 8, 8), frames.World.ReadComponentData<Box>(surface).Padding);
+        Assert.Equal("AV", frames.World.ReadComponentData<Text>(label).Value);
+        Assert.Equal(new Color(1, 1, 1), frames.World.ReadComponentData<ShapedText>(label).Style.Color);
         if (kind == ButtonKind.Icon)
         {
             Entity glyph = Assert.Single(DescendantsWith<Text>(frames.World, root),
-                node => frames.World.Read<Text>(node).Value == ">");
-            Rect iconRect = frames.World.Read<LayoutRect>(glyph).Value;
-            Assert.Equal(iconRect.X + iconRect.Width + 4, frames.World.Read<LayoutRect>(label).Value.X, 3);
-            Assert.Equal(new Color(1, 1, 1), frames.World.Read<ShapedText>(glyph).Style.Color);
+                node => frames.World.ReadComponentData<Text>(node).Value == ">");
+            Rect iconRect = frames.World.ReadComponentData<LayoutRect>(glyph).Value;
+            Assert.Equal(iconRect.X + iconRect.Width + 4, frames.World.ReadComponentData<LayoutRect>(label).Value.X, 3);
+            Assert.Equal(new Color(1, 1, 1), frames.World.ReadComponentData<ShapedText>(glyph).Style.Color);
         }
         else
-            Assert.Equal(39.98f, frames.World.Read<LayoutRect>(surface).Value.Width, 3);
-        Assert.Equal(43.24f, frames.World.Read<LayoutRect>(surface).Value.Height, 3);
+            Assert.Equal(39.98f, frames.World.ReadComponentData<LayoutRect>(surface).Value.Width, 3);
+        Assert.Equal(43.24f, frames.World.ReadComponentData<LayoutRect>(surface).Value.Height, 3);
     }
 
     [Theory]
@@ -89,7 +89,7 @@ public sealed partial class ButtonTests
         theme.TextColor = new Color(0.9f, 0.8f, 0.7f);
         theme.Padding = new Thickness(5, 7, 11, 13);
         theme.CornerRadius = 2;
-        frames.World.Replace(root, new ThemedButtons(kind, theme));
+        frames.World.Set(root, new ThemedButtons(kind, theme));
         frames.Frame();
 
         AssertAppearance(frames.World, root, new Color(0.7f, 0.3f, 0.1f),
@@ -110,25 +110,25 @@ public sealed partial class ButtonTests
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(4, 4));
         frames.Frame();
-        Assert.True(frames.World.Read<Hover>(button).Hovered);
-        Assert.Equal(new Color(0.3f, 0.3f, 0.3f), frames.World.Read<Surface>(surface).Fill);
+        Assert.True(frames.World.ReadComponentData<Hover>(button).Hovered);
+        Assert.Equal(new Color(0.3f, 0.3f, 0.3f), frames.World.ReadComponentData<Surface>(surface).Fill);
 
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Assert.True(frames.World.Read<Hover>(button).Pressed);
-        Assert.Equal(new Color(0.1f, 0.1f, 0.1f), frames.World.Read<Surface>(surface).Fill);
+        Assert.True(frames.World.ReadComponentData<Hover>(button).Pressed);
+        Assert.Equal(new Color(0.1f, 0.1f, 0.1f), frames.World.ReadComponentData<Surface>(surface).Fill);
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(300, 200));
         frames.Frame();
-        Assert.False(frames.World.Read<Hover>(button).Hovered);
-        Assert.True(frames.World.Read<Hover>(button).Pressed);
-        Assert.Equal(new Color(0.1f, 0.1f, 0.1f), frames.World.Read<Surface>(surface).Fill);
+        Assert.False(frames.World.ReadComponentData<Hover>(button).Hovered);
+        Assert.True(frames.World.ReadComponentData<Hover>(button).Pressed);
+        Assert.Equal(new Color(0.1f, 0.1f, 0.1f), frames.World.ReadComponentData<Surface>(surface).Fill);
 
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Assert.False(frames.World.Read<Hover>(button).Pressed);
-        Assert.Equal(new Color(0.2f, 0.2f, 0.2f), frames.World.Read<Surface>(surface).Fill);
-        Assert.Equal(0u, frames.World.Read<Clicks>(button).Count);
+        Assert.False(frames.World.ReadComponentData<Hover>(button).Pressed);
+        Assert.Equal(new Color(0.2f, 0.2f, 0.2f), frames.World.ReadComponentData<Surface>(surface).Fill);
+        Assert.Equal(0u, frames.World.ReadComponentData<Clicks>(button).Count);
     }
 
     [Theory]
@@ -158,38 +158,38 @@ public sealed partial class ButtonTests
         };
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new NestedButtons(kind, theme, zeroInner));
         frames.Frame();
-        ButtonPair buttons = frames.World.Read<ButtonPair>(root);
+        ButtonPair buttons = frames.World.ReadComponentData<ButtonPair>(root);
         Entity outerSurface = Assert.Single(DescendantsWith<Surface>(frames.World, buttons.Outer));
         Entity innerSurface = Assert.Single(DescendantsWith<Surface>(frames.World, buttons.Inner));
-        Assert.Equal(new Color(0.4f, 0.5f, 0.6f), frames.World.Read<Surface>(outerSurface).Fill);
-        Assert.Equal(zeroInner ? default : new Color(0.7f, 0.1f, 0.3f), frames.World.Read<Surface>(innerSurface).Fill);
-        Assert.Equal(zeroInner ? 0 : 4, frames.World.Read<Surface>(innerSurface).CornerRadius);
-        Assert.Equal(zeroInner ? default : new Thickness(8, 8, 8, 8), frames.World.Read<Box>(innerSurface).Padding);
+        Assert.Equal(new Color(0.4f, 0.5f, 0.6f), frames.World.ReadComponentData<Surface>(outerSurface).Fill);
+        Assert.Equal(zeroInner ? default : new Color(0.7f, 0.1f, 0.3f), frames.World.ReadComponentData<Surface>(innerSurface).Fill);
+        Assert.Equal(zeroInner ? 0 : 4, frames.World.ReadComponentData<Surface>(innerSurface).CornerRadius);
+        Assert.Equal(zeroInner ? default : new Thickness(8, 8, 8, 8), frames.World.ReadComponentData<Box>(innerSurface).Padding);
         foreach (Entity text in DescendantsWith<Text>(frames.World, buttons.Inner))
-            Assert.Equal(zeroInner ? default : new Color(1, 1, 1), frames.World.Read<ShapedText>(text).Style.Color);
+            Assert.Equal(zeroInner ? default : new Color(1, 1, 1), frames.World.ReadComponentData<ShapedText>(text).Style.Color);
 
-        Rect outerRect = frames.World.Read<LayoutRect>(outerSurface).Value;
+        Rect outerRect = frames.World.ReadComponentData<LayoutRect>(outerSurface).Value;
         Pointer.Move(frames.World, frames.Canvas, new Vector2(outerRect.X + 1, outerRect.Y + 1));
         frames.Frame();
-        Assert.Equal(new Color(0.5f, 0.6f, 0.7f), frames.World.Read<Surface>(outerSurface).Fill);
+        Assert.Equal(new Color(0.5f, 0.6f, 0.7f), frames.World.ReadComponentData<Surface>(outerSurface).Fill);
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Assert.Equal(new Color(0.2f, 0.3f, 0.4f), frames.World.Read<Surface>(outerSurface).Fill);
+        Assert.Equal(new Color(0.2f, 0.3f, 0.4f), frames.World.ReadComponentData<Surface>(outerSurface).Fill);
 
         theme.PressedFill = new Color(0.9f, 0.6f, 0.2f);
-        frames.World.Replace(root, new NestedButtons(kind, theme, zeroInner));
+        frames.World.Set(root, new NestedButtons(kind, theme, zeroInner));
         frames.Frame();
-        Assert.Equal(new Color(0.9f, 0.6f, 0.2f), frames.World.Read<Surface>(outerSurface).Fill);
+        Assert.Equal(new Color(0.9f, 0.6f, 0.2f), frames.World.ReadComponentData<Surface>(outerSurface).Fill);
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
 
-        Rect innerRect = frames.World.Read<LayoutRect>(innerSurface).Value;
+        Rect innerRect = frames.World.ReadComponentData<LayoutRect>(innerSurface).Value;
         Pointer.Move(frames.World, frames.Canvas, new Vector2(innerRect.X + 1, innerRect.Y + 1));
         frames.Frame();
-        Assert.Equal(zeroInner ? default : new Color(0.3f, 0.3f, 0.3f), frames.World.Read<Surface>(innerSurface).Fill);
+        Assert.Equal(zeroInner ? default : new Color(0.3f, 0.3f, 0.3f), frames.World.ReadComponentData<Surface>(innerSurface).Fill);
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Assert.Equal(zeroInner ? default : new Color(0.1f, 0.1f, 0.1f), frames.World.Read<Surface>(innerSurface).Fill);
+        Assert.Equal(zeroInner ? default : new Color(0.1f, 0.1f, 0.1f), frames.World.ReadComponentData<Surface>(innerSurface).Fill);
     }
 
     private readonly record struct NestedButtons(ButtonKind Kind, ButtonTheme Theme, bool ZeroInner) : IView, IComponent
@@ -199,8 +199,12 @@ public sealed partial class ButtonTests
             Scope.Entity.Provide(Theme);
             ButtonTheme innerTheme = ZeroInner ? new ButtonTheme
             {
-                Fill = default, HoverFill = default, PressedFill = default, TextColor = default,
-                Padding = default, CornerRadius = 0,
+                Fill = default,
+                HoverFill = default,
+                PressedFill = default,
+                TextColor = default,
+                Padding = default,
+                CornerRadius = 0,
             } : new ButtonTheme { Fill = new Color(0.7f, 0.1f, 0.3f) };
             Entity outer;
             Entity inner;
@@ -224,12 +228,12 @@ public sealed partial class ButtonTests
         Assert.Equal(2, surfaces.Count);
         foreach (Entity surface in surfaces)
         {
-            Assert.Equal(fill, world.Read<Surface>(surface).Fill);
-            Assert.Equal(cornerRadius, world.Read<Surface>(surface).CornerRadius);
-            Assert.Equal(padding, world.Read<Box>(surface).Padding);
+            Assert.Equal(fill, world.ReadComponentData<Surface>(surface).Fill);
+            Assert.Equal(cornerRadius, world.ReadComponentData<Surface>(surface).CornerRadius);
+            Assert.Equal(padding, world.ReadComponentData<Box>(surface).Padding);
         }
         foreach (Entity text in DescendantsWith<Text>(world, root))
-            Assert.Equal(textColor, world.Read<ShapedText>(text).Style.Color);
+            Assert.Equal(textColor, world.ReadComponentData<ShapedText>(text).Style.Color);
     }
 
     private readonly record struct ThemedButtons(ButtonKind Kind, ButtonTheme Theme) : IView, IComponent

@@ -12,7 +12,7 @@ public sealed class TerrainBrushRenderingTests(SceneContentFixture content)
     [Fact]
     public async Task HeightSmoothingChangesSamplesAndTheRenderedSurface()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var example = new HeightTerrainExample(scheduler);
         await example.Heights.EditCpu(new HeightDeltaBrush(new HeightRegion(2, 2, 1, 1), 3f)).WaitAsync();
         HeightFieldRead initial = await example.Heights.ReadCpuAsync(example.Heights.Grid.Range);
@@ -50,7 +50,7 @@ public sealed class TerrainBrushRenderingTests(SceneContentFixture content)
     [Fact]
     public async Task VoxelFlatteningChangesSamplesAndTheRenderedSurface()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var example = new VoxelTerrainExample(scheduler);
         VoxelFieldRead initial = await example.Field.ReadCpuAsync(example.SampleRegion);
         SceneImage? before = null, after = null;

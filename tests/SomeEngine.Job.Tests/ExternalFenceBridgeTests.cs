@@ -8,7 +8,7 @@ public sealed class ExternalFenceBridgeTests
 
     public ExternalFenceBridgeTests()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
         _data.Reset();
     }
 
@@ -158,7 +158,7 @@ public sealed class ExternalFenceBridgeTests
     [Fact]
     public void ThrowingExternalContinuationDoesNotBlockCleanupOrOtherCallbacks()
     {
-        JobSystem.Initialize(new JobRuntimeConfig
+        JobSystem.Initialize(new JobConfiguration
         {
             WorkerCount = 2,
             MaxCompletionStates = 4,
@@ -196,7 +196,7 @@ public sealed class ExternalFenceBridgeTests
     [Fact]
     public void ExternalContinuationStateIsReclaimedWithCompletionState()
     {
-        JobSystem.Initialize(new JobRuntimeConfig
+        JobSystem.Initialize(new JobConfiguration
         {
             WorkerCount = 2,
             MaxCompletionStates = 4,

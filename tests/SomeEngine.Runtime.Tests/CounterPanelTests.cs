@@ -22,7 +22,7 @@ public sealed class CounterPanelTests
         using var input = new WindowInput(world);
         frames.UpdateInput();
         frames.UpdateViews(0);
-        var label = world.Read<LayoutRect>(FindText(world, "Add one")).Value;
+        var label = world.ReadComponentData<LayoutRect>(FindText(world, "Add one")).Value;
         var position = new Vector2(label.X + label.Width / 2, label.Y + label.Height / 2);
 
         input.ChangePointerButton(0, true, position);
@@ -40,18 +40,15 @@ public sealed class CounterPanelTests
 
     private static Entity FindText(World world, string text)
     {
-        var query = world.Query(world.QueryDefinition().Read<TextContent>());
+        Query query = world.Query(new QueryDescription().With<TextContent>());
         var result = (Text: text, Node: Entity.Null);
-        try
+        using QueryScope source = query.OpenRead();
+        foreach (QueryChunk chunk in source)
         {
-            world.ExecuteQuery(query, ref result, static (rows, ref value) =>
-            {
-                foreach (var row in rows.Rows)
-                    if (row.Read<TextContent>().Value == value.Text)
-                        value.Node = row.Entity;
-            });
+            ReadOnlySpan<TextContent> values = chunk.Read<TextContent>();
+            for (int row = 0; row < chunk.Count; row++)
+                if (values[row].Value == text) result.Node = chunk.Entities[row];
         }
-        finally { world.ReleaseQuery(query); }
         Assert.NotEqual(Entity.Null, result.Node);
         return result.Node;
     }

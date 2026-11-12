@@ -15,8 +15,8 @@ internal sealed class RuntimeViewPrepareSystem : ISystem<RenderPrepareSystemCont
         new("render", "Prepare.View");
     private readonly Entity _viewEntity;
     private readonly object _gate = new();
-    private RenderView _pending;
-    private bool _hasPending;
+    private RenderView _view;
+    private bool _hasView;
 
     internal RuntimeViewPrepareSystem(Entity viewEntity)
         => _viewEntity = viewEntity;
@@ -25,16 +25,16 @@ internal sealed class RuntimeViewPrepareSystem : ISystem<RenderPrepareSystemCont
     {
         lock (_gate)
         {
-            if (_hasPending)
+            if (_hasView)
                 throw new InvalidOperationException("The previous runtime view update was not prepared.");
-            _pending = view;
-            _hasPending = true;
+            _view = view;
+            _hasView = true;
         }
     }
 
     public void OnCreate(ref RenderPrepareSystemContext context)
     {
-        if (!context.World.IsAlive(_viewEntity) || !context.World.Has<RenderView>(_viewEntity))
+        if (!context.World.World.IsAlive(_viewEntity) || !context.World.World.Has<RenderView>(_viewEntity))
             throw new InvalidOperationException("The runtime view entity is not present in RenderWorld.");
     }
 
@@ -44,14 +44,14 @@ internal sealed class RuntimeViewPrepareSystem : ISystem<RenderPrepareSystemCont
         RenderView next;
         lock (_gate)
         {
-            if (!_hasPending)
+            if (!_hasView)
                 return;
-            next = _pending;
-            _pending = default;
-            _hasPending = false;
+            next = _view;
+            _view = default;
+            _hasView = false;
         }
 
-        if (context.World.Read<RenderView>(_viewEntity) != next)
-            context.World.Replace(_viewEntity, next);
+        if (context.World.World.ReadComponentData<RenderView>(_viewEntity) != next)
+            context.World.World.Set(_viewEntity, next);
     }
 }

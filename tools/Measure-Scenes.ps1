@@ -5,11 +5,22 @@ $application = if ($ApplicationPath) { [IO.Path]::GetFullPath($ApplicationPath) 
 if (!(Test-Path -LiteralPath $application)) { throw 'Publish samples/DefaultGame in Release first.' }
 Add-Type -TypeDefinition @'
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 public static class SceneTestKeys {
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, UIntPtr key, IntPtr data);
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr window, int command);
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+}
+public static class SceneTestOutput {
+    public static async Task ForwardAsync(StreamReader source) {
+        string line;
+        while ((line = await source.ReadLineAsync().ConfigureAwait(false)) != null) {
+            Console.Out.WriteLine(line);
+            Console.Out.Flush();
+        }
+    }
 }
 '@
 $started = [DateTime]::UtcNow
@@ -41,7 +52,7 @@ if ($Trace) {
     [void]$start.Environment.Remove('SOMEENGINE_STARTUP_TRACE')
 }
 $process = [Diagnostics.Process]::Start($start)
-$output = $process.StandardOutput.ReadToEndAsync()
+$output = [SceneTestOutput]::ForwardAsync($process.StandardOutput)
 $errors = $process.StandardError.ReadToEndAsync()
 $report = $null
 try {
@@ -70,7 +81,7 @@ try {
     }
 } finally {
     if (!$process.HasExited) { $process.Kill($true); $process.WaitForExit() }
-    $applicationOutput = $output.GetAwaiter().GetResult()
+    [void]$output.GetAwaiter().GetResult()
     $errorText = $errors.GetAwaiter().GetResult()
     if ($errorText) { Write-Host $errorText }
     $applicationExitCode = $process.ExitCode
@@ -81,7 +92,6 @@ if (!$report -and (Test-Path -LiteralPath $reports)) {
         Where-Object { $_.LastWriteTimeUtc -ge $started } | Select-Object -First 1
 }
 if (!$report -or $applicationExitCode -ne 0) {
-    Write-Host $applicationOutput
     throw 'The scene test did not finish successfully within 60 seconds. No complete performance result is available.'
 }
 $result = Get-Content -LiteralPath $report.FullName -Raw | ConvertFrom-Json

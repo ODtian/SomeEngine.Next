@@ -4,6 +4,8 @@ using SomeEngine.Assets.Schema;
 using SomeEngine.Assets.Importers;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Serialization;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Core.Math;
 using SomeEngine.Render;
@@ -292,16 +294,16 @@ public static class SampleContent
         const int columns = 32;
         const float spacing = 1.5f;
         float origin = -((columns - 1) * spacing) * 0.5f;
-        using var world = new World(initialEntityCapacity: 2048);
+        using var world = new World(capacity: 2048);
         for (int index = 0; index < instanceCount; index++)
         {
-            var entity = world.CreateEntity(new WorldTransform
+            var entity = world.Create(new WorldTransform
             {
                 Qvvs = new(new Vector3(origin + index % columns * spacing, origin + index / columns * spacing, 65), Quaternion.Identity)
                 { Stretch = new(0.6f) },
             });
-            world.Add(entity, new MeshSource { Mesh = new(meshGuid), BoundsExpansion = 0.3f });
-            world.Add(entity, new MeshMotion
+            world.Set(entity, new MeshSource { Mesh = new(meshGuid), BoundsExpansion = 0.3f });
+            world.Set(entity, new MeshMotion
             {
                 Seed = unchecked((uint)index * 0x9E3779B9u),
                 Amplitude = new(0.25f + (index & 3) * 0.035f,
@@ -309,21 +311,40 @@ public static class SampleContent
                     0.32f + ((index >> 4) & 3) * 0.04f),
             });
         }
-        world.CreateEntity(new SceneCamera
+        world.Create(new SceneCamera
         {
             Position = new(0, 0, -3), Target = new(0, 0, 65), Up = Vector3.UnitY,
             VerticalFieldOfView = MathF.PI / 4, NearPlane = 0.1f, FarPlane = 1000,
         });
-        world.CreateEntity(new DirectionalLight(new(0.35f, -0.85f, 0.4f), new(1, 0.96f, 0.9f), 3));
-        world.CreateEntity(new PointLight(new(0, 6, 52), 28, new(0.55f, 0.75f, 1), 10));
-        world.CreateEntity(new PointLight(new(-18, 4, 58), 22, new(1, 0.55f, 0.45f), 7));
-        world.CreateEntity(new PointLight(new(18, 8, 60), 24, new(0.45f, 1, 0.65f), 8));
+        world.Create(new DirectionalLight(new(0.35f, -0.85f, 0.4f), new(1, 0.96f, 0.9f), 3));
+        world.Create(new PointLight(new(0, 6, 52), 28, new(0.55f, 0.75f, 1), 10));
+        world.Create(new PointLight(new(-18, 4, 58), 22, new(1, 0.55f, 0.45f), 7));
+        world.Create(new PointLight(new(18, 8, 60), 24, new(0.45f, 1, 0.65f), 8));
+        using var entities = new EntityAsset(SampleAssetIds.SceneEntities) { Name = "Default entities" };
+        entities.GetBlock<EntityBlock>().WriteEntities(world, ReadSceneEntities(world), new(Codecs: SceneSerialization.Codecs));
+        project.RegisterAsset(await entities.SaveAsync(Path.Combine(project.RootPath, "assets/Scenes/default.entities.asset"),
+            cancellationToken).ConfigureAwait(false));
         using var asset = new WorldAsset(SampleAssetIds.Scene) { Name = "Default" };
-        asset.WriteWorld(world, SceneSerialization.CreateRegistry());
+        asset.GetBlock<WorldBlock>().Contents =
+            [new(new AssetId<Asset>(entities.Id), new WorldBounds(-64, -64, -64, 64, 64, 128))];
         AssetEntry entry = await asset.SaveAsync(Path.Combine(project.RootPath, outputPath), cancellationToken).ConfigureAwait(false);
         Guid id = project.RegisterAsset(entry);
         Console.WriteLine($"  Scene: {outputPath}");
         return id;
+    }
+
+    private static Entity[] ReadSceneEntities(World world)
+    {
+        Query query = world.Query(new QueryDescription().Without<Destroyed>());
+        Entity[] entities = new Entity[query.Count];
+        int offset = 0;
+        using QueryScope rows = query.OpenRead();
+        foreach (QueryChunk chunk in rows)
+        {
+            chunk.Entities.CopyTo(entities.AsSpan(offset));
+            offset += chunk.Count;
+        }
+        return entities;
     }
 
     private static void BuildApplicationSettings(AssetProject project, Guid sceneGuid, Guid clusterPipelineGuid, Guid virtualShadowMapGuid)

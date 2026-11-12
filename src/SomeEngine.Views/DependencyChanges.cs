@@ -8,7 +8,7 @@ namespace SomeEngine.Views;
 /// <summary>Checks view and callback reads against the World's component type versions.</summary>
 internal sealed class DependencyChanges
 {
-    private readonly List<ushort> _types = new();
+    private readonly List<int> _types = new();
     private readonly List<Dependency> _dependencies = new();
     private ComponentChange[] _changes = new ComponentChange[16];
 
@@ -25,16 +25,16 @@ internal sealed class DependencyChanges
     {
         bool sameFrame = Frame == frame;
         Frame = frame;
-        foreach (ushort component in _types)
+        foreach (int component in _types)
         {
             ref ComponentChange change = ref _changes[component];
-            uint version = world.ComponentWriteVersion(component);
+            ulong version = world.ComponentWriteVersion(component);
             change.Changed = version != change.Version || (sameFrame && change.Changed);
             change.Version = version;
         }
     }
 
-    private bool HasComponentChanges(World world, ushort component, bool recheck)
+    private bool HasComponentChanges(World world, int component, bool recheck)
     {
         if (component >= _changes.Length)
             Array.Resize(ref _changes, Math.Max(component + 1, _changes.Length * 2));
@@ -64,7 +64,7 @@ internal sealed class DependencyChanges
     {
         DependencyKind.Environment => EnvironmentLookup.HasChanges(world, entity, in read),
         DependencyKind.Presence => world.HasComponentData(read.Entity, read.Component) != (read.Version != 0),
-        DependencyKind.Membership => world.MembershipVersion(read.Query) != read.Version,
+        DependencyKind.Membership => read.Query.MembershipVersion != read.Version,
         _ => world.ComponentDataWriteVersion(read.Entity, read.Component) != read.Version,
     };
 
@@ -72,16 +72,16 @@ internal sealed class DependencyChanges
     {
         if (world.Has<ObjectDependencies>(entity) && world.Read<ObjectDependencies>(entity).Reads.HasChanges(Frame))
             return true;
-        if (!world.HasBuffer<Dependency>(entity))
+        if (!world.Has<Buffer<Dependency>>(entity))
             return false;
 
         _dependencies.Clear();
         List<Dependency> dependencies = _dependencies;
-        world.ExecuteBufferRead<Dependency, List<Dependency>>(entity, ref dependencies, static (buffer, ref values) =>
         {
+            using var buffer = world.ReadBuffer<Dependency>(entity);
             foreach (Dependency read in buffer.AsSpan())
-                values.Add(read);
-        });
+                dependencies.Add(read);
+        }
         foreach (Dependency read in _dependencies)
             if (HasChanges(world, entity, read, recheck))
                 return true;
@@ -92,13 +92,13 @@ internal sealed class DependencyChanges
     {
         if (world.Has<ObjectDependencies>(entity))
             world.Read<ObjectDependencies>(entity).Reads.CopyVersions(versions, Frame);
-        if (!world.HasBuffer<Dependency>(entity)) return;
+        if (!world.Has<Buffer<Dependency>>(entity)) return;
         _dependencies.Clear();
         List<Dependency> dependencies = _dependencies;
-        world.ExecuteBufferRead<Dependency, List<Dependency>>(entity, ref dependencies, static (buffer, ref values) =>
         {
-            foreach (Dependency read in buffer.AsSpan()) values.Add(read);
-        });
+            using var buffer = world.ReadBuffer<Dependency>(entity);
+            foreach (Dependency read in buffer.AsSpan()) dependencies.Add(read);
+        }
         CopyVersions(world, entity, CollectionsMarshal.AsSpan(_dependencies), versions);
     }
 
@@ -113,14 +113,14 @@ internal sealed class DependencyChanges
                     if (!HasComponentChanges(world, read.Component, recheck: false) &&
                         !HasComponentChanges(world, ComponentId<Parent<ElementTree>>.Value, recheck: false)) break;
                     Entity source = EnvironmentLookup.FindSource(world, entity, read.Component);
-                    uint? version = source == Entity.Null ? 0 : world.ComponentDataWriteVersion(source, read.Component);
+                    ulong? version = source == Entity.Null ? 0 : world.ComponentDataWriteVersion(source, read.Component);
                     versions.Add(new(read.Version, version, source != read.Entity));
                     break;
                 case DependencyKind.Presence:
                     versions.Add(new(read.Version, world.HasComponentData(read.Entity, read.Component) ? 1u : 0u));
                     break;
                 case DependencyKind.Membership:
-                    versions.Add(new(read.Version, world.MembershipVersion(read.Query)));
+                    versions.Add(new(read.Version, read.Query.MembershipVersion));
                     break;
                 default:
                     if (HasComponentChanges(world, read.Component, recheck: false))
@@ -132,13 +132,13 @@ internal sealed class DependencyChanges
 
     private struct ComponentChange
     {
-        internal uint Version;
+        internal ulong Version;
         internal bool Changed;
         internal bool Recorded;
     }
 }
 
-internal readonly record struct DependencyVersion(uint ReadVersion, uint? CurrentVersion, bool Changed = false)
+internal readonly record struct DependencyVersion(ulong ReadVersion, ulong? CurrentVersion, bool Changed = false)
 {
     internal bool HasChanges => Changed || ReadVersion != CurrentVersion;
 }

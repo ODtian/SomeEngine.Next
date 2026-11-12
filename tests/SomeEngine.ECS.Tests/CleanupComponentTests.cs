@@ -5,7 +5,7 @@ using Xunit;
 
 namespace SomeEngine.ECS.Tests;
 
-public struct CleanupMarker : SomeEngine.ECS.ICleanupComponent
+public struct CleanupMarker : SomeEngine.ECS.ICleanupComponent, IAddedComponent
 {
     public int Value;
 }
@@ -13,10 +13,14 @@ public struct CleanupMarker : SomeEngine.ECS.ICleanupComponent
 public class CleanupComponentTests
 {
     [Fact]
-    public void Storage_Table_IsCleanup_ForICleanupComponent()
+    public void CleanupComponentRetainsItsValueUntilExplicitRemoval()
     {
-        Assert.Equal(StoragePath.Table, ComponentMetadata<CleanupMarker>.Storage);
-        Assert.True(ComponentMetadata<CleanupMarker>.IsCleanup);
+        using var world = new World();
+        var entity = world.Create(new CleanupMarker { Value = 7 });
+        world.Destroy(entity);
+        Assert.Equal(7, world.Read<CleanupMarker>(entity).Value);
+        world.Remove<CleanupMarker>(entity);
+        Assert.False(world.IsAlive(entity));
     }
 
     [Fact]
@@ -29,7 +33,7 @@ public class CleanupComponentTests
             Position = new Position { X = 1, Y = 2 },
         });
 
-        world.DestroyEntity(entity);
+        world.Destroy(entity);
 
         Assert.True(world.IsAlive(entity));
         Assert.True(world.Has<CleanupMarker>(entity));
@@ -48,7 +52,7 @@ public class CleanupComponentTests
             Cleanup = new CleanupMarker { Value = 1 },
             Position = new Position { X = 1, Y = 2 },
         });
-        world.DestroyEntity(warm); // warm cleanup transition plan
+        world.Destroy(warm); // warm cleanup transition plan
 
         var first = world.Spawn(new CleanupPositionBundle
         {
@@ -64,9 +68,9 @@ public class CleanupComponentTests
         // The last structural publication intentionally shares untouched chunks with the old
         // root. Warm the bounded first-write detach as well as the transition cache; subsequent
         // moves within the same published root retain the allocation-free hot path.
-        world.DestroyEntity(first);
+        world.Destroy(first);
 
-        world.DestroyEntity(entity);
+        world.Destroy(entity);
 
         Assert.True(world.IsPendingCleanup(entity));
     }
@@ -81,7 +85,7 @@ public class CleanupComponentTests
             Position = new Position { X = 3, Y = 4 },
         });
 
-        world.DestroyEntity(entity);
+        world.Destroy(entity);
         world.Remove<CleanupMarker>(entity);
 
         Assert.False(world.IsAlive(entity));
@@ -93,9 +97,9 @@ public class CleanupComponentTests
     public void CleanupOnlyEntity_RemainsPendingUntilCleanupIsRemoved()
     {
         var world = new World();
-        var entity = world.CreateEntity(new CleanupMarker { Value = 9 });
+        var entity = world.Create(new CleanupMarker { Value = 9 });
 
-        world.DestroyEntity(entity);
+        world.Destroy(entity);
 
         Assert.True(world.IsAlive(entity));
         Assert.True(world.IsPendingCleanup(entity));
@@ -109,28 +113,32 @@ public class CleanupComponentTests
     public void RemovedFactAlone_DoesNotRequestDestroy()
     {
         var world = new World();
-        var entity = world.CreateEntity(new Position { X = 5, Y = 6 });
+        var entity = world.Create(new RemovedNumber(5));
 
-        world.Remove<Position>(entity);
+        world.Remove<RemovedNumber>(entity);
         Assert.True(world.IsAlive(entity));
         Assert.False(world.IsPendingCleanup(entity));
-        Assert.True(world.Has<Removed<Position>>(entity));
+        Assert.True(world.Has<Removed<RemovedNumber>>(entity));
 
-        world.DestroyEntity(entity);
+        world.Destroy(entity);
 
+        Assert.True(world.IsAlive(entity));
+        Assert.True(world.IsPendingCleanup(entity));
+        world.ClearRemoved<RemovedNumber>(world.Version);
         Assert.False(world.IsAlive(entity));
-        Assert.False(world.IsPendingCleanup(entity));
     }
 
     [Fact]
     public void DestroyEntity_WithoutCleanup_StillHardDestroys()
     {
         var world = new World();
-        var entity = world.CreateEntity(new Position { X = 5, Y = 6 });
+        var entity = world.Create(new Position { X = 5, Y = 6 });
 
-        world.DestroyEntity(entity);
+        world.Destroy(entity);
 
         Assert.False(world.IsAlive(entity));
         Assert.False(world.IsPendingCleanup(entity));
     }
+    private readonly record struct RemovedNumber(int Value) : IRemovedComponent;
+
 }

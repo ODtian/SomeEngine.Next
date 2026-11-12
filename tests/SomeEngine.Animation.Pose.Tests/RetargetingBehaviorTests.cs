@@ -90,8 +90,12 @@ public sealed class RetargetingBehaviorTests
         for (int bone = 0; bone < parents.Length; bone++)
         {
             parents[bone] = (short)(bone - 1);
-            reference[bone] = new() { Translation = bone < 2 ? Vector3.Zero : new(lengths[bone - 2], 0, 0),
-                Rotation = bone == 0 ? axes : Quaternion.Identity, Scale = Vector3.One };
+            reference[bone] = new()
+            {
+                Translation = bone < 2 ? Vector3.Zero : new(lengths[bone - 2], 0, 0),
+                Rotation = bone == 0 ? axes : Quaternion.Identity,
+                Scale = Vector3.One
+            };
             names[bone] = (uint)bone + 1;
         }
         return new(parents, reference, names);

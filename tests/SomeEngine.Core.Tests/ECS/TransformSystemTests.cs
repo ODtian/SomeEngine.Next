@@ -5,8 +5,6 @@ using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Hooks;
-using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Core.Tests.ECS;
 
@@ -20,25 +18,25 @@ public class TransformSystemTests
     [Fact]
     public void TestHierarchyAndTransform()
     {
-        Entity root = _world.World.CreateEntity();
+        Entity root = _world.World.Create();
         _world.World.Add(root, new LocalTransform { Value = new TransformQvvs(new Vector3(0, 0, 0), Quaternion.Identity) });
         _world.World.Add(root, new WorldTransform());
 
-        Entity child = _world.World.CreateEntity();
+        Entity child = _world.World.Create();
         _world.World.Add(child, new LocalTransform { Value = new TransformQvvs(new Vector3(10, 0, 0), Quaternion.Identity) });
         _world.World.Add(child, new WorldTransform());
         Hierarchy.SetParent(_world.World, child, root);
 
-        Entity grandChild = _world.World.CreateEntity();
+        Entity grandChild = _world.World.Create();
         _world.World.Add(grandChild, new LocalTransform { Value = new TransformQvvs(new Vector3(0, 5, 0), Quaternion.Identity) });
         _world.World.Add(grandChild, new WorldTransform());
         Hierarchy.SetParent(_world.World, grandChild, child);
 
         RunSystems();
 
-        var rootWorld = _world.World.Read<WorldTransform>(root).Qvvs;
-        var childWorld = _world.World.Read<WorldTransform>(child).Qvvs;
-        var grandChildWorld = _world.World.Read<WorldTransform>(grandChild).Qvvs;
+        var rootWorld = _world.World.ReadComponentData<WorldTransform>(root).Qvvs;
+        var childWorld = _world.World.ReadComponentData<WorldTransform>(child).Qvvs;
+        var grandChildWorld = _world.World.ReadComponentData<WorldTransform>(grandChild).Qvvs;
 
         Assert.Equal(new Vector3(0, 0, 0), rootWorld.Position);
         Assert.Equal(new Vector3(10, 0, 0), childWorld.Position);
@@ -48,19 +46,19 @@ public class TransformSystemTests
     [Fact]
     public void TestRotation()
     {
-        Entity root = _world.World.CreateEntity();
+        Entity root = _world.World.Create();
         var rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2.0f);
         _world.World.Add(root, new LocalTransform { Value = new TransformQvvs(Vector3.Zero, rotation) });
         _world.World.Add(root, new WorldTransform());
 
-        Entity child = _world.World.CreateEntity();
+        Entity child = _world.World.Create();
         _world.World.Add(child, new LocalTransform { Value = new TransformQvvs(new Vector3(10, 0, 0), Quaternion.Identity) });
         _world.World.Add(child, new WorldTransform());
         Hierarchy.SetParent(_world.World, child, root);
 
         RunSystems();
 
-        var childWorld = _world.World.Read<WorldTransform>(child).Qvvs;
+        var childWorld = _world.World.ReadComponentData<WorldTransform>(child).Qvvs;
         var expected = Vector3.Transform(new Vector3(10, 0, 0), rotation);
 
         Assert.InRange(childWorld.Position.X, expected.X - 0.001f, expected.X + 0.001f);
@@ -71,17 +69,17 @@ public class TransformSystemTests
     [Fact]
     public void OrganizationEntity_PassesNearestTransformAncestorToDescendants()
     {
-        Entity root = _world.World.CreateEntity();
+        Entity root = _world.World.Create();
         _world.World.Add(root, new LocalTransform
         {
             Value = new TransformQvvs(new Vector3(10, 0, 0), Quaternion.Identity),
         });
         _world.World.Add(root, new WorldTransform());
 
-        Entity organization = _world.World.CreateEntity();
+        Entity organization = _world.World.Create();
         Hierarchy.SetParent(_world.World, organization, root);
 
-        Entity child = _world.World.CreateEntity();
+        Entity child = _world.World.Create();
         _world.World.Add(child, new LocalTransform
         {
             Value = new TransformQvvs(new Vector3(2, 0, 0), Quaternion.Identity),
@@ -93,14 +91,14 @@ public class TransformSystemTests
 
         Assert.Equal(
             new Vector3(12, 0, 0),
-            _world.World.Read<WorldTransform>(child).Qvvs.Position);
+            _world.World.ReadComponentData<WorldTransform>(child).Qvvs.Position);
     }
 
     [Fact]
     public void WorldTransformOnlyOrganization_PassesNearestTransformAncestorToDescendants()
     {
         Entity root = CreateTransformEntity(new Vector3(10, 0, 0));
-        Entity organization = _world.World.CreateEntity();
+        Entity organization = _world.World.Create();
         _world.World.Add(organization, new WorldTransform
         {
             Qvvs = new TransformQvvs(new Vector3(100, 0, 0), Quaternion.Identity),
@@ -111,8 +109,8 @@ public class TransformSystemTests
 
         RunSystems();
 
-        Assert.Equal(new Vector3(12, 0, 0), _world.World.Read<WorldTransform>(child).Qvvs.Position);
-        Assert.Equal(new Vector3(100, 0, 0), _world.World.Read<WorldTransform>(organization).Qvvs.Position);
+        Assert.Equal(new Vector3(12, 0, 0), _world.World.ReadComponentData<WorldTransform>(child).Qvvs.Position);
+        Assert.Equal(new Vector3(100, 0, 0), _world.World.ReadComponentData<WorldTransform>(organization).Qvvs.Position);
     }
 
     [Fact]
@@ -120,7 +118,7 @@ public class TransformSystemTests
     {
         Entity rootA = CreateTransformEntity(new Vector3(10, 0, 0));
         Entity rootB = CreateTransformEntity(new Vector3(100, 0, 0));
-        Entity organization = _world.World.CreateEntity();
+        Entity organization = _world.World.Create();
         Entity child = CreateTransformEntity(new Vector3(2, 0, 0));
 
         Hierarchy.SetParent(_world.World, organization, rootA);
@@ -130,21 +128,21 @@ public class TransformSystemTests
 
         Assert.Equal(
             new Vector3(12, 0, 0),
-            _world.World.Read<WorldTransform>(child).Qvvs.Position);
+            _world.World.ReadComponentData<WorldTransform>(child).Qvvs.Position);
 
         Hierarchy.SetParent(_world.World, organization, rootB);
         RunSystems();
 
         Assert.Equal(
             new Vector3(102, 0, 0),
-            _world.World.Read<WorldTransform>(child).Qvvs.Position);
+            _world.World.ReadComponentData<WorldTransform>(child).Qvvs.Position);
     }
 
     [Fact]
     public void OrganizationEntity_DetachUpdatesDescendantAfterSteadyFrame()
     {
         Entity root = CreateTransformEntity(new Vector3(10, 0, 0));
-        Entity organization = _world.World.CreateEntity();
+        Entity organization = _world.World.Create();
         Entity child = CreateTransformEntity(new Vector3(2, 0, 0));
 
         Hierarchy.SetParent(_world.World, organization, root);
@@ -154,14 +152,14 @@ public class TransformSystemTests
 
         Assert.Equal(
             new Vector3(12, 0, 0),
-            _world.World.Read<WorldTransform>(child).Qvvs.Position);
+            _world.World.ReadComponentData<WorldTransform>(child).Qvvs.Position);
 
         Hierarchy.Detach(_world.World, organization);
         RunSystems();
 
         Assert.Equal(
             new Vector3(2, 0, 0),
-            _world.World.Read<WorldTransform>(child).Qvvs.Position);
+            _world.World.ReadComponentData<WorldTransform>(child).Qvvs.Position);
     }
 
     [Fact]
@@ -169,8 +167,8 @@ public class TransformSystemTests
     {
         Entity rootA = CreateTransformEntity(new Vector3(10, 0, 0));
         Entity rootB = CreateTransformEntity(new Vector3(100, 0, 0));
-        Entity outerOrganization = _world.World.CreateEntity();
-        Entity innerOrganization = _world.World.CreateEntity();
+        Entity outerOrganization = _world.World.Create();
+        Entity innerOrganization = _world.World.Create();
         Entity child = CreateTransformEntity(new Vector3(2, 0, 0));
 
         Hierarchy.SetParent(_world.World, outerOrganization, rootA);
@@ -184,27 +182,27 @@ public class TransformSystemTests
 
         Assert.Equal(
             new Vector3(102, 0, 0),
-            _world.World.Read<WorldTransform>(child).Qvvs.Position);
+            _world.World.ReadComponentData<WorldTransform>(child).Qvvs.Position);
     }
 
     [Fact]
     public void SetParentInPlace_PreservesFreshWorldTransform()
     {
-        Entity oldParent = _world.World.CreateEntity();
+        Entity oldParent = _world.World.Create();
         _world.World.Add(oldParent, new LocalTransform
         {
             Value = new TransformQvvs(new Vector3(10, 0, 0), Quaternion.Identity),
         });
         _world.World.Add(oldParent, new WorldTransform());
 
-        Entity newParent = _world.World.CreateEntity();
+        Entity newParent = _world.World.Create();
         _world.World.Add(newParent, new LocalTransform
         {
             Value = new TransformQvvs(new Vector3(100, 0, 0), Quaternion.Identity),
         });
         _world.World.Add(newParent, new WorldTransform());
 
-        Entity child = _world.World.CreateEntity();
+        Entity child = _world.World.Create();
         _world.World.Add(child, new LocalTransform
         {
             Value = new TransformQvvs(new Vector3(2, 0, 0), Quaternion.Identity),
@@ -216,18 +214,18 @@ public class TransformSystemTests
         TransformHierarchy.SetParentInPlace(_world.World, child, newParent);
 
         Assert.Equal(newParent, Hierarchy.GetParent(_world.World, child));
-        Assert.Equal(new Vector3(-88, 0, 0), _world.World.Read<LocalTransform>(child).Value.Position);
-        Assert.Equal(new Vector3(12, 0, 0), _world.World.Read<WorldTransform>(child).Qvvs.Position);
+        Assert.Equal(new Vector3(-88, 0, 0), _world.World.ReadComponentData<LocalTransform>(child).Value.Position);
+        Assert.Equal(new Vector3(12, 0, 0), _world.World.ReadComponentData<WorldTransform>(child).Qvvs.Position);
 
         RunSystems();
-        Assert.Equal(new Vector3(12, 0, 0), _world.World.Read<WorldTransform>(child).Qvvs.Position);
+        Assert.Equal(new Vector3(12, 0, 0), _world.World.ReadComponentData<WorldTransform>(child).Qvvs.Position);
     }
 
     [Fact]
     public void SetParentInPlace_NonInvertibleParentLeavesTopologyAndLocalUnchanged()
     {
-        Entity oldParent = _world.World.CreateEntity();
-        Entity child = _world.World.CreateEntity();
+        Entity oldParent = _world.World.Create();
+        Entity child = _world.World.Create();
         _world.World.Add(child, new LocalTransform
         {
             Value = new TransformQvvs(new Vector3(2, 0, 0), Quaternion.Identity),
@@ -235,19 +233,19 @@ public class TransformSystemTests
         _world.World.Add(child, new WorldTransform());
         Hierarchy.SetParent(_world.World, child, oldParent);
 
-        Entity degenerateParent = _world.World.CreateEntity();
+        Entity degenerateParent = _world.World.Create();
         _world.World.Add(degenerateParent, new LocalTransform
         {
             Value = new TransformQvvs(Vector3.Zero, Quaternion.Identity, scale: 0.0f),
         });
         _world.World.Add(degenerateParent, new WorldTransform());
 
-        LocalTransform before = _world.World.Read<LocalTransform>(child);
+        LocalTransform before = _world.World.ReadComponentData<LocalTransform>(child);
         Assert.Throws<InvalidOperationException>(
             () => TransformHierarchy.SetParentInPlace(_world.World, child, degenerateParent));
 
         Assert.Equal(oldParent, Hierarchy.GetParent(_world.World, child));
-        Assert.Equal(before.Value.Position, _world.World.Read<LocalTransform>(child).Value.Position);
+        Assert.Equal(before.Value.Position, _world.World.ReadComponentData<LocalTransform>(child).Value.Position);
     }
 
     [Fact]
@@ -274,25 +272,25 @@ public class TransformSystemTests
         Assert.Equal(parent, Hierarchy.GetParent(_world.World, child));
         AssertMatrixNear(
             intendedLocal.ToMatrix(),
-            _world.World.Read<LocalTransform>(child).Value.ToMatrix());
+            _world.World.ReadComponentData<LocalTransform>(child).Value.ToMatrix());
         AssertMatrixNear(
             childWorld.ToMatrix(),
-            _world.World.Read<WorldTransform>(child).Qvvs.ToMatrix());
+            _world.World.ReadComponentData<WorldTransform>(child).Qvvs.ToMatrix());
 
         RunSystems();
         AssertMatrixNear(
             childWorld.ToMatrix(),
-            _world.World.Read<WorldTransform>(child).Qvvs.ToMatrix());
+            _world.World.ReadComponentData<WorldTransform>(child).Qvvs.ToMatrix());
     }
 
     [Fact]
     public void SetParentInPlace_UnrepresentableShearLeavesAllPublishedStateUnchanged()
     {
-        Entity oldParent = _world.World.CreateEntity();
-        Hierarchy.SetChildOrderPolicy(_world.World, oldParent, ChildOrderPolicy.Ordered);
-        Entity first = _world.World.CreateEntity();
+        Entity oldParent = _world.World.Create();
+        Hierarchy<DefaultHierarchyDomain>.SetOrdered(_world.World, oldParent, true);
+        Entity first = _world.World.Create();
         Entity child = CreateTransformEntity(TransformQvvs.Identity);
-        Entity last = _world.World.CreateEntity();
+        Entity last = _world.World.Create();
         Hierarchy.SetParent(_world.World, first, oldParent);
         Hierarchy.SetParent(_world.World, child, oldParent);
         Hierarchy.SetParent(_world.World, last, oldParent);
@@ -305,56 +303,47 @@ public class TransformSystemTests
         Entity newParent = CreateTransformEntity(parentTransform);
         RunSystems();
 
-        LocalTransform previousLocal = _world.World.Read<LocalTransform>(child);
-        WorldTransform previousWorld = _world.World.Read<WorldTransform>(child);
-        Entity[] previousChildren = Hierarchy.GetChildren(_world.World, oldParent).ToArray();
+        LocalTransform previousLocal = _world.World.ReadComponentData<LocalTransform>(child);
+        WorldTransform previousWorld = _world.World.ReadComponentData<WorldTransform>(child);
+        Entity[] previousChildren = Children(_world.World, oldParent);
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
             () => TransformHierarchy.SetParentInPlace(_world.World, child, newParent));
 
         Assert.Equal(oldParent, Hierarchy.GetParent(_world.World, child));
-        Assert.Equal(previousChildren, Hierarchy.GetChildren(_world.World, oldParent).ToArray());
-        Assert.Empty(Hierarchy.GetChildren(_world.World, newParent));
+        Assert.Equal(previousChildren, Children(_world.World, oldParent));
+        Assert.Empty(Children(_world.World, newParent));
         AssertMatrixNear(
             previousLocal.Value.ToMatrix(),
-            _world.World.Read<LocalTransform>(child).Value.ToMatrix());
+            _world.World.ReadComponentData<LocalTransform>(child).Value.ToMatrix());
         AssertMatrixNear(
             previousWorld.Qvvs.ToMatrix(),
-            _world.World.Read<WorldTransform>(child).Qvvs.ToMatrix());
+            _world.World.ReadComponentData<WorldTransform>(child).Qvvs.ToMatrix());
     }
 
     [Fact]
-    public void SetParentInPlace_ComponentFaultRestoresOrderedSiblingIndexAndTransforms()
+    public void SetParentInPlace_ExpiredParentPreservesOrderedSiblingIndexAndTransforms()
     {
         Entity oldParent = CreateTransformEntity(new TransformQvvs(
             new Vector3(10, 0, 0),
             Quaternion.Identity));
-        Hierarchy.SetChildOrderPolicy(_world.World, oldParent, ChildOrderPolicy.Ordered);
+        Hierarchy<DefaultHierarchyDomain>.SetOrdered(_world.World, oldParent, true);
         Entity newParent = CreateTransformEntity(new TransformQvvs(
             new Vector3(100, 0, 0),
             Quaternion.Identity));
-        Entity first = _world.World.CreateEntity();
+        Entity first = _world.World.Create();
         Entity child = CreateTransformEntity(new TransformQvvs(
             new Vector3(2, 0, 0),
             Quaternion.Identity));
-        Entity last = _world.World.CreateEntity();
+        Entity last = _world.World.Create();
         Hierarchy.SetParent(_world.World, first, oldParent);
         Hierarchy.SetParent(_world.World, child, oldParent);
         Hierarchy.SetParent(_world.World, last, oldParent);
         RunSystems();
 
-        LocalTransform previousLocal = _world.World.Read<LocalTransform>(child);
-        WorldTransform previousWorld = _world.World.Read<WorldTransform>(child);
-        bool throwOnce = true;
-        _world.World.Hooks<LocalTransform>().OnReplace(
-            (DeferredWorld _, Entity entity, in LocalTransform _) =>
-            {
-                if (entity == child && throwOnce)
-                {
-                    throwOnce = false;
-                    throw new InvalidOperationException("injected LocalTransform hook fault");
-                }
-            });
+        LocalTransform previousLocal = _world.World.ReadComponentData<LocalTransform>(child);
+        WorldTransform previousWorld = _world.World.ReadComponentData<WorldTransform>(child);
+        _world.World.Destroy(newParent);
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
             () => TransformHierarchy.SetParentInPlace(_world.World, child, newParent));
@@ -362,14 +351,14 @@ public class TransformSystemTests
         Assert.Equal(oldParent, Hierarchy.GetParent(_world.World, child));
         Assert.Equal(
             new[] { first, child, last },
-            Hierarchy.GetChildren(_world.World, oldParent).ToArray());
-        Assert.Empty(Hierarchy.GetChildren(_world.World, newParent));
+            Children(_world.World, oldParent));
+        Assert.Empty(Children(_world.World, newParent));
         AssertMatrixNear(
             previousLocal.Value.ToMatrix(),
-            _world.World.Read<LocalTransform>(child).Value.ToMatrix());
+            _world.World.ReadComponentData<LocalTransform>(child).Value.ToMatrix());
         AssertMatrixNear(
             previousWorld.Qvvs.ToMatrix(),
-            _world.World.Read<WorldTransform>(child).Qvvs.ToMatrix());
+            _world.World.ReadComponentData<WorldTransform>(child).Qvvs.ToMatrix());
     }
 
     [Fact]
@@ -400,11 +389,11 @@ public class TransformSystemTests
     [Fact]
     public void ParentMove_UpdatesDescendantWorldTransformAfterSteadyFrame()
     {
-        Entity root = _world.World.CreateEntity();
+        Entity root = _world.World.Create();
         _world.World.Add(root, new LocalTransform { Value = new TransformQvvs(Vector3.Zero, Quaternion.Identity) });
         _world.World.Add(root, new WorldTransform());
 
-        Entity child = _world.World.CreateEntity();
+        Entity child = _world.World.Create();
         _world.World.Add(child, new LocalTransform { Value = new TransformQvvs(new Vector3(1, 0, 0), Quaternion.Identity) });
         _world.World.Add(child, new WorldTransform());
         Hierarchy.SetParent(_world.World, child, root);
@@ -412,92 +401,89 @@ public class TransformSystemTests
         RunSystems();
         RunSystems();
 
-        LocalTransform rootLocal = _world.World.Read<LocalTransform>(root);
+        LocalTransform rootLocal = _world.World.ReadComponentData<LocalTransform>(root);
         rootLocal.Value = new TransformQvvs(new Vector3(10, 0, 0), Quaternion.Identity);
-        _world.World.Replace(root, rootLocal);
+        _world.World.Set(root, rootLocal);
 
         RunSystems();
 
-        Assert.Equal(new Vector3(11, 0, 0), _world.World.Read<WorldTransform>(child).Qvvs.Position);
+        Assert.Equal(new Vector3(11, 0, 0), _world.World.ReadComponentData<WorldTransform>(child).Qvvs.Position);
     }
 
     [Fact]
     public void RemoveParent_UpdatesChildWorldTransform()
     {
-        Entity root = _world.World.CreateEntity();
+        Entity root = _world.World.Create();
         _world.World.Add(root, new LocalTransform { Value = new TransformQvvs(new Vector3(10, 0, 0), Quaternion.Identity) });
         _world.World.Add(root, new WorldTransform());
 
-        Entity child = _world.World.CreateEntity();
+        Entity child = _world.World.Create();
         _world.World.Add(child, new LocalTransform { Value = new TransformQvvs(new Vector3(1, 0, 0), Quaternion.Identity) });
         _world.World.Add(child, new WorldTransform());
         Hierarchy.SetParent(_world.World, child, root);
 
         RunSystems();
-        Assert.Equal(new Vector3(11, 0, 0), _world.World.Read<WorldTransform>(child).Qvvs.Position);
+        Assert.Equal(new Vector3(11, 0, 0), _world.World.ReadComponentData<WorldTransform>(child).Qvvs.Position);
 
         Hierarchy.Detach(_world.World, child);
         RunSystems();
 
-        Assert.Equal(new Vector3(1, 0, 0), _world.World.Read<WorldTransform>(child).Qvvs.Position);
+        Assert.Equal(new Vector3(1, 0, 0), _world.World.ReadComponentData<WorldTransform>(child).Qvvs.Position);
     }
 
     [Fact]
     public void TestRepeatedUpdatesDoNotExhaustJobCounters()
     {
-        Entity root = _world.World.CreateEntity();
+        Entity root = _world.World.Create();
         _world.World.Add(root, new LocalTransform { Value = new TransformQvvs(Vector3.Zero, Quaternion.Identity) });
         _world.World.Add(root, new WorldTransform());
 
         for (int i = 0; i < 200; i++)
             RunSystems();
 
-        var world = _world.World.Read<WorldTransform>(root).Qvvs;
+        var world = _world.World.ReadComponentData<WorldTransform>(root).Qvvs;
         Assert.Equal(Vector3.Zero, world.Position);
     }
 
     [Fact]
     public void FlatLeafUpdate_OnlyMarksChangedWorldTransformRows()
     {
-        Entity first = _world.World.CreateEntity();
+        Entity first = _world.World.Create();
         _world.World.Add(first, new LocalTransform { Value = new TransformQvvs(Vector3.Zero, Quaternion.Identity) });
         _world.World.Add(first, new WorldTransform());
 
-        Entity second = _world.World.CreateEntity();
+        Entity second = _world.World.Create();
         _world.World.Add(second, new LocalTransform { Value = new TransformQvvs(Vector3.Zero, Quaternion.Identity) });
         _world.World.Add(second, new WorldTransform());
 
         RunSystems();
         RunSystems();
 
-        uint beforeLocalChange = _world.World.CurrentTick;
-        _world.World.Replace(first, new LocalTransform { Value = new TransformQvvs(new Vector3(5, 0, 0), Quaternion.Identity) });
+        ulong beforeLocalChange = _world.World.Version;
+        _world.World.Set(first, new LocalTransform { Value = new TransformQvvs(new Vector3(5, 0, 0), Quaternion.Identity) });
 
         RunSystems();
 
-        QueryHandle changedWorldTransforms = _world.World.Query(
-            new QueryDefinitionBuilder()
-                .Read<WorldTransform>()
-                .Changed<WorldTransform>()
-                .None<Parent<DefaultHierarchyDomain>>()
-                .None<Children<DefaultHierarchyDomain>>());
+        Query changedWorldTransforms = _world.World.Query(
+            new QueryDescription()
+                .WithStored<WorldTransform>()
+                .WithChanged<WorldTransform>(0)
+                .Without<Parent<DefaultHierarchyDomain>>()
+                .Without<Children<DefaultHierarchyDomain>>());
 
         List<Entity> changed = [];
-        _world.World.ExecuteQuery(
-            changedWorldTransforms,
-            beforeLocalChange,
-            cursor =>
-        {
-            foreach (QueryChunkView chunk in cursor.Chunks)
-            {
-                foreach (int row in chunk.RowIndices)
-                    changed.Add(chunk.GetEntity(row));
-            }
-        });
+        using (QueryScope scope = changedWorldTransforms.Since(beforeLocalChange).OpenRead())
+            foreach (QueryChunk chunk in scope) changed.AddRange(chunk.Entities);
 
         Entity changedEntity = Assert.Single(changed);
         Assert.Equal(first, changedEntity);
         Assert.DoesNotContain(second, changed);
+    }
+
+    private static Entity[] Children(World world, Entity parent)
+    {
+        using ChildrenRead children = Hierarchy.GetChildren(world, parent);
+        return children.Entities.ToArray();
     }
 
     private Entity CreateTransformEntity(Vector3 position)
@@ -507,7 +493,7 @@ public class TransformSystemTests
 
     private Entity CreateTransformEntity(TransformQvvs transform)
     {
-        Entity entity = _world.World.CreateEntity();
+        Entity entity = _world.World.Create();
         _world.World.Add(entity, new LocalTransform
         {
             Value = transform,

@@ -15,13 +15,13 @@ public static partial class BuildResumeChecks
         var completion = new TaskCompletionSource();
         var cleanupCompletion = new TaskCompletionSource();
         var events = new HelperEvents();
-        Entity target = frames.World.CreateEntity(new CleanupNumber());
+        Entity target = frames.World.Create(new CleanupNumber());
         Entity root = Views.Spawn(frames.World, Entity.Null,
             new HelperFinallyContent(source, output, target, completion.Task, cleanupCompletion.Task, events));
         frames.Frame();
         source.Value = 2;
         frames.Frame();
-        Require(output.Value == 2 && frames.World.Read<CleanupNumber>(target).Value == 2,
+        Require(output.Value == 2 && frames.World.ReadComponentData<CleanupNumber>(target).Value == 2,
             "The replacement build publishes its state and component result.");
         completion.SetResult();
         Require(SpinWait.SpinUntil(() =>
@@ -37,7 +37,7 @@ public static partial class BuildResumeChecks
         }, TimeSpan.FromSeconds(5)), "The helper and the following finally statements finish.");
         Require(events.Values.SequenceEqual(new[] { "finally", "helper finished", "after helper", "disposed", "canceled" }),
             $"The helper finishes before using disposal and cancellation completion; events: {string.Join(", ", events.Values)}.");
-        Require(output.Value == 2 && frames.World.Read<CleanupNumber>(target).Value == 2,
+        Require(output.Value == 2 && frames.World.ReadComponentData<CleanupNumber>(target).Value == 2,
             "The completed cleanup keeps the new state and component result.");
         Require(!frames.World.HasSparse<BuildError>(root), "The nested canceled cleanup completes successfully.");
     }

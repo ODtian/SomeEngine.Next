@@ -74,22 +74,27 @@ public sealed partial class CanvasDrawingTests
             imageMaterial, renderDevice);
         using SomeEngine.Graphics.Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(64 * 256, BufferUsages.CopyDestination), MemoryType.Readback);
-        Entity view = world.CreateEntity(new RenderView(Matrix4x4.Identity, Matrix4x4.Identity, 64, 64));
+        Entity view = world.World.Create(new RenderView(Matrix4x4.Identity, Matrix4x4.Identity, 64, 64));
         var canvasData = new RenderCanvas(CanvasTarget.WorldSpace(Entity.Null), new Size(0.5f, 0.5f), 1)
         {
             Transform = Matrix4x4.CreateTranslation(-0.75f, 0.75f, reversedDepth ? 0.25f : 0.75f),
         };
-        Entity canvas = world.CreateEntity(canvasData);
-        world.AddBuffer<SurfaceInstance>(canvas);
+        Entity canvas = world.World.Create(canvasData);
+        world.World.AddBuffer<SurfaceInstance>(canvas);
         if (image)
         {
-            world.AddBuffer<ImageInstance>(canvas);
-            world.ExecuteBufferWrite<ImageInstance>(canvas, buffer => buffer.Add(new(Entity.Null, texture,
-                new Rect(0, 0, 0.5f, 0.5f), new Rect(0, 0, 1, 1), new Rect(0, 0, 0.5f, 0.5f), 0, 1)));
+            world.World.AddBuffer<ImageInstance>(canvas);
+            using (SomeEngine.ECS.DynamicBuffer<ImageInstance> buffer = world.World.GetBuffer<ImageInstance>(canvas))
+            {
+                buffer.Add(new(Entity.Null, texture,
+                                new Rect(0, 0, 0.5f, 0.5f), new Rect(0, 0, 1, 1), new Rect(0, 0, 0.5f, 0.5f), 0, 1));
+            }
         }
-        else world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer =>
-            buffer.Add(new(Entity.Null, new Rect(0, 0, 0.5f, 0.5f), new Color(1, 0, 0), 0,
-                default, 0, new Rect(0, 0, 0.5f, 0.5f), 0, 1)));
+        else using (SomeEngine.ECS.DynamicBuffer<SurfaceInstance> buffer = world.World.GetBuffer<SurfaceInstance>(canvas))
+            {
+                buffer.Add(new(Entity.Null, new Rect(0, 0, 0.5f, 0.5f), new Color(1, 0, 0), 0,
+                                default, 0, new Rect(0, 0, 0.5f, 0.5f), 0, 1));
+            }
 
         GraphTextureId target;
         GraphTextureId depth;
@@ -138,29 +143,40 @@ public sealed partial class CanvasDrawingTests
         ulong structure = 0;
         for (int index = 0; index < 7; index++)
         {
-            world.AcquireSystemTick();
+            world.World.AcquireSystemVersion();
             if (index == 1) canvasData = canvasData with { DepthTest = true };
             if (index == 2) canvasData = canvasData with { Transform = Matrix4x4.CreateTranslation(-0.75f, 0.75f, reversedDepth ? 0.75f : 0.25f) };
             if (index == 3) canvasData = canvasData with { Transform = Matrix4x4.CreateTranslation(0.25f, 0.25f, reversedDepth ? 0.75f : 0.25f) };
             if (index == 5) canvasData = canvasData with
             {
-                Transform = Matrix4x4.CreateScale(2) * Matrix4x4.CreateTranslation(-1.5f, 1.5f, -2), DepthTest = false,
+                Transform = Matrix4x4.CreateScale(2) * Matrix4x4.CreateTranslation(-1.5f, 1.5f, -2),
+                DepthTest = false,
             };
             if (index == 6)
             {
                 canvasData = canvasData with { Scale = 2 };
-                if (image) world.ExecuteBufferWrite<ImageInstance>(canvas, buffer => buffer[0] = buffer[0] with
-                {
-                    Rectangle = new Rect(0, 0, 0.25f, 0.25f), ClipRectangle = new Rect(0, 0, 0.25f, 0.25f), Version = 2,
-                });
-                else world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer => buffer[0] = buffer[0] with
-                {
-                    Rectangle = new Rect(0, 0, 0.25f, 0.25f), ClipRectangle = new Rect(0, 0, 0.25f, 0.25f), Version = 2,
-                });
+                if (image) using (SomeEngine.ECS.DynamicBuffer<ImageInstance> buffer = world.World.GetBuffer<ImageInstance>(canvas))
+                    {
+                        buffer[0] = buffer[0] with
+                        {
+                            Rectangle = new Rect(0, 0, 0.25f, 0.25f),
+                            ClipRectangle = new Rect(0, 0, 0.25f, 0.25f),
+                            Version = 2,
+                        };
+                    }
+                else using (SomeEngine.ECS.DynamicBuffer<SurfaceInstance> buffer = world.World.GetBuffer<SurfaceInstance>(canvas))
+                    {
+                        buffer[0] = buffer[0] with
+                        {
+                            Rectangle = new Rect(0, 0, 0.25f, 0.25f),
+                            ClipRectangle = new Rect(0, 0, 0.25f, 0.25f),
+                            Version = 2,
+                        };
+                    }
             }
-            world.Replace(canvas, canvasData);
-            if (index == 4) world.Replace(view, new RenderView(Matrix4x4.CreateTranslation(-0.5f, 0, 0), Matrix4x4.Identity, 64, 64));
-            if (index == 5) world.Replace(view, new RenderView(Matrix4x4.Identity,
+            world.World.Set(canvas, canvasData);
+            if (index == 4) world.World.Set(view, new RenderView(Matrix4x4.CreateTranslation(-0.5f, 0, 0), Matrix4x4.Identity, 64, 64));
+            if (index == 5) world.World.Set(view, new RenderView(Matrix4x4.Identity,
                 Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, 1, 10), 64, 64));
             renderer.ReconcileGraph(target, worldTarget);
             Assert.True(renderer.TryGetPass(canvas, out GraphPassId drawing));

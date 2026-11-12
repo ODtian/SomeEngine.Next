@@ -16,7 +16,7 @@ public sealed class HeadingNavigationFlowAssetTests : IDisposable
     [Fact]
     public async Task ReopenedHeadingFlowDrivesSharedActorsThroughTurningAndTraversalAfterAssetsClose()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var manifest = new AssetManifest();
         string flowPath = Path.Combine(_directory, "group.navigation-flow.asset");
         HeadingNavigationFlowSource source;
@@ -90,42 +90,42 @@ public sealed class HeadingNavigationFlowAssetTests : IDisposable
         Assert.Equal(new Vector3(2, 0, 11), action.Traversal.Value.Exit);
         Assert.Equal(new Vector3(2, 0, 12), restored.Goals.Span[0].Position);
 
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var navigation = new NavigationSystems<FlowMotion, FlowMotionReader>(world);
-        Entity[] actors = [world.CreateEntity(new FlowMotion(new(2, 0, 2), default, MathF.PI / 2)),
-            world.CreateEntity(new FlowMotion(new(2.1f, 0, 2), default, MathF.PI / 2))];
+        Entity[] actors = [world.Create(new FlowMotion(new(2, 0, 2), default, MathF.PI / 2)),
+            world.Create(new FlowMotion(new(2.1f, 0, 2), default, MathF.PI / 2))];
         foreach (Entity actor in actors)
         {
             world.Add(actor, new FlowAction());
             navigation.AddFlowAgent(actor, restored, 2);
         }
-        for (int frame = 0; frame < 150 && actors.Any(actor => world.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived); frame++)
+        for (int frame = 0; frame < 150 && actors.Any(actor => world.ReadComponentData<NavigationProgress>(actor).Status != NavigationStatus.Arrived); frame++)
         {
             navigation.Schedule(0.1f).Steering.Complete();
             foreach (Entity actor in actors)
             {
-                FlowMotion motion = world.Read<FlowMotion>(actor);
-                NavigationTraversalRequest request = world.Read<NavigationTraversalRequest>(actor);
+                FlowMotion motion = world.ReadComponentData<FlowMotion>(actor);
+                NavigationTraversalRequest request = world.ReadComponentData<NavigationTraversalRequest>(actor);
                 if (request.Status is NavigationTraversalStatus.Requested or NavigationTraversalStatus.Executing)
                 {
-                    FlowAction execution = world.Read<FlowAction>(actor);
+                    FlowAction execution = world.ReadComponentData<FlowAction>(actor);
                     if (execution.Request != request.RequestId)
                         execution = new(request.RequestId, motion.Position, 0, execution.Count + 1, request.Action);
                     execution = execution with { Elapsed = execution.Elapsed + 0.1f };
                     float progress = MathF.Min(1, execution.Elapsed / request.Parameters.X);
                     Vector3 position = Vector3.Lerp(execution.Start, request.Exit, progress);
                     motion = motion with { Velocity = (position - motion.Position) / 0.1f, Position = position };
-                    world.Replace(actor, execution);
-                    world.Replace(actor, new NavigationTraversalResult(request.RequestId,
+                    world.Set(actor, execution);
+                    world.Set(actor, new NavigationTraversalResult(request.RequestId,
                         progress == 1 ? NavigationTraversalExecution.Completed : NavigationTraversalExecution.Running, progress));
                 }
                 else
                 {
-                    NavigationSteering steering = world.Read<NavigationSteering>(actor);
+                    NavigationSteering steering = world.ReadComponentData<NavigationSteering>(actor);
                     Vector3 velocity = steering.Active ? steering.Velocity : Vector3.Zero;
                     motion = new(motion.Position + velocity * 0.1f, velocity, steering.Active ? steering.Heading : motion.Heading);
                 }
-                world.Replace(actor, motion);
+                world.Set(actor, motion);
                 if (motion.Position.Z >= 4 && motion.Position.Z <= 8)
                     Assert.InRange(MathF.Abs(NavigationHeading.Difference(0, motion.Heading)), 0, 0.01f);
             }
@@ -134,10 +134,10 @@ public sealed class HeadingNavigationFlowAssetTests : IDisposable
         }
         Assert.All(actors, actor =>
         {
-            Assert.Same(restored, world.Read<FlowFollower>(actor).Flow);
-            Assert.Equal(1, world.Read<FlowAction>(actor).Count);
-            Assert.Equal(9, world.Read<FlowAction>(actor).Action);
-            Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+            Assert.Same(restored, world.ReadComponentData<FlowFollower>(actor).Flow);
+            Assert.Equal(1, world.ReadComponentData<FlowAction>(actor).Count);
+            Assert.Equal(9, world.ReadComponentData<FlowAction>(actor).Action);
+            Assert.Equal(NavigationStatus.Arrived, world.ReadComponentData<NavigationProgress>(actor).Status);
         });
     }
 

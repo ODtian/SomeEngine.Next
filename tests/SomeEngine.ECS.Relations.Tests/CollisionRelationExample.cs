@@ -1,5 +1,4 @@
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Components;
 
 namespace SomeEngine.ECS.Relations.Tests;
 

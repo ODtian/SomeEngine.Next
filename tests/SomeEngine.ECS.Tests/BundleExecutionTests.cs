@@ -1,7 +1,4 @@
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Hooks;
-using SomeEngine.ECS.Registry;
 using SomeEngine.ECS.Serialization;
 
 namespace SomeEngine.ECS.Tests;
@@ -9,410 +6,218 @@ namespace SomeEngine.ECS.Tests;
 public sealed class BundleExecutionTests
 {
     [Fact]
-    public void ExecuteBundleSpawn_CallbackFaultDiscardsCandidateAndReleasesRuntime()
+    public void FailedCandidateBundleCreationPreservesTheSourceAndAllowsLaterCreation()
     {
-        var world = new World();
-        int[] componentIds =
-        [
-            ComponentMetadata<Position>.Id,
-            ComponentMetadata<Velocity>.Id,
-        ];
+        using var world = new World();
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        int[] ids = [ComponentId<Position>.Value, ComponentId<Velocity>.Value];
 
-        Assert.Throws<BundleCallbackException>(() =>
-            world.ExecuteBundleSpawn(
-                componentIds,
-                static view =>
-                {
-                    var position = new Position { X = 10, Y = 20 };
-                    view.Write(in position);
-                    throw new BundleCallbackException();
-                }));
+        Assert.Throws<BundleWriteException>(() => candidate.ExecuteBundleSpawn(ids, 0, new PositionFaultWriter()));
 
         Assert.Equal(0, world.EntityCount);
-
-        Entity entity = world.ExecuteBundleSpawn(
-            componentIds,
-            static view =>
-            {
-                var position = new Position { X = 1, Y = 2 };
-                var velocity = new Velocity { X = 3, Y = 4 };
-                view.Write(in position);
-                view.Write(in velocity);
-            });
-
+        Entity entity = world.Spawn(new PhysicsBundle { Position = new() { X = 1, Y = 2 }, Velocity = new() { X = 3, Y = 4 } });
         Assert.True(world.IsAlive(entity));
         Assert.Equal(1, world.Read<Position>(entity).X);
         Assert.Equal(4, world.Read<Velocity>(entity).Y);
     }
 
     [Fact]
-    public void ExecuteBundleSpawnBatch_LaterFaultPublishesNoRows()
+    public void LaterCandidateBatchFaultPreservesTheSourceRows()
     {
-        var world = new World();
-        int[] componentIds = [ComponentMetadata<Position>.Id];
-
-        Assert.Throws<BundleCallbackException>(() =>
-            world.ExecuteBundleSpawnBatch(
-                componentIds,
-                4,
-                static view =>
-                {
-                    var position = new Position { X = view.Index, Y = view.Index + 1 };
-                    view.Write(in position);
-                    if (view.Index == 2)
-                        throw new BundleCallbackException();
-                }));
-
+        using var world = new World();
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        int[] ids = [ComponentId<Position>.Value];
+        Assert.Throws<BundleWriteException>(() => candidate.ExecuteBundleSpawnBatch(ids, 4, 0, new BatchFaultWriter()));
         Assert.Equal(0, world.EntityCount);
-
-        world.ExecuteBundleSpawnBatch(
-            componentIds,
-            2,
-            static view =>
-            {
-                var position = new Position { X = view.Index + 10, Y = view.Index + 20 };
-                view.Write(in position);
-            });
-
+        world.ExecuteBundleSpawnBatch(ids, 2, 10, new PositionWriter());
         Assert.Equal(2, world.EntityCount);
     }
 
     [Fact]
-    public void ExecuteBundleAddAndReplace_FaultsPreservePublishedEntity()
+    public void CandidateBundleAddAndReplaceFaultsPreserveTheSourceEntity()
     {
-        var world = new World();
-        Entity entity = world.CreateEntity(new Position { X = 1, Y = 2 });
-        int[] velocityIds = [ComponentMetadata<Velocity>.Id];
-
-        Assert.Throws<BundleCallbackException>(() =>
-            world.ExecuteBundleAdd(
-                entity,
-                velocityIds,
-                static view =>
-                {
-                    var velocity = new Velocity { X = 3, Y = 4 };
-                    view.Write(in velocity);
-                    throw new BundleCallbackException();
-                }));
-
+        using var world = new World();
+        Entity entity = world.Create(new Health { Value = 9 });
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        int[] ids = [ComponentId<Position>.Value, ComponentId<Velocity>.Value];
+        Assert.Throws<BundleWriteException>(() => candidate.ExecuteBundleAdd(entity, ids, [], 0, new PositionFaultWriter()));
         Assert.False(world.Has<Velocity>(entity));
-        Assert.Equal(1, world.Read<Position>(entity).X);
-
-        world.ExecuteBundleAdd(
-            entity,
-            velocityIds,
-            static view =>
-            {
-                var velocity = new Velocity { X = 5, Y = 6 };
-                view.Write(in velocity);
-            });
-
-        int[] replacementIds =
-        [
-            ComponentMetadata<Position>.Id,
-            ComponentMetadata<Velocity>.Id,
-        ];
-        Assert.Throws<BundleCallbackException>(() =>
-            world.ExecuteBundleReplace(
-                entity,
-                replacementIds,
-                static view =>
-                {
-                    var position = new Position { X = 100, Y = 200 };
-                    view.Write(in position);
-                    throw new BundleCallbackException();
-                }));
-
+        Assert.False(world.Has<Position>(entity));
+        Assert.Equal(9, world.Read<Health>(entity).Value);
+        world.AddBundle(entity, new PhysicsBundle { Position = new() { X = 1, Y = 2 }, Velocity = new() { X = 5, Y = 6 } });
+        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        checkpoint.Restore(candidate);
+        Assert.Throws<BundleWriteException>(() => candidate.ExecuteBundleReplace(entity, ids, [], 0, new PositionFaultWriter()));
         Assert.Equal(1, world.Read<Position>(entity).X);
         Assert.Equal(6, world.Read<Velocity>(entity).Y);
     }
 
     [Fact]
-    public void ExecuteBundleSpawn_CompositeStorageFaultDiscardsEveryOwnerMutation()
+    public void CompositeStorageCandidateFaultPreservesEverySourceBinding()
     {
-        var world = new World();
-        int[] componentIds =
-        [
-            ComponentMetadata<NameIndex>.Id,
-            ComponentMetadata<SceneId>.Id,
-            BufferComponents.Header<IntElement>(),
-            BufferComponents.Inline<IntElement>(),
-        ];
-        int[] sparseComponentIds = [ComponentMetadata<Damage>.Id];
-
-        Assert.Throws<BundleCallbackException>(() =>
-            world.ExecuteBundleSpawn(
-                componentIds,
-                sparseComponentIds,
-                static view =>
-                {
-                    var scene = new SceneId { Value = 7 };
-                    var name = new NameIndex { Value = "discarded" };
-                    var damage = new Damage { Amount = 9 };
-                    ReadOnlyMemory<IntElement> buffer = new IntElement[]
-                    {
-                        new IntElement { Value = 11 },
-                        new IntElement { Value = 12 },
-                    };
-                    view.WriteShared(in scene);
-                    view.Write(in name);
-                    view.WriteSparse(in damage);
-                    view.WriteBuffer(in buffer);
-                    throw new BundleCallbackException();
-                }));
-
+        using var world = new World();
+        _ = world.Index<NameIndex, string>();
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        int[] ids = [ComponentId<NameIndex>.Value, ComponentId<SceneId>.Value, ComponentId<Buffer<IntElement>>.Value];
+        int[] sparse = [ComponentId<Damage>.Value];
+        Assert.Throws<BundleWriteException>(() => candidate.ExecuteBundleSpawn(ids, sparse, 0, new MixedFaultWriter()));
         Assert.Equal(0, world.EntityCount);
-        Assert.Empty(world.GetByIndex<NameIndex, string>("discarded").ToArray());
-
-        Entity entity = world.ExecuteBundleSpawn(
-            componentIds,
-            sparseComponentIds,
-            static view =>
-            {
-                var scene = new SceneId { Value = 3 };
-                var name = new NameIndex { Value = "published" };
-                var damage = new Damage { Amount = 5 };
-                ReadOnlyMemory<IntElement> buffer =
-                    new IntElement[] { new IntElement { Value = 13 } };
-                view.WriteShared(in scene);
-                view.Write(in name);
-                view.WriteSparse(in damage);
-                view.WriteBuffer(in buffer);
-            });
-
-        Assert.Equal(3, world.GetShared<SceneId>(entity).Value);
+        Assert.Empty(ReadIndexedEntities<NameIndex, string>(world, "published"));
+        Entity entity = world.ExecuteBundleSpawn(ids, sparse, 0, new MixedWriter());
+        Assert.Equal(3, world.ReadShared<SceneId>(entity).Value);
         Assert.Equal(5, world.ReadSparse<Damage>(entity).Amount);
-        Assert.Contains(entity, world.GetByIndex<NameIndex, string>("published").ToArray());
-        world.ExecuteBufferRead<IntElement>(entity, static buffer =>
-        {
-            Assert.Equal(1, buffer.Count);
-            Assert.Equal(13, buffer[0].Value);
-        });
+        Assert.Equal([entity], ReadIndexedEntities<NameIndex, string>(world, "published"));
+        using ReadOnlyBuffer<IntElement> buffer = world.ReadBuffer<IntElement>(entity);
+        Assert.Equal(1, buffer.Count);
+        Assert.Equal(13, buffer[0].Value);
     }
 
     [Fact]
-    public void ExecuteBundleSpawn_MissingOrUndeclaredWriteCannotPublish()
+    public void BundleReplaceRejectsMissingColumnsBeforeChangingAnyField()
     {
-        var world = new World();
-        int[] spawnIds =
-        [
-            ComponentMetadata<Position>.Id,
-            ComponentMetadata<Velocity>.Id,
-        ];
-
-        Assert.Throws<InvalidOperationException>(() =>
-            world.ExecuteBundleSpawn(
-                spawnIds,
-                static view =>
-                {
-                    var position = new Position { X = 1, Y = 2 };
-                    view.Write(in position);
-                }));
-        Assert.Equal(0, world.EntityCount);
-
-        Entity entity = world.CreateEntity(new Position { X = 4, Y = 5 });
-        int[] replacementIds = [ComponentMetadata<Position>.Id];
-        Assert.Throws<InvalidOperationException>(() =>
-            world.ExecuteBundleReplace(
-                entity,
-                replacementIds,
-                static view =>
-                {
-                    var velocity = new Velocity { X = 8, Y = 9 };
-                    view.Write(in velocity);
-                }));
-
+        using var world = new World();
+        Entity entity = world.Create(new Position { X = 4, Y = 5 });
+        int[] ids = [ComponentId<Position>.Value, ComponentId<Velocity>.Value];
+        Assert.Throws<InvalidOperationException>(() => world.ExecuteBundleReplace(entity, ids, [], 0, new PhysicsWriter()));
         Assert.Equal(4, world.Read<Position>(entity).X);
         Assert.False(world.Has<Velocity>(entity));
     }
 
     [Fact]
-    public void ExecuteBundleSpawn_SharedWriteAfterMaterializationCannotPublish()
+    public void RepeatedSharedWritesCreateOneFinalSharedMembership()
     {
-        var world = new World();
-        int[] componentIds = [ComponentMetadata<SceneId>.Id];
-
-        Assert.Throws<InvalidOperationException>(() =>
-            world.ExecuteBundleSpawn(
-                componentIds,
-                static view =>
-                {
-                    var scene = new SceneId { Value = 6 };
-                    view.WriteShared(in scene);
-                    _ = view.Entity;
-                    view.WriteShared(in scene);
-                }));
-
-        Assert.Equal(0, world.EntityCount);
+        using var world = new World();
+        Entity entity = world.ExecuteBundleSpawn([ComponentId<SceneId>.Value], 0, new SharedWriter());
+        SharedId<SceneId> id = world.InternShared(new SceneId { Value = 6 });
+        using SharedMembers members = world.FindShared(id);
+        Assert.Equal(1, world.EntityCount);
+        Assert.Equal(1, members.Count);
+        Assert.Equal(6, world.ReadShared<SceneId>(entity).Value);
     }
 
     [Fact]
-    public void ExecuteBundleSpawn_HookFaultDiscardsCandidateAndReleasesTransaction()
+    public void CountedStructWriterReturnsEachCreatedIdentity()
     {
-        var world = new World();
-        world.Hooks<Position>().OnAdd(
-            static (DeferredWorld _, Entity _, in Position _) =>
-                throw new BundleCallbackException());
-        int[] positionIds = [ComponentMetadata<Position>.Id];
-
-        Assert.Throws<BundleCallbackException>(() =>
-            world.ExecuteBundleSpawn(
-                positionIds,
-                static view =>
-                {
-                    var position = new Position { X = 1, Y = 2 };
-                    view.Write(in position);
-                }));
-        Assert.Equal(0, world.EntityCount);
-
-        int[] velocityIds = [ComponentMetadata<Velocity>.Id];
-        Entity entity = world.ExecuteBundleSpawn(
-            velocityIds,
-            static view =>
-            {
-                var velocity = new Velocity { X = 3, Y = 4 };
-                view.Write(in velocity);
-            });
-        Assert.Equal(4, world.Read<Velocity>(entity).Y);
-    }
-
-    [Fact]
-    public void ExecuteBundleSpawnBatch_MaterializesOnlyTheCurrentCallbackRow()
-    {
-        var world = new World();
-        int[] componentIds = [ComponentMetadata<Position>.Id];
-
-        world.ExecuteBundleSpawnBatch(
-            componentIds,
-            4,
-            view =>
-            {
-                Assert.Equal(view.Index, world.EntityCount);
-                var position = new Position { X = view.Index, Y = view.Index + 1 };
-                view.Write(in position);
-                Assert.Equal(view.Index + 1, world.EntityCount);
-            });
-
-        Assert.Equal(4, world.EntityCount);
-    }
-
-    [Fact]
-    public void ExecuteBundleSpawnBatch_RechecksRawWriteEligibilityAfterLazyIndexCreation()
-    {
-        var world = new World();
-        int[] componentIds = [ComponentMetadata<IndexedName>.Id];
-
-        world.ExecuteBundleSpawnBatch(
-            componentIds,
-            3,
-            view =>
-            {
-                string value = $"name-{view.Index}";
-                var component = new IndexedName { Value = value };
-                view.Write(in component);
-                if (view.Index == 0)
-                    Assert.Single(world.GetByIndex<IndexedName, string>(value).ToArray());
-            });
-
-        for (int i = 0; i < 3; i++)
-            Assert.Single(world.GetByIndex<IndexedName, string>($"name-{i}").ToArray());
-    }
-
-    [Fact]
-    public void ExecuteBundleSpawnBatch_RejectsCapturedWorldMutationsWithoutDamagingTheCandidate()
-    {
-        var world = new World();
-        int[] componentIds = [ComponentMetadata<Position>.Id];
-
-        world.ExecuteBundleSpawnBatch(
-            componentIds,
-            2,
-            view =>
-            {
-                var position = new Position { X = view.Index + 1, Y = view.Index + 2 };
-                view.Write(in position);
-                Entity entity = view.Entity;
-
-                Assert.Throws<InvalidOperationException>(() => world.CreateEntity());
-                Assert.Throws<InvalidOperationException>(() => world.DestroyEntity(entity));
-                Assert.Throws<InvalidOperationException>(
-                    () => world.Add(entity, new Velocity { X = 3, Y = 4 }));
-                Assert.Throws<InvalidOperationException>(() => world.Remove<Position>(entity));
-                Assert.Throws<InvalidOperationException>(
-                    () => world.Replace(entity, new Position { X = 9, Y = 10 }));
-                Assert.Throws<InvalidOperationException>(
-                    () => world.ExecuteBundleSpawn(
-                        componentIds,
-                        static nestedView =>
-                        {
-                            var nested = new Position { X = 11, Y = 12 };
-                            nestedView.Write(in nested);
-                        }));
-            });
-
-        Assert.Equal(2, world.EntityCount);
-        var values = new List<float>();
-        var query = world.Query(world.QueryDefinition().Read<Position>());
-        world.ExecuteQuery(query, cursor =>
+        using var world = new World();
+        var output = new Entity[4];
+        int[] ids = [ComponentId<Position>.Value];
+        world.ExecuteBundleSpawnBatch(ids, output.Length, new EntityOutput(output), new OutputWriter());
+        Assert.Equal(output.Length, world.EntityCount);
+        for (int index = 0; index < output.Length; index++)
         {
-            foreach (var row in cursor.Rows)
-                values.Add(row.Read<Position>().X);
-        });
-        values.Sort();
-        Assert.Equal([1f, 2f], values);
+            Assert.True(world.IsAlive(output[index]));
+            Assert.Equal(index, world.Read<Position>(output[index]).X);
+        }
     }
 
     [Fact]
-    public void ExecuteBundleSpawn_RejectsLazyIndexBackfillForPendingComponent()
+    public void BatchConstructionMaintainsAnIndexActivatedAfterTheFirstFieldWrite()
     {
-        var world = new World();
-        int[] componentIds = [ComponentMetadata<IndexedName>.Id];
-
-        Entity entity = world.ExecuteBundleSpawn(
-            componentIds,
-            view =>
-            {
-                _ = view.Entity;
-                Assert.Throws<InvalidOperationException>(
-                    () => world.GetByIndex<IndexedName, string>("pending").ToArray());
-                var name = new IndexedName { Value = "ready" };
-                view.Write(in name);
-                Assert.Single(world.GetByIndex<IndexedName, string>("ready").ToArray());
-            });
-
-        Assert.Equal([entity], world.GetByIndex<IndexedName, string>("ready").ToArray());
+        using var world = new World();
+        int[] ids = [ComponentId<IndexedName>.Value];
+        world.ExecuteBundleSpawnBatch(ids, 3, new IndexInput(world), new LateIndexWriter());
+        for (int index = 0; index < 3; index++)
+            Assert.Single(ReadIndexedEntities<IndexedName, string>(world, $"name-{index}"));
     }
 
     [Fact]
-    public void ExecuteBundleSpawn_HookCannotMutateWorldOrBackfillAPendingIndex()
+    public void FinalBundleColumnsSupportIndexActivationBeforeTheFieldAssignment()
     {
-        var world = new World();
-        world.Hooks<Position>().OnAdd(
-            (DeferredWorld deferred, Entity entity, in Position _) =>
-            {
-                Assert.Throws<InvalidOperationException>(() => world.DestroyEntity(entity));
-                Assert.Throws<InvalidOperationException>(
-                    () => deferred.GetByIndex<IndexedName, string>("pending").ToArray());
-            });
-        int[] componentIds =
-        [
-            ComponentMetadata<Position>.Id,
-            ComponentMetadata<IndexedName>.Id,
-        ];
-
-        Entity entity = world.ExecuteBundleSpawn(
-            componentIds,
-            static view =>
-            {
-                var position = new Position { X = 1, Y = 2 };
-                var name = new IndexedName { Value = "ready" };
-                view.Write(in position);
-                view.Write(in name);
-            });
-
-        Assert.True(world.IsAlive(entity));
-        Assert.Equal([entity], world.GetByIndex<IndexedName, string>("ready").ToArray());
+        using var world = new World();
+        Entity entity = world.ExecuteBundleSpawn([ComponentId<IndexedName>.Value], new IndexInput(world), new EarlyIndexWriter());
+        Assert.Equal([entity], ReadIndexedEntities<IndexedName, string>(world, "ready"));
     }
 
-    private sealed class BundleCallbackException : Exception;
+    private readonly struct PositionWriter : IBundleWriter<int>
+    {
+        public void Write(BundleWriteView view, in int offset)
+            => view.Write(new Position { X = view.Index + offset, Y = view.Index + offset + 1 });
+    }
+    private readonly struct PositionFaultWriter : IBundleWriter<int>
+    {
+        public void Write(BundleWriteView view, in int value)
+        {
+            view.Write(new Position { X = 100, Y = 200 });
+            throw new BundleWriteException();
+        }
+    }
+    private readonly struct BatchFaultWriter : IBundleWriter<int>
+    {
+        public void Write(BundleWriteView view, in int value)
+        {
+            view.Write(new Position { X = view.Index, Y = view.Index + 1 });
+            if (view.Index == 2) throw new BundleWriteException();
+        }
+    }
+    private readonly struct PhysicsWriter : IBundleWriter<int>
+    {
+        public void Write(BundleWriteView view, in int value)
+        {
+            view.Write(new Position { X = 1, Y = 2 });
+            view.Write(new Velocity { X = 3, Y = 4 });
+        }
+    }
+    private readonly struct MixedWriter : IBundleWriter<int>
+    {
+        public void Write(BundleWriteView view, in int value)
+        {
+            view.WriteShared(new SceneId { Value = 3 });
+            view.Write(new NameIndex { Value = "published" });
+            view.WriteSparse(new Damage { Amount = 5 });
+            ReadOnlyMemory<IntElement> buffer = new IntElement[] { new() { Value = 13 } };
+            view.WriteBuffer(in buffer);
+        }
+    }
+    private readonly struct MixedFaultWriter : IBundleWriter<int>
+    {
+        public void Write(BundleWriteView view, in int value)
+        {
+            new MixedWriter().Write(view, in value);
+            throw new BundleWriteException();
+        }
+    }
+    private readonly struct SharedWriter : IBundleWriter<int>
+    {
+        public void Write(BundleWriteView view, in int value)
+        {
+            view.WriteShared(new SceneId { Value = 6 });
+            view.WriteShared(new SceneId { Value = 6 });
+        }
+    }
+    private readonly record struct EntityOutput(Entity[] Entities);
+    private readonly struct OutputWriter : IBundleWriter<EntityOutput>
+    {
+        public void Write(BundleWriteView view, in EntityOutput output)
+        {
+            view.Write(new Position { X = view.Index });
+            output.Entities[view.Index] = view.Entity;
+        }
+    }
+    private readonly record struct IndexInput(World World);
+    private readonly struct LateIndexWriter : IBundleWriter<IndexInput>
+    {
+        public void Write(BundleWriteView view, in IndexInput input)
+        {
+            string key = $"name-{view.Index}";
+            view.Write(new IndexedName { Value = key });
+            if (view.Index == 0) Assert.Single(ReadIndexedEntities<IndexedName, string>(input.World, key));
+        }
+    }
+    private readonly struct EarlyIndexWriter : IBundleWriter<IndexInput>
+    {
+        public void Write(BundleWriteView view, in IndexInput input)
+        {
+            _ = input.World.Index<IndexedName, string>();
+            view.Write(new IndexedName { Value = "ready" });
+        }
+    }
+    private sealed class BundleWriteException : Exception;
 }

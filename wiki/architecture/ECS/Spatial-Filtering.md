@@ -1,6 +1,6 @@
 # 空间筛选下推
 
-`SomeEngine.Physics` 把普通组件语义、类别位和角色键条件组合进 [空间候选](Spatial-Candidates.md) 的同一二叉树遍历。每个条件保持具体的 struct 类型，节点对分别保存两个方向的逐条件结论，叶子按最终实体身份顺序读取对应结论。
+`SomeEngine.ECS.Relationships` 的 `SomeEngine.ECS.Spatial` 把普通组件语义、类别位和角色键条件组合进 [空间候选](Spatial-Candidates.md) 的同一二叉树遍历。每个条件保持具体的 struct 类型，节点对分别保存两个方向的逐条件结论，叶子按最终实体身份顺序读取对应结论。
 
 ## 条件与组级结论
 
@@ -8,7 +8,7 @@
 
 `ISpatialFilter<TGroupResults>` 为此空间后端提供组件读取声明、摘要重建、单节点更新、组判断和叶子判断。`TGroupResults` 是 unmanaged 值，遍历栈直接保存它。各条件在父节点已取得的结论随子节点继承。
 
-`SpatialComponentFilter<TRelation,TFirst,TSecond>` 的组判断为 Unknown，构造只接收具体关系值。叶子遍历把已验证成员的两个 `QueryRow` 按身份位置交给现有 `ComponentRelation`，从同一借用行读取组件引用。静态 `ReadsComponentRows` 将这一需求沿组合传递。`SpatialKeyFilter` 和 `SpatialBitmapFilter` 读取各自的具体摘要。`SpatialAnd` 的组结果为 `(TFirstResults,TSecondResults)`，继续组合产生嵌套 ValueTuple；最终组合为 Unknown 时，各条件的 All/None 仍在叶子阶段复用。
+`SpatialComponentFilter<TRelation,TFirst,TSecond>` 的组判断为 Unknown，构造只接收具体关系值。叶子遍历按最终身份位置传递两个原生 `QueryChunk` 与行下标，通过 `TryRead<T>` 绑定列，并由 `Has<T>(row)` 核对实际行存在性，再将只读组件值交给具体关系。静态 `ReadsComponentRows` 将这一需求沿组合传递。`SpatialKeyFilter` 和 `SpatialBitmapFilter` 读取各自的具体摘要。`SpatialAnd` 的组结果为 `(TFirstResults,TSecondResults)`，继续组合产生嵌套 ValueTuple；最终组合为 Unknown 时，各条件的 All/None 仍在叶子阶段复用。
 
 `SpatialExcept` 保留内部结果并交换返回的 All/None；Unknown 继续细分。叶子通过内部结果判断该条件，再执行排除。因此组合中已证明的键或类别条件可以直接决定该条件的通过状态。
 
@@ -17,13 +17,13 @@
 | 数据 | 主要持有者 | 保存的内容 | 更新入口 |
 | --- | --- | --- | --- |
 | 业务组件与既有键桶 | World | 几何、类别、角色键及现有键索引 | 既有 ECS 组件和索引入口 |
-| 空间拓扑 | CollisionTree | 节点范围、实体、父子编号、MemberCount、Height | Rebuild 与后续树修改 |
-| 角色键摘要 | CollisionKeySummary | KeyCount、HasUniformKey、UniformKey 数组 | 具体持有者的 Rebuild / Refit |
-| 类别摘要 | CollisionBitmapSummary | ComponentCount、类别并交集、许可并交集数组 | 具体持有者的 Rebuild / Refit |
+| 空间拓扑 | BoundsTree | 节点范围、实体、父子编号、MemberCount、Height | Rebuild 与后续树修改 |
+| 角色键摘要 | BoundsKeySummary | KeyCount、HasUniformKey、UniformKey 数组 | 具体持有者的 Rebuild / Refit |
+| 类别摘要 | BoundsBitmapSummary | ComponentCount、类别并交集、许可并交集数组 | 具体持有者的 Rebuild / Refit |
 
-两个摘要持有者都是 sealed 类型，各自引用同一个 CollisionTree，以节点编号读取数组。`MemberCount` 直接读取拓扑节点。树的 `CreateKeySummary` 和 `CreateBitmapSummary` 返回具体持有者，筛选描述直接保存这些引用。泛型条件链的 `RebuildSummaries`、`RefitSummary` 是组合的更新入口。
+两个摘要持有者都是 sealed 类型，各自引用同一个 BoundsTree，以节点编号读取数组。`MemberCount` 直接读取拓扑节点。树的 `CreateKeySummary` 和 `CreateBitmapSummary` 返回具体持有者，筛选描述直接保存这些引用。泛型条件链的 `RebuildSummaries`、`RefitSummary` 是组合的更新入口。
 
-摘要的节点索引器返回数组元素的 `ref readonly`，具体组判断直接读取该元素。组件语义条件和 SpatialAll 显式报告其摘要变化状态；维护回调按块持有具体筛选值，再观察行的组件变化。
+摘要的节点索引器返回数组元素的 `ref readonly`，具体组判断直接读取该元素。组件语义条件和 SpatialAll 显式报告其摘要变化状态；维护在 `QueryScope` 内按块持有具体筛选值，通过 `WasWritten<T>(row,since)` 观察行的组件变化。
 
 角色键叶子读取既有 `IIndexedComponent<TKey>.GetKey()`，分支合并键数和统一键。组判断调用具体 `IKeyRelation.Matches(in relation,in firstKey,in secondKey)`：
 
@@ -52,15 +52,15 @@ SourceGen 为内置 OneWayPermission、MutualPermission 选择对应的具体组
 
 ## 构建与只读枚举
 
-默认 `Collision.Candidates(world,bodies)` 及泛型读取器入口在终端作用域中构建当前树、填充该描述的摘要，再枚举结果。
+默认 `SpatialQueries.Candidates(world,bodies)` 及泛型读取器入口在终端作用域中构建当前树、填充该描述的摘要，再枚举结果。
 
-调用方持有树时，先构建树，建立完整条件链，再显式调用 `RebuildSummaries()`。之后的 Enumerate、Count、Any 读取已经填充的数组。摘要写入由这一显式入口或条件链的 `RefitSummary(node,access)` 执行；Refit 接收一个叶子，或孩子已更新的分支。这个顺序为持续维护及并行计数、填充提供共同的读取范围。
+调用方持有树时，先构建树，建立完整条件链，再显式调用 `RebuildSummaries()`。之后的 Enumerate、Count、Any 读取已经填充的数组。摘要写入由这一显式入口或条件链的 `RefitSummary(node,world)` 执行；Refit 接收一个叶子，或孩子已更新的分支。这个顺序为持续维护及并行计数、填充提供共同的读取范围。
 
 以下是业务例子的完整组合调用；`bodies` 是既有 Body 查询，`output` 是调用方的具体实体对输出：
 
 ```csharp
-var tree = Collision.Build<Body, BodyBoundsReader>(world, bodies, default);
-var contacts = Collision.Candidates<Body, BodyBoundsReader>(world, bodies, tree, default)
+var tree = SpatialQueries.Build<Body, BodyBoundsReader>(world, bodies, default);
+var contacts = SpatialQueries.Candidates<Body, BodyBoundsReader>(world, bodies, tree, default)
     .Where(default(DefaultContacts))
     .Where(default(MutualCategories), default(MutualCategoryBitmap))
     .Except(default(SameCharacterHair), default(HairCharacterIndex));
@@ -87,8 +87,8 @@ bool any = contacts.Any();
 
 ## 生成入口与手写对照
 
-`SpatialRelationGenerator` 在使用方引用 Physics 时，按 Roslyn 的语义和实现接口生成空间入口。每个二元语义或 key/bitmap 实现各生成四个薄方法：Where、Except 分别接受原 CollisionCandidates 和已组合 SpatialCandidates。普通入口追加 SpatialComponentFilter，具体实现入口追加 SpatialKeyFilter 或 SpatialBitmapFilter；返回类型保留语义、实现、许可、组证明和嵌套结果类型。当前业务夹具的四个语义与三个实现产生 28 个空间薄方法，合入其命名空间的 RelationQueryExtensions。
+`SpatialRelationGenerator` 在使用方引用 Relationships 时，按 Roslyn 的语义和实现接口生成空间入口。每个二元语义或 key/bitmap 实现各生成四个薄方法：Where、Except 分别接受原 TreeCandidates 和已组合 SpatialCandidates。普通入口追加 SpatialComponentFilter，具体实现入口追加 SpatialKeyFilter 或 SpatialBitmapFilter；返回类型保留语义、实现、许可、组证明和嵌套结果类型。当前业务夹具的四个语义与三个实现产生 28 个空间薄方法，合入其命名空间的 RelationQueryExtensions。
 
 `HandwrittenSpatialGroups.cs` 提供独立的实际遍历，直接合写类别组证明、角色组证明、动力学判断与输出。两侧各持有自己的树和具体摘要，节点布局、正反结论、嵌套结果、查询范围和输出格式保持一致。树构建与摘要填充使用相同具体数据操作，手写节点访问与规则组合分别展开。初建、维护、查询准备和结果消费接入统一物理 benchmark 场景。
 
-持续帧的具体摘要更新和 Job 依赖见 [碰撞树维护](Spatial-Maintenance.md)。本次公开行为、实际生成入口和 IL 接点见 [空间筛选交付检查](../../../docs/ECS-Relations-Spatial-Checks-2026-10-19.md)。
+实现见 [SpatialFilters](../../../src/SomeEngine.ECS.Relationships/Spatial/SpatialFilters.cs)、[SpatialBitmapFilter](../../../src/SomeEngine.ECS.Relationships/Spatial/SpatialBitmapFilter.cs) 与 [SpatialRelationGenerator](../../../src/SomeEngine.ECS.SourceGen/SpatialRelationGenerator.cs)。持续帧的具体摘要更新和 Job 依赖见 [空间索引维护](Spatial-Maintenance.md)。2026-10-19 对应提交的公开行为与 IL 记录见 [历史空间筛选交付检查](../../../docs/ECS-Relations-Spatial-Checks-2026-10-19.md)。

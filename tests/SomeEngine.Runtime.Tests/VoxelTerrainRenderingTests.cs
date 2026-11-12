@@ -15,7 +15,7 @@ public sealed class VoxelTerrainRenderingTests(SceneContentFixture content)
     [Fact]
     public async Task VoxelEditMovesTheSampledSurfaceAndItsRenderedGeometry()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var example = new VoxelTerrainExample(scheduler);
         VoxelFieldRead earlier = await example.Field.ReadCpuAsync(example.SampleRegion);
         SceneImage? before = null, after = null, expectedBefore = null, expectedAfter = null;

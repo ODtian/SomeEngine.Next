@@ -82,7 +82,7 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
             """, ("computeMain", SlangStage.Compute));
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         using Device device = backend.CreateDevice(new DeviceDesc(default, [new(QueueType.Graphics)]));
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         try
         {
             using Pipeline pipeline = await backend.CreateComputePipelineAsync(device,
@@ -91,7 +91,7 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
 
             Assert.Equal(PipelineType.Compute, pipeline.Type);
         }
-        finally { JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 }); }
+        finally { JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 }); }
     }
 
     [Theory]

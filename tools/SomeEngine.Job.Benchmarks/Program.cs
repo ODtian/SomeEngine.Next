@@ -19,8 +19,10 @@ bool dependencies = args.Contains("--dependencies", StringComparer.OrdinalIgnore
 bool categories = args.Contains("--categories", StringComparer.OrdinalIgnoreCase);
 bool storage = args.Contains("--storage", StringComparer.OrdinalIgnoreCase);
 bool sizing = args.Contains("--sizing", StringComparer.OrdinalIgnoreCase);
+bool worldEdits = args.Contains("--world-edits", StringComparer.OrdinalIgnoreCase);
+bool componentRanges = args.Contains("--component-ranges", StringComparer.OrdinalIgnoreCase);
 
-JobSystem.Initialize(new JobRuntimeConfig
+JobSystem.Initialize(new JobConfiguration
 {
     WorkerCount = workerCount,
     EnableCounters = counters,
@@ -37,6 +39,19 @@ try
             : dependencies ? "predecessors=1,16,256,4096,16384 | input-copies=1,2 | "
             : $"length={parallelLength} | batch={(automatic ? "auto" : "explicit")} | ") +
         $"spin={spinCount}/{busySpinCount} | counters={counters}");
+
+    if (worldEdits)
+    {
+        WorldEditBenchmarks.Run(JobSystem.Default, parallelLength, warmups, samples);
+        return;
+    }
+
+    if (componentRanges)
+    {
+        ComponentRangeBenchmarks.Run(JobSystem.Default, parallelLength, warmups, samples,
+            ReadNonNegativeArgument(args, "--chunk-capacity", 1024));
+        return;
+    }
 
     if (sizing)
     {
@@ -248,7 +263,7 @@ static void RunSizing(Scheduler scheduler, int workers, int warmups, int samples
         if (lightValues.Any(value => value != expected) || variableValues[0] != 1_015_568_748L)
             throw new InvalidOperationException("The sizing workloads must complete their public results.");
     }
-    JobRuntimeStats stats = scheduler.GetStats();
+    JobStatistics stats = scheduler.GetStats();
     Console.WriteLine($"statistics scheduled={stats.ScheduledJobs} executed={stats.ExecutedWorkItems} " +
         $"ready-tickets={stats.ReadyTicketsExecuted} ready-latency-average={stats.ReadyLatencyAverageNanoseconds}ns");
 }

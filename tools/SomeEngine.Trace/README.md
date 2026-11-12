@@ -45,6 +45,13 @@ dotnet run --project tools/SomeEngine.Trace -c Release -- benchmark trace-calibr
 
 The analyzer pairs intervals, checks event loss, duplicate/missing records and nesting, then subtracts immediate execution children to obtain exclusive time and allocations. Causal links between threads are retained separately and are never subtracted as nested CPU time. Calls shorter than a clock tick have an empty interval.
 
+Detailed allocation captures also record GC counters at each frame end. `GC.FramePauseTicks`
+is the change in `GC.GetTotalPauseDuration()` during the frame, in `TimeSpan` ticks;
+`GC.TotalPauseTicks` retains the process total. `GC.HeapBytes` comes from
+`GC.GetTotalMemory(false)`. The collection index, generation, heap size and committed bytes
+describe the latest completed collection from `GC.GetGCMemoryInfo()`. These counters work
+with the NativeAOT application's instrumentation and complement process private-memory samples.
+
 Frame elapsed time, main-thread elapsed work, and summed worker-thread elapsed work remain separate. Worker elapsed time is not added to frame latency and is not called CPU utilization. Work retains its originating frame even if it executes before or after that frame's interval; `OutsideFrameMilliseconds` exposes this instead of relocating the cost. Warmup filtering happens after integrity checks and cannot hide damaged records. `Complete` describes data integrity, not performance acceptance.
 
 The calibration command records paired uninstrumented, disabled, enabled, and allocation-enabled loops. It reports both elapsed overhead and the interval measured inside each scope, including the recording tax. It also verifies complete recordings and reports producer allocations. Do not subtract calibration constants from every engine call and present the result as exact native CPU time: clock granularity, inlining, scheduling, and driver behavior affect those intervals.
@@ -68,4 +75,4 @@ Capture `EngineTrace.Context` when scheduling asynchronous work and use `EngineT
 
 Sites store labels once. Events contain numeric IDs and fixed-size data. The producer owns its current block; preallocated bounded queues transfer complete blocks to a dedicated writer thread. A producer never waits for disk IO. Pool exhaustion, nesting-depth exhaustion, or ID exhaustion increment explicit loss counts; misuse is reported separately. Such a trace is unsuitable for complete cost accounting.
 
-The current format is little-endian `SETRACE1`, version 2, with a clock header, blocks of 56-byte records, and a completion footer containing sites, threads, event totals, and loss counts. The decoder rejects unsupported versions and truncated files. Windows thread metadata includes both managed and OS thread IDs for correlation with `.nettrace`; other platforms currently report OS thread ID as unavailable (`0`). Raw files are retained independently of derived reports.
+The current format is little-endian `SETRACE1`, version 2, with a clock header, blocks of 56-byte records, and a completion footer containing sites, threads, event totals, and loss counts. The decoder rejects unsupported versions and truncated files. Each registered thread receives a unique ID within its capture, so short-lived threads retain distinct spans when managed thread IDs are reused. Windows metadata also records the OS thread ID for correlation with `.nettrace`; other platforms currently report OS thread ID as unavailable (`0`). Raw files are retained independently of derived reports.

@@ -1,7 +1,8 @@
+using SomeEngine.ECS;
+using SomeEngine.ECS.Spatial;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Relations;
 using SomeEngine.Job;
-using SomeEngine.Physics;
 
 namespace SomeEngine.ECS.Benchmarks.Relations.Spatial;
 
@@ -9,10 +10,10 @@ namespace SomeEngine.ECS.Benchmarks.Relations.Spatial;
 public static partial class SpatialCollisionFrames
 {
     public static JobHandle Schedule<TGeometry, TBoundsReader, TFilter, TGroupResults>(
-        CollisionMaintenance<TGeometry, TBoundsReader, TFilter, TGroupResults> maintenance,
+        SpatialMaintenance<TGeometry, TBoundsReader, TFilter, TGroupResults> maintenance,
         SpatialContactBuffer contacts, JobHandle dependency = default)
         where TGeometry : struct
-        where TBoundsReader : struct, ICollisionBoundsReader<TGeometry>
+        where TBoundsReader : struct, ISpatialBoundsReader<TGeometry>
         where TFilter : struct, ISpatialFilter<TGroupResults>
         where TGroupResults : unmanaged
     {
@@ -31,7 +32,7 @@ public static partial class SpatialCollisionFrames
         RelationQuery<SpatialCandidates<TGeometry, TBoundsReader, TFilter, TGroupResults>, (Entity, Entity)> query,
         SpatialContactBuffer contacts) : IJob
         where TGeometry : struct
-        where TBoundsReader : struct, ICollisionBoundsReader<TGeometry>
+        where TBoundsReader : struct, ISpatialBoundsReader<TGeometry>
         where TFilter : struct, ISpatialFilter<TGroupResults>
         where TGroupResults : unmanaged
     {

@@ -107,7 +107,7 @@ public class BundleTests
     public void AddBundle_AllNew_AddsAllMissingComponentsInOneCall()
     {
         var world = new World();
-        var entity = world.CreateEntity();
+        var entity = world.Create();
 
         world.AddBundle(entity, new PhysicsBundle
         {
@@ -125,33 +125,35 @@ public class BundleTests
     public void AddBundle_ComponentAlreadyExists_Throws()
     {
         var world = new World();
-        var entity = world.CreateEntity(new Position { X = 7, Y = 8 });
+        var entity = world.Create(new Position { X = 7, Y = 8 });
 
-        Assert.Throws<InvalidOperationException>(() =>
-            world.AddBundle(entity, new PhysicsBundle
+        Assert.Throws<InvalidOperationException>(() => world.AddBundle(entity, new PhysicsBundle
             {
                 Position = new Position { X = 1, Y = 2 },
                 Velocity = new Velocity { X = 3, Y = 4 },
             }));
 
-        var sparseEntity = world.CreateEntity();
-        world.AddSparse(sparseEntity, new Damage { Amount = 7 });
+        var sparseEntity = world.Create();
+        world.SetSparse(sparseEntity, new Damage { Amount = 7 });
 
-        Assert.Throws<InvalidOperationException>(() =>
-            world.AddBundle(sparseEntity, new StatusBundle
+        Assert.Throws<InvalidOperationException>(() => world.AddBundle(sparseEntity, new StatusBundle
             {
                 Visibility = new VisibilityState { Value = 1 },
                 Cleanup = new CleanupMarker { Value = 2 },
                 Name = new NameIndex { Value = "unit" },
                 Damage = new Damage { Amount = 3 },
             }));
+        Assert.Equal(7, world.Read<Position>(entity).X);
+        Assert.False(world.Has<Velocity>(entity));
+        Assert.Equal(7, world.ReadSparse<Damage>(sparseEntity).Amount);
+        Assert.False(world.Has<CleanupMarker>(sparseEntity));
     }
 
     [Fact]
-    public void SetBundle_UpsertsMissingComponentsAndUpdatesExistingValues()
+    public void ReplaceBundleRequiresEveryFieldAndUpdatesExistingValues()
     {
         var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1, Y = 2 });
+        var entity = world.Create(new Position { X = 1, Y = 2 });
 
         Assert.Throws<InvalidOperationException>(() =>
             world.ReplaceBundle(entity, new PhysicsBundle
@@ -216,7 +218,7 @@ public class BundleTests
         Assert.True(world.HasSparse<Damage>(entity));
         Assert.Equal(42, world.ReadSparse<Damage>(entity).Amount);
 
-        var matches = world.GetByIndex<NameIndex, string>("boss");
+        var matches = ReadIndexedEntities<NameIndex, string>(world, "boss");
         Assert.Contains(entity, matches.ToArray());
     }
 
@@ -236,13 +238,15 @@ public class BundleTests
         });
 
         Assert.True(world.Has<Position>(entity));
-        Assert.True(world.HasBuffer<IntElement>(entity));
-        world.ExecuteBufferRead<IntElement>(entity, static buffer =>
+        Assert.True(world.Has<Buffer<IntElement>>(entity));
         {
+            using ReadOnlyBuffer<IntElement> buffer = world.ReadBuffer<IntElement>(entity);
+
             Assert.Equal(2, buffer.Count);
             Assert.Equal(10, buffer[0].Value);
             Assert.Equal(20, buffer[1].Value);
-        });
+
+        };
     }
 
     [Fact]
@@ -261,21 +265,22 @@ public class BundleTests
             Scene = new SceneId { Value = 7 },
         });
 
-        Assert.True(world.HasShared<SceneId>(e1));
-        Assert.True(world.HasShared<SceneId>(e2));
-        Assert.Equal(7, world.GetShared<SceneId>(e1).Value);
+        Assert.True(world.Has<SceneId>(e1));
+        Assert.True(world.Has<SceneId>(e2));
+        Assert.Equal(7, world.ReadShared<SceneId>(e1).Value);
 
         var query = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Shared<SceneId>());
+            new QueryDescription().WithStored<Position>()
+                .WithStored<SceneId>());
 
         int count = 0;
-        world.ExecuteQuery(query, cursor =>
         {
-            foreach (var _ in cursor.RowsWithShared(new SceneId { Value = 7 }))
-                count++;
-        });
+            using QueryScope cursor = (query).OpenRead();
+            foreach (QueryChunk chunk in cursor)
+                for (int row = 0; row < chunk.Count; row++)
+                    if (chunk.Shared<SceneId>(row).Value == 7) count++;
+
+        };
 
         Assert.Equal(2, count);
     }
@@ -284,8 +289,8 @@ public class BundleTests
     public void SetBundle_SharedOnly_MigratesSharedChunkWithoutTableWrites()
     {
         var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1, Y = 2 });
-        world.AddShared(entity, new SceneId { Value = 1 });
+        var entity = world.Create(new Position { X = 1, Y = 2 });
+        world.SetShared(entity, new SceneId { Value = 1 });
 
         world.ReplaceBundle(entity, new SharedOnlyBundle
         {
@@ -293,26 +298,27 @@ public class BundleTests
         });
 
         var sceneQuery = world.Query(
-            world.QueryDefinition()
-                .Read<Position>()
-                .Shared<SceneId>());
+            new QueryDescription().WithStored<Position>()
+                .WithStored<SceneId>());
 
         int oldCount = 0;
         int newCount = 0;
-        world.ExecuteQuery(sceneQuery, cursor =>
         {
-            foreach (var _ in cursor.RowsWithShared(new SceneId { Value = 1 }))
-                oldCount++;
-            foreach (var row in cursor.RowsWithShared(new SceneId { Value = 2 }))
-            {
-                newCount++;
-                Assert.Equal(1, row.Read<Position>().X);
-            }
-        });
+            using QueryScope cursor = (sceneQuery).OpenRead();
+            foreach (QueryChunk chunk in cursor)
+                for (int row = 0; row < chunk.Count; row++)
+                    if (chunk.Shared<SceneId>(row).Value == 1) oldCount++;
+                    else if (chunk.Shared<SceneId>(row).Value == 2)
+                    {
+                        newCount++;
+                        Assert.Equal(1, chunk.Read<Position>()[row].X);
+                    }
+
+        };
 
         Assert.Equal(0, oldCount);
         Assert.Equal(1, newCount);
-        Assert.Equal(2, world.GetShared<SceneId>(entity).Value);
+        Assert.Equal(2, world.ReadShared<SceneId>(entity).Value);
     }
 
     [Fact]
@@ -341,8 +347,8 @@ public class BundleTests
         Assert.Equal(10, world.Read<VisibilityState>(entity).Value);
         Assert.Equal(20, world.Read<CleanupMarker>(entity).Value);
         Assert.Equal(30, world.ReadSparse<Damage>(entity).Amount);
-        Assert.DoesNotContain(entity, world.GetByIndex<NameIndex, string>("before").ToArray());
-        Assert.Contains(entity, world.GetByIndex<NameIndex, string>("after").ToArray());
+        Assert.DoesNotContain(entity, ReadIndexedEntities<NameIndex, string>(world, "before").ToArray());
+        Assert.Contains(entity, ReadIndexedEntities<NameIndex, string>(world, "after").ToArray());
     }
 
     [Fact]
@@ -373,10 +379,10 @@ public class BundleTests
             Velocity = new Velocity { X = 9, Y = 10 },
         };
 
-        var warmEntity = world.CreateEntity();
+        var warmEntity = world.Create();
         world.AddBundle(warmEntity, bundle); // warm destination archetype
 
-        var entity = world.CreateEntity();
+        var entity = world.Create();
 
         world.AddBundle(entity, bundle);
 
@@ -385,66 +391,32 @@ public class BundleTests
     }
 
     [Fact]
-    public void ExecuteBundleSpawnBatch_WritesRowsWithinRuntimeCallbacks()
+    public void CountedBundleStructWriterWritesEveryRequestedEntity()
     {
-        var world = new World();
-        int[] componentIds =
-        {
-            ComponentMetadata<Position>.Id,
-            ComponentMetadata<Velocity>.Id,
-        };
+        using var world = new World();
+        int[] ids = [ComponentId<Position>.Value, ComponentId<Velocity>.Value];
         var entities = new Entity[3];
-
-        var state = new BatchWriteState(entities);
-        world.ExecuteBundleSpawnBatch(
-            componentIds,
-            entities.Length,
-            ref state,
-            static (BundleWriteView view, ref BatchWriteState batch) =>
-            {
-                int index = view.Index;
-                var position = new Position { X = index + 1, Y = index + 10 };
-                var velocity = new Velocity { X = index + 20, Y = index + 30 };
-                view.Write(in position);
-                view.Write(in velocity);
-                batch.Entities[index] = view.Entity;
-                batch.Count++;
-            });
-        Assert.Equal(entities.Length, state.Count);
-
-        for (int i = 0; i < entities.Length; i++)
+        world.ExecuteBundleSpawnBatch(ids, entities.Length, new BatchOutput(entities), new PairBatchWriter());
+        Assert.Equal(entities.Length, world.EntityCount);
+        for (int index = 0; index < entities.Length; index++)
         {
-            Assert.True(world.IsAlive(entities[i]));
-            Assert.Equal(i + 1, world.Read<Position>(entities[i]).X);
-            Assert.Equal(i + 30, world.Read<Velocity>(entities[i]).Y);
+            Assert.True(world.IsAlive(entities[index]));
+            Assert.Equal(index + 1, world.Read<Position>(entities[index]).X);
+            Assert.Equal(index + 30, world.Read<Velocity>(entities[index]).Y);
         }
     }
 
     [Fact]
-    public void ExecuteBundleSpawnBatch_SingleComponent_WritesEveryEntity()
+    public void CountedSingleComponentStructWriterWritesEveryEntity()
     {
-        var world = new World();
+        using var world = new World();
         var entities = new Entity[4];
-
-        Span<int> componentIds = [ComponentMetadata<Position>.Id];
-        var state = new BatchWriteState(entities);
-        world.ExecuteBundleSpawnBatch(
-            componentIds,
-            entities.Length,
-            ref state,
-            static (BundleWriteView view, ref BatchWriteState batch) =>
-            {
-                int index = view.Index;
-                var position = new Position { X = index + 1, Y = index + 2 };
-                view.Write(in position);
-                batch.Entities[index] = view.Entity;
-            });
-
-        for (int i = 0; i < entities.Length; i++)
+        world.ExecuteBundleSpawnBatch([ComponentId<Position>.Value], entities.Length, new BatchOutput(entities), new SingleBatchWriter());
+        for (int index = 0; index < entities.Length; index++)
         {
-            Assert.True(world.IsAlive(entities[i]));
-            Assert.Equal(i + 1, world.Read<Position>(entities[i]).X);
-            Assert.Equal(i + 2, world.Read<Position>(entities[i]).Y);
+            Assert.True(world.IsAlive(entities[index]));
+            Assert.Equal(index + 1, world.Read<Position>(entities[index]).X);
+            Assert.Equal(index + 2, world.Read<Position>(entities[index]).Y);
         }
     }
 
@@ -453,35 +425,47 @@ public class BundleTests
     {
         using var world = new World();
         world.Spawn(new PhysicsBundle { Position = new Position { X = -1 } });
-        int[] ids = [ComponentMetadata<Position>.Id, ComponentMetadata<Velocity>.Id];
+        int[] ids = [ComponentId<Position>.Value, ComponentId<Velocity>.Value];
         world.ReserveBundle(ids, 2_049);
-        world.ExecuteBundleSpawnBatch(ids, 2_049, view =>
-        {
-            var position = new Position { X = view.Index };
-            var velocity = new Velocity { X = view.Index + 1 };
-            view.Write(in position);
-            view.Write(in velocity);
-        });
+        world.ExecuteBundleSpawnBatch(ids, 2_049, 0, new ReservedPairWriter());
         Assert.Equal(2_050, world.EntityCount);
-        var query = world.Query(world.QueryDefinition().Read<Position>().Read<Velocity>());
+        var query = world.Query(new QueryDescription().WithStored<Position>().WithStored<Velocity>());
         var values = new List<float>();
-        world.ExecuteQuery(query, cursor =>
         {
-            foreach (var row in cursor.Rows)
-                values.Add(row.Read<Position>().X);
-        });
+            using QueryScope cursor = (query).OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                values.Add(rowChunk.Read<Position>()[row].X);
+
+        };
         Assert.Equal(Enumerable.Range(-1, 2_050).Select(value => (float)value),
             values.OrderBy(value => value));
     }
 
-    private struct BatchWriteState
+    private readonly record struct BatchOutput(Entity[] Entities);
+    private readonly struct PairBatchWriter : IBundleWriter<BatchOutput>
     {
-        internal BatchWriteState(Entity[] entities)
+        public void Write(BundleWriteView view, in BatchOutput output)
         {
-            Entities = entities;
+            view.Write(new Position { X = view.Index + 1, Y = view.Index + 10 });
+            view.Write(new Velocity { X = view.Index + 20, Y = view.Index + 30 });
+            output.Entities[view.Index] = view.Entity;
         }
-
-        internal Entity[] Entities;
-        internal int Count;
+    }
+    private readonly struct SingleBatchWriter : IBundleWriter<BatchOutput>
+    {
+        public void Write(BundleWriteView view, in BatchOutput output)
+        {
+            view.Write(new Position { X = view.Index + 1, Y = view.Index + 2 });
+            output.Entities[view.Index] = view.Entity;
+        }
+    }
+    private readonly struct ReservedPairWriter : IBundleWriter<int>
+    {
+        public void Write(BundleWriteView view, in int value)
+        {
+            view.Write(new Position { X = view.Index });
+            view.Write(new Velocity { X = view.Index + 1 });
+        }
     }
 }

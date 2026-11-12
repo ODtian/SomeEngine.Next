@@ -3,7 +3,7 @@ using SomeEngine.ECS;
 namespace SomeEngine.Layout;
 
 /// <summary>Caller-written sizing weights, main-axis basis, and cross-axis alignment for a Flex child.</summary>
-public struct FlexItem : IComponent
+public struct FlexItem : IComponent, ITrackedComponent
 {
     public float Grow;
     private float? _shrink;

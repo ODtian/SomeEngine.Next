@@ -13,7 +13,7 @@ public sealed class TerrainLodRenderingTests(SceneContentFixture content)
     [Fact]
     public async Task CameraMovementAndDetailEditingReachTheFreshCoarseScenePicture()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var example = new LodTerrainExample(scheduler);
         SceneImage? before = null, after = null, expected = null;
         TerrainChunk[] nearChunks = [], farChunks = [];

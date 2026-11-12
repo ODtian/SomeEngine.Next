@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -77,7 +78,7 @@ public sealed partial class SkinningRenderingTests
                     animations[actor] = graph.Play(frame.World, PoseAnimation.CreateTarget(frame.World, bodies[actor], 2, new(1)));
                 var binding = new SkinBinding([Matrix4x4.Identity, Matrix4x4.CreateTranslation(0, -1, 0)], [1, 2]);
                 foreach (Entity mesh in frame.Scene.MeshEntities)
-                    frame.World.Add(mesh, new MeshSkin(frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0 ? second : first, binding));
+                    frame.World.Set(mesh, new MeshSkin(frame.World.ReadComponentData<WorldTransform>(mesh).Qvvs.Position.X > 0 ? second : first, binding));
             },
             UpdateFrame = frame =>
             {
@@ -90,16 +91,15 @@ public sealed partial class SkinningRenderingTests
                     var parameters = new GraphParameters();
                     for (int value = 0; value < 6; value++)
                         parameters.Values[6 + value] = noise[frame.Index][value];
-                    frame.World.Replace(animations[actor], parameters);
+                    frame.World.Set(animations[actor], parameters);
                     Vector3[] control = controls[actor];
-                    frame.World.ExecuteBufferWrite<FlowMatchingInstance, Vector3[]>(animations[actor], ref control,
-                        static (instances, ref control) =>
-                        {
-                            ref FlowMatchingInstance instance = ref instances[0];
-                            ReadOnlySpan<FlowControlField> fields = instance.Definition.Parameters[instance.Index].Model.Controls;
-                            fields[0].Encode(control[0], instance.State.Controls);
-                            fields[1].Encode(control[1], instance.State.Controls);
-                        });
+                    {
+                        using DynamicBuffer<FlowMatchingInstance> instances = frame.World.GetBuffer<FlowMatchingInstance>(animations[actor]);
+                        ref FlowMatchingInstance instance = ref instances[0];
+                        ReadOnlySpan<FlowControlField> fields = instance.Definition.Parameters[instance.Index].Model.Controls;
+                        fields[0].Encode(control[0], instance.State.Controls);
+                        fields[1].Encode(control[1], instance.State.Controls);
+                    }
                 }
             },
         };
@@ -255,8 +255,8 @@ public sealed partial class SkinningRenderingTests
             for (int actor = 0; actor < animations.Length; actor++)
             {
                 int index = actor;
-                context.World.ExecuteBufferRead<FlowMatchingInstance>(animations[actor],
-                    instances => histories[index] = instances.Read(0).State.History.ToArray());
+                using ReadOnlyBuffer<FlowMatchingInstance> instances = context.World.ReadBuffer<FlowMatchingInstance>(animations[actor]);
+                histories[index] = instances[0].State.History.ToArray();
             }
             Histories.Add(histories);
         }

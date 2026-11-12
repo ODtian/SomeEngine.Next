@@ -4,7 +4,7 @@ using SomeEngine.ECS;
 namespace SomeEngine.Elements;
 
 /// <summary>The caller's transform in node-local coordinates and opacity multiplier.</summary>
-public struct ElementTransform : IComponent
+public struct ElementTransform : IComponent, ITrackedComponent
 {
     public Matrix3x2 Matrix;
     public float Alpha;

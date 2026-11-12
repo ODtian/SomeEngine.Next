@@ -2,7 +2,7 @@ using System.Collections.Immutable;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Assets;
@@ -32,9 +32,9 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IGraphResourceProv
     private readonly List<Entity> _removed = [];
     private readonly List<Control> _controls = [];
     private MeshBounds[] _order = [];
-    private RenderWorld _world = null!;
-    private QueryHandle _query;
-    private uint _membersVersion;
+    private World _world = null!;
+    private Query _query;
+    private ulong _membersVersion;
     private GraphPassId _uploadPass;
     private byte[] _definitionBytes = [];
     private BufferRange _boxRange, _workRange, _usesRange;
@@ -134,25 +134,25 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IGraphResourceProv
 
     public void OnCreate(ref RenderPrepareSystemContext context)
     {
-        _world = context.World;
-        _query = context.World.Query(new QueryDefinitionBuilder().Read<RenderMesh>().Read<RenderMeshSkin>()
-            .Read<RenderSkinBinding>().Read<RenderSkinBounds>().Write<RenderDeformBounds>());
+        _world = context.World.World;
+        _query = _world.Query(new QueryDescription().WithStored<RenderMesh>().WithStored<RenderMeshSkin>()
+            .WithStored<RenderSkinBinding>().WithStored<RenderSkinBounds>().WithStored<RenderDeformBounds>());
     }
 
     public void OnUpdate(ref RenderPrepareSystemContext context)
     {
         _collection++;
-        uint members = _world.MembershipVersion(_query);
+        ulong members = _query.MembershipVersion;
         var changes = new BoundsChanges(this, members != _membersVersion);
-        _world.ExecuteQuery(_query, context.LastSystemVersion, ref changes, static (QueryCursor rows, ref BoundsChanges changes) =>
+        using (QueryScope rows = _query.OpenRead())
         {
             SkinBoundsFeature feature = changes.Feature;
-            foreach (QueryChunkView chunk in rows.Chunks)
+            foreach (QueryChunk chunk in rows)
             {
-                if (!changes.MembersChanged && !chunk.HasChangedSinceLastSystemVersion<RenderMesh>()
-                    && !chunk.HasChangedSinceLastSystemVersion<RenderMeshSkin>()
-                    && !chunk.HasChangedSinceLastSystemVersion<RenderSkinBinding>()
-                    && !chunk.HasChangedSinceLastSystemVersion<RenderSkinBounds>()) continue;
+                if (!changes.MembersChanged && !chunk.WasWritten<RenderMesh>(context.LastSystemVersion)
+                    && !chunk.WasWritten<RenderMeshSkin>(context.LastSystemVersion)
+                    && !chunk.WasWritten<RenderSkinBinding>(context.LastSystemVersion)
+                    && !chunk.WasWritten<RenderSkinBounds>(context.LastSystemVersion)) continue;
                 ReadOnlySpan<Entity> entities = chunk.Entities;
                 ReadOnlySpan<RenderMesh> meshes = chunk.Read<RenderMesh>();
                 ReadOnlySpan<RenderMeshSkin> skins = chunk.Read<RenderMeshSkin>();
@@ -161,7 +161,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IGraphResourceProv
                 for (int index = 0; index < entities.Length; index++)
                     feature.ReadInstance(entities[index], meshes[index].Mesh, bindings[index], skins[index].Joints, bounds[index].Data);
             }
-        });
+        }
         if (changes.MembersChanged)
         {
             _removed.Clear();
@@ -170,7 +170,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IGraphResourceProv
             foreach (Entity entity in _removed)
             {
                 _instances.Remove(entity);
-                if (_world.IsAlive(entity) && _world.Has<RenderDeformBounds>(entity)) _world.Replace(entity, new RenderDeformBounds());
+                if (_world.IsAlive(entity) && _world.Has<RenderDeformBounds>(entity)) _world.Set(entity, new RenderDeformBounds());
                 _layoutChanged = true;
             }
         }
@@ -253,7 +253,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IGraphResourceProv
                 work.Add(new((uint)index, start.Boxes + boxesRange.First, boxesRange.Count,
                     start.Uses + boxesRange.FirstUse, boxesRange.UseCount, 0, 0, 0));
             }
-            _world.Replace(instance.Entity, new RenderDeformBounds(output, geometry.NodeCount));
+            _world.Set(instance.Entity, new RenderDeformBounds(output, geometry.NodeCount));
             output += geometry.OutputCount;
         }
         if (boxes.Count == 0) boxes.Add(default);
@@ -438,7 +438,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IGraphResourceProv
         return joints.OrderBy(value => value.Key).Select(value => value.Value).ToArray();
     }
 
-    public void OnDestroy(ref RenderPrepareSystemContext context) => context.World.ReleaseQuery(_query);
+    public void OnDestroy(ref RenderPrepareSystemContext context) => _query = default;
     public bool TryResolve(string name, ResourceBindingType type, out GraphResourceBinder binder)
     {
         binder = name == "SkinJointTransforms" && type == ResourceBindingType.BufferSrv

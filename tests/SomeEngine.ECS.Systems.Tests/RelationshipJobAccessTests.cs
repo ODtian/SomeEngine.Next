@@ -13,7 +13,7 @@ public sealed class RelationshipJobAccessTests : JobTest
     {
         ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
+        ConfigureJobs(new JobConfiguration
         {
             WorkerCount = 4,
             SafetyMode = previousSafety,
@@ -27,13 +27,11 @@ public sealed class RelationshipJobAccessTests : JobTest
         {
             var world = CreateJobWorld();
             var otherWorld = CreateJobWorld();
-            blocker = HierarchyJobAccess<Domain>.ScheduleParentWrite(
-                world,
-                new BlockingJob(started, release));
+            blocker = world.Execution!.Scheduler!.Schedule(new BlockingJob(started, release), world.Execution!.StructureWrite);
             Assert.True(started.Wait(TimeSpan.FromSeconds(2)));
 
-            JobHandle sameWorldRelation = RelationMaintenanceSystem<Payload>.Schedule(world);
-            JobHandle otherWorldRelation = RelationMaintenanceSystem<Payload>.Schedule(otherWorld);
+            JobHandle sameWorldRelation = Jobs.Schedule(new MaintainRelations(world), world.Execution!.StructureWrite);
+            JobHandle otherWorldRelation = Jobs.Schedule(new MaintainRelations(otherWorld), otherWorld.Execution!.StructureWrite);
 
             otherWorldRelation.Complete();
             Assert.False(sameWorldRelation.IsCompleted);
@@ -46,7 +44,7 @@ public sealed class RelationshipJobAccessTests : JobTest
         {
             release.Set();
             blocker.Complete();
-            ConfigureJobs(new JobRuntimeConfig
+            ConfigureJobs(new JobConfiguration
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
@@ -59,7 +57,7 @@ public sealed class RelationshipJobAccessTests : JobTest
     {
         ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
+        ConfigureJobs(new JobConfiguration
         {
             WorkerCount = 4,
             SafetyMode = previousSafety,
@@ -72,22 +70,17 @@ public sealed class RelationshipJobAccessTests : JobTest
         try
         {
             var world = CreateJobWorld();
-            Entity child = world.CreateEntity();
+            Entity child = world.Create();
             var capture = new ParentCapture();
 
-            JobHandle missingTopology = Jobs.Schedule(
-                new CaptureParentJob(world, child, capture),
-                HierarchyJobAccess<Domain>.ParentRead(world));
+            World other = CreateJobWorld();
+            JobHandle missingTopology = Jobs.Schedule(new CaptureParentJob(world, child, capture), other.Execution!.StructureRead);
             Assert.Throws<JobResourceSafetyException>(() => missingTopology.Complete());
 
-            blocker = RelationJobAccess<Payload>.ScheduleEndpointsWrite(
-                world,
-                new BlockingJob(started, release));
+            blocker = world.Execution!.Scheduler!.Schedule(new BlockingJob(started, release), world.Execution!.StructureWrite);
             Assert.True(started.Wait(TimeSpan.FromSeconds(2)));
 
-            JobHandle reader = HierarchyJobAccess<Domain>.ScheduleParentRead(
-                world,
-                new CaptureParentJob(world, child, capture));
+            JobHandle reader = world.Execution!.Scheduler!.Schedule(new CaptureParentJob(world, child, capture), world.Execution!.StructureRead);
             Assert.False(reader.IsCompleted);
 
             release.Set();
@@ -99,12 +92,17 @@ public sealed class RelationshipJobAccessTests : JobTest
         {
             release.Set();
             blocker.Complete();
-            ConfigureJobs(new JobRuntimeConfig
+            ConfigureJobs(new JobConfiguration
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
             });
         }
+    }
+
+    private readonly struct MaintainRelations(World world) : IJob
+    {
+        public void Execute() => Relations<Payload>.Maintain(world);
     }
 
     private readonly struct BlockingJob : IJob
@@ -145,7 +143,7 @@ public sealed class RelationshipJobAccessTests : JobTest
 
         public void Execute()
         {
-            _capture.Parent = HierarchyJobAccess<Domain>.GetParent(_world, _child);
+            _capture.Parent = Hierarchy<Domain>.GetParent(_world, _child);
         }
     }
 

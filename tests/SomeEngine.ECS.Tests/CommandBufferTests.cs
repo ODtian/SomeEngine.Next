@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Serialization;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Components;
@@ -18,7 +19,7 @@ public class CommandBufferTests
     {
         var world = new World();
         var cb = new CommandBuffer(world);
-        var e = cb.CreateEntity();
+        var e = cb.Create();
         Assert.Equal(0, world.EntityCount);
         Assert.False(e.TryResolve(out _));
         cb.Playback();
@@ -29,7 +30,7 @@ public class CommandBufferTests
     public void Add_Playback_HasComponentAndValueCorrect()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.Create();
         var cb = new CommandBuffer(world);
         cb.Add(e, new Position { X = 10, Y = 20 });
         cb.Playback();
@@ -42,9 +43,9 @@ public class CommandBufferTests
     public void Set_Playback_ValueUpdated()
     {
         var world = new World();
-        var e = world.CreateEntity(new Position { X = 1, Y = 2 });
+        var e = world.Create(new Position { X = 1, Y = 2 });
         var cb = new CommandBuffer(world);
-        cb.Replace(e, new Position { X = 99, Y = 88 });
+        cb.Set(e, new Position { X = 99, Y = 88 });
         cb.Playback();
         Assert.Equal(99f, world.Read<Position>(e).X);
         Assert.Equal(88f, world.Read<Position>(e).Y);
@@ -54,7 +55,7 @@ public class CommandBufferTests
     public void Remove_Playback_ComponentGone()
     {
         var world = new World();
-        var e = world.CreateEntity(new Position { X = 1, Y = 2 });
+        var e = world.Create(new Position { X = 1, Y = 2 });
         var cb = new CommandBuffer(world);
         cb.Remove<Position>(e);
         cb.Playback();
@@ -65,9 +66,9 @@ public class CommandBufferTests
     public void DestroyEntity_Playback_EntityDead()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.Create();
         var cb = new CommandBuffer(world);
-        cb.DestroyEntity(e);
+        cb.Destroy(e);
         cb.Playback();
         Assert.False(world.IsAlive(e));
     }
@@ -76,9 +77,9 @@ public class CommandBufferTests
     public void AddTag_Playback_HasTag()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.Create();
         var cb = new CommandBuffer(world);
-        cb.AddTag<PlayerTag>(e);
+        cb.Add(e, default(PlayerTag));
         cb.Playback();
         Assert.True(world.Has<PlayerTag>(e));
     }
@@ -87,10 +88,10 @@ public class CommandBufferTests
     public void RemoveTag_Playback_TagGone()
     {
         var world = new World();
-        var e = world.CreateEntity();
-        world.AddTag<PlayerTag>(e);
+        var e = world.Create();
+        world.Add(e, default(PlayerTag));
         var cb = new CommandBuffer(world);
-        cb.RemoveTag<PlayerTag>(e);
+        cb.Remove<PlayerTag>(e);
         cb.Playback();
         Assert.False(world.Has<PlayerTag>(e));
     }
@@ -99,9 +100,9 @@ public class CommandBufferTests
     public void RemoveTag_MissingDuringPlayback_SkipsSilently()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.Create();
         var cb = new CommandBuffer(world);
-        cb.RemoveTag<PlayerTag>(e);
+        cb.Remove<PlayerTag>(e);
 
         Assert.Throws<InvalidOperationException>(() => cb.Playback());
 
@@ -113,10 +114,10 @@ public class CommandBufferTests
     public void AddTag_DuplicateDuringPlayback_SkipsSilently()
     {
         var world = new World();
-        var e = world.CreateEntity();
-        world.AddTag<PlayerTag>(e);
+        var e = world.Create();
+        world.Add(e, default(PlayerTag));
         var cb = new CommandBuffer(world);
-        cb.AddTag<PlayerTag>(e);
+        cb.Add(e, default(PlayerTag));
 
         Assert.Throws<InvalidOperationException>(() => cb.Playback());
 
@@ -133,7 +134,7 @@ public class CommandBufferTests
     {
         var world = new World();
         var cb = new CommandBuffer(world);
-        var e = cb.CreateEntity();
+        var e = cb.Create();
         cb.Add(e, new Position { X = 42, Y = 0 });
         cb.Playback();
         Entity resolved = e.Resolve();
@@ -146,7 +147,7 @@ public class CommandBufferTests
     public void AddThenRemove_SameComponent_Removed()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.Create();
         var cb = new CommandBuffer(world);
         cb.Add(e, new Position { X = 1, Y = 2 });
         cb.Remove<Position>(e);
@@ -158,7 +159,7 @@ public class CommandBufferTests
     public void MultipleAdd_DifferentTypes_AllPresent()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.Create();
         var cb = new CommandBuffer(world);
         cb.Add(e, new Position { X = 1, Y = 2 });
         cb.Add(e, new Velocity { X = 3, Y = 4 });
@@ -170,27 +171,21 @@ public class CommandBufferTests
     }
 
     [Fact]
-    public void PlaybackFailureLeavesLiveWorldUnchanged()
+    public void CandidatePlaybackFailurePreservesSourceAndStopsAfterSuccessfulPrefix()
     {
-        var world = new World();
-        var cb = new CommandBuffer(world);
-        var first = cb.CreateEntity();
-        cb.Add(first, new Position { X = 1, Y = 2 });
-        cb.Add(first, new Position { X = 3, Y = 4 });
-        var later = cb.CreateEntity();
-        cb.Add(later, new Velocity { X = 5, Y = 6 });
-
-        Assert.Throws<InvalidOperationException>(() => cb.Playback());
-
-        Assert.False(first.TryResolve(out _));
-        Assert.False(later.TryResolve(out _));
-        Assert.Throws<InvalidOperationException>(() => first.Resolve());
-        Assert.Throws<InvalidOperationException>(() => later.Resolve());
-        Assert.Equal(0, world.EntityCount);
-
-        cb.Clear();
-
-        Assert.False(first.TryResolve(out _));
+        using var world = new World();
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        using var commands = new CommandBuffer(candidate);
+        DeferredEntity first = commands.Create();
+        commands.Add(first, new Position { X = 1, Y = 2 });
+        commands.Add(Entity.Null, new Position());
+        DeferredEntity later = commands.Create();
+        commands.Add(later, new Velocity { X = 5, Y = 6 });
+        Assert.Throws<ArgumentException>(commands.Playback);
+        Assert.True(first.TryResolve(out Entity prefix));
+        Assert.Equal(1, candidate.Read<Position>(prefix).X);
         Assert.False(later.TryResolve(out _));
         Assert.Equal(0, world.EntityCount);
     }
@@ -204,7 +199,7 @@ public class CommandBufferTests
     {
         var world = new World();
         var cb = new CommandBuffer(world);
-        var e = cb.CreateEntity();
+        var e = cb.Create();
         // 可以立即用于后续命令
         cb.Add(e, new Position { X = 100, Y = 200 });
         cb.Playback();
@@ -218,9 +213,9 @@ public class CommandBufferTests
     {
         var world = new World();
         var cb = new CommandBuffer(world);
-        var e1 = cb.CreateEntity();
-        var e2 = cb.CreateEntity();
-        var e3 = cb.CreateEntity();
+        var e1 = cb.Create();
+        var e2 = cb.Create();
+        var e3 = cb.Create();
         Assert.NotEqual(e1, e2);
         Assert.NotEqual(e2, e3);
         cb.Playback();
@@ -234,7 +229,7 @@ public class CommandBufferTests
     {
         var world = new World();
         var cb = new CommandBuffer(world);
-        var e = cb.CreateEntity();
+        var e = cb.Create();
         // 在 Playback 之前 entity 尚未 finalized
         cb.Playback();
         Assert.True(world.IsAlive(e.Resolve()));
@@ -245,7 +240,7 @@ public class CommandBufferTests
     {
         var world = new World();
         var cb = new CommandBuffer(world);
-        var entity = cb.CreateEntity();
+        var entity = cb.Create();
 
         cb.Playback();
         Assert.Throws<InvalidOperationException>(() => cb.Playback());
@@ -259,10 +254,10 @@ public class CommandBufferTests
     {
         var world = new World();
         var cb = new CommandBuffer(world);
-        var entity = cb.CreateEntity();
+        var entity = cb.Create();
 
         Assert.Equal(0, world.EntityCount);
-        Assert.False(entity.IsResolved);
+        Assert.False(entity.TryResolve(out _));
         Assert.False(entity.TryResolve(out _));
         Assert.Throws<InvalidOperationException>(() => entity.Resolve());
 
@@ -282,11 +277,10 @@ public class CommandBufferTests
     public void DuringIteration_CB_Add_DoesNotThrow()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.Create();
         var cb = new CommandBuffer(world);
-        var query = world.Query(world.QueryDefinition().Read<Position>());
-        world.ExecuteQuery(query, _ =>
-            cb.Add(e, new Position { X = 1, Y = 2 }));
+        var query = world.Query(new QueryDescription().WithStored<Position>());
+        using (QueryScope scope = query.OpenRead()) cb.Add(e, new Position { X = 1, Y = 2 });
         cb.Playback();
         Assert.True(world.Has<Position>(e));
     }
@@ -295,11 +289,10 @@ public class CommandBufferTests
     public void DuringIteration_World_Add_Throws()
     {
         var world = new World();
-        var e = world.CreateEntity();
-        var query = world.Query(world.QueryDefinition().Read<Position>());
-        world.ExecuteQuery(query, _ =>
-            Assert.Throws<InvalidOperationException>(() =>
-                world.Add(e, new Position { X = 1, Y = 2 })));
+        var e = world.Create();
+        var query = world.Query(new QueryDescription().WithStored<Position>());
+        using QueryScope scope = query.OpenRead();
+        Assert.Throws<InvalidOperationException>(() => world.Add(e, new Position { X = 1, Y = 2 }));
     }
 
     [Fact]
@@ -307,10 +300,10 @@ public class CommandBufferTests
     {
         var world = new World();
         var cb = new CommandBuffer(world);
-        cb.CreateEntity();
-        var query = world.Query(world.QueryDefinition().Read<Position>());
-        world.ExecuteQuery(query, _ =>
-            Assert.Throws<InvalidOperationException>(() => cb.Playback()));
+        cb.Create();
+        var query = world.Query(new QueryDescription().WithStored<Position>());
+        using QueryScope scope = query.OpenRead();
+        Assert.Throws<InvalidOperationException>(() => cb.Playback());
     }
 
     // ════════════════════════════════════════════════
@@ -321,7 +314,7 @@ public class CommandBufferTests
     public void Clear_ThenPlayback_NoEffect()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.Create();
         var cb = new CommandBuffer(world);
         cb.Add(e, new Position { X = 1, Y = 2 });
         cb.Clear();
@@ -335,7 +328,7 @@ public class CommandBufferTests
         var world = new World();
         var cb = new CommandBuffer(world);
 
-        var entity = cb.CreateEntity();
+        var entity = cb.Create();
         Assert.Equal(0, world.EntityCount);
         cb.Clear();
 
@@ -348,21 +341,21 @@ public class CommandBufferTests
     public void RecordingAndClear_DoNotConsumeNextAllocatorIdentity()
     {
         var recordedWorld = new World();
-        Entity recordedSeed = recordedWorld.CreateEntity();
-        recordedWorld.DestroyEntity(recordedSeed);
+        Entity recordedSeed = recordedWorld.Create();
+        recordedWorld.Destroy(recordedSeed);
 
         var controlWorld = new World();
-        Entity controlSeed = controlWorld.CreateEntity();
-        controlWorld.DestroyEntity(controlSeed);
+        Entity controlSeed = controlWorld.Create();
+        controlWorld.Destroy(controlSeed);
 
         var commands = new CommandBuffer(recordedWorld);
-        DeferredEntity pending = commands.CreateEntity();
+        DeferredEntity pending = commands.Create();
 
         Assert.Equal(0, recordedWorld.EntityCount);
         commands.Clear();
 
         Assert.False(pending.TryResolve(out _));
-        Assert.Equal(controlWorld.CreateEntity(), recordedWorld.CreateEntity());
+        Assert.Equal(controlWorld.Create(), recordedWorld.Create());
     }
 
     [Fact]
@@ -371,65 +364,64 @@ public class CommandBufferTests
         var recordedWorld = new World();
         var controlWorld = new World();
         using var commands = new CommandBuffer(recordedWorld);
-        DeferredEntity pending = commands.CreateEntity();
+        DeferredEntity pending = commands.Create();
 
-        Assert.Equal(controlWorld.CreateEntity(), recordedWorld.CreateEntity());
+        Assert.Equal(controlWorld.Create(), recordedWorld.Create());
         Assert.False(pending.TryResolve(out _));
     }
 
     [Fact]
-    public void ValidationFailure_DoesNotConsumeNextAllocatorIdentity()
+    public void FailedCandidatePlaybackPreservesSourceAllocatorIdentity()
     {
-        var failedWorld = new World();
-        Entity failedSeed = failedWorld.CreateEntity();
-        failedWorld.DestroyEntity(failedSeed);
-
-        var controlWorld = new World();
-        Entity controlSeed = controlWorld.CreateEntity();
-        controlWorld.DestroyEntity(controlSeed);
-
-        var commands = new CommandBuffer(failedWorld);
-        DeferredEntity pending = commands.CreateEntity();
-        commands.Add(pending, new Position { X = 1, Y = 2 });
-        commands.Add(pending, new Position { X = 3, Y = 4 });
-
-        Assert.Throws<InvalidOperationException>(() => commands.Playback());
-
-        Assert.Equal(0, failedWorld.EntityCount);
-        Assert.False(pending.TryResolve(out _));
-        Assert.Equal(controlWorld.CreateEntity(), failedWorld.CreateEntity());
+        using var source = new World();
+        Entity seed = source.Create();
+        source.Destroy(seed);
+        using var control = new World();
+        Entity controlSeed = control.Create();
+        control.Destroy(controlSeed);
+        using var checkpoint = new WorldCheckpoint().Capture(source, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        using var commands = new CommandBuffer(candidate);
+        DeferredEntity prefix = commands.Create();
+        commands.Add(prefix, new Position { X = 1 });
+        commands.Add(Entity.Null, new Position());
+        Assert.Throws<ArgumentException>(commands.Playback);
+        Assert.True(prefix.TryResolve(out _));
+        Assert.Equal(0, source.EntityCount);
+        Assert.Equal(control.Create(), source.Create());
     }
 
     [Fact]
     public void Playback_PreservesExactNonSortedLifoFreeListAllocationOrder()
     {
         var commandWorld = new World();
-        Entity commandFirst = commandWorld.CreateEntity();
-        Entity commandSecond = commandWorld.CreateEntity();
-        _ = commandWorld.CreateEntity();
-        Entity commandFourth = commandWorld.CreateEntity();
-        commandWorld.DestroyEntity(commandFirst);
-        commandWorld.DestroyEntity(commandFourth);
-        commandWorld.DestroyEntity(commandSecond);
+        Entity commandFirst = commandWorld.Create();
+        Entity commandSecond = commandWorld.Create();
+        _ = commandWorld.Create();
+        Entity commandFourth = commandWorld.Create();
+        commandWorld.Destroy(commandFirst);
+        commandWorld.Destroy(commandFourth);
+        commandWorld.Destroy(commandSecond);
 
         var controlWorld = new World();
-        Entity controlFirst = controlWorld.CreateEntity();
-        Entity controlSecond = controlWorld.CreateEntity();
-        _ = controlWorld.CreateEntity();
-        Entity controlFourth = controlWorld.CreateEntity();
-        controlWorld.DestroyEntity(controlFirst);
-        controlWorld.DestroyEntity(controlFourth);
-        controlWorld.DestroyEntity(controlSecond);
+        Entity controlFirst = controlWorld.Create();
+        Entity controlSecond = controlWorld.Create();
+        _ = controlWorld.Create();
+        Entity controlFourth = controlWorld.Create();
+        controlWorld.Destroy(controlFirst);
+        controlWorld.Destroy(controlFourth);
+        controlWorld.Destroy(controlSecond);
 
         var commands = new CommandBuffer(commandWorld);
-        DeferredEntity first = commands.CreateEntity();
-        DeferredEntity second = commands.CreateEntity();
-        DeferredEntity third = commands.CreateEntity();
+        DeferredEntity first = commands.Create();
+        DeferredEntity second = commands.Create();
+        DeferredEntity third = commands.Create();
         commands.Playback();
 
-        Assert.Equal(controlWorld.CreateEntity(), first.Resolve());
-        Assert.Equal(controlWorld.CreateEntity(), second.Resolve());
-        Assert.Equal(controlWorld.CreateEntity(), third.Resolve());
+        Assert.Equal(controlWorld.Create(), first.Resolve());
+        Assert.Equal(controlWorld.Create(), second.Resolve());
+        Assert.Equal(controlWorld.Create(), third.Resolve());
     }
 
     [Fact]
@@ -437,7 +429,7 @@ public class CommandBufferTests
     {
         var world = new World();
         var commands = new CommandBuffer(world);
-        DeferredEntity pending = commands.CreateEntity();
+        DeferredEntity pending = commands.Create();
 
         commands.Playback();
         Entity live = pending.Resolve();
@@ -447,7 +439,7 @@ public class CommandBufferTests
         Assert.True(pending.TryResolve(out Entity resolved));
         Assert.Equal(live, resolved);
         Assert.Equal(live, pending.Resolve());
-        Assert.Throws<InvalidOperationException>(() => commands.DestroyEntity(pending));
+        Assert.Throws<ArgumentException>(() => commands.Destroy(pending));
     }
 
     [Fact]
@@ -455,7 +447,7 @@ public class CommandBufferTests
     {
         var world = new World();
         var commands = new CommandBuffer(world);
-        DeferredEntity pending = commands.CreateEntity();
+        DeferredEntity pending = commands.Create();
 
         commands.Playback();
         Entity live = pending.Resolve();
@@ -468,23 +460,17 @@ public class CommandBufferTests
     }
 
     [Fact]
-    public void WorldOwnedBufferRejectsDirectLifecycleAndRemainsFlushable()
+    public void BatchProducerPlaybackAppliesItsRecordedWrites()
     {
-        var world = new World();
-        Entity entity = world.CreateEntity();
-        CommandBuffer commands = world.Commands();
+        using var world = new World();
+        Entity entity = world.Create();
+        using var batch = new CommandBatch(world, 1);
+        CommandBuffer commands = batch[0];
         commands.Add(entity, new Position { X = 4, Y = 9 });
-
-        InvalidOperationException playback = Assert.Throws<InvalidOperationException>(commands.Playback);
-        InvalidOperationException clear = Assert.Throws<InvalidOperationException>(commands.Clear);
-        InvalidOperationException dispose = Assert.Throws<InvalidOperationException>(commands.Dispose);
-
-        Assert.Equal(1, commands.CommandCount);
-
-        world.Flush();
-        Position value = world.Read<Position>(entity);
-        Assert.Equal(4, value.X);
-        Assert.Equal(9, value.Y);
+        Assert.Equal(1, commands.Count);
+        commands.Playback();
+        Assert.Equal(4, world.Read<Position>(entity).X);
+        Assert.Equal(9, world.Read<Position>(entity).Y);
     }
 
     [Fact]
@@ -492,7 +478,7 @@ public class CommandBufferTests
     {
         var world = new World();
         using var commands = new CommandBuffer(world);
-        DeferredEntity pending = commands.CreateEntity();
+        DeferredEntity pending = commands.Create();
         commands.Playback();
         Entity entity = pending.Resolve();
 
@@ -509,7 +495,7 @@ public class CommandBufferTests
     public void Clear_ThenRecordAndPlayback_Works()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.Create();
         var cb = new CommandBuffer(world);
         cb.Add(e, new Position { X = 1, Y = 2 });
         cb.Clear();
@@ -533,14 +519,14 @@ public class CommandBufferTests
     }
 
     [Fact]
-    public void DeadEntity_Command_SkippedSilently()
+    public void CommandsRejectExpiredEntityIdentity()
     {
         var world = new World();
-        var e = world.CreateEntity();
-        world.DestroyEntity(e);
+        var e = world.Create();
+        world.Destroy(e);
         var cb = new CommandBuffer(world);
         cb.Add(e, new Position { X = 1, Y = 2 });
-        Assert.Throws<InvalidOperationException>(() => cb.Playback());
+        Assert.Throws<ArgumentException>(() => cb.Playback());
         Assert.False(world.IsAlive(e));
     }
 
@@ -552,7 +538,7 @@ public class CommandBufferTests
         var entities = new DeferredEntity[1000];
         for (int i = 0; i < 1000; i++)
         {
-            entities[i] = cb.CreateEntity();
+            entities[i] = cb.Create();
             cb.Add(entities[i], new Position { X = i, Y = i * 2 });
         }
         cb.Playback();
@@ -570,7 +556,7 @@ public class CommandBufferTests
         var world = new World();
         var cb = new CommandBuffer(world);
         cb.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => cb.CreateEntity());
+        Assert.Throws<ObjectDisposedException>(() => cb.Create());
     }
 
     [Fact]
@@ -581,7 +567,7 @@ public class CommandBufferTests
 
         using (var cb = new CommandBuffer(world))
         {
-            entity = cb.CreateEntity();
+            entity = cb.Create();
         }
 
         Assert.False(entity.TryResolve(out _));
@@ -593,15 +579,15 @@ public class CommandBufferTests
     public void CommandCount_TracksCommands()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.Create();
         var cb = new CommandBuffer(world);
-        Assert.Equal(0, cb.CommandCount);
+        Assert.Equal(0, cb.Count);
         cb.Add(e, new Position { X = 1, Y = 2 });
-        Assert.Equal(1, cb.CommandCount);
-        cb.DestroyEntity(e);
-        Assert.Equal(2, cb.CommandCount);
+        Assert.Equal(1, cb.Count);
+        cb.Destroy(e);
+        Assert.Equal(2, cb.Count);
         cb.Clear();
-        Assert.Equal(0, cb.CommandCount);
+        Assert.Equal(0, cb.Count);
     }
 
     [Fact]
@@ -609,8 +595,8 @@ public class CommandBufferTests
     {
         var world = new World();
         var cb = new CommandBuffer(world);
-        var e = cb.CreateEntity();
-        cb.AddTag<PlayerTag>(e);
+        var e = cb.Create();
+        cb.Add(e, default(PlayerTag));
         cb.Add(e, new Position { X = 1, Y = 2 });
         cb.Playback();
         Entity resolved = e.Resolve();
@@ -624,13 +610,13 @@ public class CommandBufferTests
     {
         var world = new World();
         var commands = new CommandBuffer(world);
-        DeferredEntity pending = commands.CreateEntity();
+        DeferredEntity pending = commands.Create();
         commands.Add(pending, new Position { X = 1, Y = 2 });
-        commands.Replace(pending, new Position { X = 3, Y = 4 });
-        commands.AddTag<PlayerTag>(pending);
-        commands.RemoveTag<PlayerTag>(pending);
+        commands.Set(pending, new Position { X = 3, Y = 4 });
+        commands.Add(pending, default(PlayerTag));
+        commands.Remove<PlayerTag>(pending);
         commands.Remove<Position>(pending);
-        commands.DestroyEntity(pending);
+        commands.Destroy(pending);
 
         commands.Playback();
 
@@ -645,9 +631,9 @@ public class CommandBufferTests
         var world = new World();
         using var owner = new CommandBuffer(world);
         using var other = new CommandBuffer(world);
-        DeferredEntity pending = owner.CreateEntity();
+        DeferredEntity pending = owner.Create();
 
-        Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<ArgumentException>(() =>
             other.Add(pending, new Position { X = 1, Y = 2 }));
     }
 

@@ -5,7 +5,7 @@ using Size = SomeEngine.Layout.Size;
 namespace SomeEngine.Elements;
 
 /// <summary>Read-only text layout written by the text shaping system.</summary>
-public readonly struct ShapedText : IComponent
+public readonly struct ShapedText : IComponent, ITrackedComponent
 {
     private readonly TextShapingSystem.TextMeasurement? _measurement;
     public TextShape Shape => _measurement?.Current.Buffer.Shape ?? default;

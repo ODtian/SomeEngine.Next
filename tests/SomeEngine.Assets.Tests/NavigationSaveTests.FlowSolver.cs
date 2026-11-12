@@ -13,7 +13,7 @@ public sealed partial class NavigationSaveTests
     [Fact]
     public async Task RestoringAnUnfinishedFimKeepsGradientGuidanceAndReachesTheSharedGoal()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var manifest = new AssetManifest();
         var resources = new NavigationSaveResources();
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
@@ -43,13 +43,13 @@ public sealed partial class NavigationSaveTests
             new(Guid.Parse("f943af78-c106-4f68-a4a7-dc05d7008dcc"), "navigation-save-motion", 1));
         using var stream = new MemoryStream();
         Entity actor;
-        using (World world = WorldJobs.CreateWorld(scheduler: scheduler))
+        using (World world = new World(execution: new WorldJobs(scheduler)))
         {
             NavigationCosts costs = NavigationCostSystem.Schedule(grid, policy, scheduler: scheduler).Complete().Costs;
             var flow = new NavigationFlow(costs, profile, [new(new(4.5f, 0, 2.5f), 0.1f)]);
             var solver = new NavigationFlowSystem<FastIterativeFlow, FastIterativeFlowState>(flow, scheduler);
             Assert.Equal(NavigationFlowStatus.Searching, solver.Schedule(1).Complete().Status);
-            actor = world.CreateEntity(new SaveMotion(new(0.5f, 0, 0.5f), default, 0));
+            actor = world.Create(new SaveMotion(new(0.5f, 0, 0.5f), default, 0));
             NavigationComponents.AddFlow(world, actor, flow, 1);
             NavigationSave.Write(stream, world, registry, resources);
         }
@@ -58,15 +58,15 @@ public sealed partial class NavigationSaveTests
         await using (var loader = new AssetLoader(new LooseAssetStorage(_directory, manifest)))
             restored = await NavigationSave.ReadAsync(stream, registry, loader, scheduler);
         using World loaded = restored.World;
-        NavigationFlow resumed = loaded.Read<FlowFollower>(actor).Flow;
+        NavigationFlow resumed = loaded.ReadComponentData<FlowFollower>(actor).Flow;
         Assert.Equal(NavigationFlowSampling.Gradient, resumed.Field!.Sampling);
         var navigation = new NavigationSystems<SaveMotion, SaveMotionReader>(loaded);
-        for (int frame = 0; frame < 80 && loaded.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived; frame++)
+        for (int frame = 0; frame < 80 && loaded.ReadComponentData<NavigationProgress>(actor).Status != NavigationStatus.Arrived; frame++)
         {
             NavigationFlowStep step = navigation.Schedule(0.2f);
             navigation.ScheduleProgress(new ConsumeSavedSteering(0.2f).ScheduleParallel(loaded, step.Steering)).Complete();
         }
-        Assert.Equal(NavigationStatus.Arrived, loaded.Read<NavigationProgress>(actor).Status);
+        Assert.Equal(NavigationStatus.Arrived, loaded.ReadComponentData<NavigationProgress>(actor).Status);
 
         void Add(AssetEntry entry) => manifest.AddAsset(entry.AssetGuid, entry.Name, Path.GetFileName(entry.Path), entry.AssetType,
             entry.SchemaFingerprint, version: entry.Version);

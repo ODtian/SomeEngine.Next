@@ -16,14 +16,14 @@ public sealed class RegistryCodecTests
         var second = new SerializationRegistry()
             .RegisterCodec<SerPosition, RecordingPositionCodec>(key, new(secondReads));
         using var stream = new MemoryStream();
-        WorldSerializer.WriteDurableComponent(stream, new SerPosition { X = 4, Y = 5 }, first);
+        WorldSerializer.WriteComponent(stream, new SerPosition { X = 4, Y = 5 }, first, new SerializeOptions(Purpose: SavePurpose.DurableSave));
 
         stream.Position = 0;
-        Assert.Equal(4, WorldSerializer.ReadDurableComponent<SerPosition>(stream, first).X);
+        Assert.Equal(4, WorldSerializer.ReadComponent<SerPosition>(stream, first, new SerializationReadOptions(RequiredPurpose: SavePurpose.DurableSave)).X);
         stream.Position = 0;
-        Assert.Equal(4, WorldSerializer.ReadDurableComponent<SerPosition>(stream, second).X);
+        Assert.Equal(4, WorldSerializer.ReadComponent<SerPosition>(stream, second, new SerializationReadOptions(RequiredPurpose: SavePurpose.DurableSave)).X);
         stream.Position = 0;
-        Assert.Equal(4, WorldSerializer.ReadDurableComponent<SerPosition>(stream, second).X);
+        Assert.Equal(4, WorldSerializer.ReadComponent<SerPosition>(stream, second, new SerializationReadOptions(RequiredPurpose: SavePurpose.DurableSave)).X);
         Assert.Equal(new float[] { 4 }, firstReads);
         Assert.Equal(new float[] { 4, 4 }, secondReads);
     }
@@ -37,23 +37,25 @@ public sealed class RegistryCodecTests
         var registry = new SerializationRegistry()
             .RegisterBufferCodec<SerElement, RecordingElementCodec>(key, new(written, read));
         using var source = new World();
-        Entity entity = source.CreateEntity();
+        Entity entity = source.Create();
         source.AddBuffer<SerElement>(entity);
-        source.ExecuteBufferWrite<SerElement>(entity, buffer =>
         {
+            using DynamicBuffer<SerElement> buffer = source.GetBuffer<SerElement>(entity);
+
             buffer.Add(new SerElement { Value = 7 });
             buffer.Add(new SerElement { Value = 11 });
-        });
+        }
         using var stream = new MemoryStream();
-        WorldSerializer.WriteDurableWorld(stream, source, registry);
+        new WorldSerializer(registry).Save(source, stream, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         stream.Position = 0;
-        using World loaded = WorldSerializer.ReadDurableWorld(stream, registry);
+        using World loaded = WorldSerializer.ReadWorld(stream, registry, new WorldLoadOptions(RequiredPurpose: SavePurpose.DurableSave));
         var values = new List<int>();
-        loaded.ExecuteBufferRead<SerElement>(entity, buffer =>
         {
+            using ReadOnlyBuffer<SerElement> buffer = loaded.ReadBuffer<SerElement>(entity);
+
             foreach (SerElement value in buffer.AsSpan())
                 values.Add(value.Value);
-        });
+        }
         Assert.Equal(new[] { 7, 11 }, values);
         Assert.Equal(values, written);
         Assert.Equal(values, read);
@@ -70,10 +72,10 @@ public sealed class RegistryCodecTests
         var reader = new SerializationRegistry()
             .RegisterCodec<SerPosition, FailingPositionCodec>(key, new(expected));
         using var stream = new MemoryStream();
-        WorldSerializer.WriteDurableComponent(stream, new SerPosition { X = 4, Y = 5 }, writer);
+        WorldSerializer.WriteComponent(stream, new SerPosition { X = 4, Y = 5 }, writer, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         stream.Position = 0;
         InvalidDataException actual = Assert.Throws<InvalidDataException>(() =>
-            WorldSerializer.ReadDurableComponent<SerPosition>(stream, reader));
+            WorldSerializer.ReadComponent<SerPosition>(stream, reader, new SerializationReadOptions(RequiredPurpose: SavePurpose.DurableSave)));
         Assert.Same(expected, actual);
         Assert.Same(cause, actual.InnerException);
         Assert.Equal(SerializationError.UnknownType, SerializationErrors.GetError(actual));

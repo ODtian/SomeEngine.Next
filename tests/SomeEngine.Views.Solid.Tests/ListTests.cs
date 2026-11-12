@@ -1,6 +1,6 @@
+using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Elements;
 using static SomeEngine.Views.Solid.Solid;
 using SolidFrames = SomeEngine.Views.Tests.HeadlessFrameDriver;
@@ -25,26 +25,26 @@ public sealed partial class SolidTests
                 Text(index);
             })));
         frames.Frame();
-        Entity list = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
-        Entity[] labels = rows.Select(row => Hierarchy<ElementTree>.GetChildren(frames.World, row)[0]).ToArray();
+        Entity list = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] rows = ElementChildren.Read(frames.World, list);
+        Entity[] labels = rows.Select(row => ElementChildren.Read(frames.World, row)[0]).ToArray();
         labels[0].SetText(frames.World, "edited first");
 
         sample.Value = "latest";
         frames.Frame();
-        Assert.Equal(rows, Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray());
+        Assert.Equal(rows, ElementChildren.Read(frames.World, list));
         Assert.Equal(["edited first", "20:initial", "30:initial"], labels.Select(ReadText));
 
         items.Value = [30, 10, 20];
         frames.Frame();
-        Entity[] reordered = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
+        Entity[] reordered = ElementChildren.Read(frames.World, list);
         Assert.Equal([rows[2], rows[0], rows[1]], reordered);
         Assert.Equal(["30:initial", "edited first", "20:initial"], reordered.Select(row =>
-            ReadText(Hierarchy<ElementTree>.GetChildren(frames.World, row)[0])));
+            ReadText(ElementChildren.Read(frames.World, row)[0])));
         Assert.Equal(["0", "1", "2"], reordered.Select(row =>
-            ReadText(Hierarchy<ElementTree>.GetChildren(frames.World, row)[1])));
+            ReadText(ElementChildren.Read(frames.World, row)[1])));
 
-        string ReadText(Entity node) => frames.World.Read<Elements.Text>(node).Value;
+        string ReadText(Entity node) => frames.World.ReadComponentData<Elements.Text>(node).Value;
     }
 
     [Fact]
@@ -60,9 +60,9 @@ public sealed partial class SolidTests
                 Text(() => $"{item()}:{Untrack(() => sample.Value)}");
             })));
         frames.Frame();
-        Entity list = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
-        Entity[] labels = rows.Select(row => Hierarchy<ElementTree>.GetChildren(frames.World, row)[1]).ToArray();
+        Entity list = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] rows = ElementChildren.Read(frames.World, list);
+        Entity[] labels = rows.Select(row => ElementChildren.Read(frames.World, row)[1]).ToArray();
         labels[0].SetText(frames.World, "edited first");
         labels[2].SetText(frames.World, "edited third");
 
@@ -70,26 +70,26 @@ public sealed partial class SolidTests
         items.Value = ["one", "changed", "three"];
         frames.Frame();
 
-        Assert.Equal(rows, Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray());
+        Assert.Equal(rows, ElementChildren.Read(frames.World, list));
         Assert.Equal(["edited first", "changed:latest", "edited third"], labels.Select(ReadText));
         Assert.Equal(["0:one:initial", "1:two:initial", "2:three:initial"], rows.Select(row =>
-            ReadText(Hierarchy<ElementTree>.GetChildren(frames.World, row)[0])));
+            ReadText(ElementChildren.Read(frames.World, row)[0])));
 
         items.Value = ["three", "one", "changed"];
         frames.Frame();
-        Assert.Equal(rows, Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray());
+        Assert.Equal(rows, ElementChildren.Read(frames.World, list));
         Assert.Equal(["three:latest", "one:latest", "changed:latest"], labels.Select(ReadText));
 
-        string ReadText(Entity node) => frames.World.Read<Elements.Text>(node).Value;
+        string ReadText(Entity node) => frames.World.ReadComponentData<Elements.Text>(node).Value;
     }
 
     [Fact]
     public void ForAcceptsEachAndKeepsEntityRowsThroughDataAndMembershipChanges()
     {
         using var frames = new SolidFrames();
-        QueryHandle query = frames.World.Query(frames.World.QueryDefinition().All<Total>());
-        Entity first = frames.World.CreateEntity(new Total(10));
-        Entity second = frames.World.CreateEntity(new Total(20));
+        Query query = frames.World.Query(new QueryDescription().With<Total>());
+        Entity first = frames.World.Create(new Total(10));
+        Entity second = frames.World.Create(new Total(20));
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(() =>
             For(() => Scope.Each(query), (item, index) =>
             {
@@ -97,66 +97,66 @@ public sealed partial class SolidTests
                 Text(index);
             })));
         frames.Frame();
-        Entity list = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
-        Entity secondLabel = Hierarchy<ElementTree>.GetChildren(frames.World, rows[1])[0];
+        Entity list = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] rows = ElementChildren.Read(frames.World, list);
+        Entity secondLabel = ElementChildren.Read(frames.World, rows[1])[0];
         secondLabel.SetText(frames.World, "edited second");
 
-        frames.World.Replace(first, new Total(15));
+        frames.World.Set(first, new Total(15));
         frames.Frame();
-        Assert.Equal(rows, Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray());
-        Assert.Equal("15", ReadText(Hierarchy<ElementTree>.GetChildren(frames.World, rows[0])[0]));
+        Assert.Equal(rows, ElementChildren.Read(frames.World, list));
+        Assert.Equal("15", ReadText(ElementChildren.Read(frames.World, rows[0])[0]));
         Assert.Equal("edited second", ReadText(secondLabel));
 
-        Entity third = frames.World.CreateEntity(new Total(30));
+        Entity third = frames.World.Create(new Total(30));
         frames.Frame();
-        Entity[] expanded = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
+        Entity[] expanded = ElementChildren.Read(frames.World, list);
         Assert.Equal(rows, expanded.Take(2));
-        frames.World.DestroyEntity(first);
+        frames.World.Destroy(first);
         frames.Frame();
-        Entity[] remaining = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
+        Entity[] remaining = ElementChildren.Read(frames.World, list);
         Assert.Equal([expanded[2], rows[1]], remaining);
         Assert.Equal(["30", "edited second"], remaining.Select(row =>
-            ReadText(Hierarchy<ElementTree>.GetChildren(frames.World, row)[0])));
+            ReadText(ElementChildren.Read(frames.World, row)[0])));
         Assert.Equal(["0", "1"], remaining.Select(row =>
-            ReadText(Hierarchy<ElementTree>.GetChildren(frames.World, row)[1])));
-        Assert.False(frames.World.IsAlive(rows[0]));
+            ReadText(ElementChildren.Read(frames.World, row)[1])));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(rows[0]));
 
-        string ReadText(Entity node) => frames.World.Read<Elements.Text>(node).Value;
+        string ReadText(Entity node) => frames.World.ReadComponentData<Elements.Text>(node).Value;
     }
 
     [Fact]
     public void IndexAcceptsEachAndKeepsPositionsWhileTheirEntitiesChange()
     {
         using var frames = new SolidFrames();
-        QueryHandle query = frames.World.Query(frames.World.QueryDefinition().All<Total>());
-        Entity first = frames.World.CreateEntity(new Total(10));
-        Entity second = frames.World.CreateEntity(new Total(20));
+        Query query = frames.World.Query(new QueryDescription().With<Total>());
+        Entity first = frames.World.Create(new Total(10));
+        Entity second = frames.World.Create(new Total(20));
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(() =>
             Index(() => Scope.Each(query), (item, index) => Text(() => Scope.Read<Total>(item()).Value))));
         frames.Frame();
-        Entity list = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
-        Entity secondLabel = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, rows[1]));
+        Entity list = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] rows = ElementChildren.Read(frames.World, list);
+        Entity secondLabel = Assert.Single(ElementChildren.Read(frames.World, rows[1]));
         secondLabel.SetText(frames.World, "edited second");
 
-        Entity third = frames.World.CreateEntity(new Total(30));
+        Entity third = frames.World.Create(new Total(30));
         frames.Frame();
-        Entity[] expanded = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
+        Entity[] expanded = ElementChildren.Read(frames.World, list);
         Assert.Equal(rows, expanded.Take(2));
-        frames.World.DestroyEntity(first);
+        frames.World.Destroy(first);
         frames.Frame();
-        Entity[] remaining = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
+        Entity[] remaining = ElementChildren.Read(frames.World, list);
         Assert.Equal(rows, remaining);
-        Assert.Equal("30", frames.World.Read<Elements.Text>(
-            Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, rows[0]))).Value);
-        Assert.Equal("edited second", frames.World.Read<Elements.Text>(secondLabel).Value);
-        Assert.False(frames.World.IsAlive(expanded[2]));
+        Assert.Equal("30", frames.World.ReadComponentData<Elements.Text>(
+            Assert.Single(ElementChildren.Read(frames.World, rows[0]))).Value);
+        Assert.Equal("edited second", frames.World.ReadComponentData<Elements.Text>(secondLabel).Value);
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(expanded[2]));
 
-        frames.World.Replace(third, new Total(35));
+        frames.World.Set(third, new Total(35));
         frames.Frame();
-        Assert.Equal("35", frames.World.Read<Elements.Text>(
-            Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, rows[0]))).Value);
+        Assert.Equal("35", frames.World.ReadComponentData<Elements.Text>(
+            Assert.Single(ElementChildren.Read(frames.World, rows[0]))).Value);
     }
 
     [Theory]
@@ -167,7 +167,7 @@ public sealed partial class SolidTests
         using var frames = new SolidFrames();
         var items = new State<IReadOnlyList<int>>([1, 2]);
         var sample = new State<string>("initial");
-        Entity[] outputs = [frames.World.CreateEntity(new Display("empty")), frames.World.CreateEntity(new Display("empty"))];
+        Entity[] outputs = [frames.World.Create(new Display("empty")), frames.World.Create(new Display("empty"))];
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(() =>
         {
             if (byPosition)
@@ -176,36 +176,36 @@ public sealed partial class SolidTests
                 For(() => items.Value, (item, index) => Content(item));
         }));
         frames.Frame();
-        Entity list = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
-        Entity container = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, rows[1]));
-        Entity label = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container));
+        Entity list = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] rows = ElementChildren.Read(frames.World, list);
+        Entity container = Assert.Single(ElementChildren.Read(frames.World, rows[1]));
+        Entity label = Assert.Single(ElementChildren.Read(frames.World, container));
 
         items.Value = [1];
         sample.Value = "latest";
         frames.Frame();
-        Assert.Equal(rows[0], Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, list)));
-        Assert.False(frames.World.IsAlive(rows[1]));
-        Assert.False(frames.World.IsAlive(container));
-        Assert.False(frames.World.IsAlive(label));
-        Assert.Equal("latest", frames.World.Read<Display>(outputs[0]).Value);
-        Assert.Equal("initial", frames.World.Read<Display>(outputs[1]).Value);
+        Assert.Equal(rows[0], Assert.Single(ElementChildren.Read(frames.World, list)));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(rows[1]));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(container));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(label));
+        Assert.Equal("latest", frames.World.ReadComponentData<Display>(outputs[0]).Value);
+        Assert.Equal("initial", frames.World.ReadComponentData<Display>(outputs[1]).Value);
 
         items.Value = [];
         sample.Value = "empty";
         frames.Frame();
-        Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, list));
-        Assert.False(frames.World.IsAlive(rows[0]));
-        Assert.Equal("latest", frames.World.Read<Display>(outputs[0]).Value);
+        Assert.Empty(ElementChildren.Read(frames.World, list));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(rows[0]));
+        Assert.Equal("latest", frames.World.ReadComponentData<Display>(outputs[0]).Value);
 
         items.Value = [1, 2];
         frames.Frame();
-        Entity[] returning = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
+        Entity[] returning = ElementChildren.Read(frames.World, list);
         Assert.Equal(2, returning.Length);
         Assert.DoesNotContain(rows[0], returning);
         Assert.DoesNotContain(rows[1], returning);
-        Assert.Equal("empty", frames.World.Read<Display>(outputs[0]).Value);
-        Assert.Equal("empty", frames.World.Read<Display>(outputs[1]).Value);
+        Assert.Equal("empty", frames.World.ReadComponentData<Display>(outputs[0]).Value);
+        Assert.Equal("empty", frames.World.ReadComponentData<Display>(outputs[1]).Value);
 
         void Content(int item)
         {
@@ -224,24 +224,24 @@ public sealed partial class SolidTests
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(() =>
             For(() => items.Value, (item, index) => Text(item.Text))));
         frames.Frame();
-        Entity list = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
-        Entity[] labels = rows.Select(row => Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, row))).ToArray();
+        Entity list = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] rows = ElementChildren.Read(frames.World, list);
+        Entity[] labels = rows.Select(row => Assert.Single(ElementChildren.Read(frames.World, row))).ToArray();
         labels[0].SetText(frames.World, "first alpha");
         labels[1].SetText(frames.World, "edited beta");
         labels[2].SetText(frames.World, "second alpha");
 
         items.Value = [new("alpha"), new("alpha"), new("beta")];
         frames.Frame();
-        Assert.Equal([rows[0], rows[2], rows[1]], Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray());
+        Assert.Equal([rows[0], rows[2], rows[1]], ElementChildren.Read(frames.World, list));
         Assert.Equal(["first alpha", "edited beta", "second alpha"], labels.Select(node =>
-            frames.World.Read<Elements.Text>(node).Value));
+            frames.World.ReadComponentData<Elements.Text>(node).Value));
 
         items.Value = [new("alpha"), new("beta")];
         frames.Frame();
-        Assert.Equal([rows[0], rows[1]], Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray());
-        Assert.False(frames.World.IsAlive(rows[2]));
-        Assert.False(frames.World.IsAlive(labels[2]));
+        Assert.Equal([rows[0], rows[1]], ElementChildren.Read(frames.World, list));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(rows[2]));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(labels[2]));
     }
 
     [Theory]
@@ -259,18 +259,18 @@ public sealed partial class SolidTests
                 For(() => items.Value, (item, index) => Text(() => $"{item}:{index()}"));
         }));
         frames.Frame();
-        Entity list = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
+        Entity list = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] rows = ElementChildren.Read(frames.World, list);
         string[] initial = ReadValues();
 
         items.Value = new InterruptedItems([2, 3, 1]);
         frames.Frame();
-        Assert.Equal(rows, Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray());
+        Assert.Equal(rows, ElementChildren.Read(frames.World, list));
         Assert.Equal(initial, ReadValues());
 
         items.Value = [2, 3, 1];
         frames.Frame();
-        Entity[] recovered = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
+        Entity[] recovered = ElementChildren.Read(frames.World, list);
         if (byPosition)
         {
             Assert.Equal(rows, recovered.Take(2));
@@ -283,8 +283,8 @@ public sealed partial class SolidTests
             Assert.Equal(["2:0", "3:1", "1:2"], ReadValues());
         }
 
-        string[] ReadValues() => Hierarchy<ElementTree>.GetChildren(frames.World, list).Select(row =>
-            frames.World.Read<Elements.Text>(Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, row))).Value).ToArray();
+        string[] ReadValues() => ElementChildren.Read(frames.World, list).Select(row =>
+            frames.World.ReadComponentData<Elements.Text>(Assert.Single(ElementChildren.Read(frames.World, row))).Value).ToArray();
     }
 
     [Theory]
@@ -304,16 +304,16 @@ public sealed partial class SolidTests
                 For(() => items.Value, (item, index) => Text(() => $"{currentCaption}:{index()}"));
         }));
         frames.Frame();
-        Entity list = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
-        Entity label = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, rows[0]));
+        Entity list = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] rows = ElementChildren.Read(frames.World, list);
+        Entity label = Assert.Single(ElementChildren.Read(frames.World, rows[0]));
         label.SetText(frames.World, "edited first");
 
         caption.Value = "latest";
         frames.Frame();
 
-        Assert.Equal(rows, Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray());
-        Assert.Equal("edited first", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal(rows, ElementChildren.Read(frames.World, list));
+        Assert.Equal("edited first", frames.World.ReadComponentData<Elements.Text>(label).Value);
     }
 
     [Theory]

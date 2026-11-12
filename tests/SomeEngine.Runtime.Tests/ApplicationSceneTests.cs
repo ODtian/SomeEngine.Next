@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
+using DefaultGame;
 
 namespace SomeEngine.Runtime.Tests;
 
@@ -7,6 +8,39 @@ namespace SomeEngine.Runtime.Tests;
 [Collection("Scene content")]
 public sealed class ApplicationSceneTests(SceneContentFixture content)
 {
+    [Fact]
+    public async Task FixedMeasurementStopsAtTheFirstUnreadyFrameAndReportsItsState()
+    {
+        string[] options = ["--hardware-adapter", "--graphics-backend", "d3d12", "--hidden-window",
+            "--frames", "130", "--static-scene", "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm",
+            "--fixed-step", "0.016666667"];
+        var platform = new SceneTestPlatform([
+            new("Early fixed frame", content.DirectoryPath) { MeasurementFrames = new(1, 128) },
+        ], RuntimeStartupOptions.Parse(options));
+        var presented = new List<int>();
+        Action<ApplicationFrame> completed = platform.Application.FrameCompleted!;
+        platform.Application.FrameCompleted = frame =>
+        {
+            if (platform.IsMeasuring && !platform.Application.ReloadRequested) presented.Add(frame.Index);
+            completed(frame);
+        };
+        platform.StartMeasurements();
+
+        Assert.Equal(0, await Application.RunAsync(options, animateMaterial: null, platform.Application));
+        Assert.Equal([0, 1], presented);
+        using var report = System.Text.Json.JsonDocument.Parse(File.ReadAllText(platform.LastReport!));
+        Assert.False(report.RootElement.GetProperty("Complete").GetBoolean());
+        Assert.Contains("Warmup did not complete", report.RootElement.GetProperty("Error").GetString());
+        var scene = report.RootElement.GetProperty("Scenes")[0];
+        Assert.Equal("Incomplete", scene.GetProperty("Status").GetString());
+        Assert.Equal(1, scene.GetProperty("Frames").GetInt32());
+        Assert.Equal(1, scene.GetProperty("FirstSimulationFrame").GetInt32());
+        Assert.Equal(1, scene.GetProperty("LastSimulationFrame").GetInt32());
+        File.Delete(platform.LastReport!);
+        File.Delete(Path.Combine(Path.GetDirectoryName(platform.LastReport!)!, "frame-samples.json"));
+        Directory.Delete(Path.GetDirectoryName(platform.LastReport!)!);
+    }
+
     [Fact]
     public async Task GameWorkFailureIsObservedBeforePresentingItsFrame()
     {

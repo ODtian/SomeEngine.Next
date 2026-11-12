@@ -10,15 +10,15 @@
 
 ## 枚举和组合
 
-对于直接来自 `Within`、`Between`、二元 `Product` 的查询，生成入口返回 `RelationQuery<KeyPairs<…>,(Entity,Entity)>`。`KeyPairs` 在执行回调中收集参与集合当前使用的键，调用 `World.GetByIndex<TComponent,TKey>` 取得已有桶，再通过各参与查询的 `Contains` 选取桶成员；后续筛选需要组件行时使用 `TryGetRow` 并继续转发该借用行。缺少该组件的成员形成单独的临时组：其关系判断为 false，`Except` 保留这些实体参与的行。
+对于直接来自 `Within`、`Between`、二元 `Product` 的查询，生成入口返回 `RelationQuery<KeyPairs<…>,(Entity,Entity)>`。`KeyPairs` 在终端打开的 `QueryScope` 中枚举 `QueryChunk`，按列读取参与集合当前使用的键，通过 `World.Index<TComponent,TKey>().Find(key)` 取得已有成员范围，再用各参与范围的 `Contains(entity)` 选取桶成员。缺少该组件的成员形成单独的临时组：其关系判断为 false，`Except` 保留这些实体参与的行。
 
 `KeyPairsWithin`、`KeyPairsBetween`、`KeyProduct2` 分别实现对应的身份行规则，具体顺序与重复含义见[关系查询](Relation-Queries.md)。`Between` 的键判断随输出实体顺序交换输入位置；同一对键的两个方向分别求值，实际实体对使用对应方向的结论。`Within` 按完整实体身份选出升序组合；`Product` 保留输入位置与自身组合。
 
-公开枚举入口从本次查询视图中提取具体成员与访问输入，桶循环接收这些输入。`Within` 的单集合读取使用同一成员查询；`Between` 和 `Product` 保留各自两个成员查询与访问范围。`IKeyPairing.TryPair` 以 `scoped in` 接收第一、第二成员查询，身份判断与重叠去重只读取这两个集合。语义参数和具体实现沿 `scoped in` 传入桶循环，保持查询描述中只读字段的调用含义。
+公开枚举入口以 `RelationQueryViews` 持有本次的原生查询范围，桶循环接收这些输入。`Within` 的单集合读取使用同一成员范围；`Between` 和 `Product` 保留各自两个成员范围。`IKeyPairing.TryPair` 以 `scoped in QueryScope` 接收第一、第二范围，身份判断与重叠去重只读取这两个集合。语义参数和具体实现沿具体泛型值传入桶循环。
 
-对于已经组合过的具体枚举，生成入口返回 `RelationQuery<KeyFilter<…>,(Entity,Entity)>`。临时 `KeyRelation<…>` 从完整 Access 视图读取当前两个键，转发给具体实现。两种入口均通过现有 `IRelationOutput` 输出，复用 `Count`、`Any`、`Enumerate` 与提前结束规则。外层访问查询声明键组件的可选读取，参与查询沿用原有的成员、启用和变更筛选。
+对于已经组合过的具体枚举，生成入口返回 `RelationQuery<KeyFilter<…>,(Entity,Entity)>`。`KeyRelation<…>.Bind(firstChunk,secondChunk)` 一次取得两侧可选列，逐行判断接收行号和角色换位标记；来自身份行的随机读取使用同一外层范围中的 `ReadLookup<TComponent>`。两种入口均通过具体 struct 输出，复用 `Count`、`Any`、`Enumerate` 与提前结束规则。外层访问查询声明键组件的可选读取，参与查询沿用原有的成员、启用和变更筛选。
 
-查询描述保存 World、查询身份、语义参数及具体实现，均为普通 struct。键组、组件借用、键判断与输出转发位于实际查询回调中。键到实体的索引以及回填、引用写入后的重建、组件增删和实体销毁维护继续由 ECS 持有；临时键组只描述本次参与集合。
+查询描述保存 World、`Query`、语义参数及具体实现，均为普通 struct。键组、组件借用、键判断与输出转发位于终端的原生读取范围中。键到实体的索引以及 typed 索引写入、组件增删和实体销毁维护继续由 ECS 持有；临时键组只描述本次参与集合。
 
 ## 代码归属与生成清单
 
@@ -30,6 +30,6 @@
 
 ## 手写对照
 
-`benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenKeyPairs.cs` 是成对 benchmark 使用的手写键配对夹具，提供 `HandwrittenKeyPairs<TComponent,TKey>.Where` 与 `Except`。其数据输入是同一 World、参与 QueryHandle、组件键与 `GetByIndex` 桶；其执行直接展开键分组、键相等、桶遍历、完整实体身份去重和输出循环。入口从原成员定义增加键组件的可选读取：只读定义相同时借用原成员句柄，实际派生或带写访问的定义在本次终端中取得查询并在结束时释放。两条路径均经 `World.ExecuteQuery` 进入访问范围，输出状态沿 finally 回写，泛型输出接口及提前结束含义相同。
+`benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenKeyPairs.cs` 是成对 benchmark 使用的手写键配对夹具，提供 `HandwrittenKeyPairs<TComponent,TKey>.Where` 与 `Except`。其数据输入是同一 World、参与 `Query`、组件键与 `ValueIndex.Find` 成员；其执行直接展开键分组、键相等、桶遍历、完整实体身份去重和输出循环。终端分别打开键组件的可选读取范围与原成员查询范围，读取原生列并用 `QueryScope.Contains` 筛选索引成员。每个 `IndexMembers` 在遍历后释放，输出状态沿 finally 回写，泛型输出接口及提前结束含义相同。
 
 行为检查直接链接该夹具源码，并用独立的五个期望身份行核对手写与关系实现的排除结果。完整 benchmark 在固定输入、相同更新和采样配置下，分别记录两侧初始化、索引维护、分组、输出与端到端成本。

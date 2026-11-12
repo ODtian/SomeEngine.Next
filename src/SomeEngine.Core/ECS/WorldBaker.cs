@@ -1,6 +1,5 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Core.ECS;
 
@@ -31,13 +30,13 @@ public sealed class WorldBaker
 
     private static void Clear(World runtimeWorld, List<EntityId> scratch)
     {
-        QueryHandle query = runtimeWorld.AllEntities();
+        Query query = runtimeWorld.AllEntities();
         runtimeWorld.CollectEntities(query, scratch);
 
         foreach (EntityId entity in scratch)
         {
             if (runtimeWorld.IsAlive(entity))
-                runtimeWorld.DestroyEntity(entity);
+                runtimeWorld.Destroy(entity);
         }
     }
 }

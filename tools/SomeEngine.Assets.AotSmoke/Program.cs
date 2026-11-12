@@ -107,23 +107,43 @@ try
     var inherited = await childCopy.CreateAsync<StandardMaterial>(materialLoader, shaders, textures);
     if (inherited.Roughness != 0.25f || !childRead.GetBlock<MaterialBlock>().HasOverride(nameof(StandardMaterial.Roughness)))
         throw new InvalidOperationException("Resetting an override changed another branch or lost inheritance.");
-    var worldTypes = new SerializationRegistry().Register<SmokeWorldValue, SmokeWorldCodec>(
-        new(new Guid("91165D12-730E-4EA2-8183-4C7B1BED4417"), nameof(SmokeWorldValue), 0x534D4F4B450001UL));
+    var worldCodecs = System.Collections.Immutable.ImmutableArray.Create(
+        ComponentCodec.Create<SmokeWorldValue, SmokeWorldCodec>(
+            new(new Guid("91165D12-730E-4EA2-8183-4C7B1BED4417"), nameof(SmokeWorldValue), 0x534D4F4B450001UL), new()));
     using var world = new World();
-    var entity = world.CreateEntity(new SmokeWorldValue { Number = 16, Reference = new(parent.Id) });
+    var entity = world.Create(new SmokeWorldValue { Number = 16, Reference = new(parent.Id) });
+    using var entityAsset = new EntityAsset { Name = "world entities" };
+    entityAsset.GetBlock<EntityBlock>().WriteEntities(world, [entity], new(Codecs: worldCodecs));
+    using var entityCopy = entityAsset.Duplicate();
+    world.Set(entity, new SmokeWorldValue { Number = 21 });
+    entityCopy.GetBlock<EntityBlock>().WriteEntities(world, [entity], new(Codecs: worldCodecs));
+    AssetEntry entityEntry = await entityAsset.SaveAsync(Path.Combine(directory, "world.entities.asset"));
+    project.RegisterAsset(entityEntry);
     using var worldAsset = new WorldAsset { Name = "world" };
-    worldAsset.WriteWorld(world, worldTypes);
-    using var worldCopy = worldAsset.Duplicate();
-    world.Replace(entity, new SmokeWorldValue { Number = 21 });
-    worldCopy.WriteWorld(world, worldTypes);
+    worldAsset.GetBlock<WorldBlock>().Contents =
+        [new(new AssetId<Asset>(entityAsset.Id), new WorldBounds(0, 0, 0, 1, 1, 1))];
     AssetEntry worldEntry = await worldAsset.SaveAsync(Path.Combine(directory, "world.scene.asset"));
-    using var openedWorld = await WorldAsset.OpenAsync(worldEntry.Path);
-    using World loadedWorld = await openedWorld.LoadAsync(worldTypes);
-    using World changedWorld = await worldCopy.LoadAsync(worldTypes);
-    if (!loadedWorld.IsAlive(entity) || loadedWorld.Read<SmokeWorldValue>(entity).Number != 16
-        || changedWorld.Read<SmokeWorldValue>(entity).Number != 21
-        || !worldEntry.Dependencies.SequenceEqual(new[] { parent.Id }))
-        throw new InvalidOperationException("World asset persistence lost ECS identity, independent content, or dependencies.");
+    project.RegisterAsset(worldEntry);
+    await using var worldLoader = new AssetLoader(project.CreateStorage());
+    using var loadedWorld = new World();
+    await using var stream = new WorldStream(loadedWorld, worldLoader, worldAsset.Reference, new(), new(Codecs: worldCodecs));
+    await stream.ContentsReady;
+    stream.Request(0);
+    stream.Update();
+    while (!stream.LoadedGroups.TryGetEntities(0, out _))
+    {
+        await stream.CompleteReadsAsync();
+        stream.Update();
+    }
+    stream.LoadedGroups.TryGetEntities(0, out ReadOnlyMemory<SomeEngine.ECS.Entities.Entity> loadedMembers);
+    using var changedWorld = new World();
+    ReadOnlyMemory<byte> changedBytes = await entityCopy.GetBlock<EntityBlock>().ReadBytesAsync(EntityBlock.ContentKey);
+    var changed = WorldSerializer.ReadEntities(changedBytes, changedWorld, new(Codecs: worldCodecs));
+    if (loadedWorld.ReadComponentData<SmokeWorldValue>(loadedMembers.Span[0]).Number != 16
+        || changedWorld.ReadComponentData<SmokeWorldValue>(changed[0]).Number != 21
+        || !entityEntry.Dependencies.SequenceEqual(new[] { parent.Id })
+        || !worldEntry.Dependencies.SequenceEqual(new[] { entityAsset.Id }))
+        throw new InvalidOperationException("Scene entities lost independent data or their directory dependencies.");
     string curvePath = Path.Combine(directory, "curve.source");
     using var curveAsset = new SomeEngine.Examples.Curves.CurveAsset
     { Name = "speed" };
@@ -340,7 +360,7 @@ public sealed partial class SmokeCoatingMaterial : Material
     public partial float Roughness { get; set; } = .4f;
 }
 
-public struct SmokeWorldCodec : ICanonicalComponentCodec<SmokeWorldValue>
+public struct SmokeWorldCodec : IDurableComponentCodec<SmokeWorldValue>
 {
     public void Write(ref DataWriter writer, in SmokeWorldValue value)
     {

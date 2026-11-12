@@ -10,7 +10,7 @@ public sealed class TerrainMesherTests
     [Fact]
     public async Task HeightSurfaceProducesAnUpwardFacingPlaneAtItsSampledHeight()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Resources.Terrain(new TerrainEditing(scheduler));
         HeightField heights = terrain.CreateHeightField("plane", new HeightGrid(3, 3, 2), .5f);
         terrain.Surface = new HeightSurface(heights);

@@ -28,7 +28,7 @@
   <Project Path="tools\SomeEngine.ECS.AotSmoke\SomeEngine.ECS.AotSmoke.csproj" />
   <Project Path="tools\SomeEngine.Views.AotSmoke\SomeEngine.Views.AotSmoke.csproj" />
   <Project Path="src\SomeEngine.ECS\SomeEngine.ECS.csproj" />
-  <Project Path="src\SomeEngine.ECS.Relations\SomeEngine.ECS.Relations.csproj" />
+  <Project Path="src\SomeEngine.ECS.Relationships\SomeEngine.ECS.Relationships.csproj" />
   <Project Path="src\SomeEngine.Physics\SomeEngine.Physics.csproj" />
   <Project Path="src\SomeEngine.ECS.Systems\SomeEngine.ECS.Systems.csproj" />
   <Project Path="src/SomeEngine.Animation/SomeEngine.Animation.csproj" />
@@ -47,7 +47,7 @@
   <Project Path="src/SomeEngine.Views.Compiler/SomeEngine.Views.Compiler.csproj" />
   <Project Path="src\SomeEngine.ECS.Serialization\SomeEngine.ECS.Serialization.csproj" />
   <Project Path="src\SomeEngine.ECS.SourceGen\SomeEngine.ECS.SourceGen.csproj" />
-  <Project Path="src\SomeEngine.Job.Contracts\SomeEngine.Job.Contracts.csproj" />
+  <Project Path="src\SomeEngine.Job.Resources\SomeEngine.Job.Resources.csproj" />
   <Project Path="src\SomeEngine.Job\SomeEngine.Job.csproj" />
   <Project Path="src\SomeEngine.Job.Dots\SomeEngine.Job.Dots.csproj" />
   <Project Path="src\SomeEngine.Generators\SomeEngine.Generators.csproj" />
@@ -91,6 +91,7 @@
   <Project Path="samples\SomeEngine.Curves.Assets\SomeEngine.Curves.Assets.csproj" />
   <Project Path="benchmarks\SomeEngine.Graphics.Benchmarks\SomeEngine.Graphics.Benchmarks.csproj" />
   <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/SomeEngine.ECS.Comparison/SomeEngine.ECS.Comparison.csproj" />
     <Project Path="benchmarks/SomeEngine.RenderGraph.Benchmarks/SomeEngine.RenderGraph.Benchmarks.csproj" />
   </Folder>
   <Folder Name="/samples/" />
@@ -102,6 +103,7 @@
   <Folder Name="/templates/" />
   <Folder Name="/tests/">
     <Project Path="tests/SomeEngine.TestRules.Tests/SomeEngine.TestRules.Tests.csproj" />
+    <Project Path="tests/SomeEngine.ArchitectureRules.Tests/SomeEngine.ArchitectureRules.Tests.csproj" />
     <Project Path="tests/SomeEngine.Assets.Consumer.Tests/SomeEngine.Assets.Consumer.Tests.csproj" />
     <Project Path="tests/SomeEngine.ECS.Benchmarks.Tests/SomeEngine.ECS.Benchmarks.Tests.csproj" />
     <Project Path="tests/SomeEngine.Graphics.Benchmarks.Tests/SomeEngine.Graphics.Benchmarks.Tests.csproj" />
@@ -111,6 +113,7 @@
     <Project Path="tools/SomeEngine.Transparency.Research/SomeEngine.Transparency.Research.csproj" />
     <Project Path="tools/SomeEngine.Transparency.Measurements/SomeEngine.Transparency.Measurements.csproj" />
     <Project Path="tools/TestRules/SomeEngine.TestRules.csproj" />
+    <Project Path="tools/ArchitectureRules/SomeEngine.ArchitectureRules.csproj" />
     <Project Path="tools/GenerateDefaultAssets/SomeEngine.GenerateDefaultAssets.csproj" />
     <Project Path="tools/SomeEngine.Job.Benchmarks/SomeEngine.Job.Benchmarks.csproj" />
     <Project Path="tools/SomeEngine.SceneContent/SomeEngine.SceneContent.csproj" />

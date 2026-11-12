@@ -1,6 +1,5 @@
-using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -9,59 +8,96 @@ namespace SomeEngine.Animation.Pose;
 /// <summary>Completes a level's concrete masked TRS jobs before publishing their pose results.</summary>
 public struct PoseLayerSystem : ISystem<PoseNodeContext>
 {
-    private QueryHandle _layers;
+    private Query _layers;
     private List<JobHandle> _jobs;
 
     public void OnCreate(ref PoseNodeContext context)
     {
         _jobs = [];
-        _layers = context.Frame.World.Query(AnimationGraph.WithTimeAccess(context.Frame.World.QueryDefinition()
-            .ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<PoseLayerInstance>()
-            .Optional<AnimationLayers>(QueryAccess.Read)
-            .OptionalBuffer<LocalPose>(QueryAccess.ReadWrite).OptionalBuffer<PoseResult>(QueryAccess.ReadWrite)));
+        _layers = context.Frame.World.Query(AnimationGraph.WithTimeAccess(new QueryDescription()
+            .WithStored<Timeline>().With<Timeline>().WithStored<Buffer<PoseLayerInstance>>()
+            .Optional<AnimationLayers>()
+            .Optional<Buffer<LocalPose>>().Optional<Buffer<PoseResult>>()));
     }
 
     public void OnUpdate(ref PoseNodeContext context)
     {
         _jobs.Clear();
         var frame = new LayerFrame { World = context.Frame.World, Level = context.Level, Jobs = _jobs };
-        frame.World.ExecuteQuery(_layers, ref frame, static (QueryCursor rows, ref LayerFrame frame) =>
         {
-            foreach (QueryRow row in rows.Rows)
-                foreach (ref PoseLayerInstance layer in row.Buffer<PoseLayerInstance>().AsSpan())
-                    if (layer.Node.Level == frame.Level) Gather(frame.World, row.Entity, ref layer, frame.Jobs);
-        });
-        foreach (JobHandle job in _jobs) job.Complete();
-        frame.World.ExecuteQuery(_layers, ref frame, static (QueryCursor rows, ref LayerFrame frame) =>
-        {
-            World world = frame.World;
-            foreach (QueryRow row in rows.Rows)
-                foreach (ref PoseLayerInstance layer in row.Buffer<PoseLayerInstance>().AsSpan())
+            using QueryScope read = _layers.Open();
+            Visit(in read, ref frame);
+
+            static void Visit(scoped in QueryScope rows, ref LayerFrame frame)
+            {
+                foreach (QueryChunk chunk in rows)
                 {
-                    if (!layer.Active || layer.Node.Level != frame.Level) continue;
-                    if (layer.Sampled)
+                    var buffers0 = chunk.Has<Buffer<PoseLayerInstance>>() ? chunk.GetBuffers<PoseLayerInstance>() : default;
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
                     {
-                        var copy = (Values: layer.Samples.Output, Range: layer.Output.Range);
-                        world.ExecuteBufferWrite<LocalPose, (BoneTransform[] Values, PoseRange Range)>(layer.Output.Entity,
-                            ref copy, static (poses, ref copy) => copy.Values.AsSpan()
-                                .CopyTo(LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count))));
+                        foreach (ref PoseLayerInstance layer in buffers0[rowIndex].AsSpan())
+                            if (layer.Node.Level == frame.Level) Gather(frame.World, chunk.Entities[rowIndex], ref layer, frame.Jobs);
                     }
-                    var output = (Index: layer.Output.Index, Basis: layer.Basis, Weight: layer.Weight, Sampled: layer.Sampled);
-                    world.ExecuteBufferWrite<PoseResult, (int Index, PoseResult Basis, float Weight, bool Sampled)>(layer.Output.Entity,
-                        ref output, static (results, ref output) =>
-                        {
-                            ref PoseResult result = ref results[output.Index];
-                            result.Weight = output.Weight;
-                            if (!output.Sampled) return;
-                            result.Time = output.Basis.Time;
-                            result.Phase = output.Basis.Phase;
-                            result.Starts = output.Basis.Starts;
-                            result.RootMotion = new(output.Basis.RootMotion.Transform * result.RootMotion.Transform);
-                            result.Version++;
-                        });
-                    AnimationGraph.Submit(world, row.Entity, in layer.Placement, layer.Sampled);
                 }
-        });
+
+            }
+        }
+        foreach (JobHandle job in _jobs) job.Complete();
+        {
+            using QueryScope read = _layers.Open();
+            Visit(in read, ref frame);
+
+            static void Visit(scoped in QueryScope rows, ref LayerFrame frame)
+            {
+                World world = frame.World;
+                foreach (QueryChunk chunk in rows)
+                {
+                    var buffers0 = chunk.Has<Buffer<PoseLayerInstance>>() ? chunk.GetBuffers<PoseLayerInstance>() : default;
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+                        foreach (ref PoseLayerInstance layer in buffers0[rowIndex].AsSpan())
+                        {
+                            if (!layer.Active || layer.Node.Level != frame.Level) continue;
+                            if (layer.Sampled)
+                            {
+                                var copy = (Values: layer.Samples.Output, Range: layer.Output.Range);
+                                {
+                                    using var poses = world.GetBuffer<LocalPose>(layer.Output.Entity);
+                                    Visit(poses, ref copy);
+
+                                    static void Visit(DynamicBuffer<LocalPose> poses, ref (BoneTransform[] Values, PoseRange Range) copy)
+                                    {
+                                        copy.Values.AsSpan()
+                                                                        .CopyTo(LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count)));
+
+                                    }
+                                }
+                            }
+                            var output = (Index: layer.Output.Index, Basis: layer.Basis, Weight: layer.Weight, Sampled: layer.Sampled);
+                            {
+                                using var results = world.GetBuffer<PoseResult>(layer.Output.Entity);
+                                Visit(results, ref output);
+
+                                static void Visit(DynamicBuffer<PoseResult> results, ref (int Index, PoseResult Basis, float Weight, bool Sampled) output)
+                                {
+                                    ref PoseResult result = ref results[output.Index];
+                                    result.Weight = output.Weight;
+                                    if (!output.Sampled) return;
+                                    result.Time = output.Basis.Time;
+                                    result.Phase = output.Basis.Phase;
+                                    result.Starts = output.Basis.Starts;
+                                    result.RootMotion = new(output.Basis.RootMotion.Transform * result.RootMotion.Transform);
+                                    result.Version++;
+
+                                }
+                            }
+                            AnimationGraph.Submit(world, chunk.Entities[rowIndex], in layer.Placement, layer.Sampled);
+                        }
+                    }
+                }
+
+            }
+        }
     }
 
     private static void Gather(World world, Entity animation, ref PoseLayerInstance layer, List<JobHandle> jobs)
@@ -77,7 +113,7 @@ public struct PoseLayerSystem : ISystem<PoseNodeContext>
         var operation = new AnimationLayer { Mode = LayerMode.Override, Weight = 1 };
         if (world.Has<AnimationLayers>(layer.Output.Entity))
         {
-            AnimationLayers layers = world.Read<AnimationLayers>(layer.Output.Entity);
+            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(layer.Output.Entity);
             if (layer.Placement.Layer < layers.Count) operation = layers.Items[layer.Placement.Layer];
         }
         Copy(world, in layer.Base, layer.Samples.Base);
@@ -90,12 +126,20 @@ public struct PoseLayerSystem : ISystem<PoseNodeContext>
     private static void Copy(World world, in PoseResultReference reference, BoneTransform[] values)
     {
         var copy = (Values: values, Range: reference.Range);
-        world.ExecuteBufferRead<LocalPose, (BoneTransform[] Values, PoseRange Range)>(reference.Entity, ref copy,
-            static (poses, ref copy) => LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count))
-                .CopyTo(copy.Values));
+        {
+            using var poses = world.ReadBuffer<LocalPose>(reference.Entity);
+            Visit(poses, ref copy);
+
+            static void Visit(ReadOnlyBuffer<LocalPose> poses, ref (BoneTransform[] Values, PoseRange Range) copy)
+            {
+                LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count))
+                                .CopyTo(copy.Values);
+
+            }
+        }
     }
 
-    public void OnDestroy(ref PoseNodeContext context) => context.Frame.World.ReleaseQuery(_layers);
+    public void OnDestroy(ref PoseNodeContext context) { }
 
     private struct LayerFrame
     {

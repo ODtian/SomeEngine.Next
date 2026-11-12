@@ -4,7 +4,7 @@ using SomeEngine.Serialization;
 
 namespace SomeEngine.ECS.Serialization.Tests;
 
-// Malformed inputs are authored in the documented v4 wire format and read through public APIs.
+// Malformed inputs follow the version 5 wire fields and are read through public APIs.
 internal static class SaveBytes
 {
     internal static UTF8Encoding Utf8 { get; } = new(false, true);
@@ -33,7 +33,7 @@ internal static class SaveBytes
 
     internal static void WriteEntity(BinaryWriter writer, Entity entity)
     {
-        writer.Write(entity.Index);
+        writer.Write(entity.Id);
         writer.Write(entity.Generation);
     }
 
@@ -50,6 +50,8 @@ internal static class SaveBytes
             reader.ReadBytes(16);
             ReadString(reader);
             reader.ReadUInt64();
+            reader.ReadByte();
+            reader.ReadInt32();
         }
     }
 }

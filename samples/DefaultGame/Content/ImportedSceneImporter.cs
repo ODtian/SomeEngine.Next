@@ -18,7 +18,7 @@ using GltfTexture = SharpGLTF.Schema2.Texture;
 
 namespace DefaultGame.Content;
 
-[AssetImporter("a91c86d1-551d-48e3-8e33-a25e30e2c2f4", typeof(WorldBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
+[AssetImporter("a91c86d1-551d-48e3-8e33-a25e30e2c2f4", typeof(EntityBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
 public sealed class ImportedSceneImporter : GltfSceneImporter
 {
     public static readonly Guid ImporterId = new("a91c86d1-551d-48e3-8e33-a25e30e2c2f4");
@@ -86,14 +86,17 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         content.SetParameter(new("OcclusionStrength", MaterialParameterKind.Float) { Float = occlusion?.GetFactor("OcclusionStrength") ?? 1 });
     }
 
-    internal async Task UpdateMaterialsAsync(AssetProject project, ModelRoot model, AssetManifest imported)
+    internal async Task UpdateMaterialsAsync(AssetProject project, ModelRoot model, AssetManifest imported,
+        GltfImporterSettings settings)
     {
-        var entries = imported.Assets.Values.ToDictionary(entry => entry.SubAssetKey);
+        var entries = imported.Assets.Values.Where(entry => entry.AssetType is TextureAsset.FileType or MaterialAsset.FileType
+                && entry.SubAssetKey.Length != 0).ToDictionary(entry => entry.SubAssetKey);
         var textures = model.LogicalTextures.ToDictionary(texture => texture,
-            texture => new AssetId<TextureAsset>(entries[$"texture:index:{texture.LogicalIndex}"].AssetGuid));
+            texture => new AssetId<TextureAsset>(entries[GltfSourceImporter.GetElementKey(
+                settings, "texture", texture.LogicalIndex, texture)].AssetGuid));
         foreach (GltfMaterial source in model.LogicalMaterials)
         {
-            AssetEntry entry = entries[$"material:index:{source.LogicalIndex}"];
+            AssetEntry entry = entries[GltfSourceImporter.GetElementKey(settings, "material", source.LogicalIndex, source)];
             using var asset = new MaterialAsset(entry.AssetGuid) { Name = entry.Name };
             MaterialBlock content = asset.GetBlock<MaterialBlock>();
             content.Parent = SampleSceneMaterials.ImportedTemplate;
@@ -103,7 +106,57 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             content.Shader = shader.Reference;
             string destination = Path.Combine(project.RootPath, entry.Path);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            project.RegisterAsset(await asset.SaveAsync(destination));
+            project.RegisterAsset((await asset.SaveAsync(destination)) with
+                { SourceGuid = entry.SourceGuid, SubAssetKey = entry.SubAssetKey });
+        }
+    }
+
+    internal async Task RebuildSceneAsync(AssetProject project, ModelRoot model, AssetManifest imported,
+        SourceMeta metadata, AssetEntry sceneEntry)
+    {
+        string sourcePath = imported.Sources[sceneEntry.SourceGuid];
+        string localSource = Path.Combine(project.RootPath, sourcePath);
+        GltfImporterSettings settings = metadata.GetSettings(GltfSourceImporter.SourceImporterId,
+            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
+        project.Manifest.AddSource(metadata.SourceGuid, sourcePath);
+        await using var loader = new AssetLoader(project.CreateStorage());
+        await using var context = new ImportContext(project.RootPath, sourcePath, metadata);
+        context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new ReusedMeshImporter());
+        context.EnableImporter<Scene, EntityAsset>(new AssetImporter<Scene, GltfSceneSettings>(ImporterId,
+            [EntityBlock.BlockTypeId], this, new()));
+        foreach (SharpGLTF.Schema2.Mesh mesh in model.LogicalMeshes)
+        {
+            string key = GltfSourceImporter.GetElementKey(settings, "mesh", mesh.LogicalIndex, mesh);
+            AssetEntry entry = imported.Assets[metadata.ElementIds[key]];
+            MeshAsset asset = await MeshAsset.OpenAsync(loader, new(entry.AssetGuid));
+            context.AddAsset(mesh, asset, key, entry.Path);
+        }
+        Scene source = model.DefaultScene;
+        string entitiesKey = GltfSourceImporter.GetElementKey(settings, "entities", source.LogicalIndex, source);
+        Guid entitiesId = context.GetAssetId(entitiesKey);
+        string entitiesPath = Path.Combine(Path.GetDirectoryName(sceneEntry.Path)!,
+            $"{Path.GetFileNameWithoutExtension(sourcePath)}.{entitiesId:N}.entities.asset");
+        context.AddAsset(source, new EntityAsset(entitiesId) { Name = sceneEntry.Name }, entitiesKey, entitiesPath);
+        EntityAsset entities = await context.GetAssetAsync<Scene, EntityAsset>(source);
+        project.RegisterAsset((await entities.SaveAsync(Path.Combine(project.RootPath, entitiesPath))) with
+            { SourceGuid = metadata.SourceGuid, SubAssetKey = entitiesKey });
+        WorldBounds bounds = await GetSceneBoundsAsync(source, context, default);
+        using var directory = new WorldAsset(sceneEntry.AssetGuid) { Name = sceneEntry.Name };
+        directory.GetBlock<WorldBlock>().Contents = [new(new(entities.Id), bounds)];
+        project.RegisterAsset((await directory.SaveAsync(Path.Combine(project.RootPath, sceneEntry.Path))) with
+            { SourceGuid = metadata.SourceGuid, SubAssetKey = sceneEntry.SubAssetKey });
+        SourceMeta.Save(localSource, metadata);
+    }
+
+    private sealed class ReusedMeshImporter : IAssetImporter<SharpGLTF.Schema2.Mesh>
+    {
+        public Guid Id => ImporterId;
+        public IReadOnlyList<Guid> ProducedBlocks { get; } = [MeshBlock.BlockTypeId];
+        public async ValueTask ImportAsync(SharpGLTF.Schema2.Mesh source, ImportContext context,
+            ImportOutput output, CancellationToken cancellationToken)
+        {
+            MeshBlock geometry = await ((MeshAsset)output.Target).GetBlockAsync<MeshBlock>(cancellationToken);
+            output.SetBlock(geometry.Duplicate());
         }
     }
 
@@ -225,14 +278,14 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
     {
         string name = Path.GetFileNameWithoutExtension(context.SourcePath);
         bool sponza = name.Equals("Sponza", StringComparison.OrdinalIgnoreCase);
-        world.CreateEntity(new SceneCamera
+        world.Create(new SceneCamera
         {
             Position = sponza ? new(-9, 2, 0) : new(-8, 3, 0),
             Target = sponza ? new(5, 2, 0) : new(0, 2, 0),
             Up = Vector3.UnitY, VerticalFieldOfView = MathF.PI / 3, NearPlane = 0.05f, FarPlane = 2000,
         });
-        world.CreateEntity(new DirectionalLight(new(0.35f, -0.85f, 0.4f), new(1, 0.96f, 0.9f), 3));
-        if (sponza) world.CreateEntity(new PointLight(new(0, 4, 0), 30, new(1, 0.95f, 0.9f), 15));
+        world.Create(new DirectionalLight(new(0.35f, -0.85f, 0.4f), new(1, 0.96f, 0.9f), 3));
+        if (sponza) world.Create(new PointLight(new(0, 4, 0), 30, new(1, 0.95f, 0.9f), 15));
         return ValueTask.CompletedTask;
     }
 

@@ -14,13 +14,13 @@ internal static class CheckViewCheckpoint
     {
         SerializationRegistry registry = CreateRegistry(reading: false);
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new CheckpointNumber(7));
+        Entity source = frames.World.Create(new CheckpointNumber(7));
         frames.World.Add(source, new SavedCount(7));
         Entity root = Views.Spawn(frames.World, Entity.Null, new SavedPanel(source));
         frames.Frame();
         using var stream = File.Create(path);
         WorldCheckpointCodec.Write(stream, frames.World, registry);
-        Console.WriteLine($"Checkpoint written; panel ViewType.Id={frames.World.Read<ViewType>(root).Id}.");
+        Console.WriteLine($"Checkpoint written; panel ViewType.Id={frames.World.ReadComponentData<ViewType>(root).Id}.");
     }
 
     internal static void Read(string path)
@@ -30,44 +30,41 @@ internal static class CheckViewCheckpoint
         using var stream = File.OpenRead(path);
         using var frames = new HeadlessFrameDriver(WorldCheckpointCodec.Read(stream, registry));
         Entity root = Entity.Null;
-        var query = frames.World.Query(frames.World.QueryDefinition().Read<SavedPanel>());
-        frames.World.ExecuteQuery(query, ref root, static (rows, ref panel) =>
-        {
-            foreach (var row in rows.Rows)
-                panel = row.Entity;
-        });
-        frames.World.ReleaseQuery(query);
-        Entity source = frames.World.Read<SavedPanel>(root).Source;
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Query query = frames.World.Query(new QueryDescription().WithStored<SavedPanel>());
+        using (QueryScope rows = query.OpenRead())
+            foreach (QueryChunk chunk in rows)
+                foreach (Entity entity in chunk.Entities) root = entity;
+        Entity source = frames.World.ReadComponentData<SavedPanel>(root).Source;
+        Entity[] children = ElementChildren.Read(frames.World, root).ToArray();
         Require(children.Length == 3, "The checkpoint restores the three ordered children.");
-        Entity[] descendants = Hierarchy<ElementTree>.GetChildren(frames.World, children[1]).ToArray();
+        Entity[] descendants = ElementChildren.Read(frames.World, children[1]).ToArray();
         Require(descendants.Length == 1, "The caller container keeps its declared child.");
-        frames.World.Replace(source, new CheckpointNumber(13));
-        frames.World.Replace(source, new SavedCount(13));
+        frames.World.Set(source, new CheckpointNumber(13));
+        frames.World.Set(source, new SavedCount(13));
 
         frames.Frame();
 
-        Require(Hierarchy<ElementTree>.GetChildren(frames.World, root).SequenceEqual(children),
+        Require(ElementChildren.Read(frames.World, root).SequenceEqual(children),
             "The first frame reuses the restored node identities and child order.");
-        Require(Hierarchy<ElementTree>.GetChildren(frames.World, children[1]).SequenceEqual(descendants),
+        Require(ElementChildren.Read(frames.World, children[1]).SequenceEqual(descendants),
             "The first frame reuses the caller container's descendants.");
-        Require(frames.World.ReadSparse<SavedNumber>(children[0]).Value == 13,
+        Require(frames.World.ReadComponentData<SavedNumber>(children[0]).Value == 13,
             "The remapped panel rebuilds from its restored source parameters.");
-        Require(frames.World.Read<CheckpointNumber>(children[1]).Value == 13,
+        Require(frames.World.ReadComponentData<CheckpointNumber>(children[1]).Value == 13,
             "The Once caller container rebuilds in the first frame.");
-        Entity composeValue = Hierarchy<ElementTree>.GetChildren(frames.World, children[2]).Single();
-        Require(frames.World.ReadSparse<SavedValue>(composeValue).Value == 13,
+        Entity composeValue = ElementChildren.Read(frames.World, children[2]).Single();
+        Require(frames.World.ReadComponentData<SavedValue>(composeValue).Value == 13,
             "The referenced Compose view restores its generated codec and rebuilds its output.");
-        frames.World.Replace(source, new CheckpointNumber(19));
-        frames.World.Replace(source, new SavedCount(19));
+        frames.World.Set(source, new CheckpointNumber(19));
+        frames.World.Set(source, new SavedCount(19));
         frames.Frame();
-        Require(frames.World.ReadSparse<SavedNumber>(children[0]).Value == 19,
+        Require(frames.World.ReadComponentData<SavedNumber>(children[0]).Value == 19,
             "The first frame reestablishes ECS dependencies for subsequent updates.");
-        Require(frames.World.Read<CheckpointNumber>(children[1]).Value == 13,
+        Require(frames.World.ReadComponentData<CheckpointNumber>(children[1]).Value == 13,
             "The Once container retains its first rebuilt output on subsequent frames.");
-        Require(frames.World.ReadSparse<SavedValue>(composeValue).Value == 19,
+        Require(frames.World.ReadComponentData<SavedValue>(composeValue).Value == 19,
             "The referenced Compose view reestablishes its source dependency.");
-        Console.WriteLine($"Checkpoint read, type remapping, next-frame rebuilding, and dependencies passed; panel ViewType.Id={frames.World.Read<ViewType>(root).Id}.");
+        Console.WriteLine($"Checkpoint read, type remapping, next-frame rebuilding, and dependencies passed; panel ViewType.Id={frames.World.ReadComponentData<ViewType>(root).Id}.");
     }
 
     private static SerializationRegistry CreateRegistry(bool reading)
@@ -104,9 +101,9 @@ internal static class CheckViewCheckpoint
     }
 }
 
-public readonly record struct CheckpointNumber(int Value) : IComponent;
+public readonly record struct CheckpointNumber(int Value) : IComponent, ITrackedComponent;
 
-public struct CheckpointNumberCodec : ICanonicalComponentCodec<CheckpointNumber>
+public struct CheckpointNumberCodec : IDurableComponentCodec<CheckpointNumber>
 {
     public void Write(ref DataWriter writer, in CheckpointNumber value) => writer.WriteInt32(value.Value);
     public void Read(ref DataReader reader, out CheckpointNumber value) => value = new CheckpointNumber(reader.ReadInt32());
@@ -140,7 +137,7 @@ public readonly record struct SavedContainer(Entity Source) : IView, IComponent
     {
         var value = new CheckpointNumber(Scope.Read<CheckpointNumber>(Source).Value);
         if (Scope.World.Has<CheckpointNumber>(Scope.Entity))
-            Scope.World.Replace(Scope.Entity, in value);
+            Scope.World.Set(Scope.Entity, in value);
         else
             Scope.World.Add(Scope.Entity, in value);
         return default;

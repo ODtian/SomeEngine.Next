@@ -1,10 +1,8 @@
 using System.Collections.Concurrent;
 using SomeEngine.ECS;
-using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Serialization;
 using SomeEngine.Serialization;
@@ -17,17 +15,51 @@ namespace SomeEngine.ECS.Serialization.Tests;
 
 public sealed class WorldStreamingSerializationTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ComponentThenWorldReadFromOneStreamPreservesBothValues(bool seekable)
+    {
+        var registry = new SerializationRegistry()
+            .RegisterCodec<SerName, SerNameCodec>(default)
+            .RegisterCodec<SerPosition, SerPositionFullCodec>(default);
+        var name = new SerName { Value = "入口 🚲", Id = 7 };
+        using var world = new World();
+        Entity entity = world.Create(new SerPosition { X = 17, Y = 23 });
+        using var output = new MemoryStream();
+        WorldSerializer.WriteComponent(output, name, registry);
+        new WorldSerializer(registry).Save(world, output);
+        using Stream input = seekable
+            ? new MemoryStream(output.ToArray(), writable: false)
+            : new SequentialReadStream(output.ToArray());
+        SerName restoredName = WorldSerializer.ReadComponent<SerName>(input, registry);
+        using World restoredWorld = WorldSerializer.ReadWorld(input, registry,
+            new WorldLoadOptions(RequireEndOfInput: true));
+        Assert.Equal(name.Value, restoredName.Value);
+        Assert.Equal(name.Id, restoredName.Id);
+        Assert.Equal(1, restoredWorld.EntityCount);
+        Assert.Equal(17, restoredWorld.Read<SerPosition>(entity).X);
+        Assert.Equal(23, restoredWorld.Read<SerPosition>(entity).Y);
+    }
+
+    private sealed class SequentialReadStream(byte[] bytes) : MemoryStream(bytes, writable: false)
+    {
+        public override bool CanSeek => false;
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    }
+
     [Fact]
     public void DurableWorldUsesManagedStorageWithoutChangingItsEncodingOrReadBehavior()
     {
         var registry = new SerializationRegistry().Register<SerPosition, PagePositionCodec>(new(
             Guid.Parse("57C630DB-1452-42CB-915A-A0CE63728294"), "tests.page-position", 1));
         using var world = new World();
-        var entity = world.CreateEntity(new SerPosition { X = 17, Y = 23 });
+        var entity = world.Create(new SerPosition { X = 17, Y = 23 });
         using var stream = new MemoryStream();
-        WorldSerializer.WriteDurableWorld(stream, world, registry);
+        new WorldSerializer(registry).Save(world, stream, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         using var expected = new MemoryStream();
-        WorldSerializer.WriteDurableWorld(expected, world, registry);
+        new WorldSerializer(registry).Save(world, expected, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         byte[] encoded = new byte[stream.Length];
         stream.Position = 0;
         stream.ReadExactly(encoded);
@@ -36,7 +68,7 @@ public sealed class WorldStreamingSerializationTests
         byte[] retained = stream.ToArray();
         using var input = new MemoryStream(retained, writable: false);
         using World decoded = WorldSerializer.ReadWorld(input, registry,
-            new() { RequiredContract = SerializationContract.DurableSave });
+            new() { RequiredPurpose = SavePurpose.DurableSave });
         Assert.True(decoded.IsAlive(entity));
         Assert.Equal(17, decoded.Read<SerPosition>(entity).X);
         Assert.Equal(23, decoded.Read<SerPosition>(entity).Y);
@@ -58,19 +90,19 @@ public sealed class WorldStreamingSerializationTests
     {
         var registry = new SerializationRegistry().Register<SerPosition>();
         var world = new World();
-        world.CreateEntity(new SerPosition { X = 1, Y = 2 });
+        world.Create(new SerPosition { X = 1, Y = 2 });
 
         using var successful = new MemoryStream();
-        WorldSerializer.WriteWorld(successful, world, registry);
+        new WorldSerializer(registry).Save(world, successful);
 
         using var faulting = new ThrowingWriteStream();
-        Assert.Throws<IOException>(() => WorldSerializer.WriteWorld(faulting, world, registry));
+        Assert.Throws<IOException>(() => new WorldSerializer(registry).Save(world, faulting));
 
         // The owner-thread root context must be gone after the output exception. A subsequent
         // capture on this same test thread must pin the current successor, not collide with or
         // read through the failed capture's retained root.
         using var retry = new MemoryStream();
-        WorldSerializer.WriteWorld(retry, world, registry);
+        new WorldSerializer(registry).Save(world, retry);
         Assert.Equal(successful.ToArray(), retry.ToArray());
         Assert.Equal(1, world.EntityCount);
     }
@@ -83,7 +115,7 @@ public sealed class WorldStreamingSerializationTests
     {
         var registry = new SerializationRegistry().Register<SerPosition>();
         var world = new World();
-        world.CreateEntity(new SerPosition { X = 1, Y = 2 });
+        world.Create(new SerPosition { X = 1, Y = 2 });
         Exception expected = kind switch
         {
             WriteFailureKind.Io => new IOException("Injected output fault."),
@@ -94,7 +126,7 @@ public sealed class WorldStreamingSerializationTests
         using var output = new FaultingWriteStream(expected);
 
         Exception? actual = Record.Exception(() =>
-            WorldSerializer.WriteWorld(output, world, registry));
+            new WorldSerializer(registry).Save(world, output));
         Assert.NotNull(actual);
         Assert.Equal(expected.GetType(), actual.GetType());
         await AssertMutationCompletesAsync(world);
@@ -104,13 +136,13 @@ public sealed class WorldStreamingSerializationTests
     public async Task WorldWrite_ComponentCodecFailureReleasesAdmission()
     {
         var registry = new SerializationRegistry()
-            .Register<ThrowingWorldComponent, ThrowingWorldComponentCodec>();
+            .RegisterCodec<ThrowingWorldComponent, ThrowingWorldComponentCodec>(default);
         var world = new World();
-        world.CreateEntity(new ThrowingWorldComponent { Value = 1 });
+        world.Create(new ThrowingWorldComponent { Value = 1 });
         using var output = new MemoryStream();
 
         Assert.Throws<InvalidOperationException>(() =>
-            WorldSerializer.WriteWorld(output, world, registry));
+            new WorldSerializer(registry).Save(world, output));
 
         await AssertMutationCompletesAsync(world);
     }
@@ -121,9 +153,11 @@ public sealed class WorldStreamingSerializationTests
         using var world = new World();
         var registry = new SerializationRegistry()
             .RegisterCodec<ReentrantWorldComponent, ReentrantWorldComponentCodec>(new ReentrantWorldComponentCodec(world));
-        world.CreateEntity(new ReentrantWorldComponent { Value = 1 });
+        world.Create(new ReentrantWorldComponent { Value = 1 });
         using var output = new MemoryStream();
-        WorldSerializer.WriteWorld(output, world, registry);
+        using var checkpoint = new WorldCheckpoint();
+        checkpoint.Capture(world);
+        new WorldSerializer(registry).Save(checkpoint, output);
 
         Assert.Equal(2, world.EntityCount);
         output.Position = 0;
@@ -136,11 +170,13 @@ public sealed class WorldStreamingSerializationTests
     {
         var registry = new SerializationRegistry().Register<SerPosition>();
         using var world = new World();
-        world.CreateEntity(new SerPosition { X = 1, Y = 2 });
+        world.Create(new SerPosition { X = 1, Y = 2 });
         Entity created = default;
-        using var output = new CallbackWriteStream(() => created = world.CreateEntity());
+        using var output = new CallbackWriteStream(() => created = world.Create());
 
-        WorldSerializer.WriteWorld(output, world, registry);
+        using var checkpoint = new WorldCheckpoint();
+        checkpoint.Capture(world);
+        new WorldSerializer(registry).Save(checkpoint, output);
 
         Assert.True(world.IsAlive(created));
         Assert.Equal(2, world.EntityCount);
@@ -151,14 +187,14 @@ public sealed class WorldStreamingSerializationTests
     {
         var registry = new SerializationRegistry().Register<SerPosition>();
         using var serializedWorld = new World();
-        serializedWorld.CreateEntity(new SerPosition { X = 1, Y = 2 });
+        serializedWorld.Create(new SerPosition { X = 1, Y = 2 });
         using var otherWorld = new World();
         using var output = new CallbackWriteStream(otherWorld.Dispose);
 
-        WorldSerializer.WriteWorld(output, serializedWorld, registry);
+        new WorldSerializer(registry).Save(serializedWorld, output);
 
         Assert.Equal(1, serializedWorld.EntityCount);
-        Assert.Throws<ObjectDisposedException>(() => otherWorld.CreateEntity());
+        Assert.Throws<ObjectDisposedException>(() => otherWorld.Create());
     }
 
     [Fact]
@@ -166,13 +202,13 @@ public sealed class WorldStreamingSerializationTests
     {
         var registry = new SerializationRegistry().Register<SerPosition>();
         var world = new World();
-        Entity valid = world.CreateEntity(new SerPosition { X = 1, Y = 2 });
-        Entity invalid = world.CreateEntity();
-        world.DestroyEntity(invalid);
+        Entity valid = world.Create(new SerPosition { X = 1, Y = 2 });
+        Entity invalid = world.Create();
+        world.Destroy(invalid);
         using var output = new MemoryStream();
 
-        Assert.Throws<InvalidOperationException>(() =>
-            WorldSerializer.WriteEntities(output, world, [valid, invalid], registry));
+        Assert.Throws<ArgumentException>(() =>
+            new WorldSerializer(registry).Save(world, [valid, invalid], output));
 
         Assert.Equal(0, output.Length);
         Assert.True(world.IsAlive(valid));
@@ -183,21 +219,20 @@ public sealed class WorldStreamingSerializationTests
     {
         var registry = new SerializationRegistry().Register<SerPosition>();
         var world = new World();
-        Entity entity = world.CreateEntity(new SerPosition { X = 1, Y = 2 });
-        var query = world.Query(world.QueryDefinition().Read<SerPosition>());
+        Entity entity = world.Create(new SerPosition { X = 1, Y = 2 });
+        var query = world.Query(new QueryDescription().With<SerPosition>());
 
         using var snapshot = new MemoryStream();
-        WorldSerializer.WriteWorld(snapshot, world, registry);
+        new WorldSerializer(registry).Save(world, snapshot);
 
         int matched = 0;
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (var row in cursor.Rows)
-            {
-                Assert.Equal(entity, row.Entity);
-                matched++;
-            }
-        });
+        using (QueryScope scope = query.OpenRead())
+            foreach (QueryChunk chunk in scope)
+                foreach (Entity match in chunk.Entities)
+                {
+                    Assert.Equal(entity, match);
+                    matched++;
+                }
         Assert.Equal(1, matched);
     }
 
@@ -206,13 +241,13 @@ public sealed class WorldStreamingSerializationTests
     {
         var registry = new SerializationRegistry()
             .Register<SerPosition>()
-            .RegisterSparse<SerSparse>();
+            .RegisterSparse<SerSparse>(SaveTypes.Key<SerSparse>());
         var first = new World();
-        Entity firstEntity = first.CreateEntity(new SerPosition { X = 1, Y = 2 });
-        first.AddSparse(firstEntity, new SerSparse { Value = 3 });
+        Entity firstEntity = first.Create(new SerPosition { X = 1, Y = 2 });
+        first.SetSparse(firstEntity, new SerSparse { Value = 3 });
         var second = new World();
-        Entity secondEntity = second.CreateEntity(new SerPosition { X = 1, Y = 2 });
-        second.AddSparse(secondEntity, new SerSparse { Value = 3 });
+        Entity secondEntity = second.Create(new SerPosition { X = 1, Y = 2 });
+        second.SetSparse(secondEntity, new SerSparse { Value = 3 });
 
         Digest256 firstHash = WorldSerializer.ComputeWorldStateHash(first, registry);
         Digest256 repeatedHash = WorldSerializer.ComputeWorldStateHash(first, registry);
@@ -221,7 +256,7 @@ public sealed class WorldStreamingSerializationTests
         Assert.Equal(firstHash, repeatedHash);
         Assert.Equal(firstHash, equivalentHash);
 
-        second.Replace(secondEntity, new SerPosition { X = 9, Y = 2 });
+        second.Set(secondEntity, new SerPosition { X = 9, Y = 2 });
         Digest256 mutatedHash = WorldSerializer.ComputeWorldStateHash(second, registry);
         Assert.NotEqual(firstHash, mutatedHash);
     }
@@ -231,16 +266,18 @@ public sealed class WorldStreamingSerializationTests
     {
         var registry = new SerializationRegistry().Register<SerPosition>();
         var world = new World();
-        Entity captured = world.CreateEntity(new SerPosition { X = 1, Y = 2 });
+        Entity captured = world.Create(new SerPosition { X = 1, Y = 2 });
         using var output = new GateWriteStream();
 
-        Task write = Task.Run(() => WorldSerializer.WriteWorld(output, world, registry));
+        using var checkpoint = new WorldCheckpoint();
+        checkpoint.Capture(world);
+        Task write = Task.Run(() => new WorldSerializer(registry).Save(checkpoint, output));
         Assert.True(output.WaitUntilWrite(TimeSpan.FromSeconds(10)));
 
         Task<Entity> mutate = Task.Run(() =>
         {
-            world.Replace(captured, new SerPosition { X = 10, Y = 20 });
-            return world.CreateEntity(new SerPosition { X = 30, Y = 40 });
+            world.Set(captured, new SerPosition { X = 10, Y = 20 });
+            return world.Create(new SerPosition { X = 30, Y = 40 });
         });
         Entity createdAfterWrite;
         try
@@ -266,31 +303,37 @@ public sealed class WorldStreamingSerializationTests
     [InlineData(NarrowCaptureOperation.Entity)]
     [InlineData(NarrowCaptureOperation.EntitySet)]
     [InlineData(NarrowCaptureOperation.Query)]
-    public async Task NarrowWrite_BlockedOutputAllowsMutationAndUsesPinnedRoot(
+    public async Task NarrowWrite_ExplicitCaptureAllowsSourceMutationDuringOutput(
         NarrowCaptureOperation operation)
     {
         var registry = new SerializationRegistry().Register<SerPosition>();
         var world = new World();
-        Entity first = world.CreateEntity(new SerPosition { X = 1, Y = 2 });
-        Entity second = world.CreateEntity(new SerPosition { X = 3, Y = 4 });
+        Entity first = world.Create(new SerPosition { X = 1, Y = 2 });
+        Entity second = world.Create(new SerPosition { X = 3, Y = 4 });
         Entity[] selected = [first, second];
-        QueryHandle query = world.Query(world.QueryDefinition().Read<SerPosition>());
+        Query query = world.Query(new QueryDescription().With<SerPosition>());
 
         using var baseline = new MemoryStream();
         WriteNarrow(operation, baseline, world, first, selected, query, registry);
 
+        using var checkpoint = new WorldCheckpoint();
+        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        using var captured = new World();
+        checkpoint.Restore(captured);
+        Query capturedQuery = captured.Query(new QueryDescription().With<SerPosition>());
+
         using var output = new GateWriteStream();
         Task write = Task.Run(() =>
-            WriteNarrow(operation, output, world, first, selected, query, registry));
+            WriteNarrow(operation, output, captured, first, selected, capturedQuery, registry));
         Assert.True(output.WaitUntilWrite(TimeSpan.FromSeconds(10)));
 
         try
         {
             await Task.Run(() =>
             {
-                world.Replace(first, new SerPosition { X = 10, Y = 20 });
-                world.DestroyEntity(second);
-                world.CreateEntity(new SerPosition { X = 30, Y = 40 });
+                world.Set(first, new SerPosition { X = 10, Y = 20 });
+                world.Destroy(second);
+                world.Create(new SerPosition { X = 30, Y = 40 });
             }).WaitAsync(TimeSpan.FromSeconds(10));
 
             Assert.Equal(10, world.Read<SerPosition>(first).X);
@@ -307,36 +350,28 @@ public sealed class WorldStreamingSerializationTests
     }
 
     [Fact]
-    public async Task WorldWrite_BlockedOutputMakesDisposeWaitThenCompletes()
+    public async Task WorldWrite_CapturedDataAllowsSourceDisposalDuringEncoding()
     {
         var registry = new SerializationRegistry().Register<SerPosition>();
         var world = new World();
-        var events = new ConcurrentQueue<string>();
-        world.CreateEntity(new SerPosition { X = 1, Y = 2 });
-        using var output = new GateWriteStream { WriteObserved = () => events.Enqueue("write") };
-
-        Task write = Task.Run(() => WorldSerializer.WriteWorld(output, world, registry));
+        Entity entity = world.Create(new SerPosition { X = 1, Y = 2 });
+        using var checkpoint = new WorldCheckpoint();
+        checkpoint.Capture(world);
+        using var output = new GateWriteStream();
+        Task write = Task.Run(() => new WorldSerializer(registry).Save(checkpoint, output));
         Assert.True(output.WaitUntilWrite(TimeSpan.FromSeconds(10)));
-        Task dispose = Task.Run(() =>
-        {
-            world.Dispose();
-            events.Enqueue("disposed");
-        });
         try
         {
-            await DisposalChecks.WaitForReadRejectionAsync(() => _ = world.EntityCount);
-            Assert.False(dispose.IsCompleted);
+            await Task.Run(world.Dispose).WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Throws<ObjectDisposedException>(() => world.Create());
+            Assert.False(write.IsCompleted);
         }
-        finally
-        {
-            output.Release();
-        }
-
+        finally { output.Release(); }
         await write.WaitAsync(TimeSpan.FromSeconds(10));
-        await dispose.WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.Throws<ObjectDisposedException>(() => world.CreateEntity());
-        Assert.Contains("write", events);
-        Assert.Equal("disposed", events.Last());
+        using var input = new MemoryStream(output.ToArray(), writable: false);
+        using World restored = WorldSerializer.ReadWorld(input, registry);
+        Assert.Equal(1, restored.EntityCount);
+        Assert.Equal(1, restored.Read<SerPosition>(entity).X);
     }
 
     [Fact]
@@ -348,22 +383,19 @@ public sealed class WorldStreamingSerializationTests
             .RegisterCodec<CountingWorldComponent, CountingWorldComponentCodec>(new CountingWorldComponentCodec(componentCalls))
             .RegisterBufferCodec<CountingWorldBuffer, CountingWorldBufferCodec>(new CountingWorldBufferCodec(bufferCalls));
         var world = new World();
-        world.CreateEntity(new CountingWorldComponent { Value = 1 });
-        world.CreateEntity(new CountingWorldComponent { Value = 2 });
-        Entity buffered = world.CreateEntity();
+        world.Create(new CountingWorldComponent { Value = 1 });
+        world.Create(new CountingWorldComponent { Value = 2 });
+        Entity buffered = world.Create();
         world.AddBuffer<CountingWorldBuffer>(buffered);
         int[] values = [3, 4, 5];
-        world.ExecuteBufferWrite<CountingWorldBuffer, int[]>(
-            buffered,
-            ref values,
-            static (DynamicBuffer<CountingWorldBuffer> buffer, ref int[] source) =>
-            {
-                for (int i = 0; i < source.Length; i++)
-                    buffer.Add(new CountingWorldBuffer { Value = source[i] });
-            });
+        {
+            using DynamicBuffer<CountingWorldBuffer> buffer = world.GetBuffer<CountingWorldBuffer>(buffered);
+            for (int i = 0; i < values.Length; i++)
+                buffer.Add(new CountingWorldBuffer { Value = values[i] });
+        }
 
         using var output = new MemoryStream();
-        WorldSerializer.WriteWorld(output, world, registry);
+        new WorldSerializer(registry).Save(world, output);
 
         Assert.Equal(2, componentCalls.Writes);
         Assert.Equal(3, bufferCalls.Writes);
@@ -375,19 +407,19 @@ public sealed class WorldStreamingSerializationTests
         const int entityCount = 20_000;
         var registry = new SerializationRegistry()
             .Register<SerPosition>()
-            .RegisterSparse<SerSparse>();
+            .RegisterSparse<SerSparse>(SaveTypes.Key<SerSparse>());
         using var world = new World(entityCount);
         var entities = new Entity[entityCount];
         for (int i = 0; i < entityCount; i++)
         {
-            Entity entity = world.CreateEntity(new SerPosition { X = i, Y = -i });
+            Entity entity = world.Create(new SerPosition { X = i, Y = -i });
             entities[i] = entity;
             if (i % 3 == 0)
-                world.AddSparse(entity, new SerSparse { Value = i });
+                world.SetSparse(entity, new SerSparse { Value = i });
         }
 
         using var output = new NonSeekableWriteStream();
-        WorldSerializer.WriteWorld(output, world, registry);
+        new WorldSerializer(registry).Save(world, output);
 
         using var input = new MemoryStream(output.ToArray(), writable: false);
         using World loaded = WorldSerializer.ReadWorld(input, registry);
@@ -407,59 +439,53 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public void SparseMembershipWorkingSet_RespectsConfiguredLimit()
     {
-        var registry = new SerializationRegistry().RegisterSparse<SerSparse>();
+        var registry = new SerializationRegistry().RegisterSparse<SerSparse>(SaveTypes.Key<SerSparse>());
         var world = new World();
         for (int i = 0; i < 3; i++)
         {
-            Entity entity = world.CreateEntity();
-            world.AddSparse(entity, new SerSparse { Value = i });
+            Entity entity = world.Create();
+            world.SetSparse(entity, new SerSparse { Value = i });
         }
 
         using var rejected = new MemoryStream();
         Assert.Throws<InvalidOperationException>(() =>
-            WorldSerializer.WriteWorld(
-                rejected,
-                world,
-                registry,
-                new SerializeOptions(MaximumSparseMemberships: 2)));
+            new WorldSerializer(registry).Save(world, rejected, new SerializeOptions(MaximumSparseMemberships: 2)));
 
         using var accepted = new MemoryStream();
-        WorldSerializer.WriteWorld(
-            accepted,
-            world,
-            registry,
-            new SerializeOptions(MaximumSparseMemberships: 3));
+        new WorldSerializer(registry).Save(world, accepted, new SerializeOptions(MaximumSparseMemberships: 3));
         Assert.True(accepted.Length > 0);
     }
 
     [Fact]
-    public async Task WholeWorldSnapshot_RejectsManagedReferenceValuesBeforeOutput()
+    public void CheckpointCopiesManagedRowsAndSharesOrdinaryReferenceFields()
     {
         var registry = new SerializationRegistry()
-            .Register<SnapshotReferenceComponent, SnapshotReferenceCodec>();
+            .RegisterCodec<SnapshotReferenceComponent, SnapshotReferenceCodec>(default);
         int[] values = [1, 2, 3];
-        var world = new World();
-        Entity entity = world.CreateEntity(new SnapshotReferenceComponent { Values = values });
-        using var output = new MemoryStream();
-
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => Task.Run(() => WorldSerializer.WriteWorld(output, world, registry)));
-
-        Assert.Equal(0, output.Length);
+        using var world = new World();
+        Entity entity = world.Create(new SnapshotReferenceComponent { Values = values });
+        using var checkpoint = new WorldCheckpoint();
+        checkpoint.Capture(world, CheckpointProgress.Preserve);
         values[0] = 99;
-        Assert.Equal(99, world.Read<SnapshotReferenceComponent>(entity).Values![0]);
+        world.Set(entity, new SnapshotReferenceComponent { Values = [7, 8] });
+        using var output = new MemoryStream();
+        new WorldSerializer(registry).Save(checkpoint, output);
+        output.Position = 0;
+        using World loaded = WorldSerializer.ReadWorld(output, registry);
+        Assert.Equal(new[] { 99, 2, 3 }, loaded.Read<SnapshotReferenceComponent>(entity).Values);
+        Assert.Equal(new[] { 7, 8 }, world.Read<SnapshotReferenceComponent>(entity).Values);
     }
 
     [Fact]
     public void WholeWorldSnapshot_AllowsRegisteredManagedReferenceTypeWhenAbsent()
     {
         var registry = new SerializationRegistry()
-            .Register<SnapshotReferenceComponent, SnapshotReferenceCodec>();
+            .RegisterCodec<SnapshotReferenceComponent, SnapshotReferenceCodec>(default);
         var world = new World();
-        Entity entity = world.CreateEntity();
+        Entity entity = world.Create();
         using var output = new MemoryStream();
 
-        WorldSerializer.WriteWorld(output, world, registry);
+        new WorldSerializer(registry).Save(world, output);
 
         Assert.True(output.Length > 0);
         Assert.True(world.IsAlive(entity));
@@ -470,38 +496,26 @@ public sealed class WorldStreamingSerializationTests
     public void TopologyWorkingSet_RespectsRecordAndPayloadLimits_OnNonSeekableOutput()
     {
         var registry = new SerializationRegistry()
-            .RegisterHierarchyDomain<DefaultHierarchyDomain>();
+            .RegisterHierarchy<DefaultHierarchyDomain>(SaveTypes.Key<DefaultHierarchyDomain>());
         var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
+        Entity parent = world.Create();
+        Entity first = world.Create();
+        Entity second = world.Create();
         DefaultHierarchy.SetParent(world, first, parent);
         DefaultHierarchy.SetParent(world, second, parent);
 
         using var recordRejected = new NonSeekableWriteStream();
         Assert.Throws<InvalidOperationException>(() =>
-            WorldSerializer.WriteWorld(
-                recordRejected,
-                world,
-                registry,
-                new SerializeOptions(MaximumTopologyRecords: 1)));
+            new WorldSerializer(registry).Save(world, recordRejected, new SerializeOptions(MaximumTopologyRecords: 1)));
 
         using var payloadRejected = new NonSeekableWriteStream();
         Assert.Throws<InvalidOperationException>(() =>
-            WorldSerializer.WriteWorld(
-                payloadRejected,
-                world,
-                registry,
-                new SerializeOptions(
+            new WorldSerializer(registry).Save(world, payloadRejected, new SerializeOptions(
                     MaximumTopologyRecords: 16,
                     MaximumTopologyPayloadBytes: 1)));
 
         using var accepted = new NonSeekableWriteStream();
-        WorldSerializer.WriteWorld(
-            accepted,
-            world,
-            registry,
-            new SerializeOptions(
+        new WorldSerializer(registry).Save(world, accepted, new SerializeOptions(
                 MaximumTopologyRecords: 16,
                 MaximumTopologyPayloadBytes: 1024));
         using var input = new MemoryStream(accepted.ToArray(), writable: false);
@@ -514,31 +528,22 @@ public sealed class WorldStreamingSerializationTests
     public void HierarchyRecordBudget_RejectsTheDirectWriteWithoutSnapshotDto()
     {
         var registry = new SerializationRegistry()
-            .RegisterHierarchyDomain<DefaultHierarchyDomain>();
+            .RegisterHierarchy<DefaultHierarchyDomain>(SaveTypes.Key<DefaultHierarchyDomain>());
         var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
-        Hierarchy<DefaultHierarchyDomain>.SetChildOrderPolicy(
+        Entity parent = world.Create();
+        Entity first = world.Create();
+        Entity second = world.Create();
+        Hierarchy<DefaultHierarchyDomain>.SetOrdered(
             world,
-            parent,
-            ChildOrderPolicy.Ordered);
+            parent, true);
         Hierarchy<DefaultHierarchyDomain>.SetParent(world, first, parent);
         Hierarchy<DefaultHierarchyDomain>.SetParent(world, second, parent);
         using var rejected = new MemoryStream();
         Assert.Throws<InvalidOperationException>(() =>
-            WorldSerializer.WriteWorld(
-                rejected,
-                world,
-                registry,
-                new SerializeOptions(MaximumTopologyRecords: 4)));
+            new WorldSerializer(registry).Save(world, rejected, new SerializeOptions(MaximumTopologyRecords: 4)));
 
         using var accepted = new MemoryStream();
-        WorldSerializer.WriteWorld(
-            accepted,
-            world,
-            registry,
-            new SerializeOptions(MaximumTopologyRecords: 5));
+        new WorldSerializer(registry).Save(world, accepted, new SerializeOptions(MaximumTopologyRecords: 5));
         Assert.True(accepted.Length > 0);
     }
 
@@ -547,10 +552,10 @@ public sealed class WorldStreamingSerializationTests
     {
         var registry = new SerializationRegistry()
             .Register<StreamingRelation>()
-            .RegisterRelationTopology<StreamingRelation>();
+            .RegisterRelation<StreamingRelation>();
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity target = world.CreateEntity();
+        Entity source = world.Create();
+        Entity target = world.Create();
         world.SetRelationAdjacencyOrder<StreamingRelation>(
             source,
             RelationAdjacencyRole.Outgoing,
@@ -561,67 +566,65 @@ public sealed class WorldStreamingSerializationTests
             RelationAdjacencyOrderPolicy.Ordered);
         world.CreateRelation(source, target, new StreamingRelation { Value = 1 });
         for (int i = 0; i < 10_000; i++)
-            world.CreateEntity();
+            world.Create();
 
         using var rejected = new MemoryStream();
         Assert.Throws<InvalidOperationException>(() =>
-            WorldSerializer.WriteWorld(
-                rejected,
-                world,
-                registry,
-                new SerializeOptions(MaximumTopologyRecords: 4)));
+            new WorldSerializer(registry).Save(world, rejected, new SerializeOptions(MaximumTopologyRecords: 4)));
 
         using var accepted = new MemoryStream();
-        WorldSerializer.WriteWorld(
-            accepted,
-            world,
-            registry,
-            new SerializeOptions(MaximumTopologyRecords: 5));
+        new WorldSerializer(registry).Save(world, accepted, new SerializeOptions(MaximumTopologyRecords: 5));
         accepted.Position = 0;
         using World loaded = WorldSerializer.ReadWorld(accepted, registry);
-        Assert.Single(loaded.GetOutgoingRelations<StreamingRelation>(source).Entries.ToArray());
+        Assert.Single(TopologyValues.Outgoing<StreamingRelation>(loaded, source));
     }
 
     [Fact]
     public void RepeatedWorldSerializationKeepsLatestClockAndBytes()
     {
         var registry = new SerializationRegistry()
-            .Register<SerPosition>()
-            .RegisterSparse<SerSparse>();
+            .Register<SavedTrackedPosition>()
+            .RegisterSparse<SerSparse>(SaveTypes.Key<SerSparse>());
         var world = new World();
-        Entity first = world.CreateEntity(new SerPosition { X = 1, Y = 2 });
-        Entity second = world.CreateEntity(new SerPosition { X = 3, Y = 4 });
-        world.AddSparse(second, new SerSparse { Value = 5 });
-        uint versionBefore = world.WriteVersion<SerPosition>(first);
-        uint tickBefore = world.CurrentTick;
+        Entity first = world.Create(new SavedTrackedPosition { X = 1, Y = 2 });
+        Entity second = world.Create(new SavedTrackedPosition { X = 3, Y = 4 });
+        world.SetSparse(second, new SerSparse { Value = 5 });
+        ulong versionBefore = world.Version;
+        ulong tickBefore = world.Version;
 
         using var beforeMutation = new MemoryStream();
-        WorldSerializer.WriteWorld(beforeMutation, world, registry);
+        new WorldSerializer(registry).Save(world, beforeMutation, progress: CheckpointProgress.Preserve);
 
-        world.Replace(first, new SerPosition { X = 100, Y = 200 });
-        world.Replace(first, new SerPosition { X = 1, Y = 2 });
-        uint versionAfter = world.WriteVersion<SerPosition>(first);
+        world.Set(first, new SavedTrackedPosition { X = 100, Y = 200 });
+        world.Set(first, new SavedTrackedPosition { X = 1, Y = 2 });
+        ulong versionAfter = world.Version;
         Assert.NotEqual(versionBefore, versionAfter);
 
         using var afterMutation = new MemoryStream();
-        WorldSerializer.WriteWorld(afterMutation, world, registry);
+        new WorldSerializer(registry).Save(world, afterMutation, progress: CheckpointProgress.Preserve);
         using var repeated = new MemoryStream();
-        WorldSerializer.WriteWorld(repeated, world, registry);
+        new WorldSerializer(registry).Save(world, repeated, progress: CheckpointProgress.Preserve);
         Assert.Equal(afterMutation.ToArray(), repeated.ToArray());
 
         beforeMutation.Position = 0;
         afterMutation.Position = 0;
         using var earlier = WorldSerializer.ReadWorld(beforeMutation, registry);
         using var later = WorldSerializer.ReadWorld(afterMutation, registry);
-        Assert.Equal(tickBefore, earlier.CurrentTick);
-        Assert.Equal(world.CurrentTick, later.CurrentTick);
-        Assert.Equal(1, later.Read<SerPosition>(first).X);
-        Assert.Equal(2, later.Read<SerPosition>(first).Y);
+        Assert.Equal(tickBefore, earlier.Version);
+        Assert.Equal(world.Version, later.Version);
+        Assert.Equal(1, later.Read<SavedTrackedPosition>(first).X);
+        Assert.Equal(2, later.Read<SavedTrackedPosition>(first).Y);
+    }
+
+    private struct SavedTrackedPosition : ITrackedComponent
+    {
+        public float X;
+        public float Y;
     }
 
     private static async Task AssertMutationCompletesAsync(World world)
     {
-        Entity created = await Task.Run(() => world.CreateEntity())
+        Entity created = await Task.Run(() => world.Create())
             .WaitAsync(TimeSpan.FromSeconds(10));
         Assert.True(world.IsAlive(created));
     }
@@ -632,19 +635,19 @@ public sealed class WorldStreamingSerializationTests
         World world,
         Entity entity,
         Entity[] entities,
-        QueryHandle query,
+        Query query,
         SerializationRegistry registry)
     {
         switch (operation)
         {
             case NarrowCaptureOperation.Entity:
-                WorldSerializer.WriteEntity(output, world, entity, registry);
+                new WorldSerializer(registry).Save(world, entity, output);
                 break;
             case NarrowCaptureOperation.EntitySet:
-                WorldSerializer.WriteEntities(output, world, entities, registry);
+                new WorldSerializer(registry).Save(world, entities, output);
                 break;
             case NarrowCaptureOperation.Query:
-                WorldSerializer.WriteQuery(output, world, query, registry);
+                new WorldSerializer(registry).Save(world, query, output);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(operation));
@@ -697,7 +700,7 @@ public sealed class WorldStreamingSerializationTests
 
         public void Write(ref DataWriter writer, in ReentrantWorldComponent value)
         {
-            world.CreateEntity();
+            world.Create();
             writer.WriteInt32(value.Value);
         }
 

@@ -1,60 +1,24 @@
-using SomeEngine.ECS.Registry;
-
 namespace SomeEngine.ECS.Serialization;
 
-public enum ComponentCodecKind : byte
+public enum ComponentCodecKind : byte { Missing, Raw, Custom, Durable, RawDurable }
+public enum SerializationValueKind : byte { Component, Tag, Shared, Buffer, Sparse, Resource }
+
+public readonly record struct SerializationTypeEntry(
+    SerializationTypeKey TypeKey,
+    SerializationValueKind Kind,
+    ComponentCodecKind CodecKind);
+
+internal static class SavedTypeDescription
 {
-    Missing,
-    Raw,
-    Custom,
-    Canonical,
-    RawCanonical,
+    internal static SerializationTypeEntry Describe(this SavedType type) => new(
+        type.CodecKind == ComponentCodecKind.Raw ? type.CheckpointKey : type.Key,
+        type.Storage switch
+        {
+            SavedStorage.Tag => SerializationValueKind.Tag,
+            SavedStorage.Shared => SerializationValueKind.Shared,
+            SavedStorage.Buffer => SerializationValueKind.Buffer,
+            SavedStorage.Sparse => SerializationValueKind.Sparse,
+            SavedStorage.Resource => SerializationValueKind.Resource,
+            _ => SerializationValueKind.Component,
+        }, type.CodecKind);
 }
-
-public enum SerializationValueKind : byte
-{
-    Component,
-    Tag,
-    Shared,
-    Buffer,
-    Sparse,
-}
-
-public enum SerializationSchemaSource : byte
-{
-    RuntimeDerived,
-    Explicit,
-}
-
-public readonly struct SerializationTypeEntry
-{
-    public SerializationTypeKey TypeKey { get; }
-    public int RuntimeComponentId { get; }
-    public StoragePath Storage { get; }
-    public SerializationValueKind Kind { get; }
-    public ComponentCodecKind CodecKind { get; }
-    public SerializationSchemaSource SchemaSource { get; }
-    public bool ContainsReferences { get; }
-    public bool ContainsEntityReferences { get; }
-
-    internal SerializationTypeEntry(
-        SerializationTypeKey typeKey,
-        int runtimeComponentId,
-        StoragePath storage,
-        SerializationValueKind kind,
-        ComponentCodecKind codecKind,
-        SerializationSchemaSource schemaSource,
-        bool containsReferences,
-        bool containsEntityReferences)
-    {
-        TypeKey = typeKey;
-        RuntimeComponentId = runtimeComponentId;
-        Storage = storage;
-        Kind = kind;
-        CodecKind = codecKind;
-        SchemaSource = schemaSource;
-        ContainsReferences = containsReferences;
-        ContainsEntityReferences = containsEntityReferences;
-    }
-}
-

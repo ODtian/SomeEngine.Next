@@ -20,7 +20,7 @@ public sealed class WindowInputTests
     public void Window_pixels_click_a_scaled_screen_button_before_game_input(int button)
     {
         using var world = new World();
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600), Scale = 2 });
+        Entity canvas = world.Create(new Canvas { Size = new Size(800, 600), Scale = 2 });
         Entity node = CreateButton(world, canvas);
         using var frames = new GameFrameSystems(world);
         using var input = new WindowInput(world);
@@ -29,8 +29,8 @@ public sealed class WindowInputTests
         input.ChangePointerButton(button, false, new Vector2(40, 60));
         frames.UpdateInput();
 
-        Assert.Equal(1u, world.Read<Clicks>(node).Count);
-        Assert.True(world.Read<Hover>(node).Hovered);
+        Assert.Equal(1u, world.ReadComponentData<Clicks>(node).Count);
+        Assert.True(world.ReadComponentData<Hover>(node).Hovered);
         Assert.True(input.InputCapture.Pointer);
     }
 
@@ -38,9 +38,9 @@ public sealed class WindowInputTests
     public void Navigation_and_repeated_confirm_keys_reach_the_focused_button()
     {
         using var world = new World();
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(800, 600) });
         Entity node = CreateButton(world, canvas);
-        world.Add(node, new Focusable());
+        world.Set(node, new Focusable());
         using var frames = new GameFrameSystems(world);
         using var input = new WindowInput(world);
 
@@ -54,7 +54,7 @@ public sealed class WindowInputTests
         frames.UpdateInput();
 
         Assert.True(world.HasSparse<Focused>(node));
-        Assert.Equal(3u, world.Read<Clicks>(node).Count);
+        Assert.Equal(3u, world.ReadComponentData<Clicks>(node).Count);
         Assert.True(input.InputCapture.Keyboard);
     }
 
@@ -62,21 +62,21 @@ public sealed class WindowInputTests
     public void Losing_window_focus_releases_a_held_button_and_returns_pointer_input_to_the_game()
     {
         using var world = new World();
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(800, 600) });
         Entity node = CreateButton(world, canvas);
         using var frames = new GameFrameSystems(world);
         using var input = new WindowInput(world);
         input.ChangePointerButton(0, true, new Vector2(20, 30));
         frames.UpdateInput();
-        Assert.True(world.Read<Hover>(node).Pressed);
+        Assert.True(world.ReadComponentData<Hover>(node).Pressed);
 
         input.ReleaseInput();
         frames.UpdateInput();
         frames.UpdateInput();
 
-        Assert.False(world.Read<Hover>(node).Pressed);
-        Assert.False(world.Read<Hover>(node).Hovered);
-        Assert.Equal(0u, world.Read<Clicks>(node).Count);
+        Assert.False(world.ReadComponentData<Hover>(node).Pressed);
+        Assert.False(world.ReadComponentData<Hover>(node).Hovered);
+        Assert.Equal(0u, world.ReadComponentData<Clicks>(node).Count);
         Assert.False(input.InputCapture.Pointer);
     }
 
@@ -84,11 +84,11 @@ public sealed class WindowInputTests
     public void Wheel_input_uses_canvas_units_and_screen_buttons_are_separate_from_world_canvases()
     {
         using var world = new World();
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600), Scale = 2 });
+        Entity canvas = world.Create(new Canvas { Size = new Size(800, 600), Scale = 2 });
         Entity node = CreateButton(world, canvas);
-        world.Add(node, new ScrollInput());
-        world.Add(node, new ScrollOffset { Max = new Vector2(100, 100) });
-        Entity worldCanvas = world.CreateEntity(new Canvas
+        world.Set(node, new ScrollInput());
+        world.Set(node, new ScrollOffset { Max = new Vector2(100, 100) });
+        Entity worldCanvas = world.Create(new Canvas
         {
             Size = new Size(800, 600), Target = CanvasTarget.WorldSpace(canvas),
         });
@@ -101,9 +101,9 @@ public sealed class WindowInputTests
         input.ChangePointerButton(0, false, new Vector2(40, 60));
         frames.UpdateInput();
 
-        Assert.Equal(new Vector2(1, 2), world.Read<ScrollInput>(node).Delta);
-        Assert.Equal(1u, world.Read<Clicks>(node).Count);
-        Assert.Equal(0u, world.Read<Clicks>(worldButton).Count);
+        Assert.Equal(new Vector2(1, 2), world.ReadComponentData<ScrollInput>(node).Delta);
+        Assert.Equal(1u, world.ReadComponentData<Clicks>(node).Count);
+        Assert.Equal(0u, world.ReadComponentData<Clicks>(worldButton).Count);
     }
 
     [Theory]
@@ -112,10 +112,10 @@ public sealed class WindowInputTests
     public void Window_text_selection_deletion_and_composition_reach_the_focused_editor(bool jobs)
     {
         using var world = new World(execution: jobs ? new WorldJobs(JobSystem.Default) : null);
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(800, 600) });
         Entity editor = CreateButton(world, canvas);
-        world.Add(editor, new Focusable());
-        world.Add(editor, new EditableText { Text = "", Composition = "" });
+        world.Set(editor, new Focusable());
+        world.Set(editor, new EditableText { Text = "", Composition = "" });
         using var frames = new GameFrameSystems(world);
         using var input = new WindowInput(world);
         input.ChangeKey(0x28, true);
@@ -127,19 +127,19 @@ public sealed class WindowInputTests
         input.ChangeKey(0x23, true);
         input.ChangeKey(0x08, true);
         frames.UpdateInput();
-        Assert.Equal("A", world.Read<EditableText>(editor).Text);
-        Assert.Equal(1, world.Read<EditableText>(editor).Caret);
+        Assert.Equal("A", world.ReadComponentData<EditableText>(editor).Text);
+        Assert.Equal(1, world.ReadComponentData<EditableText>(editor).Caret);
 
         input.ChangeComposition("你好", 1);
         frames.UpdateInput();
-        Assert.Equal("A", world.Read<EditableText>(editor).Text);
-        Assert.Equal("你好", world.Read<EditableText>(editor).Composition);
-        Assert.Equal(1, world.Read<EditableText>(editor).CompositionCaret);
+        Assert.Equal("A", world.ReadComponentData<EditableText>(editor).Text);
+        Assert.Equal("你好", world.ReadComponentData<EditableText>(editor).Composition);
+        Assert.Equal(1, world.ReadComponentData<EditableText>(editor).CompositionCaret);
         input.EnterText("你好");
         input.ChangeComposition("", 0);
         frames.UpdateInput();
-        Assert.Equal("A你好", world.Read<EditableText>(editor).Text);
-        Assert.Equal("", world.Read<EditableText>(editor).Composition);
+        Assert.Equal("A你好", world.ReadComponentData<EditableText>(editor).Text);
+        Assert.Equal("", world.ReadComponentData<EditableText>(editor).Composition);
         Assert.True(input.InputCapture.Keyboard);
     }
 
@@ -147,30 +147,30 @@ public sealed class WindowInputTests
     public void Window_utf16_characters_form_complete_text_and_control_characters_preserve_it()
     {
         using var world = new World();
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(800, 600) });
         Entity editor = CreateButton(world, canvas);
-        world.Add(editor, new Focusable());
-        world.Add(editor, new EditableText { Text = "", Composition = "" });
+        world.Set(editor, new Focusable());
+        world.Set(editor, new EditableText { Text = "", Composition = "" });
         using var frames = new GameFrameSystems(world);
         using var input = new WindowInput(world);
         input.ChangeKey(0x28, true);
         input.EnterCharacter('\uD83D');
         frames.UpdateInput();
-        Assert.Equal("", world.Read<EditableText>(editor).Text);
+        Assert.Equal("", world.ReadComponentData<EditableText>(editor).Text);
         input.EnterCharacter('\uDE00');
         input.EnterCharacter('\b');
         input.EnterCharacter('\r');
         frames.UpdateInput();
-        Assert.Equal("😀", world.Read<EditableText>(editor).Text);
-        Assert.Equal(2, world.Read<EditableText>(editor).Caret);
+        Assert.Equal("😀", world.ReadComponentData<EditableText>(editor).Text);
+        Assert.Equal(2, world.ReadComponentData<EditableText>(editor).Caret);
     }
 
     private static Entity CreateButton(World world, Entity canvas)
     {
-        Entity node = world.CreateEntity(new LayoutRect { Value = new Rect(10, 20, 100, 50) });
-        world.Add(node, new Pressable());
-        world.Add(node, new Hover());
-        world.Add(node, new Clicks());
+        Entity node = world.Create(new LayoutRect { Value = new Rect(10, 20, 100, 50) });
+        world.Set(node, new Pressable());
+        world.Set(node, new Hover());
+        world.Set(node, new Clicks());
         Hierarchy<ElementTree>.SetParent(world, node, canvas);
         return node;
     }

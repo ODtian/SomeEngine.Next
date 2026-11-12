@@ -36,7 +36,6 @@ public sealed class PhysicsPoseMap
 /// <summary>Blends completed body transforms into the current animation using a mask and common layer weight.</summary>
 public readonly record struct PhysicsPoseParameters(PoseResultId Source, PoseResultId Output, PhysicsPoseMap Map, BoneMask Mask);
 
-[BufferCapacity(1)]
 public struct PhysicsPoseInstance : IBufferElement
 {
     public AnimationLeafBatch<PhysicsPoseParameters> Definition;
@@ -128,27 +127,41 @@ public readonly struct PhysicsPoseLeaf : IAnimationLeaf<PhysicsPoseParameters>
     public static void Install(World world, Entity animation, Entity target,
         AnimationLeafBatch<PhysicsPoseParameters> definitions, int index, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<PhysicsPoseInstance>(animation)) world.AddBuffer<PhysicsPoseInstance>(animation);
+        if (!world.Has<Buffer<PhysicsPoseInstance>>(animation)) world.AddBuffer<PhysicsPoseInstance>(animation);
         PhysicsPoseParameters parameters = definitions.Parameters[index];
         var instance = new PhysicsPoseInstance
         {
-            Definition = definitions, Index = index, Placement = placement,
+            Definition = definitions,
+            Index = index,
+            Placement = placement,
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
             ActorTransform = Matrix4x4.Identity,
-            Samples = new(parameters.Map, parameters.Mask, world.Read<PoseTarget>(target).Skeleton),
+            Samples = new(parameters.Map, parameters.Mask, world.ReadComponentData<PoseTarget>(target).Skeleton),
         };
         short[] bones = parameters.Map.Bodies.ToArray().Select(static body => (short)body.Bone).ToArray();
         instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement, bones);
-        world.ExecuteBufferWrite<PhysicsPoseInstance, PhysicsPoseInstance>(animation, ref instance,
-            static (instances, ref instance) => instances.Add(instance));
+        {
+            using var instances = world.GetBuffer<PhysicsPoseInstance>(animation);
+            Visit(instances, ref instance);
+
+            static void Visit(DynamicBuffer<PhysicsPoseInstance> instances, ref PhysicsPoseInstance instance)
+            {
+                instances.Add(instance);
+
+            }
+        }
     }
 
     public static void Complete(World world, Entity animation) => PoseAnimation.CompleteNodes(world, animation);
 
     public static void Release(World world, Entity animation)
     {
-        world.ExecuteBufferWrite<PhysicsPoseInstance>(animation, static instances => instances.Clear());
+        {
+            using var instances = world.GetBuffer<PhysicsPoseInstance>(animation);
+            instances.Clear();
+
+        }
         PoseAnimation.ReleaseNodes(world, animation);
     }
 }

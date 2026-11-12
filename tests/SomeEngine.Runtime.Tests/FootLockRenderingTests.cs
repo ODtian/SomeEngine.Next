@@ -1,10 +1,10 @@
+using SomeEngine.ECS.Spatial;
 using System.Numerics;
 using SomeEngine.Animation;
 using SomeEngine.Animation.Pose;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 using SomeEngine.Physics;
@@ -41,7 +41,7 @@ public sealed partial class SkinningRenderingTests
         using SkeletonInstance character = storage.CreateInstance(skeleton), airborneReference = storage.CreateInstance(skeleton);
         Entity target = default, actor = default, leftStep = default, rightStep = default;
         Matrix4x4 actorBase = default;
-        CollisionMaintenance<MovingStep, StepReader, SpatialAll, GroupMatch>? maintenance = null;
+        SpatialMaintenance<MovingStep, StepReader, SpatialAll, GroupMatch>? maintenance = null;
         var reads = new List<GpuPoseReadback>();
         var actors = new List<Matrix4x4>();
         var metrics = new List<ClusterFrameMetrics>();
@@ -55,15 +55,15 @@ public sealed partial class SkinningRenderingTests
             Initialize = frame =>
             {
                 actor = frame.Scene.MeshEntities[0];
-                actorBase = frame.World.Read<WorldTransform>(actor).Qvvs.ToMatrix();
-                leftStep = frame.World.CreateEntity(new MovingStep(Matrix4x4.CreateTranslation(-.35f, -.2f, 0) * actorBase, 1));
-                rightStep = frame.World.CreateEntity(new MovingStep(Matrix4x4.CreateTranslation(.35f, .4f, 0) * actorBase, 1));
-                QueryHandle members = frame.World.Query(frame.World.QueryDefinition().All<MovingStep>());
-                CollisionTree tree = Collision.Build<MovingStep, StepReader>(frame.World, members, reader);
-                maintenance = Collision.Candidates<MovingStep, StepReader>(frame.World, members, tree, reader).CreateMaintenance(JobSystem.Default);
+                actorBase = frame.World.ReadComponentData<WorldTransform>(actor).Qvvs.ToMatrix();
+                leftStep = frame.World.Create(new MovingStep(Matrix4x4.CreateTranslation(-.35f, -.2f, 0) * actorBase, 1));
+                rightStep = frame.World.Create(new MovingStep(Matrix4x4.CreateTranslation(.35f, .4f, 0) * actorBase, 1));
+                Query members = frame.World.Query(new QueryDescription().With<MovingStep>());
+                BoundsTree tree = SpatialQueries.Build<MovingStep, StepReader>(frame.World, members, reader);
+                maintenance = SpatialQueries.Candidates<MovingStep, StepReader>(frame.World, members, tree, reader).CreateMaintenance(JobSystem.Default);
                 maintenance.Schedule().Complete();
                 var surfaces = Collision.Query<MovingStep, StepReader>(frame.World, members, tree, reader);
-                frame.Systems.AddGameSystem(new StepInputs(surfaces, maintenance, members));
+                frame.Systems.AddGameSystem(new StepInputs(maintenance));
                 GpuPoseAnimation.AddSystems(frame.Systems.Animation);
                 AnimationSystems.Add(frame.Systems.Animation, new FootLockSystem(), AnimationPhase.Composition);
                 target = GpuPoseAnimation.CreateTarget(frame.World, character);
@@ -74,20 +74,22 @@ public sealed partial class SkinningRenderingTests
                     builder.LockFeet(target, new(feet, new(path, new(0)), surfaces, new(Vector3.UnitY, 2, 2), Duration: 2.5f));
                 }
                 Entity animation = builder.Play();
-                frame.World.ExecuteBufferWrite<FootLockInstance, Entity>(animation, ref actor,
-                    static (instances, ref actor) => instances[0].Actor = actor);
+                {
+                    using DynamicBuffer<FootLockInstance> instances = frame.World.GetBuffer<FootLockInstance>(animation);
+                    instances[0].Actor = actor;
+                }
                 var binding = new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [3, 7]);
-                foreach (Entity entity in frame.Scene.MeshEntities) frame.World.Add(entity, new MeshSkin(character, binding));
+                foreach (Entity entity in frame.Scene.MeshEntities) frame.World.Set(entity, new MeshSkin(character, binding));
             },
             UpdateFrame = frame =>
             {
                 float step = frame.Index;
-                frame.World.Replace(leftStep, new MovingStep(Matrix4x4.CreateTranslation(-.35f + .03f * step, -.2f + .02f * step, 0) * actorBase, (ulong)frame.Index + 2));
-                frame.World.Replace(rightStep, new MovingStep(Matrix4x4.CreateTranslation(.35f + .03f * step, .4f + .02f * step, 0) * actorBase, (ulong)frame.Index + 2));
+                frame.World.Set(leftStep, new MovingStep(Matrix4x4.CreateTranslation(-.35f + .03f * step, -.2f + .02f * step, 0) * actorBase, (ulong)frame.Index + 2));
+                frame.World.Set(rightStep, new MovingStep(Matrix4x4.CreateTranslation(.35f + .03f * step, .4f + .02f * step, 0) * actorBase, (ulong)frame.Index + 2));
                 maintenance!.Schedule().Complete();
-                WorldTransform movement = frame.World.Read<WorldTransform>(actor);
+                WorldTransform movement = frame.World.ReadComponentData<WorldTransform>(actor);
                 movement.Qvvs.Position = actorBase.Translation + new Vector3(.02f * step, 0, 0);
-                frame.World.Replace(actor, movement);
+                frame.World.Set(actor, movement);
                 actors.Add(movement.Qvvs.ToMatrix());
                 frame.Scene.ReadGpuPose(target, reads.Add);
                 if (frame.Index == 9) frame.Scene.CaptureImage(value => image = value);
@@ -157,7 +159,7 @@ public sealed partial class SkinningRenderingTests
         using SkeletonInstance character = storage.CreateInstance(skeleton);
         Entity target = default, step = default;
         Matrix4x4 actor = default;
-        CollisionMaintenance<MovingStep, StepReader, SpatialAll, GroupMatch>? maintenance = null;
+        SpatialMaintenance<MovingStep, StepReader, SpatialAll, GroupMatch>? maintenance = null;
         var reads = new List<GpuPoseReadback>();
         var supports = new List<Matrix4x4>();
         var mesh = new CollisionMesh(new Vector3[] { new(-1, 0, -1), new(1, 0, -1), new(1, 0, 1), new(-1, 0, 1) },
@@ -167,14 +169,14 @@ public sealed partial class SkinningRenderingTests
         {
             Initialize = frame =>
             {
-                actor = frame.World.Read<WorldTransform>(frame.Scene.MeshEntities[0]).Qvvs.ToMatrix();
-                step = frame.World.CreateEntity(new MovingStep(Matrix4x4.CreateTranslation(0, .2f, 0) * actor, 1));
-                QueryHandle members = frame.World.Query(frame.World.QueryDefinition().All<MovingStep>());
-                CollisionTree tree = Collision.Build<MovingStep, StepReader>(frame.World, members, reader);
-                maintenance = Collision.Candidates<MovingStep, StepReader>(frame.World, members, tree, reader).CreateMaintenance(JobSystem.Default);
+                actor = frame.World.ReadComponentData<WorldTransform>(frame.Scene.MeshEntities[0]).Qvvs.ToMatrix();
+                step = frame.World.Create(new MovingStep(Matrix4x4.CreateTranslation(0, .2f, 0) * actor, 1));
+                Query members = frame.World.Query(new QueryDescription().With<MovingStep>());
+                BoundsTree tree = SpatialQueries.Build<MovingStep, StepReader>(frame.World, members, reader);
+                maintenance = SpatialQueries.Candidates<MovingStep, StepReader>(frame.World, members, tree, reader).CreateMaintenance(JobSystem.Default);
                 maintenance.Schedule().Complete();
                 var surfaces = Collision.Query<MovingStep, StepReader>(frame.World, members, tree, reader);
-                frame.Systems.AddGameSystem(new StepInputs(surfaces, maintenance, members));
+                frame.Systems.AddGameSystem(new StepInputs(maintenance));
                 GpuPoseAnimation.AddSystems(frame.Systems.Animation);
                 AnimationSystems.Add(frame.Systems.Animation, new FootLockSystem(), AnimationPhase.Composition);
                 target = GpuPoseAnimation.CreateTarget(frame.World, character);
@@ -187,16 +189,18 @@ public sealed partial class SkinningRenderingTests
                 }
                 Entity animation = builder.Play();
                 Entity actorEntity = frame.Scene.MeshEntities[0];
-                frame.World.ExecuteBufferWrite<FootLockInstance, Entity>(animation, ref actorEntity,
-                    static (instances, ref actorEntity) => instances[0].Actor = actorEntity);
+                {
+                    using DynamicBuffer<FootLockInstance> instances = frame.World.GetBuffer<FootLockInstance>(animation);
+                    instances[0].Actor = actorEntity;
+                }
                 var binding = new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [2, 3]);
-                foreach (Entity entity in frame.Scene.MeshEntities) frame.World.Add(entity, new MeshSkin(character, binding));
+                foreach (Entity entity in frame.Scene.MeshEntities) frame.World.Set(entity, new MeshSkin(character, binding));
             },
             UpdateFrame = frame =>
             {
                 Matrix4x4 support = Matrix4x4.CreateRotationY(frame.Index * MathF.PI / 6)
                     * Matrix4x4.CreateTranslation(0, .2f, 0) * actor;
-                frame.World.Replace(step, new MovingStep(support, (ulong)frame.Index + 2));
+                frame.World.Set(step, new MovingStep(support, (ulong)frame.Index + 2));
                 maintenance!.Schedule().Complete();
                 supports.Add(support);
                 frame.Scene.ReadGpuPose(target, reads.Add);
@@ -218,19 +222,18 @@ public sealed partial class SkinningRenderingTests
     private static void FootNear(Vector3 expected, Vector3 actual) =>
         Assert.True(Vector3.Distance(expected, actual) < .001f, $"Expected {expected}; actual {actual}.");
 
-    private readonly record struct MovingStep(Matrix4x4 Transform, ulong Version) : IComponent;
+    private readonly record struct MovingStep(Matrix4x4 Transform, ulong Version) : ITrackedComponent;
     private readonly struct StepReader(CollisionMesh mesh) : ICollisionSurfaceReader<MovingStep>
     {
-        public CollisionBounds Read(in MovingStep step) => ReadSurface(in step).Bounds;
+        public SpatialBounds Read(in MovingStep step) => ReadSurface(in step).Bounds;
         public CollisionSurface ReadSurface(in MovingStep step) => new(mesh, step.Transform, step.Version);
     }
-    private readonly struct StepInputs(CollisionQueries<MovingStep, StepReader> surfaces,
-        CollisionMaintenance<MovingStep, StepReader, SpatialAll, GroupMatch> maintenance, QueryHandle members) : ISystem<ImmediateSystemContext>
+    private readonly struct StepInputs(SpatialMaintenance<MovingStep, StepReader, SpatialAll, GroupMatch> maintenance) : ISystem<ImmediateSystemContext>
     {
         public void OnUpdate(ref ImmediateSystemContext context) { }
         public void OnDestroy(ref ImmediateSystemContext context)
         {
-            surfaces.Dispose(); maintenance.Dispose(); context.World.ReleaseQuery(members);
+            maintenance.Dispose();
         }
     }
     private readonly struct LandingSampler : IClipSampler<Skeleton>

@@ -11,8 +11,8 @@ public sealed class NavigationTraversalTests
     [Fact]
     public void ChangedActionLinksHandOffMovementAndResumeNavigationAfterActualCompletion()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)],
             1, maximumSpeed: 2, capabilities: 1);
         var policy = new NavigationPolicy();
@@ -31,29 +31,29 @@ public sealed class NavigationTraversalTests
             new(93, new(10, 7), new(20, 8), 45, Cost: 8, RequiredCapabilities: 1)];
         scene.ScheduleLinks(new(definitions), scheduler: scheduler).Complete();
         var navigation = new NavigationSystems<NavigationScene, SceneNavigationSearch, SceneSearchState, TestMotion, TestMotionReader>(world);
-        Entity actor = world.CreateEntity(new TestMotion { Position = new(1, 0, 1) });
+        Entity actor = world.Create(new TestMotion { Position = new(1, 0, 1) });
         world.Add(actor, new TestActionMotion());
         navigation.AddAgent(actor, scene, profile, policy, new(new Vector3(7, 0, 1), 0.05f), 2);
         navigation.Schedule(0.1f, 128).Steering.Complete();
-        Assert.Equal(43, world.Read<NavigationPathResult>(actor).Path!.Traversals.Span[0].Action);
+        Assert.Equal(43, world.ReadValue<NavigationPathResult>(actor).Path!.Traversals.Span[0].Action);
 
         definitions = definitions.ToArray();
         definitions[0] = definitions[0] with { Enabled = false };
         definitions[1] = definitions[1] with { Enabled = true };
         scene.ScheduleLinks(new(definitions), scheduler: scheduler).Complete();
-        for (int step = 0; step < 100 && world.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived; step++)
+        for (int step = 0; step < 100 && world.ReadValue<NavigationProgress>(actor).Status != NavigationStatus.Arrived; step++)
         {
             NavigationStep scheduled = navigation.Schedule(0.1f, 32);
             navigation.ScheduleProgress(new ConsumeActionOrSteering(0.1f).ScheduleParallel(world, scheduled.Steering)).Complete();
-            Vector3 position = world.Read<TestMotion>(actor).Position;
+            Vector3 position = world.ReadValue<TestMotion>(actor).Position;
             if (position.X > 3 && position.X < 5)
-                Assert.Equal(NavigationStatus.Traversing, world.Read<NavigationProgress>(actor).Status);
+                Assert.Equal(NavigationStatus.Traversing, world.ReadValue<NavigationProgress>(actor).Status);
         }
 
-        TestActionMotion executed = world.Read<TestActionMotion>(actor);
+        TestActionMotion executed = world.ReadValue<TestActionMotion>(actor);
         Assert.Equal(1, executed.Count);
         Assert.Equal(42, executed.Action);
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(actor).Status);
     }
 }
 

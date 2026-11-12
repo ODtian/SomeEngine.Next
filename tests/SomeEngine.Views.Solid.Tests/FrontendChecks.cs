@@ -16,19 +16,19 @@ public static partial class FrontendChecks
         var count = new State<int>(3);
         Entity root = Views.Spawn(frames.World, Entity.Null, new SolidContent(() => Insert(() => Number(count.Value))));
         frames.Frame();
-        Entity insertion = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-        Entity component = Hierarchy<ElementTree>.GetChildren(frames.World, insertion).Single();
-        Entity label = Hierarchy<ElementTree>.GetChildren(frames.World, component).Single();
-        Require(frames.World.ReadSparse<NumberLabel>(label).Value == 3, "Insert supplies the initial Compose parameter.");
+        Entity insertion = ElementChildren.Read(frames.World, root).Single();
+        Entity component = ElementChildren.Read(frames.World, insertion).Single();
+        Entity label = ElementChildren.Read(frames.World, component).Single();
+        Require(frames.World.ReadComponentData<NumberLabel>(label).Value == 3, "Insert supplies the initial Compose parameter.");
 
         count.Value = 7;
         frames.Frame();
 
-        Require(Hierarchy<ElementTree>.GetChildren(frames.World, root).Single() == insertion &&
-            Hierarchy<ElementTree>.GetChildren(frames.World, insertion).Single() == component &&
-            Hierarchy<ElementTree>.GetChildren(frames.World, component).Single() == label &&
-            frames.World.ReadSparse<Number_View>(component).value == 7 &&
-            frames.World.ReadSparse<NumberLabel>(label).Value == 7,
+        Require(ElementChildren.Read(frames.World, root).Single() == insertion &&
+            ElementChildren.Read(frames.World, insertion).Single() == component &&
+            ElementChildren.Read(frames.World, component).Single() == label &&
+            frames.World.ReadComponentData<Number_View>(component).value == 7 &&
+            frames.World.ReadComponentData<NumberLabel>(label).Value == 7,
             "Insert delivers changed ordinary parameters while preserving the declared nodes.");
     }
 
@@ -38,25 +38,25 @@ public static partial class FrontendChecks
         var factor = new State<int>(2);
         Entity root = Views.Spawn(frames.World, Entity.Null, new SolidHost_View(3, factor));
         frames.Frame();
-        Entity counter = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-        State<int> count = frames.World.ReadSparse<CounterState>(counter).Count;
-        Require(frames.World.ReadSparse<CounterResult>(counter).Value == 6, "The exported Solid component builds its initial computation.");
+        Entity counter = ElementChildren.Read(frames.World, root).Single();
+        State<int> count = frames.World.ReadComponentData<CounterState>(counter).Count;
+        Require(frames.World.ReadComponentData<CounterResult>(counter).Value == 6, "The exported Solid component builds its initial computation.");
 
         count.Value = 5;
         frames.Frame();
-        Require(frames.World.ReadSparse<CounterResult>(counter).Value == 10, "The component responds to its local state.");
+        Require(frames.World.ReadComponentData<CounterResult>(counter).Value == 10, "The component responds to its local state.");
 
-        frames.World.ReplaceSparse(root, new SolidHost_View(9, factor));
+        frames.World.SetSparse(root, new SolidHost_View(9, factor));
         frames.Frame();
-        Require(Hierarchy<ElementTree>.GetChildren(frames.World, root).Single() == counter &&
-            frames.World.ReadSparse<CounterState>(counter).Count.Value == 5 &&
-            frames.World.ReadSparse<CounterResult>(counter).Value == 10,
+        Require(ElementChildren.Read(frames.World, root).Single() == counter &&
+            frames.World.ReadComponentData<CounterState>(counter).Count.Value == 5 &&
+            frames.World.ReadComponentData<CounterResult>(counter).Value == 10,
             "A Compose refresh retains the Solid component and its edited local state.");
 
         count.Value = 6;
         factor.Value = 3;
         frames.Frame();
-        Require(frames.World.ReadSparse<CounterResult>(counter).Value == 18,
+        Require(frames.World.ReadComponentData<CounterResult>(counter).Value == 18,
             "The retained Memo and Effect continue responding to local and shared state.");
     }
 
@@ -72,23 +72,23 @@ public static partial class FrontendChecks
             Scope.View(new NumberLabel(99), 1);
         })));
         frames.Frame();
-        Entity insertion = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-        Entity[] first = Hierarchy<ElementTree>.GetChildren(frames.World, insertion).ToArray();
-        Entity label = Hierarchy<ElementTree>.GetChildren(frames.World, first[0]).Single();
+        Entity insertion = ElementChildren.Read(frames.World, root).Single();
+        Entity[] first = ElementChildren.Read(frames.World, insertion);
+        Entity label = ElementChildren.Read(frames.World, first[0]).Single();
 
         visible.Value = false;
         frames.Frame();
-        Require(Hierarchy<ElementTree>.GetChildren(frames.World, insertion).Single() == first[1] &&
-            !frames.World.IsAlive(first[0]) && !frames.World.IsAlive(label),
+        Require(ElementChildren.Read(frames.World, insertion).Single() == first[1] &&
+            !frames.World.Has<global::SomeEngine.Views.ViewType>(first[0]) && !frames.World.Has<global::SomeEngine.Views.ViewType>(label),
             "Insert releases omitted content and retains the following node by its key.");
 
         count.Value = 7;
         visible.Value = true;
         frames.Frame();
-        Entity[] restored = Hierarchy<ElementTree>.GetChildren(frames.World, insertion).ToArray();
-        Entity nextLabel = Hierarchy<ElementTree>.GetChildren(frames.World, restored[0]).Single();
+        Entity[] restored = ElementChildren.Read(frames.World, insertion);
+        Entity nextLabel = ElementChildren.Read(frames.World, restored[0]).Single();
         Require(restored[0] != first[0] && restored[1] == first[1] &&
-            frames.World.ReadSparse<NumberLabel>(nextLabel).Value == 7,
+            frames.World.ReadComponentData<NumberLabel>(nextLabel).Value == 7,
             "Insert recreates returning branches with current values and preserves the following node.");
     }
 
@@ -98,18 +98,18 @@ public static partial class FrontendChecks
         var factor = new State<int>(2);
         Entity root = Views.Spawn(frames.World, Entity.Null, new CounterHost(3, factor));
         frames.Frame();
-        Entity counter = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-        State<int> count = frames.World.ReadSparse<CounterState>(counter).Count;
+        Entity counter = ElementChildren.Read(frames.World, root).Single();
+        State<int> count = frames.World.ReadComponentData<CounterState>(counter).Count;
         count.Value = 5;
         frames.Frame();
 
-        frames.World.ReplaceSparse(root, new CounterHost(9, factor));
+        frames.World.SetSparse(root, new CounterHost(9, factor));
         frames.Frame();
         factor.Value = 3;
         frames.Frame();
-        Require(Hierarchy<ElementTree>.GetChildren(frames.World, root).Single() == counter &&
-            frames.World.ReadSparse<CounterState>(counter).Count.Value == 5 &&
-            frames.World.ReadSparse<CounterResult>(counter).Value == 15,
+        Require(ElementChildren.Read(frames.World, root).Single() == counter &&
+            frames.World.ReadComponentData<CounterState>(counter).Count.Value == 5 &&
+            frames.World.ReadComponentData<CounterResult>(counter).Value == 15,
             "An ordinary view Build preserves the exported component and its responsive state.");
     }
 
@@ -126,22 +126,22 @@ public static partial class FrontendChecks
                 throw error;
         })));
         frames.Frame();
-        Entity insertion = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-        Entity label = Hierarchy<ElementTree>.GetChildren(frames.World, insertion).Single();
+        Entity insertion = ElementChildren.Read(frames.World, root).Single();
+        Entity label = ElementChildren.Read(frames.World, insertion).Single();
 
         count.Value = 7;
         fail.Value = true;
         frames.Frame();
-        Require(frames.World.ReadSparse<BuildError>(insertion).Exception == error &&
-            Hierarchy<ElementTree>.GetChildren(frames.World, insertion).Single() == label &&
-            frames.World.ReadSparse<NumberLabel>(label).Value == 3,
+        Require(frames.World.ReadComponentData<BuildError>(insertion).Exception == error &&
+            ElementChildren.Read(frames.World, insertion).Single() == label &&
+            frames.World.ReadComponentData<NumberLabel>(label).Value == 3,
             "Failed Insert content records its error and preserves the previous child data.");
 
         fail.Value = false;
         frames.Frame();
         Require(!frames.World.HasSparse<BuildError>(insertion) &&
-            Hierarchy<ElementTree>.GetChildren(frames.World, insertion).Single() == label &&
-            frames.World.ReadSparse<NumberLabel>(label).Value == 7,
+            ElementChildren.Read(frames.World, insertion).Single() == label &&
+            frames.World.ReadComponentData<NumberLabel>(label).Value == 7,
             "Insert recovers on the same node when its dependency changes.");
     }
 

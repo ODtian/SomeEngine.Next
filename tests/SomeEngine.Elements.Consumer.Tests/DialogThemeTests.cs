@@ -24,9 +24,13 @@ public sealed partial class DialogTests
         using var frames = new ButtonFrames();
         var theme = new DialogTheme
         {
-            Fill = new Color(0.4f, 0.5f, 0.6f), CornerRadius = 12,
+            Fill = new Color(0.4f, 0.5f, 0.6f),
+            CornerRadius = 12,
             Shadow = new DropShadow(new Color(0, 0, 0, 0.5f), new Vector2(2, 4), 6),
-            Gap = 6, TitleColor = new Color(0.8f, 0.7f, 0.6f), TitleSize = 20, ActionsGap = 4,
+            Gap = 6,
+            TitleColor = new Color(0.8f, 0.7f, 0.6f),
+            TitleSize = 20,
+            ActionsGap = 4,
         };
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new NestedDialogs(theme, zeroInner, userFooter));
         frames.Frame();
@@ -36,34 +40,34 @@ public sealed partial class DialogTests
         theme.TitleSize = 30;
         theme.Gap = 10;
         theme.ActionsGap = 12;
-        frames.World.Replace(root, new NestedDialogs(theme, zeroInner, userFooter));
+        frames.World.Set(root, new NestedDialogs(theme, zeroInner, userFooter));
         frames.Frame();
         AssertNearestTheme(frames.World, root, zeroInner);
-        Entity container = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity outer = Hierarchy<ElementTree>.GetChildren(frames.World, container)[0];
-        Assert.Equal(new Color(0.7f, 0.3f, 0.1f), frames.World.Read<Surface>(outer).Fill);
+        Entity container = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity outer = ElementChildren.Read(frames.World, container)[0];
+        Assert.Equal(new Color(0.7f, 0.3f, 0.1f), frames.World.ReadComponentData<Surface>(outer).Fill);
         Entity title = Assert.Single(ButtonChecks.DescendantsWith<Text>(frames.World, outer));
-        Assert.Equal(30, frames.World.Read<ShapedText>(title).Style.Size);
+        Assert.Equal(30, frames.World.ReadComponentData<ShapedText>(title).Style.Size);
     }
 
     private static void AssertNearestTheme(World world, Entity root, bool zeroInner)
     {
-        Entity container = Assert.Single(Hierarchy<ElementTree>.GetChildren(world, root));
-        Entity group = Hierarchy<ElementTree>.GetChildren(world, container)[1];
-        Entity inner = Assert.Single(Hierarchy<ElementTree>.GetChildren(world, group));
-        Surface surface = world.Read<Surface>(inner);
+        Entity container = Assert.Single(ElementChildren.Read(world, root));
+        Entity group = ElementChildren.Read(world, container)[1];
+        Entity inner = Assert.Single(ElementChildren.Read(world, group));
+        Surface surface = world.ReadComponentData<Surface>(inner);
         Assert.Equal(zeroInner ? default : new Color(0.7f, 0.1f, 0.3f), surface.Fill);
         Assert.Equal(zeroInner ? 0 : 8, surface.CornerRadius);
         Assert.Equal(zeroInner ? default : new DropShadow(new Color(0, 0, 0, 0.35f), new Vector2(0, 4), 12), surface.Shadow);
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(world, inner).ToArray();
+        Entity[] children = ElementChildren.Read(world, inner);
         Entity title = Assert.Single(ButtonChecks.DescendantsWith<Text>(world, children[0]));
-        TextStyle style = world.Read<ShapedText>(title).Style;
+        TextStyle style = world.ReadComponentData<ShapedText>(title).Style;
         Assert.Equal(24, style.Size);
         Assert.Equal(zeroInner ? default : new Color(1, 1, 1), style.Color);
-        Assert.Equal(zeroInner ? 34.688f : 50.688f, world.Read<LayoutRect>(children[1]).Value.Y, 3);
-        Entity[] actions = Hierarchy<ElementTree>.GetChildren(world, children[2]).ToArray();
-        Rect first = world.Read<LayoutRect>(actions[0]).Value;
-        Rect second = world.Read<LayoutRect>(actions[1]).Value;
+        Assert.Equal(zeroInner ? 34.688f : 50.688f, world.ReadComponentData<LayoutRect>(children[1]).Value.Y, 3);
+        Entity[] actions = ElementChildren.Read(world, children[2]);
+        Rect first = world.ReadComponentData<LayoutRect>(actions[0]).Value;
+        Rect second = world.ReadComponentData<LayoutRect>(actions[1]).Value;
         Assert.Equal(zeroInner ? 0 : 8, second.X - first.X - first.Width, 3);
     }
 
@@ -74,7 +78,12 @@ public sealed partial class DialogTests
             Scope.Entity.Provide(Theme);
             DialogTheme innerTheme = ZeroInner ? new DialogTheme
             {
-                Fill = default, CornerRadius = 0, Shadow = default, Gap = 0, TitleColor = default, ActionsGap = 0,
+                Fill = default,
+                CornerRadius = 0,
+                Shadow = default,
+                Gap = 0,
+                TitleColor = default,
+                ActionsGap = 0,
             } : new DialogTheme { Fill = new Color(0.7f, 0.1f, 0.3f) };
             using (Absolute().Content())
             {
