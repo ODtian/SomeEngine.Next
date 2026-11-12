@@ -12,7 +12,7 @@ namespace SomeEngine.Render.Cluster;
 /// <summary>Physical bounds and shutdown policy for Cluster geometry residency.</summary>
 public sealed record ClusterResidencyOptions
 {
-    public uint PageHeapCapacityBytes { get; init; } = 256u * 1024 * 1024;
+    public uint PageHeapCapacityBytes { get; init; } = 512u * 1024 * 1024;
 
     public ulong BvhCapacityBytes { get; init; } = 64ul * 1024 * 1024;
 
