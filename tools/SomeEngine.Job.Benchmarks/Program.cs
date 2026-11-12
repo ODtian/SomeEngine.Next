@@ -20,6 +20,7 @@ bool categories = args.Contains("--categories", StringComparer.OrdinalIgnoreCase
 bool storage = args.Contains("--storage", StringComparer.OrdinalIgnoreCase);
 bool sizing = args.Contains("--sizing", StringComparer.OrdinalIgnoreCase);
 bool worldEdits = args.Contains("--world-edits", StringComparer.OrdinalIgnoreCase);
+bool componentRanges = args.Contains("--component-ranges", StringComparer.OrdinalIgnoreCase);
 
 JobSystem.Initialize(new JobConfiguration
 {
@@ -42,6 +43,13 @@ try
     if (worldEdits)
     {
         WorldEditBenchmarks.Run(JobSystem.Default, parallelLength, warmups, samples);
+        return;
+    }
+
+    if (componentRanges)
+    {
+        ComponentRangeBenchmarks.Run(JobSystem.Default, parallelLength, warmups, samples,
+            ReadNonNegativeArgument(args, "--chunk-capacity", 1024));
         return;
     }
 
