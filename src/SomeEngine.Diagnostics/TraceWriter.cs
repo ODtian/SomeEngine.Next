@@ -5,7 +5,8 @@ namespace SomeEngine.Diagnostics;
 internal sealed class TraceWriter
 {
     internal readonly TraceCapture Capture;
-    internal readonly int ThreadId = Environment.CurrentManagedThreadId;
+    internal readonly int ThreadId;
+    private readonly int _managedThreadId = Environment.CurrentManagedThreadId;
     internal readonly int NativeThreadId = TraceThread.CurrentNativeId;
     private TraceBlock? _block;
     private uint _sequence;
@@ -16,7 +17,7 @@ internal sealed class TraceWriter
     private int _depth;
     private long _span;
     internal TraceContext Context { get; private set; }
-    internal TraceWriter(TraceCapture capture) => Capture = capture;
+    internal TraceWriter(TraceCapture capture, int threadId) => (Capture, ThreadId) = (capture, threadId);
     internal long Dropped => _dropped;
     internal string Name => Volatile.Read(ref _name);
     internal void SetName(string name) => Volatile.Write(ref _name, name);
@@ -55,7 +56,7 @@ internal sealed class TraceWriter
 
     internal void End(long id)
     {
-        if (ThreadId != Environment.CurrentManagedThreadId || _depth == 0 || _nesting[_depth - 1].Id != id)
+        if (_managedThreadId != Environment.CurrentManagedThreadId || _depth == 0 || _nesting[_depth - 1].Id != id)
         {
             Capture.RecordMisuse();
             return;

@@ -110,6 +110,24 @@ public sealed class TraceCaptureTests : IDisposable
     }
 
     [Fact]
+    public void ShortLivedThreadsKeepDistinctSpans()
+    {
+        using (EngineTrace.Start(_path, new TraceOptions { BufferMegabytes = 16 }))
+            for (int i = 0; i < 32; i++)
+            {
+                var thread = new Thread(() => { using (EngineTrace.Begin(Work)) { } });
+                thread.Start(); thread.Join();
+            }
+        TraceData data = TraceFile.Read(_path);
+        TraceEvent[] spans = data.Events.Where(e => e.Event.Kind == TraceEventKind.Begin).Select(e => e.Event).ToArray();
+        Assert.Equal(32, spans.Length);
+        Assert.Equal(32, spans.Select(e => e.Id).Distinct().Count());
+        Assert.Equal(32, data.Threads.Select(t => t.Id).Distinct().Count());
+        Assert.Empty(TraceAnalyzer.Analyze(data).Issues);
+        Assert.Equal(0, data.Misuse);
+    }
+
+    [Fact]
     public void BufferExhaustionIsExplicitAndDoesNotBlockProducers()
     {
         using (EngineTrace.Start(_path, new TraceOptions { BufferMegabytes = 1 }))
