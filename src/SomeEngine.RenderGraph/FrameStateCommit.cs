@@ -28,6 +28,10 @@ internal sealed partial class FrameExecutor
     private List<TextureStateUpdate>?[] _textureUpdatesByResource = [];
     private List<QueryStateUpdate>?[] _queryUpdatesByResource = [];
     private List<ShaderTableStateUpdate>?[] _shaderTableUpdatesByResource = [];
+    private readonly Dictionary<int, List<int>> _stateAccessGroups = [];
+    private readonly List<int> _stateAccessSubmissions = [];
+    private readonly List<BufferStateUpdate> _previousBufferStateUpdates = [];
+    private readonly List<BufferStateStep> _stateBufferSteps = [];
 
     private readonly record struct TextureStateValue(TextureBoundaryState State, int CompletionSource,
         int LastPass = -1, bool MergeableWrites = false);
@@ -129,27 +133,31 @@ internal sealed partial class FrameExecutor
     private void BuildResourceStateUpdates((GraphAccessTargetKind Kind, int Index) key)
     {
         if (!_resourceAccessLists.TryGetValue(key, out List<int>? source) || source.Count == 0) return;
-        var groups = new Dictionary<int, List<int>>();
+        foreach (List<int> indices in _stateAccessGroups.Values) indices.Clear();
+        _stateAccessSubmissions.Clear();
         foreach (int index in source)
         {
             FrameResourceAccess access = _accesses[index];
             if (!IsLive(access.PassIndex)) continue;
             int submission = _submissionByPass[access.PassIndex];
             if (submission < 0) continue;
-            if (!groups.TryGetValue(submission, out List<int>? indices)) groups.Add(submission, indices = []);
+            if (!_stateAccessGroups.TryGetValue(submission, out List<int>? indices))
+                _stateAccessGroups.Add(submission, indices = []);
+            if (indices.Count == 0) _stateAccessSubmissions.Add(submission);
             indices.Add(index);
         }
-        foreach ((int submission, List<int> indices) in groups)
+        foreach (int submission in _stateAccessSubmissions)
         {
-            indices.Sort((left, right) =>
-            {
-                FrameResourceAccess a = _accesses[left], b = _accesses[right];
-                int order = _executionOrder.Position(a.PassIndex).CompareTo(_executionOrder.Position(b.PassIndex));
-                return order != 0 ? order : a.PassAdjacencyIndex.CompareTo(b.PassAdjacencyIndex);
-            });
+            List<int> indices = _stateAccessGroups[submission];
+            SortAccessesBySchedule(indices);
             if (key.Kind == GraphAccessTargetKind.Buffer)
             {
-                var steps = new List<BufferStateStep>();
+                BufferStateUpdate? update = null;
+                foreach (BufferStateUpdate previous in _previousBufferStateUpdates)
+                    if (previous.Submission == submission) { update = previous; break; }
+                BufferStateStep[] previousSteps = update?.Steps ?? [];
+                _stateBufferSteps.Clear();
+                bool stepsChanged = update is null;
                 for (int first = 0; first < indices.Count;)
                 {
                     int pass = _accesses[indices[first]].PassIndex;
@@ -166,12 +174,31 @@ internal sealed partial class FrameExecutor
                         writes |= value.Mode != GraphAccessMode.Read;
                         mergeableWrites &= value.UnorderedAccessHazards != UnorderedAccessHazardMode.Ordered;
                     }
-                    steps.Add(new(pass, CollectionsMarshal.AsSpan(indices).Slice(first, end - first).ToArray(), sync, access, writes,
-                        HasIncomingBufferAcquire(pass, _buffers[key.Index].Resource), mergeableWrites));
+                    ReadOnlySpan<int> sourceIndices = CollectionsMarshal.AsSpan(indices).Slice(first, end - first);
+                    int stepIndex = _stateBufferSteps.Count;
+                    int[] accesses = stepIndex < previousSteps.Length && previousSteps[stepIndex].Pass == pass &&
+                        previousSteps[stepIndex].Accesses.AsSpan().SequenceEqual(sourceIndices)
+                            ? previousSteps[stepIndex].Accesses : sourceIndices.ToArray();
+                    var step = new BufferStateStep(pass, accesses, sync, access, writes,
+                        HasIncomingBufferAcquire(pass, _buffers[key.Index].Resource), mergeableWrites);
+                    stepsChanged |= stepIndex >= previousSteps.Length || previousSteps[stepIndex] != step;
+                    _stateBufferSteps.Add(step);
                     first = end;
                 }
-                var update = new BufferStateUpdate { Submission = submission, ResourceIndex = key.Index,
-                    Steps = steps.ToArray(), Releases = ResourceReleases(submission, _buffers[key.Index].Resource) };
+                stepsChanged |= previousSteps.Length != _stateBufferSteps.Count;
+                update ??= new BufferStateUpdate { Submission = submission, ResourceIndex = key.Index };
+                if (stepsChanged)
+                {
+                    update.Steps = _stateBufferSteps.ToArray();
+                    update.Initialized = false;
+                }
+                QueueRelease[] releases = ResourceReleases(submission, _buffers[key.Index].Resource);
+                if (!update.Releases.AsSpan().SequenceEqual(releases))
+                {
+                    update.Releases = releases;
+                    update.Initialized = false;
+                }
+                _stateBufferSteps.Clear();
                 _submissionBufferUpdates[submission].Add(update);
                 (_bufferUpdatesByResource[key.Index] ??= []).Add(update);
             }
@@ -227,11 +254,13 @@ internal sealed partial class FrameExecutor
         ResizeStateResourceLists();
         foreach (var key in _stateConnectionChanges)
         {
+            _previousBufferStateUpdates.Clear();
             switch (key.Kind)
             {
                 case GraphAccessTargetKind.Buffer:
                     if ((uint)key.Index < (uint)_bufferUpdatesByResource.Length && _bufferUpdatesByResource[key.Index] is { } buffers)
                     {
+                        _previousBufferStateUpdates.AddRange(buffers);
                         foreach (BufferStateUpdate update in buffers) _submissionBufferUpdates[update.Submission].Remove(update);
                         buffers.Clear();
                     }
@@ -259,6 +288,7 @@ internal sealed partial class FrameExecutor
                     break;
             }
             BuildResourceStateUpdates(key);
+            _previousBufferStateUpdates.Clear();
         }
         _stateConnectionChanges.Clear();
     }
