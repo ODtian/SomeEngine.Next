@@ -453,7 +453,6 @@ namespace {{model.Namespace}}
     {
         return member.Kind switch
         {
-            BundleMemberKind.Sparse => $"                view.WriteSparse(in {StateAccess(member)});",
             BundleMemberKind.Buffer => $"                view.WriteBuffer(in {StateAccess(member)});",
             BundleMemberKind.Shared => string.Empty,
             _ => $"                view.Write(in {StateAccess(member)});",

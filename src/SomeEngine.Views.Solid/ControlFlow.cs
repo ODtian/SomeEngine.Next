@@ -68,8 +68,8 @@ public static partial class Solid
         if (previous.Length > 0)
         {
             Entity branch = previous[0];
-            key = Scope.World.ReadComponentData<ElementKey>(branch).Key;
-            T previousValue = Scope.World.ReadComponentData<BranchContent<T>>(branch).Value;
+            key = Scope.World.ReadValue<ElementKey>(branch).Key;
+            T previousValue = Scope.World.ReadValue<BranchContent<T>>(branch).Value;
             bool changed = keyed
                 ? !EqualityComparer<T>.Default.Equals(previousValue, value)
                 : (previousValue is null) != (value is null);

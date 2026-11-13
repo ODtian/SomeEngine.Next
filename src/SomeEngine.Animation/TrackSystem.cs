@@ -222,7 +222,7 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
         {
             T current = track.Channel.Read(world, target);
             if (track.Channel.Component != ComponentId<AnimationLayers>.Value && world.Has<AnimationLayers>(target) &&
-                world.ReadComponentData<AnimationLayers>(target).Items[track.Layer].Mode == LayerMode.Additive)
+                world.ReadValue<AnimationLayers>(target).Items[track.Layer].Mode == LayerMode.Additive)
                 PropertyAnimation.ReadBase(world, target, track.Channel, ref current);
             for (int earlier = 0; earlier < index; earlier++)
             {
@@ -318,7 +318,7 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
         if (track.Endpoints == TrackEndpoints.Values || track.Channel.Component == ComponentId<AnimationLayers>.Value ||
             !world.Has<AnimationLayers>(target))
             return value;
-        AnimationLayers layers = world.ReadComponentData<AnimationLayers>(target);
+        AnimationLayers layers = world.ReadValue<AnimationLayers>(target);
         DevelopmentCheck.Require(layers.Count <= 8 && track.Layer < layers.Count,
             "A property track requires a defined animation layer.");
         if (layers.Items[track.Layer].Mode != LayerMode.Additive)

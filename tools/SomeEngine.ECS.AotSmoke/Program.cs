@@ -134,8 +134,8 @@ internal static class Program
         rootExpected.Value += 2;
         AotPosition childExpected = childInitial;
         childExpected.Value += 3;
-        RequirePackedEqual(source.ReadComponentData<AotPosition>(root), rootExpected, "Generated root job result");
-        RequirePackedEqual(source.ReadComponentData<AotPosition>(child), childExpected, "Generated child job result");
+        RequirePackedEqual(source.ReadValue<AotPosition>(root), rootExpected, "Generated root job result");
+        RequirePackedEqual(source.ReadValue<AotPosition>(child), childExpected, "Generated child job result");
         Require(source.IsAlive(edge.Entity), "Relation entity was not alive before serialization.");
 
         using var durable = new MemoryStream();
@@ -145,11 +145,11 @@ internal static class Program
         using World loaded = WorldSerializer.ReadWorld(durable, registry, new(RequiredPurpose: SavePurpose.DurableSave));
 
         RequirePackedEqual(
-            loaded.ReadComponentData<AotPosition>(root),
+            loaded.ReadValue<AotPosition>(root),
             rootExpected,
             "Durable root packed component round-trip");
         RequirePackedEqual(
-            loaded.ReadComponentData<AotPosition>(child),
+            loaded.ReadValue<AotPosition>(child),
             childExpected,
             "Durable child packed component round-trip");
         Require(
@@ -158,18 +158,18 @@ internal static class Program
         Require(
             CountOutgoing(loaded, root) == 1,
             "Relation adjacency did not round-trip.");
-        Require(loaded.ReadComponentData<AotLink>(edge.Entity).Weight == 7, "Relation payload did not round-trip.");
+        Require(loaded.ReadValue<AotLink>(edge.Entity).Weight == 7, "Relation payload did not round-trip.");
 
         using var checkpoint = new MemoryStream();
         new WorldSerializer(registry).Save(source, checkpoint, SavePurpose.RawCheckpoint);
         checkpoint.Position = 0;
         using World checkpointLoaded = WorldSerializer.ReadWorld(checkpoint, registry, new(RequiredPurpose: SavePurpose.RawCheckpoint));
         RequirePackedEqual(
-            checkpointLoaded.ReadComponentData<AotPosition>(root),
+            checkpointLoaded.ReadValue<AotPosition>(root),
             rootExpected,
             "Checkpoint root packed component round-trip");
         RequirePackedEqual(
-            checkpointLoaded.ReadComponentData<AotPosition>(child),
+            checkpointLoaded.ReadValue<AotPosition>(child),
             childExpected,
             "Checkpoint child packed component round-trip");
 
@@ -186,11 +186,11 @@ internal static class Program
         indexedCheckpoint.Position = 0;
         using World indexedCheckpointLoaded = WorldCheckpointCodec.Read(indexedCheckpoint, registry);
         RequirePackedEqual(
-            indexedCheckpointLoaded.ReadComponentData<AotPosition>(root),
+            indexedCheckpointLoaded.ReadValue<AotPosition>(root),
             rootExpected,
             "Canonical checkpoint root round-trip");
         RequirePackedEqual(
-            indexedCheckpointLoaded.ReadComponentData<AotPosition>(child),
+            indexedCheckpointLoaded.ReadValue<AotPosition>(child),
             childExpected,
             "Canonical checkpoint child round-trip");
         Require(
@@ -204,9 +204,9 @@ internal static class Program
         ExerciseRelationCleanupDispatch();
 
         long semanticChecksum =
-            loaded.ReadComponentData<AotPosition>(root).Value * 31L +
-            loaded.ReadComponentData<AotPosition>(child).Value * 17L +
-            loaded.ReadComponentData<AotLink>(edge.Entity).Weight;
+            loaded.ReadValue<AotPosition>(root).Value * 31L +
+            loaded.ReadValue<AotPosition>(child).Value * 17L +
+            loaded.ReadValue<AotLink>(edge.Entity).Weight;
 
         return new AotSmokeResult(
             RuntimeInformation.FrameworkDescription,
@@ -250,7 +250,7 @@ internal static class Program
             Require(first.Generation == 1, "First durable file generation was not one.");
             Require(second.Generation == 2, "Second durable file generation was not two.");
             RequirePackedEqual(
-                restored.ReadComponentData<AotPosition>(root),
+                restored.ReadValue<AotPosition>(root),
                 rootExpected,
                 "Durable two-generation file store packed component round-trip");
             return second.Generation;

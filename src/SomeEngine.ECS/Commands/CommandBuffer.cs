@@ -6,7 +6,7 @@ namespace SomeEngine.ECS.Commands;
 
 internal enum CommandKind
 {
-    Create, Destroy, Set, Add, Remove, Enable, Disable, SetSparse, RemoveSparse,
+    Create, Destroy, Set, Add, Remove, Enable, Disable,
     SetBuffer, AppendBuffer, RemoveBuffer, Composite,
 }
 
@@ -178,14 +178,6 @@ public sealed partial class CommandBuffer : IDisposable
     { RequireRecording(); Typed<T>(CommandKind.Remove, entity); }
     public void Remove<T>(DeferredEntity entity) where T : struct
     { RequireRecording(); Typed<T>(CommandKind.Remove, Encode(entity)); }
-    public void SetSparse<T>(Entity entity, in T value) where T : struct
-    { RequireRecording(); Value(CommandKind.SetSparse, entity, value); }
-    public void SetSparse<T>(DeferredEntity entity, in T value) where T : struct
-    { RequireRecording(); Value(CommandKind.SetSparse, Encode(entity), value); }
-    public void RemoveSparse<T>(Entity entity) where T : struct
-    { RequireRecording(); Typed<T>(CommandKind.RemoveSparse, entity); }
-    public void RemoveSparse<T>(DeferredEntity entity) where T : struct
-    { RequireRecording(); Typed<T>(CommandKind.RemoveSparse, Encode(entity)); }
     public void Destroy(Entity entity)
     { RequireRecording(); Append(CommandKind.Destroy, entity, -1, 0); }
     public void Destroy(DeferredEntity entity)

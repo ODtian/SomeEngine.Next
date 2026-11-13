@@ -184,7 +184,13 @@ public sealed partial class World
 
     public T ReadValue<T>(Entities.Entity entity) where T : struct
     {
+        if (ComponentType<T>.IsSparseType)
+        {
+            using WorldAccess sparse = OpenValues<T>(false, WorldValueKind.Sparse);
+            return Sparse<T>().Get(entity);
+        }
         using WorldAccess access = OpenValues<T>(false);
+        if (ComponentType<T>.IsTagType) return default;
         if (ComponentType<T>.IsSharedType)
             return ReadSharedValue<T>(entity, SharedValueArray<T>());
         return Access<T>(entity, false);

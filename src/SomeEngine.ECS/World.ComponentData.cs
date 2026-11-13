@@ -6,44 +6,12 @@ namespace SomeEngine.ECS;
 
 public sealed partial class World
 {
-    public bool HasComponentData<T>(Entity entity) where T : struct
-        => ComponentType<T>.IsSparseType ? HasSparse<T>(entity) : Has<T>(entity);
-
-    public bool HasComponentData(Entity entity, int component)
-        => ComponentDataWriteVersion(entity, component).HasValue;
-
-    public T ReadComponentData<T>(Entity entity) where T : struct
-    {
-        using WorldAccess access = OpenValues([new(ComponentType<T>.TypeId,
-            ComponentType<T>.IsSparseType ? WorldValueKind.Sparse : WorldValueKind.Table, false, false,
-            !ComponentType<T>.IsSparseType && ComponentType<T>.Value.UsesStructureWrites)]);
-        if (ComponentType<T>.IsTagType) return default;
-        return ComponentType<T>.IsSparseType ? ReadSparse<T>(entity) : Read<T>(entity);
-    }
-
-    public ref readonly T ReadComponentReference<T>(Entity entity) where T : struct
-    {
-        using WorldAccess access = OpenValues([new(ComponentType<T>.TypeId,
-            ComponentType<T>.IsSparseType ? WorldValueKind.Sparse : WorldValueKind.Table, false, false,
-            !ComponentType<T>.IsSparseType && ComponentType<T>.Value.UsesStructureWrites)]);
-        if (ComponentType<T>.IsSparseType) return ref ReadSparse<T>(entity);
-        return ref Read<T>(entity);
-    }
-
-    public void AddComponentData<T>(Entity entity, in T value) where T : struct
-    {
-        if (ComponentType<T>.IsSparseType) AddSparse(entity, value);
-        else Add(entity, value);
-    }
-
-    public void ReplaceComponentData<T>(Entity entity, in T value) where T : struct
-    {
-        if (ComponentType<T>.IsSparseType) ReplaceSparse(entity, value);
-        else Set(entity, value);
-    }
+    /// <summary>Whether the entity holds the component identified by its registered type number.</summary>
+    public bool Has(Entity entity, int component)
+        => ComponentWriteVersion(entity, component).HasValue;
 
     /// <summary>Stores an equal value while preserving its observation version.</summary>
-    public void OverwriteComponentData<T>(Entity entity, in T value) where T : struct
+    public void Overwrite<T>(Entity entity, in T value) where T : struct
     {
         using WorldAccess access = OpenValues([new(ComponentType<T>.TypeId,
             ComponentType<T>.IsSparseType ? WorldValueKind.Sparse : WorldValueKind.Table, true, false)]);
@@ -57,9 +25,9 @@ public sealed partial class World
     }
 
     /// <summary>Discards data introduced by a build that is restoring its previous result.</summary>
-    public void DiscardComponentData<T>(Entity entity) where T : struct
+    public void Discard<T>(Entity entity) where T : struct
     {
-        if (ComponentType<T>.IsSparseType) { RemoveSparse<T>(entity); return; }
+        if (ComponentType<T>.IsSparseType) { RemoveSparseValue<T>(entity); return; }
         using WorldAccess access = OpenStructure();
         RequireStructure();
         using MembershipEdit membership = BeginMembershipEdit(entity);
@@ -86,10 +54,10 @@ public sealed partial class World
         else MoveKnown(entity, ref record, chunk, GetTransition(chunk, type, false, record.Row));
     }
 
-    public ulong ComponentDataWriteVersion<T>(Entity entity) where T : struct
-        => ComponentDataWriteVersion(entity, ComponentType<T>.TypeId) ?? 0;
+    public ulong ComponentWriteVersion<T>(Entity entity) where T : struct
+        => ComponentWriteVersion(entity, ComponentType<T>.TypeId) ?? 0;
 
-    public ulong? ComponentDataWriteVersion(Entity entity, int component)
+    public ulong? ComponentWriteVersion(Entity entity, int component)
     {
         ComponentType type = ComponentTypes.Get(component);
         using WorldAccess access = OpenValues([new(component,

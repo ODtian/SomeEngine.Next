@@ -237,7 +237,7 @@ internal sealed class SparseStore<T> : SparseStore where T : struct
     {
         T value = ComponentType<T>.CloneValue(world, Get(sourceId));
         EntityFields<T>.Operations?.Remap(ref value, entities);
-        world.SetSparse(target, value);
+        world.Set(target, value);
     }
 
     private void RemoveRow(ref SparseCell cell)

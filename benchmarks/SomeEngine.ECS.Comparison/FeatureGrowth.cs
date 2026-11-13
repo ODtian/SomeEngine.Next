@@ -137,11 +137,11 @@ internal sealed partial class SomeEngineWorld
             case GrowthFeature.Sparse:
                 for (int i = 0; i < created.Length; i += SparseStride)
                 {
-                    _world.SetSparse(created[i], new SparseNumber(SparseCounter, i + 1, Count + i));
-                    if (i % (SparseStride * 2) == 0) _world.SetSparse(created[i], new SparseWeight(Count + i));
+                    _world.Set(created[i], new SparseNumber(SparseCounter, i + 1, Count + i));
+                    if (i % (SparseStride * 2) == 0) _world.Set(created[i], new SparseWeight(Count + i));
                 }
                 for (int i = 0; i < created.Length; i += SparseStride)
-                    ObserveGrowth(_world.ReadSparse<SparseNumber>(created[i]).Value);
+                    ObserveGrowth(_world.Read<SparseNumber>(created[i]).Value);
                 break;
             case GrowthFeature.Group:
                 _world.Set<GroupedNumber>(created, GroupGrowthValues);

@@ -63,9 +63,9 @@ internal sealed class DependencyChanges
     internal static bool HasChanges(World world, Entity entity, Dependency read) => read.Kind switch
     {
         DependencyKind.Environment => EnvironmentLookup.HasChanges(world, entity, in read),
-        DependencyKind.Presence => world.HasComponentData(read.Entity, read.Component) != (read.Version != 0),
+        DependencyKind.Presence => world.Has(read.Entity, read.Component) != (read.Version != 0),
         DependencyKind.Membership => read.Query.MembershipVersion != read.Version,
-        _ => world.ComponentDataWriteVersion(read.Entity, read.Component) != read.Version,
+        _ => world.ComponentWriteVersion(read.Entity, read.Component) != read.Version,
     };
 
     internal bool HasChanges(World world, Entity entity, bool recheck)
@@ -113,18 +113,18 @@ internal sealed class DependencyChanges
                     if (!HasComponentChanges(world, read.Component, recheck: false) &&
                         !HasComponentChanges(world, ComponentId<Parent<ElementTree>>.Value, recheck: false)) break;
                     Entity source = EnvironmentLookup.FindSource(world, entity, read.Component);
-                    ulong? version = source == Entity.Null ? 0 : world.ComponentDataWriteVersion(source, read.Component);
+                    ulong? version = source == Entity.Null ? 0 : world.ComponentWriteVersion(source, read.Component);
                     versions.Add(new(read.Version, version, source != read.Entity));
                     break;
                 case DependencyKind.Presence:
-                    versions.Add(new(read.Version, world.HasComponentData(read.Entity, read.Component) ? 1u : 0u));
+                    versions.Add(new(read.Version, world.Has(read.Entity, read.Component) ? 1u : 0u));
                     break;
                 case DependencyKind.Membership:
                     versions.Add(new(read.Version, read.Query.MembershipVersion));
                     break;
                 default:
                     if (HasComponentChanges(world, read.Component, recheck: false))
-                        versions.Add(new(read.Version, world.ComponentDataWriteVersion(read.Entity, read.Component)));
+                        versions.Add(new(read.Version, world.ComponentWriteVersion(read.Entity, read.Component)));
                     break;
             }
         }

@@ -305,7 +305,7 @@ internal static partial class EcsBenchmarkSuite
         public void Execute()
         {
             var checksum = new StorageChecksum();
-            using (SparseWriteScope<StorageSparse> sparse = World.OpenSparseWrite<StorageSparse>())
+            using (SparseValueWrites<StorageSparse> sparse = World.OpenSparseValueWrites<StorageSparse>())
             {
                 checksum.SparseCount = sparse.Entities.Length;
                 Span<StorageSparse> values = sparse.Values;
@@ -406,12 +406,12 @@ internal static partial class EcsBenchmarkSuite
             for (int i = 0; i < _edges.Length; i++)
             {
                 RelationEndpoints<BenchmarkRelation> endpoints =
-                    World.ReadComponentData<RelationEndpoints<BenchmarkRelation>>(_edges[i].Entity);
+                    World.ReadValue<RelationEndpoints<BenchmarkRelation>>(_edges[i].Entity);
                 Entity expectedTarget = _targets[(i + 1) % _targets.Length];
                 if (endpoints.Source != _source || endpoints.Target != expectedTarget)
                     throw new InvalidOperationException("Relation benchmark published incorrect endpoints.");
                 endpointSum += endpoints.Target.Id;
-                payloadSum += World.ReadComponentData<BenchmarkRelation>(_edges[i].Entity).Value;
+                payloadSum += World.ReadValue<BenchmarkRelation>(_edges[i].Entity).Value;
             }
             return FormatHash(_edges.Length, unchecked((long)World.Version), endpointSum, payloadSum);
         }

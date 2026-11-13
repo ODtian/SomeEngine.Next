@@ -33,7 +33,7 @@ public sealed class LayoutSystem(params ILayoutDataUpdate[] dataUpdates) : ISyst
         {
             foreach (Entity entity in _canvases)
             {
-                Canvas canvas = context.World.ReadComponentData<Canvas>(entity);
+                Canvas canvas = context.World.ReadValue<Canvas>(entity);
                 LayoutValidation.CheckCanvas(in canvas);
                 _data.ReadCanvas(entity, new Size(canvas.Size.Width / canvas.Scale, canvas.Size.Height / canvas.Scale));
             }

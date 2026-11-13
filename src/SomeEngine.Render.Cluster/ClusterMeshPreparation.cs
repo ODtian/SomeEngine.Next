@@ -58,7 +58,7 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
                 {
                     Entity entity = change.Entity;
                     SetMesh(entity, _world.IsAlive(entity) && _world.Has<RenderMesh>(entity)
-                        ? _world.ReadComponentData<RenderMesh>(entity) : null);
+                        ? _world.ReadValue<RenderMesh>(entity) : null);
                 }
                 through = membership.Through;
             }

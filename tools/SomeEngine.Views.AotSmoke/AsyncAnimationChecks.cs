@@ -49,7 +49,7 @@ internal static partial class AsyncAnimationChecks
         Frame(0.5f);
         Require(world.Read<Paint>(target).Fill == new Color(0.375f, 0.5f, 0.125f), "Launch commits its resumed target.");
         Frame(0);
-        Require(ReferenceEquals(world.ReadSparse<BuildError>(launched).Exception, error), "Launch reports the resumed failure.");
+        Require(ReferenceEquals(world.Read<BuildError>(launched).Exception, error), "Launch reports the resumed failure.");
         Frame(1);
         Require(world.Read<Paint>(target).Fill == new Color(1, 0, 0), "Launch restores the completed target.");
 

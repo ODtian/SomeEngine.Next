@@ -109,7 +109,7 @@ public struct GraphOutputSystem<T, TOps>(TrackFields fields = TrackFields.Proper
             return;
         T sample = selected.Current;
         if (selected.Endpoints != TrackEndpoints.Values && selected.Channel.Component != ComponentId<AnimationLayers>.Value &&
-            world.Has<AnimationLayers>(target) && world.ReadComponentData<AnimationLayers>(target).Items[selected.Layer].Mode == LayerMode.Additive)
+            world.Has<AnimationLayers>(target) && world.ReadValue<AnimationLayers>(target).Items[selected.Layer].Mode == LayerMode.Additive)
         {
             T basis = selected.To;
             PropertyAnimation.ReadBase(world, target, selected.Channel, ref basis);

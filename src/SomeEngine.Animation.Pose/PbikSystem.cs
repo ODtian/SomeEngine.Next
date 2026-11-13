@@ -110,7 +110,7 @@ public struct PbikSystem : ISystem<PoseNodeContext>
         body.Weight = body.Basis.Weight > 0 ? time.Weight : 0;
         if (world.Has<AnimationLayers>(body.Output.Entity))
         {
-            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(body.Output.Entity);
+            AnimationLayers layers = world.ReadValue<AnimationLayers>(body.Output.Entity);
             if (body.Placement.Layer < layers.Count) body.Weight *= layers.Items[body.Placement.Layer].Weight;
         }
         if (body.Weight == 0) return;

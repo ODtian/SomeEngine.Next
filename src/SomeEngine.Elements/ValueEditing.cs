@@ -10,15 +10,15 @@ internal static class ValueEditing
     {
         if (!world.Has<ValueRange>(node))
             return;
-        ValueRange range = world.ReadComponentData<ValueRange>(node);
-        ValueDragStart start = world.ReadComponentData<ValueDragStart>(node);
+        ValueRange range = world.ReadValue<ValueRange>(node);
+        ValueDragStart start = world.ReadValue<ValueDragStart>(node);
         if (start.Count != drag.Count)
         {
             start.Count = drag.Count;
             start.Value = Current(world, node, in range);
             world.Set(node, start);
         }
-        ValueDrag mapping = world.ReadComponentData<ValueDrag>(node);
+        ValueDrag mapping = world.ReadValue<ValueDrag>(node);
         double offset = Vector2.Dot(drag.Total, mapping.Direction) / mapping.Distance;
         Change(world, node, in range, start.Value + offset * ((double)range.Maximum - range.Minimum));
     }
@@ -33,7 +33,7 @@ internal static class ValueEditing
         };
         if (direction == 0 || node == Entity.Null || !world.Has<ValueRange>(node))
             return false;
-        ValueRange range = world.ReadComponentData<ValueRange>(node);
+        ValueRange range = world.ReadValue<ValueRange>(node);
         double step = range.Step > 0 ? range.Step : ((double)range.Maximum - range.Minimum) / 20;
         Change(world, node, in range, Current(world, node, in range) + direction * step);
         return true;
@@ -41,8 +41,8 @@ internal static class ValueEditing
 
     private static float Current(World world, Entity node, in ValueRange range)
     {
-        ValueEdit edit = world.ReadComponentData<ValueEdit>(node);
-        return edit.Count != world.ReadComponentData<ValueEditSeen>(node).Count ? edit.Value : range.Value;
+        ValueEdit edit = world.ReadValue<ValueEdit>(node);
+        return edit.Count != world.ReadValue<ValueEditSeen>(node).Count ? edit.Value : range.Value;
     }
 
     private static void Change(World world, Entity node, in ValueRange range, double candidate)
@@ -54,7 +54,7 @@ internal static class ValueEditing
         float value = (float)Math.Clamp(candidate, range.Minimum, range.Maximum);
         if (value == Current(world, node, in range))
             return;
-        ValueEdit edit = world.ReadComponentData<ValueEdit>(node);
+        ValueEdit edit = world.ReadValue<ValueEdit>(node);
         edit.Value = value;
         edit.Count = unchecked(edit.Count + 1);
         world.Set(node, edit);

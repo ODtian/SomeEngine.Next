@@ -10,6 +10,7 @@ public sealed partial class World
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Add<T>(Entity entity, in T value) where T : struct
     {
+        if (ComponentType<T>.IsSparseType) { AddSparseValue(entity, value); return; }
         if (Execution is not null) { AddWithExecution(entity, value); return; }
         AddCore(entity, value);
     }
@@ -70,12 +71,14 @@ public sealed partial class World
 
     public void Remove<T>(Entity entity) where T : struct
     {
+        if (ComponentType<T>.IsSparseType) { RemoveSparseValue<T>(entity); return; }
         if (Execution is not null) { RemoveWithExecution<T>(entity); return; }
         RemoveCore<T>(entity);
     }
 
     public void Remove<T>(ReadOnlySpan<Entity> entities) where T : struct
     {
+        if (ComponentType<T>.IsSparseType) { foreach (Entity entity in entities) RemoveSparseValue<T>(entity); return; }
         using WorldAccess access = OpenStructure();
         RequireStructure();
         if (ComponentType<T>.IsControlledRemovalType) throw new InvalidOperationException("Use the component's typed removal entry.");

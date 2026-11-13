@@ -53,7 +53,7 @@ public sealed class CrowdScene(CrowdExample example) : IDisposable
             SkeletonInstance skeleton = _characters[index] = storage.CreateInstance(example.Skeleton);
             Entity target = _targets[index] = GpuPoseAnimation.CreateTarget(frame.World, skeleton);
             Entity animation = graph.Play(frame.World, target);
-            Timeline clock = frame.World.ReadComponentData<Timeline>(animation);
+            Timeline clock = frame.World.ReadValue<Timeline>(animation);
             clock.Time = CrowdExample.Phase(index);
             frame.World.Set(animation, clock);
             frame.World.Set(animation, new CrowdCharacter(index));

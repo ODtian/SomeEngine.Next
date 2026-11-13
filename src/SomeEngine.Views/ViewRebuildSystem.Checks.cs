@@ -39,7 +39,7 @@ public sealed partial class ViewRebuildSystem
             if (!requested)
             {
                 _dependencyChanges.CopyVersions(world, entity, _versions);
-                if (world.HasSparse<Computations>(entity))
+                if (world.Has<Computations>(entity))
                 {
                     CollectComputations(world, entity);
                     foreach (Computation computation in _computations)
@@ -85,12 +85,12 @@ public sealed partial class ViewRebuildSystem
     {
         foreach (Entity entity in _views)
         {
-            if (!world.Has<ObjectDependencies>(entity) && !world.HasSparse<Computations>(entity)) continue;
+            if (!world.Has<ObjectDependencies>(entity) && !world.Has<Computations>(entity)) continue;
             if (world.Has<BuildRequest>(entity) || world.Read<ViewType>(entity).RebuildRequired ||
                 _builds.HasParameterChanges(world, entity)) continue;
             if (world.Has<ObjectDependencies>(entity))
                 world.Read<ObjectDependencies>(entity).Reads.Refresh(_frame);
-            if (!world.HasSparse<Computations>(entity)) continue;
+            if (!world.Has<Computations>(entity)) continue;
             CollectComputations(world, entity);
             foreach (Computation computation in _computations)
                 if (!computation.Released && !computation.EvaluatesOnRead)

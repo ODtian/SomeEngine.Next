@@ -77,7 +77,7 @@ internal static partial class SerializationChecks
         world.Set(entities[3], new IndexedNumber(7, 3));
         world.GroupBy<ArchiveShared>();
         world.SetShared(entities[2], new ArchiveShared(7));
-        world.SetSparse(entities[1], new ArchiveLink(entities[0], 11));
+        world.Set(entities[1], new ArchiveLink(entities[0], 11));
         world.AddBuffer<ArchiveLink>(entities[0]);
         using (var values = world.GetBuffer<ArchiveLink>(entities[0])) values.Add(new(entities[1], 21));
         world.AddBuffer<ArchiveLink>(entities[6]);
@@ -167,7 +167,7 @@ internal static partial class SerializationChecks
         world.Set(entities[0], new ArchiveValue(999));
         world.Enable<ArchiveStep>(entities[7]);
         using (var values = world.GetBuffer<ArchiveLink>(entities[0])) values[0] = new(entities[0], 999);
-        world.SetSparse(entities[1], new ArchiveLink(entities[1], 999));
+        world.Set(entities[1], new ArchiveLink(entities[1], 999));
         world.Set(entities[3], new IndexedNumber(9, 3));
         using (var resource = world.OpenResourceWrite<ArchiveResource>()) resource.Value.Items[0] = 999;
         world.ClearRemoved<Buffer<ArchiveLink>>();
@@ -187,7 +187,7 @@ internal static partial class SerializationChecks
         Require(world.Query(new QueryDescription().WithChanged<ArchiveValue>(baseline)).Count == 255, "restored row versions rebuild exact change summaries");
         using (var buffer = world.ReadBuffer<ArchiveLink>(entities[0])) Require(buffer[0] == new ArchiveLink(entities[1], 21), "buffer copies own independent elements");
         using (var buffer = world.ReadRemovedBuffer<ArchiveLink>(entities[6])) Require(buffer[0] == new ArchiveLink(entities[0], 41), "removed buffer facts retain independent contents");
-        using (var sparse = world.OpenSparseRead<ArchiveLink>()) Require(sparse.Read(entities[1]) == new ArchiveLink(entities[0], 11), "sparse copies rebuild their entity map");
+        using (var sparse = world.OpenRead<ArchiveLink>()) Require(sparse.Read(entities[1]) == new ArchiveLink(entities[0], 11), "sparse copies rebuild their entity map");
         using (var found = world.Index<IndexedNumber, int>().Find(7)) Require(found.Count == 1 && found.Entities[0] == entities[3], "restore completes the active value index");
         Require(world.Query(new QueryDescription().InGroup<ArchiveShared>(7)).Count == 1, "restore retains grouped shared membership");
         using (var resource = world.OpenResourceRead<ArchiveResource>()) Require(resource.Value.Items[0] == 17 && !resource.Value.Released && initialResource.Released,

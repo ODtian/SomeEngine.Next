@@ -82,9 +82,9 @@ public static partial class Scope
     private static void RetainComputation(Computation computation)
     {
         ScopeData current = Current;
-        if (!current.World.HasSparse<Computations>(current.Entity))
-            current.World.SetSparse(current.Entity, new Computations(new ComputationList()));
-        current.World.ReadSparse<Computations>(current.Entity).List.Items.Add(computation);
+        if (!current.World.Has<Computations>(current.Entity))
+            current.World.Set(current.Entity, new Computations(new ComputationList()));
+        current.World.Read<Computations>(current.Entity).List.Items.Add(computation);
     }
 
     /// <summary>Records an object source read by a Rerun build.</summary>
@@ -130,11 +130,11 @@ public static partial class Scope
                 Kind = DependencyKind.Component,
                 Entity = entity,
                 Component = ComponentId<T>.Value,
-                Version = current.World.ComponentDataWriteVersion<T>(entity),
+                Version = current.World.ComponentWriteVersion<T>(entity),
             };
             RecordDependency(current, dependency);
         }
-        return ref current.World.ReadComponentReference<T>(entity);
+        return ref current.World.Read<T>(entity);
     }
 
     /// <summary>Reads the nearest environment component on this view or its ElementTree ancestors.</summary>
@@ -152,14 +152,14 @@ public static partial class Scope
             {
                 Entity = source,
                 Component = component,
-                Version = source == Entity.Null ? 0 : current.World.ComponentDataWriteVersion<T>(source),
+                Version = source == Entity.Null ? 0 : current.World.ComponentWriteVersion<T>(source),
                 Kind = DependencyKind.Environment,
             };
             RecordDependency(current, dependency);
         }
         if (source == Entity.Null)
             return ref EnvironmentDefault<T>.Value;
-        return ref current.World.ReadComponentReference<T>(source);
+        return ref current.World.Read<T>(source);
     }
 
     /// <summary>Returns a component copy that is compared and committed when the calculation returns or suspends.</summary>
@@ -174,7 +174,7 @@ public static partial class Scope
         if (!copies.TryGetValue(key, out ComponentCopy? copy) || !copy.Written && !copy.CanReuse)
         {
             T value = ComponentCopy<T>.HasComponent(current.World, entity)
-                ? current.World.ReadComponentData<T>(entity)
+                ? current.World.ReadValue<T>(entity)
                 : default;
             AnimatedFields.RestoreBase(current.World, entity, ref value);
             copy = new ComponentCopy<T>(entity, value);
@@ -183,7 +183,7 @@ public static partial class Scope
         else if (!copy.Written)
         {
             T value = ComponentCopy<T>.HasComponent(current.World, entity)
-                ? current.World.ReadComponentData<T>(entity)
+                ? current.World.ReadValue<T>(entity)
                 : default;
             AnimatedFields.RestoreBase(current.World, entity, ref value);
             ((ComponentCopy<T>)copy).Value = value;
@@ -211,7 +211,7 @@ public static partial class Scope
             return;
         current.Changes.RememberComponent<T>(world, entity);
         T value = default;
-        world.AddComponentData(entity, in value);
+        world.Add(entity, in value);
     }
 
     /// <summary>Checks component presence and records the result as a dependency of a Rerun build.</summary>
@@ -220,7 +220,7 @@ public static partial class Scope
         ScopeData current = Current;
         DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent or ITag or ISharedComponent,
             $"Scope.Has requires a component or tag type, received {typeof(T).Name}.");
-        bool present = current.World.IsAlive(entity) && current.World.HasComponentData<T>(entity);
+        bool present = current.World.IsAlive(entity) && current.World.Has<T>(entity);
         if (current.DependenciesEnabled)
             RecordDependency(current, new Dependency
             {
@@ -313,7 +313,7 @@ public static partial class Scope
             if (current.World.Read<ViewType>(existing).Id != ViewRegistration<T>.Id)
                 break;
             current.DeclaredChildren.Add(existing);
-            T previous = current.World.ReadComponentData<T>(existing);
+            T previous = current.World.ReadValue<T>(existing);
             T view = create(in value, in previous);
             current.Changes.RememberParameters(current.World, existing, in previous);
             T previousTarget = previous;
@@ -334,10 +334,10 @@ public static partial class Scope
             }
             if (previousTarget.Equals(view) || previous.Equals(parameters))
             {
-                current.World.OverwriteComponentData(existing, in parameters);
+                current.World.Overwrite(existing, in parameters);
                 return existing;
             }
-            current.World.ReplaceComponentData(existing, in parameters);
+            current.World.Set(existing, in parameters);
             if (T.Mode == BuildMode.Rerun)
             {
                 current.Changes.RememberComponent<BuildError>(current.World, existing);
@@ -555,8 +555,8 @@ public static partial class Scope
                 CompleteChildren(declaration);
         CompleteChildren(data);
         CommitWrites(data);
-        if (data.Computation is null && data.World.HasSparse<BuildError>(data.Entity))
-            data.World.RemoveSparse<BuildError>(data.Entity);
+        if (data.Computation is null && data.World.Has<BuildError>(data.Entity))
+            data.World.Remove<BuildError>(data.Entity);
     }
 
     private static void CompleteChildren(ScopeData data)

@@ -96,7 +96,7 @@ internal sealed partial class SourceTrackedArchiveJobs : TrackedArchiveJobs
     {
         public void Execute(Span<SaveCounter> counters, ReadOnlySpan<Position> positions)
         {
-            using var parents = world.OpenRead<Parent<SaveTree>>(); using var sparse = world.OpenSparseRead<SaveLink>();
+            using var parents = world.OpenRead<Parent<SaveTree>>(); using var sparse = world.OpenRead<SaveLink>();
             using var resource = world.OpenResourceRead<ResourceData<ArchiveResources.Kind0>>();
             int value = (int)resource.Value.Value;
             for (int i = 0; i < counters.Length; i++)

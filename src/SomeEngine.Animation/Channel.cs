@@ -117,7 +117,7 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
     {
         if (typeof(ISparseComponent).IsAssignableFrom(typeof(TComponent)))
         {
-            var sparse = world.OpenSparseWrite<TComponent>();
+            var sparse = world.OpenWrite<TComponent>();
             try
             {
                 foreach (ref readonly FieldWrite<T> write in writes)
@@ -201,7 +201,7 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
     {
         if (typeof(ISparseComponent).IsAssignableFrom(typeof(TComponent)))
         {
-            var sparse = world.OpenSparseWrite<TComponent>();
+            var sparse = world.OpenWrite<TComponent>();
             try
             {
                 foreach (ref readonly FieldWrite<T> write in writes)

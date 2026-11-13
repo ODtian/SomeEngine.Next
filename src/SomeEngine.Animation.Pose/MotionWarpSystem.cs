@@ -85,7 +85,7 @@ public struct MotionWarpSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNo
         float weight = source.Weight == 0 ? 0 : time.Weight;
         if (world.Has<AnimationLayers>(instance.Output.Entity))
         {
-            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(instance.Output.Entity);
+            AnimationLayers layers = world.ReadValue<AnimationLayers>(instance.Output.Entity);
             if (instance.Placement.Layer < layers.Count) weight *= layers.Items[instance.Placement.Layer].Weight;
         }
         bool sampled = !instance.Finished && instance.SourceVersion != source.Version;

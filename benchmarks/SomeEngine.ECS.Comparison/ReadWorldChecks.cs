@@ -59,7 +59,7 @@ internal static class ReadWorldChecks
         source.AddBuffer<ReferenceValue>(first);
         using (var elements = source.GetBuffer<ReferenceValue>(first))
         { elements.Add(new(second, 40)); elements.Add(new(first, 50)); }
-        source.SetSparse(first, new SparseReference(second));
+        source.Set(first, new SparseReference(second));
         source.SetResource(new ResourceReference(second, new()));
         source.Destroy(hole);
         var patches = new Counter();
@@ -83,7 +83,7 @@ internal static class ReadWorldChecks
         Require(buffer.Count == 2 && buffer[0] == new ReferenceValue(targetSecond, 40)
             && buffer[1] == new ReferenceValue(targetFirst, 50), "the bound element patcher maps each buffer value once");
         Require(target.Read<Removed<ReferenceValue>>(targetRemoved).Value.Link == targetSecond
-            && target.ReadSparse<SparseReference>(targetFirst).Link == targetSecond
+            && target.Read<SparseReference>(targetFirst).Link == targetSecond
             && target.ReadResource<ResourceReference>().Link == targetSecond && patches.Patches == 6,
             "removed, sparse and class resource values share their registered patcher instances");
     }

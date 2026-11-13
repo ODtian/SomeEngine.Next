@@ -29,7 +29,7 @@ public readonly struct PbikLeaf : IAnimationLeaf<PbikParameters>
     {
         if (!world.Has<Buffer<PbikInstance>>(animation)) world.AddBuffer<PbikInstance>(animation);
         PbikParameters parameters = definitions.Parameters[index];
-        SkeletonInstance skeleton = world.ReadComponentData<PoseTarget>(target).Skeleton;
+        SkeletonInstance skeleton = world.ReadValue<PoseTarget>(target).Skeleton;
         var instance = new PbikInstance
         {
             Definition = definitions,

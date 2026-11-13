@@ -11,7 +11,7 @@ internal static class EnvironmentLookup
         for (Entity ancestor = entity; ancestor != Entity.Null;
             ancestor = Hierarchy<ElementTree>.GetParent(world, ancestor))
         {
-            if (world.HasComponentData(ancestor, component))
+            if (world.Has(ancestor, component))
                 return ancestor;
         }
         return Entity.Null;
@@ -22,6 +22,6 @@ internal static class EnvironmentLookup
         Entity source = FindSource(world, entity, dependency.Component);
         return source != dependency.Entity ||
             (source != Entity.Null &&
-                world.ComponentDataWriteVersion(source, dependency.Component) != dependency.Version);
+                world.ComponentWriteVersion(source, dependency.Component) != dependency.Version);
     }
 }

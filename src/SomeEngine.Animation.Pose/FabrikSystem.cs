@@ -111,7 +111,7 @@ public struct FabrikSystem : ISystem<PoseNodeContext>
         chain.Weight = chain.Basis.Weight > 0 ? time.Weight : 0;
         if (world.Has<AnimationLayers>(chain.Output.Entity))
         {
-            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(chain.Output.Entity);
+            AnimationLayers layers = world.ReadValue<AnimationLayers>(chain.Output.Entity);
             if (chain.Placement.Layer < layers.Count) chain.Weight *= layers.Items[chain.Placement.Layer].Weight;
         }
         if (chain.Weight == 0) return;

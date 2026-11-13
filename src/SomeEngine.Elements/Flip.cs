@@ -19,7 +19,7 @@ public static class Flip
             world.Add(node, PresentationOffset.Identity);
         PropertyAnimation.Declare<Matrix3x2>(world, node);
         PropertyAnimation.Declare<float>(world, node);
-        Timeline timeline = world.ReadComponentData<Timeline>(node);
+        Timeline timeline = world.ReadValue<Timeline>(node);
         if (timeline.Clock != TimelineClock.Interface)
         {
             timeline.Clock = TimelineClock.Interface;

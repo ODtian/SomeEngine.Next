@@ -84,7 +84,7 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
 
     private void WriteCapture(World world, Entity focused)
     {
-        InputCapture capture = world.ReadComponentData<InputCapture>(_input);
+        InputCapture capture = world.ReadValue<InputCapture>(_input);
         if (capture.Keyboard != (focused != Entity.Null))
         {
             capture.Keyboard = focused != Entity.Null;
@@ -112,7 +112,7 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
         {
             using DestroyedRead read = system._destroyed.Open();
             foreach (DestroyedEntity fact in read)
-                if (world.HasSparse<Focused>(fact.Entity)) system.ReturnFocus(world, fact.Entity);
+                if (world.Has<Focused>(fact.Entity)) system.ReturnFocus(world, fact.Entity);
             system._destroyed.Advance(read.Through);
         }
     }
@@ -121,7 +121,7 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
     {
         if (world.Has<Parent<ElementTree>>(node)) return Hierarchy<ElementTree>.GetParent(world, node);
         return world.Has<Removed<Parent<ElementTree>>>(node)
-            ? world.ReadComponentData<Removed<Parent<ElementTree>>>(node).Value.Value : Entity.Null;
+            ? world.ReadValue<Removed<Parent<ElementTree>>>(node).Value.Value : Entity.Null;
     }
 
     private Entity ReturnFocus(World world, Entity node)
@@ -203,24 +203,24 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
         if (previous != Entity.Null)
         {
             TextEditingSystem.CancelComposition(world, previous);
-            world.RemoveSparse<Focused>(previous);
+            world.Remove<Focused>(previous);
         }
         if (next != Entity.Null)
-            world.SetSparse(next, new Focused());
+            world.Set(next, new Focused());
     }
 
     private static void Confirm(World world, Entity focused)
     {
         if (focused == Entity.Null)
             return;
-        Clicks clicks = world.ReadComponentData<Clicks>(focused);
+        Clicks clicks = world.ReadValue<Clicks>(focused);
         clicks.Count = unchecked(clicks.Count + 1);
         world.Set(focused, clicks);
     }
 
     private static Entity ReadFocus(World world)
     {
-        using SparseReadScope<Focused> focused = world.OpenSparseRead<Focused>();
+        using SparseValues<Focused> focused = world.OpenSparseValues<Focused>();
         DevelopmentCheck.Require(focused.Count <= 1, "Focus navigation requires one Focused node per World.");
         return focused.Count == 0 ? Entity.Null : focused.Entities[0];
     }
@@ -240,7 +240,7 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
     {
         if (world.Has<LayoutRect>(node))
         {
-            rect = world.ReadComponentData<LayoutRect>(node).Value;
+            rect = world.ReadValue<LayoutRect>(node).Value;
             return true;
         }
         rect = default;

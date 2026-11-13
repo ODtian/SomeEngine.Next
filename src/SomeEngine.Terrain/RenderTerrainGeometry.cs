@@ -129,7 +129,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
             var binding = new RenderClusterGeometry(geometry.Geometry, expansion);
             World entities = context.World.World;
             if (!entities.Has<RenderClusterGeometry>(value.Entity)
-                || entities.ReadComponentData<RenderClusterGeometry>(value.Entity) != binding)
+                || entities.ReadValue<RenderClusterGeometry>(value.Entity) != binding)
                 entities.Set(value.Entity, binding);
         }
         foreach (TerrainGeometryRequest request in _batches.Keys)

@@ -17,13 +17,13 @@ internal static class CommandChecks
         commands.Remove<Extra>(created);
         commands.SetBuffer<BufferValue>(created, [new(4), new(8)]);
         commands.AppendBuffer<BufferValue>(created, [new(12)]);
-        commands.SetSparse(created, new SparseValue(15));
+        commands.Set(created, new SparseValue(15));
         Require(!created.TryResolve(out _), "create results publish with completed playback");
         commands.Playback();
         Entity entity = created.Resolve();
         using (var buffer = world.ReadBuffer<BufferValue>(entity))
             Require(world.Read<Position>(entity).X == 7 && !world.Has<Extra>(entity)
-                && buffer.Count == 3 && buffer[2].Value == 12 && world.ReadSparse<SparseValue>(entity).Value == 15,
+                && buffer.Count == 3 && buffer[2].Value == 12 && world.Read<SparseValue>(entity).Value == 15,
                 "typed commands preserve FIFO values, independent buffer elements and sparse data");
         Require(commands.Count == 0 && commands.CompletedCommands == 7, "successful playback clears recording payloads and exposes its completed prefix");
         commands.Clear();
@@ -34,10 +34,10 @@ internal static class CommandChecks
         commands.Add(entity, new Switch { Value = 5 });
         commands.Disable<Switch>(entity);
         commands.Enable<Switch>(entity);
-        commands.RemoveSparse<SparseValue>(entity);
+        commands.Remove<SparseValue>(entity);
         commands.RemoveBuffer<BufferValue>(entity);
         commands.Playback();
-        Require(world.IsEnabled<Switch>(entity) && !world.HasSparse<SparseValue>(entity)
+        Require(world.IsEnabled<Switch>(entity) && !world.Has<SparseValue>(entity)
             && !world.Has<Buffer<BufferValue>>(entity), "enable and typed removal commands finish through the native World operations");
         commands.Clear();
         DeferredEntity doomed = commands.Create(new Position { X = 11 });

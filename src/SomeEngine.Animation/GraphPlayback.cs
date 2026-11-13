@@ -33,7 +33,7 @@ internal static class GraphPlayback
     {
         if (world.Has<GraphInstance>(animation))
         {
-            GraphInstance previous = world.ReadComponentData<GraphInstance>(animation);
+            GraphInstance previous = world.ReadValue<GraphInstance>(animation);
             if (previous.Data is not null)
             {
                 ReleaseConditions(world, animation, previous.Data);

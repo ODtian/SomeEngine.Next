@@ -12,12 +12,12 @@ public static class TextEditingSystem
     public static bool HandleInput(World world, Entity node, in FocusInput input, bool selecting = false)
     {
         DevelopmentCheck.Require(world is not null, "TextEditingSystem requires a World.");
-        if (node == Entity.Null || !world!.Has<EditableText>(node) || !world.HasSparse<Focused>(node))
+        if (node == Entity.Null || !world!.Has<EditableText>(node) || !world.Has<Focused>(node))
             return false;
         if (input.Kind is not (FocusInputKind.Key or FocusInputKind.Text or FocusInputKind.Composition))
             return false;
 
-        EditableText value = world.ReadComponentData<EditableText>(node);
+        EditableText value = world.ReadValue<EditableText>(node);
         string text = value.Text ?? string.Empty;
         DevelopmentCheck.Require((uint)value.Caret <= (uint)text.Length &&
             (uint)value.SelectionStart <= (uint)text.Length,
@@ -103,7 +103,7 @@ public static class TextEditingSystem
         DevelopmentCheck.Require(world is not null, "TextEditingSystem requires a World.");
         if (node == Entity.Null || !world!.Has<EditableText>(node))
             return;
-        EditableText value = world.ReadComponentData<EditableText>(node);
+        EditableText value = world.ReadValue<EditableText>(node);
         if (string.IsNullOrEmpty(value.Composition) && value.CompositionCaret == 0)
             return;
         value.Composition = string.Empty;

@@ -43,7 +43,7 @@ internal static class WorldEditBenchmarks
         if (world.Query<AddedValue>().Count != count)
             throw new InvalidOperationException("World additions must retain every entity and value.");
         for (int i = 0; i < entities.Length; i++)
-            if (world.ReadComponentData<AddedValue>(entities[i]).Value != i)
+            if (world.ReadValue<AddedValue>(entities[i]).Value != i)
                 throw new InvalidOperationException("World additions must retain each entity's assigned value.");
         Array.Sort(milliseconds);
         double median = milliseconds[(samples - 1) / 2];

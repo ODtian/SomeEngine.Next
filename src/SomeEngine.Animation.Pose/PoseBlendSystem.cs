@@ -148,7 +148,7 @@ public struct PoseBlendSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNod
         blend.Weight = time.Weight;
         if (world.Has<AnimationLayers>(blend.Output.Entity))
         {
-            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(blend.Output.Entity);
+            AnimationLayers layers = world.ReadValue<AnimationLayers>(blend.Output.Entity);
             if (blend.Placement.Layer < layers.Count) blend.Weight *= layers.Items[blend.Placement.Layer].Weight;
         }
         if (blend.Finished) return;

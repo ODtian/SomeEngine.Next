@@ -214,8 +214,8 @@ internal static class ExternalReferenceChecks
     private static void WorldSaveBoundsSparseMemberships()
     {
         using var world = new World();
-        world.SetSparse(world.Create(), 10);
-        world.SetSparse(world.Create(), 20);
+        world.Set(world.Create(), 10);
+        world.Set(world.Create(), 20);
         var registry = new SerializationRegistry().RegisterSparse<int>(Key(1));
         var serializer = new WorldSerializer(registry);
         var output = new ArrayBufferWriter<byte>();
@@ -229,8 +229,8 @@ internal static class ExternalReferenceChecks
     private static void CheckpointSaveBoundsSparseMemberships()
     {
         using var world = new World();
-        world.SetSparse(world.Create(), 10);
-        world.SetSparse(world.Create(), 20);
+        world.Set(world.Create(), 10);
+        world.Set(world.Create(), 20);
         var registry = new SerializationRegistry().RegisterSparse<int>(Key(1));
         var serializer = new WorldSerializer(registry);
         using var checkpoint = new WorldCheckpoint();

@@ -149,7 +149,7 @@ public struct FlowMatchingSystem : ISystem<ImmediateSystemContext>, ISystem<Pose
         instance.Weight = time.Weight;
         if (world.Has<AnimationLayers>(instance.Output.Entity))
         {
-            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(instance.Output.Entity);
+            AnimationLayers layers = world.ReadValue<AnimationLayers>(instance.Output.Entity);
             if (instance.Placement.Layer < layers.Count) instance.Weight *= layers.Items[instance.Placement.Layer].Weight;
         }
         instance.Time = time.Time.Time;
@@ -157,7 +157,7 @@ public struct FlowMatchingSystem : ISystem<ImmediateSystemContext>, ISystem<Pose
         instance.State.Sample = time.Time.Delta > 0;
         instance.State.Motion = RootMotionDelta.Identity;
         instance.Sampled |= instance.State.Sample;
-        GraphParameters graph = world.ReadComponentData<GraphParameters>(animation);
+        GraphParameters graph = world.ReadValue<GraphParameters>(animation);
         if (parameters.ControlParameter is byte firstControl)
             for (int value = 0; value < instance.State.Control.Length; value++)
                 instance.State.Control[value] = graph.Values[firstControl + value];

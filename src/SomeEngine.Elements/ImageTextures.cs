@@ -13,19 +13,19 @@ namespace SomeEngine.Elements;
 public sealed class ImageTextures(Func<AssetId<TextureAsset>, Texture?> resolve) : ILayoutDataUpdate
 {
     public bool HasChanges(World world, Entity node) => world.Has<Image>(node) &&
-        (!world.Has<ImageTexture>(node) || world.ReadComponentData<ImageTexture>(node) != ReadTexture(world, node));
+        (!world.Has<ImageTexture>(node) || world.ReadValue<ImageTexture>(node) != ReadTexture(world, node));
 
     public void Update(World world, Entity node, in Constraints constraints)
     {
         if (!world.Has<Image>(node)) return;
         ImageTexture value = ReadTexture(world, node);
         if (!world.Has<ImageTexture>(node)) world.Add(node, value);
-        else if (world.ReadComponentData<ImageTexture>(node) != value) world.Set(node, value);
+        else if (world.ReadValue<ImageTexture>(node) != value) world.Set(node, value);
     }
 
     private ImageTexture ReadTexture(World world, Entity node)
     {
-        Texture? texture = resolve(world.ReadComponentData<Image>(node).Source);
+        Texture? texture = resolve(world.ReadValue<Image>(node).Source);
         DevelopmentCheck.Require(texture is null || texture.SampledDimension == TextureViewDimension.Texture2D,
             "Image requires a two-dimensional sampled texture.");
         return texture is null ? new(null, new Size(1, 1), 0) :

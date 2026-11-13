@@ -139,8 +139,8 @@ try
     using var changedWorld = new World();
     ReadOnlyMemory<byte> changedBytes = await entityCopy.GetBlock<EntityBlock>().ReadBytesAsync(EntityBlock.ContentKey);
     var changed = WorldSerializer.ReadEntities(changedBytes, changedWorld, new(Codecs: worldCodecs));
-    if (loadedWorld.ReadComponentData<SmokeWorldValue>(loadedMembers.Span[0]).Number != 16
-        || changedWorld.ReadComponentData<SmokeWorldValue>(changed[0]).Number != 21
+    if (loadedWorld.ReadValue<SmokeWorldValue>(loadedMembers.Span[0]).Number != 16
+        || changedWorld.ReadValue<SmokeWorldValue>(changed[0]).Number != 21
         || !entityEntry.Dependencies.SequenceEqual(new[] { parent.Id })
         || !worldEntry.Dependencies.SequenceEqual(new[] { entityAsset.Id }))
         throw new InvalidOperationException("Scene entities lost independent data or their directory dependencies.");

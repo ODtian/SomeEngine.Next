@@ -76,7 +76,7 @@ public struct PhysicsPoseSystem : ISystem<PoseNodeContext>
         float physicsWeight = 1;
         if (world.Has<AnimationLayers>(instance.Output.Entity))
         {
-            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(instance.Output.Entity);
+            AnimationLayers layers = world.ReadValue<AnimationLayers>(instance.Output.Entity);
             if (instance.Placement.Layer < layers.Count) physicsWeight = layers.Items[instance.Placement.Layer].Weight;
         }
         var copy = (Range: instance.Source.Range, Values: instance.Samples.Source);

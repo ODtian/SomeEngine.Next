@@ -31,7 +31,7 @@ public readonly struct FabrikLeaf : IAnimationLeaf<FabrikParameters>
     {
         if (!world.Has<Buffer<FabrikInstance>>(animation)) world.AddBuffer<FabrikInstance>(animation);
         FabrikParameters parameters = definitions.Parameters[index];
-        SkeletonInstance skeleton = world.ReadComponentData<PoseTarget>(target).Skeleton;
+        SkeletonInstance skeleton = world.ReadValue<PoseTarget>(target).Skeleton;
         var instance = new FabrikInstance
         {
             Definition = definitions,

@@ -116,7 +116,7 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
         // Keep the detached pixels available when an extraction transaction is retried.
         _atlasChanged |= !context.World.IsAlive(_atlasMirror) ||
             !context.World.Has<RenderGlyphAtlas>(_atlasMirror) ||
-            context.World.ReadComponentData<RenderGlyphAtlas>(_atlasMirror) != _pixels;
+            context.World.ReadValue<RenderGlyphAtlas>(_atlasMirror) != _pixels;
         return _atlasChanged;
     }
 

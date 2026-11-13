@@ -103,7 +103,7 @@ internal static unsafe class MotionStorage<T, TOps, TParameters, TState, TEvalua
     private static void Retarget(World world, Entity animation, int index, in MotionValues<T> values)
     {
         TParameters[]? parameters = world.Has<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation)
-            ? world.ReadComponentData<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation).Values : null;
+            ? world.ReadValue<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation).Values : null;
         var update = (Index: index, Values: values, Parameters: parameters);
         {
             using var instances = world.GetBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(animation);
@@ -118,7 +118,7 @@ internal static unsafe class MotionStorage<T, TOps, TParameters, TState, TEvalua
     {
         if (!world.Has<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation))
             return;
-        TParameters[]? parameters = world.ReadComponentData<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation).Values;
+        TParameters[]? parameters = world.ReadValue<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>(animation).Values;
         if (parameters is null)
             return;
         {

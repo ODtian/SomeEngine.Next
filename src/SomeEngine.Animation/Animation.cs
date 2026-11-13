@@ -36,7 +36,7 @@ public static class Animation
     public static void Advance(World world, Entity entity)
     {
         DevelopmentCheck.Require(world.IsEnabled<Timeline>(entity), "External advancement requires an enabled timeline.");
-        Timeline timeline = world.ReadComponentData<Timeline>(entity);
+        Timeline timeline = world.ReadValue<Timeline>(entity);
         {
             using var stages = world.ReadBuffer<TimelineStage>(entity);
             DevelopmentCheck.Require(timeline.Stage < stages.Count, "External advancement requires a current stage.");

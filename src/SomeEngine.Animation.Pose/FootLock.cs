@@ -73,7 +73,7 @@ public readonly struct FootLockLeaf : IAnimationLeaf<FootLockParameters>
             Actor = target,
             Starts = placement.Starts,
             Source = definitions.Parameters[index].Source,
-            Samples = new(definitions.Parameters[index], world.ReadComponentData<GpuPoseTarget>(target).Skeleton),
+            Samples = new(definitions.Parameters[index], world.ReadValue<GpuPoseTarget>(target).Skeleton),
         };
         {
             using var instances = world.GetBuffer<FootLockInstance>(animation);

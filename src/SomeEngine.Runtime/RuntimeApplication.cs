@@ -1108,8 +1108,8 @@ internal static class RuntimeApplication
                 foreach (var request in sceneEdit.PoseReads)
                 {
                     Entity target = extraction.RequireMirror(request.Target);
-                    Entity section = renderWorld.World.ReadComponentData<RenderGpuPoseTarget>(target).Section;
-                    skinning.RequestReadback(renderWorld.World.ReadComponentData<RenderPoseSection>(section), request.Receive);
+                    Entity section = renderWorld.World.ReadValue<RenderGpuPoseTarget>(target).Section;
+                    skinning.RequestReadback(renderWorld.World.ReadValue<RenderPoseSection>(section), request.Receive);
                 }
                 long reconcileStarted = Stopwatch.GetTimestamp();
                 if (sceneEdit.ShadingPath is { } selectedShadingPath) shadingPath = selectedShadingPath;

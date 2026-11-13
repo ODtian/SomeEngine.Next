@@ -104,7 +104,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
                 if (World.Has<ScrollOffset>(node.Entity))
                 {
                     UpdateScroll(node, measured);
-                    Vector2 scroll = World.ReadComponentData<ScrollOffset>(node.Entity).Value;
+                    Vector2 scroll = World.ReadValue<ScrollOffset>(node.Entity).Value;
                     coordinatesChanged |= scroll != node.Scroll;
                     node.Scroll = scroll;
                 }
@@ -143,9 +143,9 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
             node = new NodeLayout(entity, dataUpdates.Length);
             _nodes.Add(entity, node);
         }
-        ushort viewType = World.ReadComponentData<ViewType>(entity).Id;
+        ushort viewType = World.ReadValue<ViewType>(entity).Id;
         bool missingMeasurement = !node.HasMeasurement || !World.Has<LayoutCache>(entity) ||
-            World.ReadComponentData<LayoutCache>(entity).InputVersion != node.InputVersion;
+            World.ReadValue<LayoutCache>(entity).InputVersion != node.InputVersion;
         bool readsChanged = HasReadChanges(node);
         foreach (ILayoutDataUpdate dataUpdate in dataUpdates)
             readsChanged |= dataUpdate.HasChanges(World, entity);
@@ -169,8 +169,8 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         node.Measurable = ViewTypes.HasMeasure(World, entity);
         node.CacheWritten = false;
         node.CacheExists = World.Has<LayoutCache>(entity);
-        node.CacheVersion = node.CacheExists ? World.ComponentDataWriteVersion<LayoutCache>(entity) : 0;
-        if (node.CacheExists) node.Cache = World.ReadComponentData<LayoutCache>(entity);
+        node.CacheVersion = node.CacheExists ? World.ComponentWriteVersion<LayoutCache>(entity) : 0;
+        if (node.CacheExists) node.Cache = World.ReadValue<LayoutCache>(entity);
         else node.HasMeasurement = false;
         if (node.InputsChanged)
             for (int index = 0; index < dataUpdates.Length; index++)
@@ -260,18 +260,18 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
 
     private void UpdateScroll(NodeLayout node, Size size)
     {
-        ScrollOffset previous = World.ReadComponentData<ScrollOffset>(node.Entity);
+        ScrollOffset previous = World.ReadValue<ScrollOffset>(node.Entity);
         ScrollOffset offset = previous;
-        Box box = World.Has<Box>(node.Entity) ? World.ReadComponentData<Box>(node.Entity) : default;
+        Box box = World.Has<Box>(node.Entity) ? World.ReadValue<Box>(node.Entity) : default;
         Vector2 viewport = new(MathF.Max(0, size.Width - box.Padding.Left - box.Padding.Right),
             MathF.Max(0, size.Height - box.Padding.Top - box.Padding.Bottom));
         offset.Max = Vector2.Max(Vector2.Zero, new Vector2(node.ContentSize.Width, node.ContentSize.Height) - viewport);
         bool hasSeen = World.Has<ScrollSeen>(node.Entity);
-        ScrollSeen seen = hasSeen ? World.ReadComponentData<ScrollSeen>(node.Entity) : default;
+        ScrollSeen seen = hasSeen ? World.ReadValue<ScrollSeen>(node.Entity) : default;
         bool inputChanged = false;
         if (World.Has<ScrollInput>(node.Entity))
         {
-            ScrollInput input = World.ReadComponentData<ScrollInput>(node.Entity);
+            ScrollInput input = World.ReadValue<ScrollInput>(node.Entity);
             if (input.Count != seen.Count)
             {
                 offset.Value += input.Delta;
@@ -282,7 +282,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         offset.Value = Vector2.Clamp(offset.Value, Vector2.Zero, offset.Max);
         if (World.Has<ScrollTarget>(node.Entity))
         {
-            ScrollTarget target = World.ReadComponentData<ScrollTarget>(node.Entity);
+            ScrollTarget target = World.ReadValue<ScrollTarget>(node.Entity);
             if (target.Count != seen.TargetCount)
             {
                 Rect region = target.Region;
@@ -429,7 +429,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
     {
         if (World.Has<LayoutCache>(node.Entity)) World.Set(node.Entity, node.Cache);
         else World.Add(node.Entity, node.Cache);
-        node.CacheVersion = World.ComponentDataWriteVersion<LayoutCache>(node.Entity);
+        node.CacheVersion = World.ComponentWriteVersion<LayoutCache>(node.Entity);
         node.CacheWritten = false;
     }
 
@@ -518,7 +518,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         node.HasMeasurement = false;
         node.CacheWritten = false;
         node.CacheExists = World.Has<LayoutCache>(entity);
-        node.Cache = node.CacheExists ? World.ReadComponentData<LayoutCache>(entity) : default;
+        node.Cache = node.CacheExists ? World.ReadValue<LayoutCache>(entity) : default;
         foreach (Entity child in node.Children) RestoreMeasurements(child);
     }
 
@@ -587,9 +587,9 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         internal T Value;
         internal override void Capture(World world)
         {
-            Exists = world.IsAlive(entity) && world.HasComponentData<T>(entity);
-            Value = Exists ? world.ReadComponentData<T>(entity) : default;
-            Version = Exists ? world.ComponentDataWriteVersion<T>(entity) : 0;
+            Exists = world.IsAlive(entity) && world.Has<T>(entity);
+            Value = Exists ? world.ReadValue<T>(entity) : default;
+            Version = Exists ? world.ComponentWriteVersion<T>(entity) : 0;
         }
     }
 
@@ -611,7 +611,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
     {
         if (!World.Has<LayoutRect>(entity))
             World.Add(entity, new LayoutRect { Value = value });
-        else if (World.ReadComponentData<LayoutRect>(entity).Value != value)
+        else if (World.ReadValue<LayoutRect>(entity).Value != value)
             World.Set(entity, new LayoutRect { Value = value });
     }
 

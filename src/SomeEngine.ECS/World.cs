@@ -75,6 +75,7 @@ public sealed partial class World : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref readonly T Read<T>(Entity entity) where T : struct
     {
+        if (ComponentType<T>.IsSparseType) return ref ReadSparseValue<T>(entity);
         RequireValue<T>(false);
         if (ComponentType<T>.IsSharedType) return ref ReadSharedValue<T>(entity);
         return ref Access<T>(entity, false);
@@ -83,6 +84,7 @@ public sealed partial class World : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref T Get<T>(Entity entity) where T : struct
     {
+        if (ComponentType<T>.IsSparseType) return ref GetSparseValue<T>(entity);
         RequireValue<T>(true);
         if (ComponentType<T>.IsControlledType || ComponentType<T>.IsIndexedType || ComponentType<T>.IsGroupedType) throw new InvalidOperationException("Use the component's typed write view or Set entry.");
         return ref Access<T>(entity, true);
@@ -104,6 +106,7 @@ public sealed partial class World : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Has<T>(Entity entity) where T : struct
     {
+        if (ComponentType<T>.IsSparseType) return HasSparseValue<T>(entity);
         if (Execution is not null) return HasWithExecution<T>(entity);
         return HasCore<T>(entity);
     }
@@ -122,6 +125,7 @@ public sealed partial class World : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Set<T>(Entity entity, in T value) where T : struct
     {
+        if (ComponentType<T>.IsSparseType) { SetSparseValue(entity, value); return; }
         if (Execution is not null) { SetWithExecution(entity, value); return; }
         SetComponent(entity, value);
     }

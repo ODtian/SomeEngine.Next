@@ -18,36 +18,36 @@ internal static partial class RememberChecks
         Entity root = Views.Spawn(frames.World, Entity.Null, new Screen_View(refresh, selectedTick));
         frames.Frame();
         Entity toggle = ElementChildren.Read(frames.World, root).Single();
-        Require(frames.World.ReadComponentData<Text>(toggle).Value == "False old", "Remember creates the initial lifted state.");
+        Require(frames.World.ReadValue<Text>(toggle).Value == "False old", "Remember creates the initial lifted state.");
         s_decoration = " new";
         refresh.Value = 1;
         frames.Frame();
-        Require(frames.World.ReadComponentData<Text>(root).Value == "1" &&
-            frames.World.ReadComponentData<Text>(toggle).Value == "False old", "Equal values preserve child content across parent refreshes.");
-        var button = frames.World.ReadComponentData<ToggleCallbacks>(toggle);
+        Require(frames.World.ReadValue<Text>(root).Value == "1" &&
+            frames.World.ReadValue<Text>(toggle).Value == "False old", "Equal values preserve child content across parent refreshes.");
+        var button = frames.World.ReadValue<ToggleCallbacks>(toggle);
         Require(button.Tooltip() == "tick 1", "Published Func callbacks use the current parameter data.");
         button.Change(true);
         frames.Frame();
-        Require(selectedTick.Value == 1 && frames.World.ReadComponentData<Text>(toggle).Value == "True new",
+        Require(selectedTick.Value == 1 && frames.World.ReadValue<Text>(toggle).Value == "True new",
             "The latest callback updates remembered state and displays its new value.");
 
         Entity branches = Views.Spawn(frames.World, Entity.Null, new Branches_View(false));
         frames.Frame();
-        var first = frames.World.ReadComponentData<BranchValues>(branches);
+        var first = frames.World.ReadValue<BranchValues>(branches);
         first.Change(23);
         first.ChangeTail(37);
         frames.Frame();
-        frames.World.ReplaceSparse(branches, new Branches_View(true));
+        frames.World.Set(branches, new Branches_View(true));
         frames.Frame();
-        var second = frames.World.ReadComponentData<BranchValues>(branches);
+        var second = frames.World.ReadValue<BranchValues>(branches);
         Require(second.Value == 10 && second.Tail == 37, "Conditional Remember calls keep their positions separate.");
         second.Change(11);
-        frames.World.ReplaceSparse(branches, new Branches_View(false));
+        frames.World.Set(branches, new Branches_View(false));
         frames.Frame();
-        Require(frames.World.ReadComponentData<BranchValues>(branches).Value == 23, "The first Remember branch retains its state.");
-        frames.World.ReplaceSparse(branches, new Branches_View(true));
+        Require(frames.World.ReadValue<BranchValues>(branches).Value == 23, "The first Remember branch retains its state.");
+        frames.World.Set(branches, new Branches_View(true));
         frames.Frame();
-        Require(frames.World.ReadComponentData<BranchValues>(branches).Value == 11, "The second Remember branch retains its state.");
+        Require(frames.World.ReadValue<BranchValues>(branches).Value == 11, "The second Remember branch retains its state.");
 
         var shared = MutableStateOf(3);
         s_decoration = " old";
@@ -57,9 +57,9 @@ internal static partial class RememberChecks
         s_decoration = " new";
         shared.Value = 7;
         frames.Frame();
-        Require(frames.World.ReadComponentData<Text>(children[0]).Value == "7 new" &&
-            frames.World.ReadComponentData<Text>(readers).Value == "root old" &&
-            frames.World.ReadComponentData<Text>(children[1]).Value == "controls old", "State parameters refresh the views that read their values.");
+        Require(frames.World.ReadValue<Text>(children[0]).Value == "7 new" &&
+            frames.World.ReadValue<Text>(readers).Value == "root old" &&
+            frames.World.ReadValue<Text>(children[1]).Value == "controls old", "State parameters refresh the views that read their values.");
 
         var score = new Score(3);
         Action content = new Action(Draw);
@@ -77,11 +77,11 @@ internal static partial class RememberChecks
         frames.Frame();
         Entity container = ElementChildren.Read(frames.World, contentRoot).Single();
         Entity contentNode = ElementChildren.Read(frames.World, container).Single();
-        var contentButton = frames.World.ReadComponentData<ContentButton<int>>(contentNode);
+        var contentButton = frames.World.ReadValue<ContentButton<int>>(contentNode);
         s_decoration = " new";
         refresh.Value = 2;
         frames.Frame();
-        Require(frames.World.ReadComponentData<ContentButton<int>>(contentNode).Text == "3 old" &&
+        Require(frames.World.ReadValue<ContentButton<int>>(contentNode).Text == "3 old" &&
             contentButton.Tooltip() == "tick 2", "Generic content preserves its display and calls the latest published Func.");
         contentButton.Change(7);
         Require(selectedTick.Value == 2, "Generic content calls the latest published Action.");
@@ -90,8 +90,8 @@ internal static partial class RememberChecks
         Entity genericRoot = Views.Spawn(frames.World, Entity.Null, new GenericCallbackChecks<string>.Display_View<int>(3,
             (text, number) => selectedText.Value = text + number + " before", number => "before " + number));
         frames.Frame();
-        var genericCallbacks = frames.World.ReadComponentData<GenericCallbackChecks<string>.CallbackPair<int>>(genericRoot);
-        frames.World.ReplaceSparse(genericRoot, new GenericCallbackChecks<string>.Display_View<int>(3,
+        var genericCallbacks = frames.World.ReadValue<GenericCallbackChecks<string>.CallbackPair<int>>(genericRoot);
+        frames.World.Set(genericRoot, new GenericCallbackChecks<string>.Display_View<int>(3,
             (text, number) => selectedText.Value = text + number + " after", number => "after " + number));
         frames.Frame();
         genericCallbacks.Change("chosen", 7);

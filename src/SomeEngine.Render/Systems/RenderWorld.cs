@@ -58,32 +58,32 @@ public sealed class RenderWorld : IDisposable
 
     /// <summary>Reads the shared material referenced through this world's extraction boundary.</summary>
     public Material ReadMaterial(long materialId) =>
-        World.ReadComponentData<RenderMaterialReference>(World.ReadComponentData<RenderMaterialIndex>(_materialIndexEntity).Entries[materialId].Entity).Material;
+        World.ReadValue<RenderMaterialReference>(World.ReadValue<RenderMaterialIndex>(_materialIndexEntity).Entries[materialId].Entity).Material;
 
     public ulong ReadMaterialRevision(long materialId) => ReadMaterialReference(materialId).Revision;
     internal RenderMaterialReference ReadMaterialReference(long materialId) =>
-        World.ReadComponentData<RenderMaterialReference>(World.ReadComponentData<RenderMaterialIndex>(_materialIndexEntity).Entries[materialId].Entity);
+        World.ReadValue<RenderMaterialReference>(World.ReadValue<RenderMaterialIndex>(_materialIndexEntity).Entries[materialId].Entity);
     public TextureVersions ReadTextureVersions(Texture texture) => TextureVersions[texture];
     internal ImmutableDictionary<Texture, TextureVersions> TextureVersions =>
-        World.ReadComponentData<RenderTextureVersions>(_textureVersionsEntity).Textures;
+        World.ReadValue<RenderTextureVersions>(_textureVersionsEntity).Textures;
     internal void UpdateTextureVersions(ImmutableDictionary<Texture, TextureVersions> textures) => UpdateTextureVersions(World, textures);
     internal void UpdateTextureVersions(World target, ImmutableDictionary<Texture, TextureVersions> textures) =>
         target.Set(_textureVersionsEntity, new RenderTextureVersions(textures));
     internal void UpdateMaterials(IEnumerable<RenderMaterialReference> references) => UpdateMaterials(World, references);
     internal void UpdateMaterials(World target, IEnumerable<RenderMaterialReference> references)
     {
-        var entries = target.ReadComponentData<RenderMaterialIndex>(_materialIndexEntity).Entries;
+        var entries = target.ReadValue<RenderMaterialIndex>(_materialIndexEntity).Entries;
         foreach (RenderMaterialReference reference in references)
             if (entries.TryGetValue(reference.Material.MaterialId, out RenderMaterialEntry entry) &&
-                target.ReadComponentData<RenderMaterialReference>(entry.Entity) != reference)
+                target.ReadValue<RenderMaterialReference>(entry.Entity) != reference)
                 target.Set(entry.Entity, reference);
     }
 
     internal bool TryReadMaterial(long materialId, out Material? data)
     {
-        if (World.ReadComponentData<RenderMaterialIndex>(_materialIndexEntity).Entries.TryGetValue(materialId, out RenderMaterialEntry entry))
+        if (World.ReadValue<RenderMaterialIndex>(_materialIndexEntity).Entries.TryGetValue(materialId, out RenderMaterialEntry entry))
         {
-            data = World.ReadComponentData<RenderMaterialReference>(entry.Entity).Material;
+            data = World.ReadValue<RenderMaterialReference>(entry.Entity).Material;
             return true;
         }
         data = null;
@@ -106,7 +106,7 @@ public sealed class RenderWorld : IDisposable
         bool changed = previous.Length != materials.Length;
         for (int index = 0; !changed && index < previous.Length; index++) changed = previous[index] != materials[index].MaterialId;
         if (!changed) return;
-        var entries = target.ReadComponentData<RenderMaterialIndex>(_materialIndexEntity).Entries;
+        var entries = target.ReadValue<RenderMaterialIndex>(_materialIndexEntity).Entries;
         foreach (long id in previous) entries = entries.SetItem(id, entries[id] with { ReferenceCount = entries[id].ReferenceCount - 1 });
         var ids = new long[materials.Length];
         for (int index = 0; index < materials.Length; index++)

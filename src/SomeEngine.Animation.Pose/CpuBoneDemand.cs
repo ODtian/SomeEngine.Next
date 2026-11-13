@@ -26,7 +26,7 @@ public static partial class GpuPoseAnimation
     /// <summary>Installs or replaces a synchronous bone set and its local-pose source.</summary>
     public static void SetCpuBones(World world, Entity target, CpuBoneDemand? demand)
     {
-        GpuPoseTarget output = world.ReadComponentData<GpuPoseTarget>(target);
+        GpuPoseTarget output = world.ReadValue<GpuPoseTarget>(target);
         output.CpuBones = demand;
         world.Set(target, output);
         CpuBoneDemands.For(world).Changed = true;
@@ -69,8 +69,8 @@ internal sealed class CpuBoneDemands(World world)
         if (!Changed)
             foreach (Work work in _work)
                 if (!world.IsAlive(work.Target) || work.BindingVersion != work.Skeleton.BindingVersion
-                    || world.ReadComponentData<GpuPoseTarget>(work.Target).CpuBones != work.Demand
-                    || world.ReadComponentData<GpuPoseTarget>(work.Target).Clip != work.GpuClip) { Changed = true; break; }
+                    || world.ReadValue<GpuPoseTarget>(work.Target).CpuBones != work.Demand
+                    || world.ReadValue<GpuPoseTarget>(work.Target).Clip != work.GpuClip) { Changed = true; break; }
         if (Changed) Bind();
     }
 
@@ -91,7 +91,7 @@ internal sealed class CpuBoneDemands(World world)
                 bool ready = true;
                 foreach (PoseNode parent in work.Dependencies) ready &= parent.Level <= level;
                 if (!ready) continue;
-                GpuPoseTarget input = world.ReadComponentData<GpuPoseTarget>(work.Target);
+                GpuPoseTarget input = world.ReadValue<GpuPoseTarget>(work.Target);
                 double sampleTime;
                 ulong sourceVersion;
                 uint starts;
@@ -188,7 +188,7 @@ internal sealed class CpuBoneDemands(World world)
             foreach (PoseNode node in nodes.Values)
                 if (node.ModelBones.Length != 0)
                 {
-                    SkeletonInstance skeleton = world.ReadComponentData<PoseTarget>(node.Output.Entity).Skeleton;
+                    SkeletonInstance skeleton = world.ReadValue<PoseTarget>(node.Output.Entity).Skeleton;
                     foreach (short bone in node.ModelBones)
                         for (int ancestor = bone; ancestor >= 0; ancestor = skeleton.Skeleton.Parents[ancestor])
                             RequireParent(skeleton, ancestor);

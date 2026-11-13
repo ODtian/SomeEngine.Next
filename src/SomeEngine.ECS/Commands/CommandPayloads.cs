@@ -44,8 +44,6 @@ internal sealed class ValueCommands<T> : CommandBucket where T : struct
             case CommandKind.Set: world.Set(target, _values[command.DataIndex]); transfer = true; break;
             case CommandKind.Add: world.Add(target, _values[command.DataIndex]); transfer = true; break;
             case CommandKind.Remove: world.Remove<T>(target); break;
-            case CommandKind.SetSparse: world.SetSparse(target, _values[command.DataIndex]); transfer = true; break;
-            case CommandKind.RemoveSparse: world.RemoveSparse<T>(target); break;
         }
         if (ComponentType<T>.HasValueOperationsType && transfer) _transferred![command.DataIndex] = true;
         return default;

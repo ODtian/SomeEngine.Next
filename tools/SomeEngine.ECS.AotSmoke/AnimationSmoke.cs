@@ -31,17 +31,17 @@ internal static class AnimationSmoke
         Entity target = world.Create(new Visual { Opacity = 0.25f });
         PropertyAnimation.Declare<float>(world, target);
         PropertyAnimation.Declare<Vector2>(world, target);
-        ulong version = world.ComponentDataWriteVersion<Visual>(target);
+        ulong version = world.ComponentWriteVersion<Visual>(target);
         PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(1));
         PropertyAnimation.Pause(world, target);
         PropertyAnimation.Retarget(world, target, Opacity, 2f);
-        Require(world.Read<Visual>(target).Opacity == 0.25f && world.ComponentDataWriteVersion<Visual>(target) == version,
+        Require(world.Read<Visual>(target).Opacity == 0.25f && world.ComponentWriteVersion<Visual>(target) == version,
             "Starting and retargeting preserve the presented field and its write version.");
         PropertyAnimation.Resume(world, target);
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         AnimationSystems.AddDefaults(systems);
         Tick(systems, world, 0.5);
-        Require(world.Read<Visual>(target).Opacity == 1.125f && world.ComponentDataWriteVersion<Visual>(target) != version,
+        Require(world.Read<Visual>(target).Opacity == 1.125f && world.ComponentWriteVersion<Visual>(target) != version,
             "Sampling starts at the presented value and advances its write version.");
 
         PropertyAnimation.Stop(world, target);

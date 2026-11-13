@@ -40,7 +40,7 @@ public sealed partial class SurfacePanelExample : IDisposable
     public void Resize(int width, int height)
     {
         Size size = new(width, height);
-        if (_world.ReadComponentData<Canvas>(_canvas).Size == size) return;
+        if (_world.ReadValue<Canvas>(_canvas).Size == size) return;
         _world.Set(_canvas, new Canvas { Size = size });
         _world.Set(_view, new PanelView(width, height, _text.Font, _clickCount));
     }

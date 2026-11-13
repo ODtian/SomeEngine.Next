@@ -75,11 +75,11 @@ public unsafe struct CompiledGraph : IDisposable
             using var branches = world.GetBuffer<GraphBranch>(animation);
             branches.Clear();
         }
-        Timeline previous = world.ReadComponentData<Timeline>(animation);
+        Timeline previous = world.ReadValue<Timeline>(animation);
         PropertyAnimation.Stop(world, animation);
         var timeline = new Timeline { Starts = previous.Starts + 1, Completions = previous.Completions };
         if (sharedTime != Entity.Null)
-            timeline = world.ReadComponentData<Timeline>(sharedTime);
+            timeline = world.ReadValue<Timeline>(sharedTime);
         world.Set(animation, timeline);
         GraphPlayback.Start(world, animation, _data, part, sharedTime);
         if (!world.Has<Buffer<TimelineStage>>(animation))
@@ -264,7 +264,7 @@ internal static class GraphTracks
         if (source.Node.DefinesLayer)
         {
             bool exists = world.Has<AnimationLayers>(target);
-            AnimationLayers layers = exists ? world.ReadComponentData<AnimationLayers>(target) : default;
+            AnimationLayers layers = exists ? world.ReadValue<AnimationLayers>(target) : default;
             while (layers.Count <= source.Node.Layer)
                 layers.Items[layers.Count++] = new AnimationLayer { Weight = 1 };
             layers.Items[source.Node.Layer] = source.Node.LayerDefinition;

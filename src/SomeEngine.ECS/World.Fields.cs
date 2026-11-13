@@ -11,7 +11,7 @@ public sealed partial class World
     public TValue ReadField<TComponent, TValue, TAccess>(Entity entity)
         where TComponent : struct, IComponent where TValue : unmanaged
         where TAccess : struct, IFieldAccess<TComponent, TValue>
-        => TAccess.Read(in ReadComponentReference<TComponent>(entity));
+        => TAccess.Read(ReadValue<TComponent>(entity));
 
     public void WriteField<TComponent, TValue, TAccess>(Entity entity, in TValue value)
         where TComponent : struct, IComponent where TValue : unmanaged
@@ -20,8 +20,7 @@ public sealed partial class World
         using WorldAccess access = OpenValues([new(ComponentType<TComponent>.TypeId,
             ComponentType<TComponent>.IsSparseType ? WorldValueKind.Sparse : WorldValueKind.Table, true,
             ComponentType<TComponent>.TracksWritesType)]);
-        if (ComponentType<TComponent>.IsSparseType) TAccess.Write(ref GetSparse<TComponent>(entity), in value);
-        else TAccess.Write(ref Get<TComponent>(entity), in value);
+        TAccess.Write(ref Get<TComponent>(entity), in value);
     }
 
     public ref readonly byte ReadBytes(Entity entity, int component)

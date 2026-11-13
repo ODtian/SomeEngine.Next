@@ -49,7 +49,7 @@ public static partial class GpuPoseAnimation
     /// <summary>Requests own bones after this update's GPU input has been formed, before extraction.</summary>
     public static GpuPoseReadbackRequest RequestReadback(World world, Entity target, PoseRange range)
     {
-        GpuPoseTarget input = world.ReadComponentData<GpuPoseTarget>(target);
+        GpuPoseTarget input = world.ReadValue<GpuPoseTarget>(target);
         var request = new GpuPoseReadbackRequest(new(target, input.Skeleton, input.Starts, input.InputNumber, input.AnimationStarts), range);
         var requests = new List<GpuPoseReadbackRequest>();
         foreach (GpuPoseReadbackRequest previous in input.Readbacks.Span)
@@ -66,7 +66,7 @@ public static partial class GpuPoseAnimation
     {
         AnimationLeafTime time = AnimationGraph.ReadTime(world, animation, in placement);
         if (!time.Active) return false;
-        GpuPoseTarget input = world.ReadComponentData<GpuPoseTarget>(target);
+        GpuPoseTarget input = world.ReadValue<GpuPoseTarget>(target);
         bool accepted = false;
         if (request.Completion.IsCompletedSuccessfully)
         {

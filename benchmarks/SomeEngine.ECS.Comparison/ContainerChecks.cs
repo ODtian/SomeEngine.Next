@@ -79,7 +79,7 @@ internal static class ContainerChecks
         world.RemoveResource<ResourceCounter>();
         Require(releases.Count == 2 && !world.HasResource<ResourceCounter>(), "resource removal completes release");
         world.SetResource(new ResourceCounter(releases, 3));
-        world.SetSparse(source, new ResourceCounter(releases, 4));
+        world.Set(source, new ResourceCounter(releases, 4));
         world.Clear();
         Require(releases.Count == 4, "world clear releases resources and sparse owned values");
         world.SetResource(new ResourceCounter(releases, 5));

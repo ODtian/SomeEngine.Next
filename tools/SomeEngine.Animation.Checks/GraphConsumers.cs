@@ -58,7 +58,7 @@ public readonly struct TimedMarkerLeaf : IAnimationLeaf<TimedMarkerParameters>
 
     public static void Release(World world, Entity animation)
     {
-        MarkerReleases releases = world.Has<MarkerReleases>(animation) ? world.ReadComponentData<MarkerReleases>(animation) : default;
+        MarkerReleases releases = world.Has<MarkerReleases>(animation) ? world.ReadValue<MarkerReleases>(animation) : default;
         releases.Count++;
         if (world.Has<MarkerReleases>(animation)) world.Set(animation, releases);
         else world.Add(animation, releases);

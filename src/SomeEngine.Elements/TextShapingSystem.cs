@@ -27,7 +27,7 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
                 _removed.Add(node);
                 continue;
             }
-            TextStyle style = context.World.ReadComponentData<TextAppearance>(node).Style;
+            TextStyle style = context.World.ReadValue<TextAppearance>(node).Style;
             TextInputs inputs = ReadInputs(context.World, node);
             if (measurement.HasResult && measurement.ResultInputs == inputs &&
                 measurement.Style != style)
@@ -38,7 +38,7 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
             foreach (TextShapeBuffer shape in measurement.Buffers)
             {
                 if (shape.Used && shape.HasShape && shape.Inputs != inputs)
-                    _shapes.Add(new(shape, context.World.ReadComponentData<TextContent>(node).Value, style, inputs));
+                    _shapes.Add(new(shape, context.World.ReadValue<TextContent>(node).Value, style, inputs));
                 shape.Used = false;
             }
         }
@@ -64,8 +64,8 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
 
     private static TextInputs ReadInputs(World world, Entity node)
     {
-        TextStyle style = world.ReadComponentData<TextAppearance>(node).Style;
-        return new(world.ComponentDataWriteVersion<TextContent>(node), style.Font, style.Size, style.LineHeight);
+        TextStyle style = world.ReadValue<TextAppearance>(node).Style;
+        return new(world.ComponentWriteVersion<TextContent>(node), style.Font, style.Size, style.LineHeight);
     }
 
     void ILayoutDataUpdate.Update(World world, Entity node, in Constraints constraints)
@@ -84,9 +84,9 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
             measurement = new TextMeasurement();
             _measurements.Add(node, measurement);
         }
-        TextStyle style = world.ReadComponentData<TextAppearance>(node).Style;
+        TextStyle style = world.ReadValue<TextAppearance>(node).Style;
         measurement.Inputs = ReadInputs(world, node);
-        measurement.Text = world.ReadComponentData<TextContent>(node).Value;
+        measurement.Text = world.ReadValue<TextContent>(node).Value;
         measurement.Style = style;
         if (!world.Has<ShapedText>(node))
             world.Add(node, new ShapedText(measurement, in style, measurement.Version));

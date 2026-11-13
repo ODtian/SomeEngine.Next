@@ -32,7 +32,7 @@ public readonly struct EwbikLeaf : IAnimationLeaf<EwbikParameters>
     {
         if (!world.Has<Buffer<EwbikInstance>>(animation)) world.AddBuffer<EwbikInstance>(animation);
         EwbikParameters parameters = definitions.Parameters[index];
-        SkeletonInstance skeleton = world.ReadComponentData<PoseTarget>(target).Skeleton;
+        SkeletonInstance skeleton = world.ReadValue<PoseTarget>(target).Skeleton;
         var instance = new EwbikInstance
         {
             Definition = definitions,

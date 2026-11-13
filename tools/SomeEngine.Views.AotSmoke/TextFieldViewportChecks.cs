@@ -25,8 +25,8 @@ internal static partial class TextFieldViewportChecks
             string text = new('A', 30);
             Keyboard.Text(frames.World, text);
             frames.Frame();
-            Entity field = frames.World.ReadComponentData<FieldReference>(root).Field;
-            Require(value.Value == text && frames.World.ReadComponentData<EditableText>(field).Text == text,
+            Entity field = frames.World.ReadValue<FieldReference>(root).Field;
+            Require(value.Value == text && frames.World.ReadValue<EditableText>(field).Text == text,
                 "The parent accepts long text through Edited and passes it back.");
             Require(CaretIsVisible(frames.World, field), "Long text keeps the active caret in its viewport.");
             Keyboard.Key(frames.World, Key.Home, true);
@@ -50,9 +50,9 @@ internal static partial class TextFieldViewportChecks
             Keyboard.Key(frames.World, Key.Backspace, true);
             frames.Frame();
             Entity label = ButtonChecks.DescendantsWith<TextContent>(frames.World, field).Single();
-            Require(value.Value == "" && frames.World.ReadComponentData<TextContent>(label).Value == "Name" &&
-                frames.World.ReadComponentData<AccessibleName>(field).Value == "Name" &&
-                frames.World.ReadComponentData<AccessibleRole>(field).Value == Role.TextField && CaretIsVisible(frames.World, field),
+            Require(value.Value == "" && frames.World.ReadValue<TextContent>(label).Value == "Name" &&
+                frames.World.ReadValue<AccessibleName>(field).Value == "Name" &&
+                frames.World.ReadValue<AccessibleRole>(field).Value == Role.TextField && CaretIsVisible(frames.World, field),
                 "Deleting the text restores the placeholder, accessible name, and visible caret.");
         }
     }

@@ -18,9 +18,11 @@ public readonly ref struct BundleWriteView
     public int Index { get; }
     internal BundleWriteView(World world, Entity entity, int index, bool created)
         => (_world, Entity, Index, _created) = (world, entity, index, created);
-    public void Write<T>(in T value) where T : struct => _world.WriteBundleValue(Entity, value, _created);
-    public void WriteShared<T>(in T value) where T : struct, ISharedComponent => Write(value);
-    public void WriteSparse<T>(in T value) where T : struct => _world.SetSparse(Entity, value);
+    public void Write<T>(in T value) where T : struct
+    {
+        if (ComponentType<T>.IsSparseType) _world.Set(Entity, value);
+        else _world.WriteBundleValue(Entity, value, _created);
+    }
     public void WriteBuffer<T>(in ReadOnlyMemory<T> values) where T : struct
         => _world.WriteBundleBuffer(Entity, values.Span, _created);
 }

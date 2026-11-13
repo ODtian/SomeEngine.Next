@@ -13,25 +13,25 @@ internal static class ComponentBytesSmoke
     {
         using var world = new World();
         Entity entity = world.Create(new ValueComponent { Number = 7, Opacity = 0.25f });
-        ulong before = world.ComponentDataWriteVersion<ValueComponent>(entity);
+        ulong before = world.ComponentWriteVersion<ValueComponent>(entity);
         Require(Unsafe.ReadUnaligned<float>(in world.ReadBytes(entity, ComponentId<ValueComponent>.Value, sizeof(int), sizeof(float))) == 0.25f,
             "Component byte reads return the selected field.");
-        Require(before == world.ComponentDataWriteVersion<ValueComponent>(entity), "Component byte reads preserve the write version.");
+        Require(before == world.ComponentWriteVersion<ValueComponent>(entity), "Component byte reads preserve the write version.");
         ref byte field = ref world.WriteBytes(entity, ComponentId<ValueComponent>.Value, sizeof(int), sizeof(float));
         Unsafe.WriteUnaligned(ref field, 0.75f);
         Require(world.Read<ValueComponent>(entity).Opacity == 0.75f, "Component byte writes update the selected field.");
-        Require(before != world.ComponentDataWriteVersion<ValueComponent>(entity), "Component byte writes advance the write version.");
+        Require(before != world.ComponentWriteVersion<ValueComponent>(entity), "Component byte writes advance the write version.");
 
-        world.SetSparse(entity, new SparseValue { Number = 11 });
-        before = world.ComponentDataWriteVersion<SparseValue>(entity);
+        world.Set(entity, new SparseValue { Number = 11 });
+        before = world.ComponentWriteVersion<SparseValue>(entity);
         Require(Unsafe.ReadUnaligned<int>(in world.ReadBytes(entity, ComponentId<SparseValue>.Value)) == 11,
             "Sparse byte reads return the component value.");
-        Require(before == world.ComponentDataWriteVersion<SparseValue>(entity), "Sparse byte reads preserve the write version.");
+        Require(before == world.ComponentWriteVersion<SparseValue>(entity), "Sparse byte reads preserve the write version.");
         Unsafe.WriteUnaligned(ref world.WriteBytes(entity, ComponentId<SparseValue>.Value), 23);
-        Require(world.ReadSparse<SparseValue>(entity).Number == 23, "Sparse byte writes update the value.");
-        ulong first = world.ComponentDataWriteVersion<SparseValue>(entity);
+        Require(world.Read<SparseValue>(entity).Number == 23, "Sparse byte writes update the value.");
+        ulong first = world.ComponentWriteVersion<SparseValue>(entity);
         world.WriteBytes(entity, ComponentId<SparseValue>.Value);
-        Require(before != first && first != world.ComponentDataWriteVersion<SparseValue>(entity),
+        Require(before != first && first != world.ComponentWriteVersion<SparseValue>(entity),
             "Each sparse byte write advances the write version.");
 
         Query query = world.Query(new QueryDescription().With<ValueComponent>());

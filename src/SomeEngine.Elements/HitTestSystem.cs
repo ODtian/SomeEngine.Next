@@ -57,7 +57,7 @@ public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
             _targets.Clear();
             CollectTargets(world, canvas, Entity.Null, null);
             Pointer.TakeEvents(world, canvas, _events);
-            PointerData pointer = world.ReadComponentData<PointerData>(canvas);
+            PointerData pointer = world.ReadValue<PointerData>(canvas);
             pointer.PrimaryPress = RefreshPress(pointer.PrimaryPress);
             pointer.SecondaryPress = RefreshPress(pointer.SecondaryPress);
             pointer.MiddlePress = RefreshPress(pointer.MiddlePress);
@@ -106,11 +106,11 @@ public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
         foreach (Entity node in _nodes)
         {
             Hover value = _hover.GetValueOrDefault(node);
-            Hover previous = world.ReadComponentData<Hover>(node);
+            Hover previous = world.ReadValue<Hover>(node);
             if (value.Hovered != previous.Hovered || value.Pressed != previous.Pressed || value.Within != previous.Within)
                 world.Set(node, value);
         }
-        InputCapture inputCapture = world.ReadComponentData<InputCapture>(_capture);
+        InputCapture inputCapture = world.ReadValue<InputCapture>(_capture);
         if (inputCapture.Pointer != capture)
         {
             inputCapture.Pointer = capture;
@@ -125,15 +125,15 @@ public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
             pressable = node;
             if (world.Has<LayoutRect>(node))
             {
-                AddTarget(node, world.ReadComponentData<LayoutRect>(node).Value, clip);
+                AddTarget(node, world.ReadValue<LayoutRect>(node).Value, clip);
                 pressable = Entity.Null;
             }
         }
         else if (pressable != Entity.Null && world.Has<LayoutRect>(node))
-            AddTarget(pressable, world.ReadComponentData<LayoutRect>(node).Value, clip);
+            AddTarget(pressable, world.ReadValue<LayoutRect>(node).Value, clip);
         if (world.Has<ScrollOffset>(node) && world.Has<LayoutRect>(node))
         {
-            Rect viewport = world.ReadComponentData<LayoutRect>(node).Value;
+            Rect viewport = world.ReadValue<LayoutRect>(node).Value;
             clip = clip is { } bounds ? Intersect(viewport, bounds) : viewport;
         }
         using ChildrenRead children = Hierarchy<ElementTree>.GetChildren(world, node);
@@ -159,12 +159,12 @@ public sealed partial class HitTestSystem : ISystem<ImmediateSystemContext>
         {
             if (world.Has<Pressable>(node))
             {
-                Clicks clicks = world.ReadComponentData<Clicks>(node);
+                Clicks clicks = world.ReadValue<Clicks>(node);
                 clicks.Count = unchecked(clicks.Count + 1);
                 world.Set(node, clicks);
                 if (world.Has<Selected>(node))
                 {
-                    Selected selected = world.ReadComponentData<Selected>(node);
+                    Selected selected = world.ReadValue<Selected>(node);
                     selected.Value = !selected.Value;
                     world.Set(node, selected);
                 }

@@ -203,7 +203,7 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
                 if (buffers.Atlas == Entity.Null || atlasFrames.ContainsKey(buffers.Atlas)) continue;
                 if (!_atlases.TryGetValue(buffers.Atlas, out GlyphAtlasTextures? atlas))
                     _atlases.Add(buffers.Atlas, atlas = new GlyphAtlasTextures(_backend, _device, _graph));
-                atlasFrames.Add(buffers.Atlas, atlas.UpdateFrame(ref frame, _world.World.ReadComponentData<RenderGlyphAtlas>(buffers.Atlas)));
+                atlasFrames.Add(buffers.Atlas, atlas.UpdateFrame(ref frame, _world.World.ReadValue<RenderGlyphAtlas>(buffers.Atlas)));
             }
         Span<Vector4> canvas = stackalloc Vector4[16];
         foreach ((Entity entity, CanvasBuffers buffers) in _canvases)
@@ -228,7 +228,7 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
             if (buffers.Target.WorldSpace)
             {
                 DevelopmentCheck.Require(_world.World.Has<RenderView>(_view), "World canvas drawing requires a RenderWorld view.");
-                RenderView view = _world.World.ReadComponentData<RenderView>(_view);
+                RenderView view = _world.World.ReadValue<RenderView>(_view);
                 width = (int)view.ViewportWidth;
                 height = (int)view.ViewportHeight;
                 float scale = buffers.Canvas.Scale;

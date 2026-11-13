@@ -13,14 +13,14 @@ public static partial class NavigationSave
 {
     private static NavigationSavedControls CaptureControls(World world, Entity entity, NavigationSaveResourceCapture capture)
     {
-        AvoidanceAgent? avoidance = world.Has<AvoidanceAgent>(entity) ? world.ReadComponentData<AvoidanceAgent>(entity) : null;
+        AvoidanceAgent? avoidance = world.Has<AvoidanceAgent>(entity) ? world.ReadValue<AvoidanceAgent>(entity) : null;
         NavigationPrediction<NavigationVelocityPrediction>? prediction = world.Has<NavigationPrediction<NavigationVelocityPrediction>>(entity)
-            ? world.ReadComponentData<NavigationPrediction<NavigationVelocityPrediction>>(entity) : null;
-        NavigationTrajectoryKind? source = world.Has<NavigationTrajectorySource>(entity) ? world.ReadComponentData<NavigationTrajectorySource>(entity).Kind : null;
+            ? world.ReadValue<NavigationPrediction<NavigationVelocityPrediction>>(entity) : null;
+        NavigationTrajectoryKind? source = world.Has<NavigationTrajectorySource>(entity) ? world.ReadValue<NavigationTrajectorySource>(entity).Kind : null;
         NavigationSavedMppi? mppi = null;
         if (world.Has<NavigationMppi<NavigationVehicleSpace, NavigationVehicleMppiModel>>(entity))
         {
-            var value = world.ReadComponentData<NavigationMppi<NavigationVehicleSpace, NavigationVehicleMppiModel>>(entity);
+            var value = world.ReadValue<NavigationMppi<NavigationVehicleSpace, NavigationVehicleMppiModel>>(entity);
             mppi = new(capture.Add(value.Space), value.Settings);
         }
         return new(avoidance, prediction, source, mppi);

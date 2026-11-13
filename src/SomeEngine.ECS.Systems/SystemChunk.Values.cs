@@ -5,11 +5,11 @@ namespace SomeEngine.ECS.Systems;
 public readonly ref partial struct SystemChunk
 {
     public bool HasSparse<T>(int row) where T : struct
-        => _chunk.Archetype.World.HasSparse<T>(_chunk.Entities[_start + row]);
+        => _chunk.Archetype.World.Has<T>(_chunk.Entities[_start + row]);
     public ref readonly T ReadSparse<T>(int row) where T : struct
-        => ref _chunk.Archetype.World.ReadSparse<T>(_chunk.Entities[_start + row]);
+        => ref _chunk.Archetype.World.Read<T>(_chunk.Entities[_start + row]);
     public ref T GetSparse<T>(int row) where T : struct
-        => ref _chunk.Archetype.World.GetSparse<T>(_chunk.Entities[_start + row]);
+        => ref _chunk.Archetype.World.Get<T>(_chunk.Entities[_start + row]);
     public bool Has<T>() where T : struct => new QueryChunk(_chunk, _start, Count).Has<T>();
     public bool Has<T>(int row) where T : struct => new QueryChunk(_chunk, _start, Count).Has<T>(row);
     public bool TryRead<T>(out ReadOnlySpan<T> values) where T : struct

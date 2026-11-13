@@ -83,8 +83,8 @@ internal sealed partial class SomeEngineWorld
         PrepareSparseResult(workload);
         for (int i = 0; i < Count; i += SparseStride)
         {
-            _world.SetSparse(_entities[i], new SparseNumber(SparseCounter, 1, i));
-            if (i % (SparseStride * 2) == 0) _world.SetSparse(_entities[i], new SparseWeight(i));
+            _world.Set(_entities[i], new SparseNumber(SparseCounter, 1, i));
+            if (i % (SparseStride * 2) == 0) _world.Set(_entities[i], new SparseWeight(i));
         }
         _mixedSparse = _world.QuerySparse<SparseNumber>(new QueryDescription().With<Position>().With<Team>()).With<SparseWeight>();
     }
@@ -92,7 +92,7 @@ internal sealed partial class SomeEngineWorld
     {
         using var members = _mixedSparse!.Open();
         int count = 0;
-        foreach (var entity in members) SparseMembers[count++] = _world.ReadSparse<SparseNumber>(entity).Ordinal;
+        foreach (var entity in members) SparseMembers[count++] = _world.Read<SparseNumber>(entity).Ordinal;
         return count;
     }
     internal override void SparseCycle()
@@ -101,30 +101,30 @@ internal sealed partial class SomeEngineWorld
         foreach (int ordinal in SparseLookupIndices)
         {
             var entity = _entities[ordinal];
-            ReadTotal += _world.ReadSparse<SparseNumber>(entity).Value;
-            _world.SetSparse(entity, new SparseNumber(SparseCounter, 42, ordinal));
+            ReadTotal += _world.Read<SparseNumber>(entity).Value;
+            _world.Set(entity, new SparseNumber(SparseCounter, 42, ordinal));
         }
-        using (var values = _world.OpenSparseRead<SparseNumber>())
+        using (var values = _world.OpenSparseValues<SparseNumber>())
             foreach (ref readonly var value in values.Values)
             {
                 SparseDenseTotal += value.Value;
                 if (ReferenceEquals(value.Counter, SparseCounter)) SparseDenseCount++;
             }
         SparseMixedCount = ReadSparseMembers();
-        for (int i = 0; i < Count; i += SparseStride * 2) _world.RemoveSparse<SparseNumber>(_entities[i]);
+        for (int i = 0; i < Count; i += SparseStride * 2) _world.Remove<SparseNumber>(_entities[i]);
         for (int i = SparseStride; i < Count; i += SparseStride * 2) _world.Destroy(_entities[i]);
         SparseEmptyCount = ReadSparseMembers();
         SparseReleased = SparseCounter.Count;
-        for (int i = 0; i < Count; i += SparseStride * 2) _world.RemoveSparse<SparseWeight>(_entities[i]);
+        for (int i = 0; i < Count; i += SparseStride * 2) _world.Remove<SparseWeight>(_entities[i]);
         for (int i = SparseStride; i < Count; i += SparseStride * 2)
             _entities[i] = _world.Create(new Position { X = i }, new Velocity { X = 1, Y = 2 },
                 new Health { Value = 100, Max = 100 }, new Team(), new Sleeping());
         for (int i = 0; i < Count; i += SparseStride)
         {
-            _world.SetSparse(_entities[i], new SparseNumber(SparseCounter, 1, i));
-            if (i % (SparseStride * 2) == 0) _world.SetSparse(_entities[i], new SparseWeight(i));
+            _world.Set(_entities[i], new SparseNumber(SparseCounter, 1, i));
+            if (i % (SparseStride * 2) == 0) _world.Set(_entities[i], new SparseWeight(i));
         }
-        using var complete = _world.OpenSparseRead<SparseNumber>();
+        using var complete = _world.OpenSparseValues<SparseNumber>();
         SparseFinalCount = complete.Count;
     }
 }

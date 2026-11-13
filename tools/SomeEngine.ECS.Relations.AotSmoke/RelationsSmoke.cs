@@ -99,7 +99,7 @@ internal static partial class RelationsSmoke
         Require(world.IncomingEdges<Wire<int>>(entities[2]).Count() == 1, "maintained adjacency");
 
         var joint = world.CreateRelation(entities[2], entities[0], new Joint<int>());
-        var endpoints = world.ReadComponentData<RelationEndpoints<Joint<int>>>(joint.Entity);
+        var endpoints = world.ReadValue<RelationEndpoints<Joint<int>>>(joint.Entity);
         Require(endpoints.Source == entities[2] && endpoints.Target == entities[0], "undirected roles");
         Require(RelationSchema.For<Joint<int>>().Cardinality == RelationCardinality.UniquePair, "generated generic schema");
         world.DestroyRelation(parallel);
@@ -127,7 +127,7 @@ internal static partial class RelationsSmoke
 
     private readonly struct ReadWireTarget(World world, RelationEdge<Wire<int>> edge, List<Entity> targets) : IJob
     {
-        public void Execute() => targets.Add(world.ReadComponentData<RelationEndpoints<Wire<int>>>(edge.Entity).Target);
+        public void Execute() => targets.Add(world.ReadValue<RelationEndpoints<Wire<int>>>(edge.Entity).Target);
     }
 
     private readonly struct MaintainWire(World world) : IJob

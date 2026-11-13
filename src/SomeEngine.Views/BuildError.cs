@@ -17,7 +17,7 @@ internal static class BuildErrors
     internal static void Record(World world, Entity entity, Exception exception, ulong frame, Type? viewType = null)
     {
         var error = new BuildError { Exception = exception, Frame = frame };
-        world.SetSparse(entity, in error);
+        world.Set(entity, in error);
         DevelopmentCheck.Report($"{(viewType is null ? "Calculation" : $"View {viewType.Name}")} on {entity} " +
             $"failed in frame {frame}: {exception}");
     }

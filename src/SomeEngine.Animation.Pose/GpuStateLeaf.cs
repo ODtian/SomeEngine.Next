@@ -48,7 +48,7 @@ public readonly struct GpuStateLeaf : IAnimationLeaf<GpuStateParameters>
 
             }
         }
-        GpuPoseTarget output = world.ReadComponentData<GpuPoseTarget>(target);
+        GpuPoseTarget output = world.ReadValue<GpuPoseTarget>(target);
         output.Clip = null;
         output.StateMachine = parameters.Machine;
         output.Blend = null;

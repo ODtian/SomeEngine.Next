@@ -12,11 +12,11 @@ internal static class TypedFieldSmoke
         using var world = new World();
         var value = new ReferenceValue();
         Entity entity = world.Create(new ReferenceComponent<ReferenceValue> { Value = value });
-        ulong before = world.ComponentDataWriteVersion<ReferenceComponent<ReferenceValue>>(entity);
+        ulong before = world.ComponentWriteVersion<ReferenceComponent<ReferenceValue>>(entity);
         world.WriteField<ReferenceComponent<ReferenceValue>, float, ReferenceAccess>(entity, 0.5f);
         Require(world.ReadField<ReferenceComponent<ReferenceValue>, float, ReferenceAccess>(entity) == 0.5f,
             "Typed component fields support reference-bearing generic roots.");
-        Require(world.ComponentDataWriteVersion<ReferenceComponent<ReferenceValue>>(entity) != before,
+        Require(world.ComponentWriteVersion<ReferenceComponent<ReferenceValue>>(entity) != before,
             "Reference fields advance their component write version.");
 
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));

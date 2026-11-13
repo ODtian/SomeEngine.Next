@@ -17,33 +17,33 @@ internal static partial class ComposeGroupChecks
         Require(children.Length == 3, "Inline groups declare their content on the caller's tree.");
         Entity first = ElementChildren.Read(frames.World, children[0]).Single();
         Entity second = ElementChildren.Read(frames.World, children[1]).Single();
-        Require(frames.World.ReadComponentData<CounterText>(first).Value == 10 &&
-            frames.World.ReadComponentData<CounterText>(second).Value == 20,
+        Require(frames.World.ReadValue<CounterText>(first).Value == 10 &&
+            frames.World.ReadValue<CounterText>(second).Value == 20,
             "Each inline call site starts with its own remembered value.");
-        frames.World.ReadComponentData<CounterText>(first).Change(11);
-        frames.World.ReadComponentData<CounterText>(second).Change(22);
-        frames.World.ReadComponentData<CounterChange>(root).Change(7);
+        frames.World.ReadValue<CounterText>(first).Change(11);
+        frames.World.ReadValue<CounterText>(second).Change(22);
+        frames.World.ReadValue<CounterChange>(root).Change(7);
         frames.World.Set(second, new Selection(77));
         frames.Frame();
 
-        frames.World.ReplaceSparse(root, new Screen_View(false));
+        frames.World.Set(root, new Screen_View(false));
         frames.Frame();
         Entity[] remaining = ElementChildren.Read(frames.World, root).ToArray();
         Require(remaining.SequenceEqual([children[1], children[2]]) &&
             ElementChildren.Read(frames.World, remaining[0]).Single() == second &&
-            frames.World.ReadComponentData<CounterText>(second).Value == 22 &&
-            frames.World.ReadComponentData<Selection>(second).Value == 77,
+            frames.World.ReadValue<CounterText>(second).Value == 22 &&
+            frames.World.ReadValue<Selection>(second).Value == 77,
             "A following inline call keeps its node and state through a conditional sibling change.");
-        Require(frames.World.ReadComponentData<Card>(remaining[1]).Title == "12",
+        Require(frames.World.ReadValue<Card>(remaining[1]).Title == "12",
             "A value-producing composable retains its state and supplies the expression result.");
 
-        frames.World.ReplaceSparse(root, new Screen_View(true));
+        frames.World.Set(root, new Screen_View(true));
         frames.Frame();
         children = ElementChildren.Read(frames.World, root).ToArray();
         first = ElementChildren.Read(frames.World, children[0]).Single();
-        Require(frames.World.ReadComponentData<CounterText>(first).Value == 11 &&
-            frames.World.ReadComponentData<CounterText>(second).Value == 22 &&
-            !frames.World.HasSparse<BuildError>(root),
+        Require(frames.World.ReadValue<CounterText>(first).Value == 11 &&
+            frames.World.ReadValue<CounterText>(second).Value == 22 &&
+            !frames.World.Has<BuildError>(root),
             "Nested inline groups restore remembered values when caller content returns.");
         CheckContentFunctions(frames);
     }
@@ -58,9 +58,9 @@ internal static partial class ComposeGroupChecks
         Entity[] cards = content.Select(child => ElementChildren.Read(frames.World, child).Single()).ToArray();
         values[0].Value = 11;
         frames.Frame();
-        Require(frames.World.ReadComponentData<Card>(cards[0]).Title == "11" &&
-            frames.World.ReadComponentData<Card>(cards[1]).Title == "20" &&
-            frames.World.ReadComponentData<GroupCount>(root).Value == 3,
+        Require(frames.World.ReadValue<Card>(cards[0]).Title == "11" &&
+            frames.World.ReadValue<Card>(cards[1]).Title == "20" &&
+            frames.World.ReadValue<GroupCount>(root).Value == 3,
             "Content functions in value-producing groups track their own state reads.");
     }
 

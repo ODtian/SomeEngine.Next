@@ -57,7 +57,7 @@ public static partial class Solid
             var matched = new bool[previous.Length];
             ulong nextKey = 0;
             foreach (Entity child in previous)
-                nextKey = Math.Max(nextKey, unchecked(Scope.World.ReadComponentData<ElementKey>(child).Key + 1));
+                nextKey = Math.Max(nextKey, unchecked(Scope.World.ReadValue<ElementKey>(child).Key + 1));
 
             for (int index = 0; index < items.Count; index++)
             {
@@ -69,11 +69,11 @@ public static partial class Solid
                     if (matched[previousIndex])
                         continue;
                     Entity child = previous[previousIndex];
-                    T previousItem = Scope.World.ReadComponentData<ItemRow<T>>(child).Item;
+                    T previousItem = Scope.World.ReadValue<ItemRow<T>>(child).Item;
                     if (!EqualityComparer<T>.Default.Equals(previousItem, item))
                         continue;
                     matched[previousIndex] = true;
-                    key = Scope.World.ReadComponentData<ElementKey>(child).Key;
+                    key = Scope.World.ReadValue<ElementKey>(child).Key;
                     found = true;
                     break;
                 }
