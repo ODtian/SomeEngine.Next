@@ -215,6 +215,7 @@ public sealed partial class WorldJobs(Scheduler scheduler) : WorldExecution
     internal override void EnterQuery(Query query, ReadOnlySpan<int> writes, bool writeAll)
     {
         if (HasStructureWrite()) { EnterStructure(false); return; }
+        if (JobThreads.IsActive && !writeAll && writes.Length == 0) { EnterReadQueryRanges(query); return; }
         QueryDescription description = query.Description;
         QueryDefinition definition = description.Definition;
         int writeType = !writeAll && writes.Length == 1 && definition.AccessTypes.Length <= 2

@@ -6,6 +6,11 @@ using SomeEngine.Job;
 
 namespace SomeEngine.Core.ECS;
 
+public interface IGameFrameReader
+{
+    void Read(World world);
+}
+
 public sealed class GameWorld : IDisposable
 {
     private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace = new("ecs", "GameWorld.Update");
@@ -22,6 +27,7 @@ public sealed class GameWorld : IDisposable
 
     public World World { get; }
     public SystemGroup<ImmediateSystemContext> Systems { get; }
+    public IGameFramePhysics? Physics { get; set; }
     public GameWorld(WorldExecution? execution = null)
     {
         World = new World(execution: execution ?? new WorldJobs(JobSystem.Default));
@@ -31,7 +37,10 @@ public sealed class GameWorld : IDisposable
         _transforms.Add(new TransformSystem());
     }
 
-    public void Update(double deltaTime)
+    public void Update(double deltaTime) => Update(deltaTime, new NoFrameReader());
+
+    /// <summary>Consumes the selected physical result and updates transforms before the reader and following submissions.</summary>
+    public void Update<TReader>(double deltaTime, in TReader reader) where TReader : struct, IGameFrameReader
     {
         if (!double.IsFinite(deltaTime) || deltaTime < 0)
             throw new ArgumentOutOfRangeException(nameof(deltaTime));
@@ -46,14 +55,19 @@ public sealed class GameWorld : IDisposable
         using var scope = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         try
         {
+            IGameFramePhysics? physics = Physics;
+            physics?.AdvanceTime(deltaTime);
             var context = new ImmediateSystemContext(World, 0, 0, deltaTime);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(SystemsUpdateTrace))
                 Systems.Update(ref context);
             Systems.Complete();
             World.Flush();
+            physics?.ConsumeCompleted().Complete();
             using (Profiler.BeginScope("GameWorld.Transforms.Update"))
                 _transforms.Update(ref context);
             _transforms.Complete();
+            reader.Read(World);
+            physics?.SubmitDueSteps();
         }
         finally
         {
@@ -63,6 +77,11 @@ public sealed class GameWorld : IDisposable
                 Monitor.PulseAll(_lifetimeGate);
             }
         }
+    }
+
+    private readonly struct NoFrameReader : IGameFrameReader
+    {
+        public void Read(World world) { }
     }
 
     public void Dispose()
@@ -100,6 +119,9 @@ public sealed class GameWorld : IDisposable
         var exceptions = new List<Exception>();
         try
         {
+            try { Physics?.Dispose(); }
+            catch (AggregateException exception) { exceptions.AddRange(exception.Flatten().InnerExceptions); }
+            catch (Exception exception) { exceptions.Add(exception); }
             try
             {
                 Systems.Dispose();

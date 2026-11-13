@@ -29,6 +29,46 @@ public sealed partial class WorldJobs
         }
         finally { accesses.Clear(); }
     }
+
+    /// <summary>Collects a typed action's permissions for its current query chunks after semantic dependencies complete.</summary>
+    public JobResourceAccess[] CollectAccess<TAction>(Query query) where TAction : struct, IChunkAction
+    {
+        query = ChunkActionTypes<TAction>.Bind(query);
+        using WorldAccess structure = _world.OpenStructure(false);
+        _world.BeginRead();
+        QueryRanges ranges = QueryRanges.Rent();
+        AccessBuilder<JobResourceAccess> accesses = new();
+        try
+        {
+            ranges.Build(query, 1024);
+            AddStructureAccess(false, ref accesses);
+            BuildChunkAccesses<TAction>(query, ranges, TAction.AdditionalAccesses, ref accesses, wholeTypes: false);
+            return CopyAccesses(accesses);
+        }
+        finally { accesses.Clear(); ranges.Return(); _world.EndRead(); }
+    }
+
+    /// <summary>Collects actual referenced resources while the caller holds the typed source columns.</summary>
+    public JobResourceAccess[] CollectResources<TAction>(Query query, in TAction action) where TAction : struct, IChunkAction
+    {
+        query = ChunkActionTypes<TAction>.Bind(query);
+        using WorldAccess structure = _world.OpenStructure(false);
+        _world.BeginRead();
+        QueryRanges ranges = QueryRanges.Rent();
+        AccessBuilder<JobResourceAccess> required = new(), resources = new();
+        SynchronousResourceAccess source = default;
+        bool acquired = !JobThreads.IsActive;
+        try
+        {
+            ranges.Build(query, 1024);
+            BuildChunkAccesses<TAction>(query, ranges, TAction.AdditionalAccesses, ref required, wholeTypes: false);
+            if (acquired) source = _scheduler.AcquireSynchronousAccess(JobResourceAccess.Read(_structure), required);
+            else for (int i = 0; i < required.Count; i++) _scheduler.RequireCurrentAccess(required.Get(i), required.Get(i).Mode != JobAccessMode.Read);
+            SystemRunner.CollectChunkResources(_scheduler, ranges, ref resources, query.SinceVersion, action);
+            return CopyAccesses(resources);
+        }
+        finally { if (acquired) source.Dispose(); required.Clear(); resources.Clear(); ranges.Return(); _world.EndRead(); }
+    }
     /// <summary>Declares structure and the reads required by the World's event producers.</summary>
     public override JobResourceAccess[] StructureRead => CollectStructureAccess(false);
 
@@ -73,14 +113,48 @@ public sealed partial class WorldJobs
         {
             AddStructureAccess(false, ref accesses);
             BuildQueryValues(description, definition, [], false, ref accesses);
-            var resources = new JobResourceAccessBuilder(_scheduler, ref accesses);
-            using QueryScope scope = query.OpenRead();
-            foreach (QueryChunk chunk in scope)
-                if (chunk.TryRead<TComponent>(out ReadOnlySpan<TComponent> components))
-                    ComponentResources.CollectRange<TComponent, TResources>(components, ref resources);
+            CollectComponentResources<TComponent, TResources>(query, ref accesses);
             return CopyAccesses(accesses);
         }
         finally { accesses.Clear(); }
+    }
+
+    private void CollectComponentResources<TComponent, TResources>(Query query, ref AccessBuilder<JobResourceAccess> output)
+        where TComponent : struct where TResources : struct, IJobComponentResources<TComponent>
+    {
+        using WorldAccess structure = _world.OpenStructure(false);
+        _world.BeginRead();
+        QueryRanges ranges = QueryRanges.Rent();
+        AccessBuilder<JobResourceAccess> reads = new();
+        SynchronousResourceAccess source = default;
+        bool acquired = !JobThreads.IsActive;
+        try
+        {
+            ranges.Build(query, 1024);
+            int type = ComponentType<TComponent>.TypeId;
+            if (!ComponentType<TComponent>.Value.UsesStructureWrites)
+                foreach (QueryRange range in ranges.Items.AsSpan(0, ranges.Count))
+                    reads.Add(JobResourceAccess.Read(Resource(WorldValueKind.Table, type),
+                        ((long)range.Chunk.Id << 32) + range.Start, range.End - range.Start));
+            if (acquired) source = _scheduler.AcquireSynchronousAccess(JobResourceAccess.Read(_structure), reads);
+            else for (int i = 0; i < reads.Count; i++) _scheduler.RequireCurrentAccess(reads.Get(i), false);
+            var resources = new JobResourceAccessBuilder(_scheduler, ref output);
+            foreach (QueryRange range in ranges.Items.AsSpan(0, ranges.Count))
+            {
+                if ((uint)type >= (uint)range.Chunk.Columns.Length || range.Chunk.Columns[type].ColumnPlusOne == 0) continue;
+                ReadOnlySpan<TComponent> column = ColumnEntry.Span<TComponent>(ref range.Chunk.Columns[type], range.Chunk.Count);
+                if (range.Filter is null)
+                    ComponentResources.CollectRange<TComponent, TResources>(column.Slice(range.Start, range.End - range.Start), ref resources);
+                else
+                {
+                    int next = range.Start;
+                    while (next < range.End && range.Filter.Next(range.Chunk, query.SinceVersion, ref next,
+                        out int start, out int count, range.End))
+                        ComponentResources.CollectRange<TComponent, TResources>(column.Slice(start, count), ref resources);
+                }
+            }
+        }
+        finally { if (acquired) source.Dispose(); reads.Clear(); ranges.Return(); _world.EndRead(); }
     }
 
     private JobResourceAccess[] CollectStructureAccess(bool write)

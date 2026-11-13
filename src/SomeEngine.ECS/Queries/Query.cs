@@ -155,6 +155,8 @@ public partial struct Query
     internal readonly QueryDescription Description => _data.Description;
     internal readonly QueryData Data => _data;
     public readonly ulong MembershipVersion => _world.ReadMembershipVersion(_data);
+    /// <summary>Whether membership selection includes Added or Changed conditions evaluated against Since.</summary>
+    public readonly bool HasVersionFilters => _description.Changed.Count != 0;
 
     internal Query(World world, QueryData data, ulong since)
         => (_world, _data, _singleValues, _since)
@@ -475,7 +477,7 @@ public readonly partial struct QueryChunk
     public Span<T> Write<T>() where T : struct
     {
         RequireWrite();
-        _chunk.Archetype.World.RequireValue<T>(true);
+        _chunk.Archetype.World.RequireValueRange<T>(true, _chunk, _start, Count);
         _chunk.Archetype.World.RequireWriteRange(_chunk, _start, Count);
         if (ComponentType<T>.IsControlledType || ComponentType<T>.IsIndexedType || ComponentType<T>.IsGroupedType) throw new InvalidOperationException("Use the component's typed write view or Set entry.");
         if (ComponentType<T>.TracksWritesType)
@@ -489,7 +491,7 @@ public readonly partial struct QueryChunk
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ReadOnlySpan<T> Read<T>() where T : struct
     {
-        _chunk.Archetype.World.RequireValue<T>(false);
+        _chunk.Archetype.World.RequireValueRange<T>(false, _chunk, _start, Count);
         if (ComponentType<T>.IsSharedType) throw new InvalidOperationException("Use ReadShared<T>() to read this range's shared values.");
         return ColumnEntry.Span<T>(ref _chunk.Columns[ComponentType<T>.TypeId], _chunk.Count).Slice(_start, Count);
     }
@@ -506,7 +508,7 @@ public readonly partial struct QueryChunk
 
     public ReadOnlyBuffer<T> ReadBuffer<T>(int row) where T : struct
     {
-        _chunk.Archetype.World.RequireValue<Buffer<T>>(false);
+        _chunk.Archetype.World.RequireValueRange<Buffer<T>>(false, _chunk, _start + row, 1);
         ref Buffer<T> buffer = ref ColumnEntry.At<Buffer<T>>(ref _chunk.Columns[ComponentType<Buffer<T>>.TypeId], _start + row);
         return new(_chunk.Archetype.World, in buffer, false);
     }
@@ -516,7 +518,7 @@ public readonly partial struct QueryChunk
     {
         RequireWrite();
         World world = _chunk.Archetype.World;
-        world.RequireValue<Buffer<T>>(true);
+        world.RequireValueRange<Buffer<T>>(true, _chunk, _start, Count);
         world.RequireWriteRange(_chunk, _start, Count);
         if (ComponentType<Buffer<T>>.TracksWritesType)
         {
@@ -532,7 +534,7 @@ public readonly partial struct QueryChunk
     public DynamicBuffer<T> GetBuffer<T>(int row) where T : struct
     {
         RequireWrite();
-        _chunk.Archetype.World.RequireValue<Buffer<T>>(true);
+        _chunk.Archetype.World.RequireValueRange<Buffer<T>>(true, _chunk, _start + row, 1);
         _chunk.Archetype.World.RequireWriteRow(_chunk, _start + row);
         World world = _chunk.Archetype.World;
         ref ColumnEntry column = ref _chunk.Columns[ComponentType<Buffer<T>>.TypeId];

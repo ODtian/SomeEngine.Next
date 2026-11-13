@@ -61,6 +61,7 @@ public abstract class WorldExecution
     internal abstract void EnterValues(ReadOnlySpan<WorldValueAccess> values);
     internal abstract void EnterQuery(Query query, ReadOnlySpan<int> writes, bool writeAll);
     internal abstract void RequireValue(in WorldValueAccess value);
+    internal virtual void RequireValueRange(in WorldValueAccess value, Chunk chunk, int start, int count) => RequireValue(value);
     internal virtual bool CanBorrowStructureRead => false;
     internal abstract bool HasRangeWrite { get; }
     internal abstract void RequireWriteRow(Chunk chunk, int row);
@@ -72,9 +73,14 @@ public abstract class WorldExecution
     internal abstract ulong CurrentWriteVersion { get; }
 }
 
-internal readonly struct WorldAccess(WorldExecution? execution) : IDisposable
+internal readonly struct WorldAccess(WorldExecution? execution, WorldStructureTimings.Measurement timing = default) : IDisposable
 {
-    public void Dispose() => execution?.Exit();
+    internal WorldAccess WithTiming(WorldStructureTimings.Measurement value) => new(execution, value);
+    public void Dispose()
+    {
+        timing.Dispose();
+        execution?.Exit();
+    }
 }
 
 public sealed partial class World
@@ -108,7 +114,9 @@ public sealed partial class World
     internal WorldAccess OpenStructure(bool write = true)
     {
         WorldExecution? execution = Execution;
-        return execution is null ? default : execution.OpenStructure(write);
+        WorldAccess access = execution is null ? default : execution.OpenStructure(write);
+        return write && _structureTimings is { Enabled: true } timings
+            ? access.WithTiming(timings.Measure(WorldTimingKind.StructureWrite)) : access;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -176,6 +184,14 @@ public sealed partial class World
         RequireCallingThread();
         if (Execution is { } execution)
             RequireValueWithExecution<T>(execution, write, kind);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void RequireValueRange<T>(bool write, Chunk chunk, int start, int count,
+        WorldValueKind kind = WorldValueKind.Table) where T : struct
+    {
+        RequireCallingThread();
+        Execution?.RequireValueRange(AccessFor<T>(write, kind), chunk, start, count);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

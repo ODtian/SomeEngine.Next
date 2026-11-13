@@ -1,0 +1,179 @@
+using System.Numerics;
+using SlangShaderSharp;
+using SomeEngine.ECS;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
+using SomeEngine.Physics;
+using Xunit;
+
+namespace SomeEngine.Graphics.Direct3D12.Tests;
+
+public sealed partial class DeviceXpbdTests
+{
+    [Fact]
+    public void KinematicDeviceVelocityTargetsKeepTheirAngularSpeedAcrossMultipleTurns()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        using World world = new World(execution: new WorldJobs(jobs));
+        using var bodies = new DeviceBodies(backend, device, 1);
+        Entity body = AddBody(world, bodies, 0, Vector3.Zero, BodyMotion.Kinematic);
+        Vector3 angular = new(0, 0, 200 * MathF.PI);
+        world.AddBuffer<BodyVelocityTarget>(body);
+        { using var targets = world.GetBuffer<BodyVelocityTarget>(body); targets.Add(new() { Angular = angular, Time = 0 }); }
+        Query members = world.Query(new QueryDescription().WithStored<DeviceBodyBinding>());
+        using var inputs = new DeviceBodyInputs(world, members, bodies);
+        using var timed = new DeviceBodyInputBuffers(backend, device, world, members, bodies, CompileBodyInputBuffers(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies);
+        var stages = inputs.Upload().Then(timed.WriteInputs()).Then(timed.Apply()).Then(dynamics.Predict(Vector3.Zero))
+            .Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
+        var simulation = PhysicsSimulation.Create(world, world.Query(new QueryDescription()), stages, 1);
+
+        simulation.Schedule(0, 0, 1d / 60).Complete();
+        simulation.Schedule(1, 1d / 60, 1d / 60).Complete();
+
+        Assert.InRange(Vector3.Distance(angular, world.ReadComponentData<BodyVelocity>(body).Angular), 0, 1e-4f);
+        
+    }
+
+    [Fact]
+    public void TimedForcesAndImpulsesUseTheCurrentResidentVelocityMassAndRotatedInertia()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        using World world = new World(execution: new WorldJobs(jobs));
+        using var bodies = new DeviceBodies(backend, device, 3);
+        Entity body = AddBody(world, bodies, 2, Vector3.Zero, BodyMotion.Dynamic);
+        world.Set(body, new BodyVelocity { Linear = Vector3.UnitX, Angular = Vector3.UnitZ * MathF.PI });
+        Query members = world.Query(new QueryDescription().WithStored<DeviceBodyBinding>());
+        using var inputs = new DeviceBodyInputs(world, members, bodies);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies, world, members, capacity: 1);
+        var first = inputs.Upload().Then(dynamics.Predict(new(10, 0, 0))).Then(dynamics.UpdateVelocities());
+        PhysicsSimulation.Create(world, world.Query(new QueryDescription()), first, 1).Schedule(0, 0, .1).Complete();
+        var mass = new BodyMass { Motion = BodyMotion.Dynamic, InverseMass = .5f,
+            InverseInertia = Matrix4x4.CreateScale(.25f, .5f, 1) };
+        world.Set(body, mass);
+        world.AddBuffer<BodyForce>(body);
+        { using var values = world.GetBuffer<BodyForce>(body); values.Add(new()
+            { Force = new(10, 0, 0), Torque = new(0, 0, 4), StartTime = .15, EndTime = .25 }); }
+        world.AddBuffer<BodyImpulse>(body);
+        { using var values = world.GetBuffer<BodyImpulse>(body); values.Add(new()
+            { Linear = new(2, 0, 0), Angular = new(2, 0, 0), Time = .15 }); }
+        using var timed = new DeviceBodyInputBuffers(backend, device, world, members, bodies, CompileBodyInputBuffers(), 64);
+        var second = inputs.Upload().Then(timed.WriteInputs()).Then(timed.Apply())
+            .Then(dynamics.Predict(Vector3.Zero)).Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
+
+        PhysicsSimulation.Create(world, world.Query(new QueryDescription()), second, 1).Schedule(1, .1, .1).Complete();
+
+        Quaternion priorRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI * .1f);
+        Vector3 angular = Vector3.UnitZ * MathF.PI + mass.ApplyInverseInertia(priorRotation, new(2, 0, .2f));
+        Quaternion expectedRotation = Quaternion.CreateFromAxisAngle(Vector3.Normalize(angular), angular.Length() * .1f) * priorRotation;
+        Near(new(.525f, 0, 0), world.ReadComponentData<BodyPose>(body).Position);
+        Near(new(3.25f, 0, 0), world.ReadComponentData<BodyVelocity>(body).Linear);
+        Near(angular, world.ReadComponentData<BodyVelocity>(body).Angular);
+        Assert.InRange(MathF.Abs(Quaternion.Dot(expectedRotation, world.ReadComponentData<BodyPose>(body).Rotation)), .999999f, 1.000001f);
+
+        PhysicsSimulation.Create(world, world.Query(new QueryDescription()), second, 1).Schedule(2, .2, .1).Complete();
+
+        Near(new(.875f, 0, 0), world.ReadComponentData<BodyPose>(body).Position);
+        Near(new(3.5f, 0, 0), world.ReadComponentData<BodyVelocity>(body).Linear);
+        Near(angular + mass.ApplyInverseInertia(expectedRotation, new(0, 0, .2f)), world.ReadComponentData<BodyVelocity>(body).Angular);
+        
+    }
+
+    [Fact]
+    public void VelocityTargetsSelectTheLatestOriginalInputInEachDeviceSubstep()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        using World world = new World(execution: new WorldJobs(jobs));
+        using var bodies = new DeviceBodies(backend, device, 3);
+        Entity body = AddBody(world, bodies, 2, Vector3.Zero, BodyMotion.Dynamic);
+        world.Set(body, new BodyVelocity { Linear = Vector3.UnitX });
+        world.AddBuffer<BodyVelocityTarget>(body);
+        { using var values = world.GetBuffer<BodyVelocityTarget>(body); 
+            values.Add(new() { Linear = new(3, 0, 0), Angular = new(0, 0, 2), Time = .15 });
+            values.Add(new() { Linear = new(2, 0, 0), Angular = Vector3.UnitZ, Time = .12 });
+            values.Add(new() { Linear = -Vector3.UnitX, Angular = -Vector3.UnitZ, Time = .22 });
+         }
+        Query members = world.Query(new QueryDescription().WithStored<DeviceBodyBinding>());
+        using var inputs = new DeviceBodyInputs(world, members, bodies);
+        using var timed = new DeviceBodyInputBuffers(backend, device, world, members, bodies, CompileBodyInputBuffers(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies, world, members, capacity: 1);
+        var stages = inputs.Upload().Then(timed.WriteInputs()).Then(timed.Apply())
+            .Then(dynamics.Predict(Vector3.Zero)).Then(dynamics.UpdateVelocities());
+        var simulation = PhysicsSimulation.Create(world, world.Query(new QueryDescription()), stages, 1);
+
+        simulation.Schedule(0, 0, .1).Complete();
+        simulation.Schedule(1, .1, .1).Complete();
+        PhysicsStepResult completed = simulation.Schedule(2, .2, .1);
+        var context = new PhysicsStepContext(world, world.Query(new QueryDescription()), 2, 0, 1, .2, .1);
+        results.Readback(64).Schedule(in context, completed.Completion).Complete();
+
+        Near(new(.3f, 0, 0), world.ReadComponentData<BodyPose>(body).Position);
+        Near(-Vector3.UnitX, world.ReadComponentData<BodyVelocity>(body).Linear);
+        Near(-Vector3.UnitZ, world.ReadComponentData<BodyVelocity>(body).Angular);
+        Assert.InRange(MathF.Abs(Quaternion.Dot(Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .1f),
+            world.ReadComponentData<BodyPose>(body).Rotation)), .999999f, 1.000001f);
+        
+    }
+
+    [Fact]
+    public void KinematicTargetsSampleTheOriginalTrajectoryAndHoldItsFinalDevicePose()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        using World world = new World(execution: new WorldJobs(jobs));
+        using var bodies = new DeviceBodies(backend, device, 2);
+        Entity body = AddBody(world, bodies, 1, Vector3.Zero, BodyMotion.Kinematic);
+        world.Set(body, new BodyVelocity { Linear = new(9, 0, 0) });
+        world.AddBuffer<BodyKinematicTarget>(body);
+        { using var values = world.GetBuffer<BodyKinematicTarget>(body); values.Add(new()
+        {
+            StartPose = new() { Rotation = Quaternion.Identity },
+            EndPose = new() { Position = new(2, 4, 0), Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2) },
+            StartTime = 0, EndTime = .2,
+        }); }
+        Query members = world.Query(new QueryDescription().WithStored<DeviceBodyBinding>());
+        using var inputs = new DeviceBodyInputs(world, members, bodies);
+        using var timed = new DeviceBodyInputBuffers(backend, device, world, members, bodies, CompileBodyInputBuffers(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies, world, members, capacity: 1);
+        var stages = inputs.Upload().Then(timed.WriteInputs()).Then(timed.Apply())
+            .Then(dynamics.Predict(Vector3.Zero)).Then(timed.ApplyKinematicTargets())
+            .Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
+        var simulation = PhysicsSimulation.Create(world, world.Query(new QueryDescription()), stages, 1);
+
+        simulation.Schedule(0, 0, .1).Complete();
+
+        Near(new(1, 2, 0), world.ReadComponentData<BodyPose>(body).Position);
+        Near(new(10, 20, 0), world.ReadComponentData<BodyVelocity>(body).Linear);
+        Near(new(0, 0, MathF.PI / .4f), world.ReadComponentData<BodyVelocity>(body).Angular);
+
+        simulation.Schedule(1, .1, .1).Complete();
+        simulation.Schedule(2, .2, .1).Complete();
+
+        Near(new(2, 4, 0), world.ReadComponentData<BodyPose>(body).Position);
+        Near(Vector3.Zero, world.ReadComponentData<BodyVelocity>(body).Linear);
+        Near(Vector3.Zero, world.ReadComponentData<BodyVelocity>(body).Angular);
+        Assert.InRange(MathF.Abs(Quaternion.Dot(Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2),
+            world.ReadComponentData<BodyPose>(body).Rotation)), .999999f, 1.000001f);
+        
+    }
+
+    private DeviceBodyInputKernels CompileBodyInputBuffers()
+    {
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("body_timed_inputs", "#include \"physics_body_inputs.slang\"",
+            [new("ApplyDeviceBodyInputs", SlangStage.Compute), new("ApplyDeviceKinematicTargets", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
+        ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(index), shader.GetEntryCode(index));
+        return new(Entry(0), Entry(1));
+    }
+}

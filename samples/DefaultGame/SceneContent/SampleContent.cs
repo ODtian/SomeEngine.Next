@@ -57,6 +57,20 @@ public static class SampleContent
         Console.WriteLine($"Shader: {Path.GetFileName(shaderSource)}");
     }
 
+    /// <summary>Builds the physics character material against the selected engine shaders.</summary>
+    public static async Task BuildPhysicsSkinAsync(string projectRoot, string engineRoot,
+        CancellationToken cancellationToken = default)
+    {
+        projectRoot = Path.GetFullPath(projectRoot);
+        string shaders = Path.Combine(projectRoot, "assets", "Shaders");
+        string engineShaders = Path.Combine(Path.GetFullPath(engineRoot), "assets", "Shaders");
+        WriteInstanceLayout(shaders);
+        WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
+            File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
+        var project = new AssetProject(projectRoot, [], shaderIncludeDirectories: [engineShaders]);
+        await SampleMaterials.BuildPhysicsSkinAsync(project, cancellationToken).ConfigureAwait(false);
+    }
+
     public static async Task BuildAsync(string projectRoot, string engineRoot, CancellationToken cancellationToken = default)
     {
         projectRoot = Path.GetFullPath(projectRoot);
@@ -71,7 +85,7 @@ public static class SampleContent
         await BuildEngineShadersAsync(project, shaders, engineShaders, cancellationToken).ConfigureAwait(false);
         foreach (string source in Directory.EnumerateFiles(shaders, "*.shader").Order(StringComparer.Ordinal))
         {
-            if (Path.GetFileNameWithoutExtension(source) is "standard" or "unlit") continue;
+            if (Path.GetFileNameWithoutExtension(source) is "standard" or "unlit" or "physics-crowd") continue;
             cancellationToken.ThrowIfCancellationRequested();
             await project.BuildAsync(source, cancellationToken: cancellationToken).ConfigureAwait(false);
             Console.WriteLine($"Shader: {Path.GetFileName(source)}");

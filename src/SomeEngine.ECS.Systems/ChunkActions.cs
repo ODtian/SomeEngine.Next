@@ -18,6 +18,7 @@ public interface IChunkAction
     static virtual SystemAccesses? AdditionalAccesses => null;
     static virtual void CollectResources(SystemChunk rows, ref JobResourceAccessBuilder resources) { }
     void CollectAdditionalResources(ref JobResourceAccessBuilder resources) { }
+    void CollectRangeResources(SystemChunk rows, ref JobResourceAccessBuilder resources) { }
     void Execute(SystemChunk rows);
 }
 
@@ -30,8 +31,9 @@ public readonly struct ChunkAccess
     public static ChunkAccess Read<T>(bool hasResources = false) where T : struct
         => new(ComponentType<T>.TypeId, false, ComponentType<T>.TracksWritesType, ComponentType<T>.Value.UsesStructureWrites,
             hasResources: hasResources);
-    public static ChunkAccess ReadOptional<T>() where T : struct
-        => new(ComponentType<T>.TypeId, false, ComponentType<T>.TracksWritesType, ComponentType<T>.Value.UsesStructureWrites, true);
+    public static ChunkAccess ReadOptional<T>(bool hasResources = false) where T : struct
+        => new(ComponentType<T>.TypeId, false, ComponentType<T>.TracksWritesType, ComponentType<T>.Value.UsesStructureWrites,
+            optional: true, hasResources: hasResources);
     public static ChunkAccess WriteOptional<T>() where T : struct
     {
         ChunkAccess access = Write<T>();

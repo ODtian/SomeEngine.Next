@@ -1,0 +1,43 @@
+Newton v1.7.0
+Copyright (c) 2025 The Newton Developers
+https://github.com/newton-physics/newton/tree/v1.7.0/newton/_src/solvers/vbd
+
+AvbdMaterialTerms.cs, AvbdBodyEquation.cs, AvbdElasticConnectionMath.cs,
+AvbdJointMath.cs, JointMath.cs, BodyRotation in PredictBodies.cs and
+ApplyGyroscopicTorque.cs adapt the compliant ALM coefficients, force rows,
+joint coordinates, rotation derivatives, angular inertia and gyroscopic
+prediction from Newton.
+The mathematical migration follows the project's research NewtonRigid.cpp.
+AvbdJointMath.cs also retains a positive bound for force-weighted angular
+geometric curvature, following the research BodyEquation.cpp addJointEquation.
+The device counterparts physics_avbd_joint_math.slang, physics_avbd_joint.slang
+and physics_avbd_joint_forces.slang reuse these point coordinates, world force
+rows and the same positive angular curvature bound.
+
+JointMotorMath.cs, AvbdJointMotorMath.cs and XpbdJointMotorProjection.cs reuse
+these common joint Jacobians and material coefficients for timed PD drives.
+
+AvbdContactMath.cs adapts contactEquation and addContact from the research
+NewtonRigid.cpp (Newton rigid VBD compliant contact, unilateral normal force,
+disk friction curvature and approach damping). Contact multipliers are world
+forces stored on persistent ECS contact entities; material combination and
+normal restitution impulses use explicit C# stages and project parameters.
+
+AvbdSupportedContactMath.cs reuses the same contact equations with the explicit
+LRC auxiliary force in the total Coulomb projection, following the research
+contactEquation extra-force handoff. LRC graph and support sources are listed
+in ../LongRange/NOTICE.
+
+CollisionGeometryMotion.cs and GeometryPairPrediction.cs adapt the research
+Islands.cpp readCollisionExtent/findCollisionPairs and Bridge.cpp
+readBodyTravel/readPredictedContacts motion-envelope and local-contact math.
+The C# stages consume the common ECS substep start and predicted states,
+project starting separation planes through weighted local body anchors,
+and preserve their sample time separately from the contact response interval.
+
+The C# implementation stores body equations and constraint multipliers in ECS
+components, binds concrete constraint types through borrowed query rows and
+uses the existing Job scheduler for its execution and completion.
+
+These adapted portions are licensed under the Apache License, Version 2.0.
+The complete license is included in the repository LICENSE file.

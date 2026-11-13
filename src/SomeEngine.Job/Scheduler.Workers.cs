@@ -75,6 +75,14 @@ public sealed partial class Scheduler
         return true;
     }
 
+    /// <summary>Validates a concrete producer's borrowed resource range in the current Job.</summary>
+    [System.Diagnostics.Conditional("DEBUG")]
+    public void ValidateResourceAccess(JobResourceAccess required, bool requireSingleWorkItem = false)
+    {
+        if (SomeEngine.Core.Diagnostics.DevelopmentCheck.Enabled)
+            RequireCurrentAccess(required, requireSingleWorkItem);
+    }
+
     internal void RequireCurrentAccess(JobResourceAccess required, bool requireSingleWorkItem)
     {
         EnsureCurrentScopeBelongsToThisRuntime();

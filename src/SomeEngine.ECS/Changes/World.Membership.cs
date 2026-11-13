@@ -149,6 +149,7 @@ public sealed partial class World
 
     internal void FinishMembershipEdit(int position)
     {
+        using var timing = MeasureStructure(WorldTimingKind.MembershipChanges);
         MembershipEditData state = _membershipEdits[position];
         _membershipEdits[position] = default;
         _membershipEditCount--;
@@ -196,6 +197,7 @@ public sealed partial class World
 
     private void PublishMembershipBatch(ReadOnlySpan<Entity> entities, bool added)
     {
+        using var timing = MeasureStructure(WorldTimingKind.MembershipChanges);
         int start = 0;
         while (start < entities.Length)
         {

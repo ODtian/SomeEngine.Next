@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Numerics;
 using SlangShaderSharp;
 using SomeEngine.Diagnostics;
+using SomeEngine.Animation.Pose;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
@@ -281,11 +282,12 @@ internal static class RuntimeApplication
         private bool _windowVSync;
         private bool _meshShadersDisabled;
         private bool _validation;
+        private DeviceFeatures _optionalDeviceFeatures;
 
         internal void Initialize(RuntimeStartupOptions options, bool useWarp, string title, ApplicationSettingsBlock boot)
         {
             if (Window is not null && _meshShadersDisabled == options.DisableMeshShaders &&
-                _validation == options.DeviceValidation)
+                _validation == options.DeviceValidation && _optionalDeviceFeatures == options.OptionalDeviceFeatures)
             {
                 if (_windowVSync != options.WindowVSync)
                     ReconfigureSwapchain(Backend, Swapchain, options, Window.ClientWidth, Window.ClientHeight,
@@ -296,6 +298,7 @@ internal static class RuntimeApplication
             _windowVSync = options.WindowVSync;
             _meshShadersDisabled = options.DisableMeshShaders;
             _validation = options.DeviceValidation;
+            _optionalDeviceFeatures = options.OptionalDeviceFeatures;
             if (Window is not null)
             {
                 Swapchain.Dispose();
@@ -329,7 +332,7 @@ internal static class RuntimeApplication
                 queues,
                 requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands |
                     (options.MeasureBlending ? DeviceFeatures.CalibratedTimestamps : DeviceFeatures.None),
-                optionalFeatures: DeviceFeatures.CalibratedTimestamps |
+                optionalFeatures: options.OptionalDeviceFeatures | DeviceFeatures.CalibratedTimestamps |
                     (options.DisableMeshShaders ? DeviceFeatures.None : DeviceFeatures.MeshShaders),
                 label: "SomeEngine Runtime Device"));
             Swapchain = Backend.CreateSwapchain(Device, new SwapchainDesc(
@@ -734,6 +737,7 @@ internal static class RuntimeApplication
 
         IEnumerable<ValueTask> UpdateInterface(int frameNumber, int canvasWidth, int canvasHeight, double deltaSeconds, long gameUpdateStarted)
         {
+            if (!synchronousGame) elementSystems.Physics?.AdvanceTime(deltaSeconds);
             gameWorld.Update(deltaSeconds);
             geometry.UpdateGame(deltaSeconds);
             yield return geometry.CompleteGameAsync();
@@ -854,6 +858,8 @@ internal static class RuntimeApplication
                         orbitCamera: options.ScenePlayback == "camera");
                 RunInterface(0, boot.Width, boot.Height, 0, gameStarted);
             }
+
+            elementSystems.Animation.Add(new DevicePoseSystem(backend, device));
 
             outputVerifier = options.VerifyFrameOutput || (options.FrameOutputPath is not null && options.CaptureFrame is null)
                 ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)
@@ -1010,6 +1016,7 @@ internal static class RuntimeApplication
                     ? frameIndex * options.FixedFrameSeconds
                     : (float)Stopwatch.GetElapsedTime(runtimeStarted).TotalSeconds;
                 previousFrameTimestamp = currentFrameTimestamp;
+                if (synchronousGame) elementSystems.Physics?.AdvanceTime(deltaSeconds);
                 long gameStarted = synchronousGame ? Stopwatch.GetTimestamp() : 0;
                 sceneEdit.Begin();
                 try
@@ -1324,6 +1331,7 @@ internal static class RuntimeApplication
                     prepareMs, reconcileMs, executeMs);
                 bool hasFutureFrame = (options.FrameLimit == 0 || frameIndex + 1 < options.FrameLimit)
                     && application?.ReloadRequested != true && application?.ExitRequested != true;
+                if (hasFutureFrame) elementSystems.Physics?.SubmitDueSteps();
                 if (hasFutureFrame && !synchronousGame)
                 {
                     bool updateScene = animateScene;
@@ -1457,6 +1465,8 @@ internal static class RuntimeApplication
             linearVerifier?.Dispose();
             coordinator.WaitForTrackedSubmissions();
             renderGraph.CollectCompleted();
+            if (elementSystems.Physics is { } physics)
+                RuntimeWait.WaitForCompletion(physics.Completion.WaitAsync(), window, FrameTimeout);
             application?.Shutdown?.Invoke(applicationFrame);
             geometry.FinishGame();
             if (!coordinator.TryBeginPrepare(out RenderPrepareScope? finalScope))

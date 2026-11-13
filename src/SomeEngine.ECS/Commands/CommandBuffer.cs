@@ -227,6 +227,7 @@ public sealed partial class CommandBuffer : IDisposable
     public void Playback()
     {
         using WorldAccess access = World.OpenStructure();
+        using var timing = World.MeasureStructure(WorldTimingKind.CommandPlayback);
         if (_batch is { } batch) { batch.Playback(); return; }
         Seal();
         World.RequireStructure();
@@ -315,6 +316,7 @@ public sealed class CommandBatch : IDisposable
     public void Playback()
     {
         using WorldAccess access = _world.OpenStructure();
+        using var timing = _world.MeasureStructure(WorldTimingKind.CommandPlayback);
         foreach (CommandBuffer producer in _producers) producer.Seal();
         _world.RequireStructure();
         int count = 0;

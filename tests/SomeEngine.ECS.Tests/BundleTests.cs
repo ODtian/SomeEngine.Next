@@ -442,6 +442,38 @@ public class BundleTests
             values.OrderBy(value => value));
     }
 
+    [Fact]
+    public void OneBatchWriterCreatesTheActualLayoutAndValuesForEachGroup()
+    {
+        using var world = new World();
+        Entity[] moving = new Entity[2], living = new Entity[2];
+        int[] movement = [ComponentId<Position>.Value, ComponentId<Velocity>.Value];
+        int[] health = [ComponentId<Position>.Value, ComponentId<Health>.Value];
+        world.ExecuteBundleSpawnBatch(movement, moving.Length, new VariableBodyRows(moving, true), new VariableBodyWriter());
+        world.ExecuteBundleSpawnBatch(health, living.Length, new VariableBodyRows(living, false), new VariableBodyWriter());
+
+        for (int index = 0; index < moving.Length; index++)
+        {
+            Assert.Equal(index + 1, world.Read<Position>(moving[index]).X);
+            Assert.Equal(index + 10, world.Read<Velocity>(moving[index]).X);
+            Assert.False(world.Has<Health>(moving[index]));
+            Assert.Equal(index + 1, world.Read<Position>(living[index]).X);
+            Assert.Equal(index + 20, world.Read<Health>(living[index]).Value);
+            Assert.False(world.Has<Velocity>(living[index]));
+        }
+    }
+    private readonly record struct VariableBodyRows(Entity[] Entities, bool Movement);
+    private readonly struct VariableBodyWriter : IBundleWriter<VariableBodyRows>
+    {
+        public void Write(BundleWriteView view, in VariableBodyRows rows)
+        {
+            view.Write(new Position { X = view.Index + 1 });
+            if (rows.Movement) view.Write(new Velocity { X = view.Index + 10 });
+            else view.Write(new Health { Value = view.Index + 20 });
+            rows.Entities[view.Index] = view.Entity;
+        }
+    }
+
     private readonly record struct BatchOutput(Entity[] Entities);
     private readonly struct PairBatchWriter : IBundleWriter<BatchOutput>
     {

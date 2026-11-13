@@ -62,6 +62,13 @@ public readonly ref struct JobResourceAccessBuilder
     public void Read(object data) =>
         Add(data, JobResourceAccess.Read(_scheduler.GetResourceToken(data)));
 
+    /// <summary>Adds the caller's existing resource token and interval.</summary>
+    public void Add(JobResourceAccess access)
+    {
+        if (_jobAccesses is { } list) list.Add(access);
+        else _resources.Add(access);
+    }
+
     public void Read(object data, long start, long length) =>
         Add(data, JobResourceAccess.Read(_scheduler.GetResourceToken(data), start, length));
 
@@ -101,10 +108,7 @@ public readonly ref struct JobResourceAccessBuilder
         Add(JobResourceAccess.GetArraySegment<T>(data).Array!, JobResourceAccess.Exclusive(_scheduler, data, start, length));
 
     private void Add(object data, JobResourceAccess access)
-    {
-        if (_jobAccesses is { } list) list.Add(access);
-        else _resources.Add(access);
-    }
+        => Add(access);
 }
 
 public static class ComponentResources

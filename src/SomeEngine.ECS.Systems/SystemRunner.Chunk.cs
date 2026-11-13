@@ -5,6 +5,9 @@ namespace SomeEngine.ECS.Systems;
 
 public sealed partial class SystemRunner
 {
+    /// <summary>Uses the same required components and observation window as the typed action's execution.</summary>
+    public static Query Bind<TAction>(Query query) where TAction : struct, IChunkAction => ChunkActionTypes<TAction>.Bind(query);
+
     private readonly int _chunkRangeRows = rangeRows;
 
     private int ChunkRangeRows<TAction>() where TAction : struct, IChunkAction
@@ -117,26 +120,34 @@ public sealed partial class SystemRunner
         return world.OpenValues(values[..count]);
     }
 
-    private static void CollectChunkResources<TAction>(Scheduler scheduler, QueryRanges ranges,
+    internal static void CollectChunkResources<TAction>(Scheduler scheduler, QueryRanges ranges,
         ref AccessBuilder<JobResourceAccess> accesses, ulong since, in TAction action) where TAction : struct, IChunkAction
     {
         var resources = new JobResourceAccessBuilder(scheduler, ref accesses);
         action.CollectAdditionalResources(ref resources);
         for (int index = 0; index < ranges.Count; index++)
-            CollectChunkRangeResources<TAction>(in ranges.Items[index], ref resources, since);
+            CollectChunkRangeResources(in ranges.Items[index], ref resources, since, action);
     }
 
     private static void CollectChunkRangeResources<TAction>(in QueryRange range,
-        ref JobResourceAccessBuilder resources, ulong since) where TAction : struct, IChunkAction
+        ref JobResourceAccessBuilder resources, ulong since, in TAction action) where TAction : struct, IChunkAction
     {
         if (range.Filter is null)
-            TAction.CollectResources(new(range.Chunk, range.Start, range.End - range.Start, 0), ref resources);
+        {
+            var rows = new SystemChunk(range.Chunk, range.Start, range.End - range.Start, 0);
+            TAction.CollectResources(rows, ref resources);
+            action.CollectRangeResources(rows, ref resources);
+        }
         else
         {
             int next = range.Start;
             while (next < range.End && range.Filter.Next(range.Chunk, since, ref next,
                 out int start, out int count, range.End))
-                TAction.CollectResources(new(range.Chunk, start, count, 0), ref resources);
+            {
+                var rows = new SystemChunk(range.Chunk, start, count, 0);
+                TAction.CollectResources(rows, ref resources);
+                action.CollectRangeResources(rows, ref resources);
+            }
         }
     }
 
@@ -165,7 +176,7 @@ public sealed partial class SystemRunner
     private readonly record struct ChunkResourceRange(QueryRange Range, JobResourceAccess[] Accesses);
 
     private ChunkResourceRange[] BindResourceRanges<TAction>(WorldJobs jobs, Query query, QueryRanges ranges,
-        ulong since, in AccessBuilder<JobResourceAccess> captured) where TAction : struct, IChunkAction
+        ulong since, in AccessBuilder<JobResourceAccess> captured, in TAction action) where TAction : struct, IChunkAction
     {
         var result = new ChunkResourceRange[ranges.Count];
         QueryRanges selected = QueryRanges.Rent();
@@ -182,7 +193,7 @@ public sealed partial class SystemRunner
                     jobs.BuildChunkAccesses<TAction>(query, selected, TAction.AdditionalAccesses, ref accesses, false);
                     for (int item = 0; item < captured.Count; item++) accesses.Add(captured.Get(item));
                     var resources = new JobResourceAccessBuilder(_scheduler, ref accesses);
-                    CollectChunkRangeResources<TAction>(range, ref resources, since);
+                    CollectChunkRangeResources(range, ref resources, since, action);
                     var values = new JobResourceAccess[accesses.Count];
                     for (int item = 0; item < values.Length; item++) values[item] = accesses.Get(item);
                     result[index] = new(range, values);
@@ -285,11 +296,11 @@ public sealed partial class SystemRunner
                     for (int index = 0; index < captured.Count; index++) accesses.Add(captured.Get(index));
                     var all = new JobResourceAccessBuilder(jobs.Scheduler, ref accesses);
                     for (int index = 0; index < _ranges!.Count; index++)
-                        CollectChunkRangeResources<TAction>(_ranges.Items[index], ref all, since);
+                        CollectChunkRangeResources(_ranges.Items[index], ref all, since, action);
                     if (parallel && !ChunkActionTypes<TAction>.Serial(TAction.AdditionalAccesses) && HasResourceWrites(accesses))
                     {
                         _ranges.Select(since);
-                        _resourceRanges = runner.BindResourceRanges<TAction>(jobs, query, _ranges, since, captured);
+                        _resourceRanges = runner.BindResourceRanges<TAction>(jobs, query, _ranges, since, captured, action);
                         accesses.Clear();
                     }
                 }

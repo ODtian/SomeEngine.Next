@@ -31,7 +31,12 @@ internal static class BundleTypes<TState, TWriter>
     private static TypeSet? s_types;
     internal static TypeSet Get(ReadOnlySpan<int> componentIds)
     {
-        if (Volatile.Read(ref s_types) is { } types) return types;
+        if (Volatile.Read(ref s_types) is { } types && types.Types.Length == componentIds.Length)
+        {
+            bool matches = true;
+            foreach (int id in componentIds) matches &= types.Bits.Has(id);
+            if (matches) return types;
+        }
         foreach (int id in componentIds)
         {
             ComponentType component = ComponentTypes.Get(id);
@@ -39,7 +44,8 @@ internal static class BundleTypes<TState, TWriter>
                 throw new InvalidOperationException("Create relationship values through their typed entry.");
         }
         var created = new TypeSet(componentIds.ToArray());
-        return Interlocked.CompareExchange(ref s_types, created, null) ?? created;
+        Interlocked.CompareExchange(ref s_types, created, null);
+        return created;
     }
 }
 

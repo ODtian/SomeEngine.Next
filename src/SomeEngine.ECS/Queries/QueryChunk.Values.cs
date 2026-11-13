@@ -33,7 +33,7 @@ public readonly partial struct QueryChunk
     {
         RequireWrite();
         World world = _chunk.Archetype.World;
-        world.RequireValue<T>(true);
+        world.RequireValueRange<T>(true, _chunk, _start + row, 1);
         world.RequireWriteRow(_chunk, _start + row);
         if (ComponentType<T>.IsControlledType || ComponentType<T>.IsIndexedType || ComponentType<T>.IsGroupedType)
             throw new InvalidOperationException("Use the component's typed write view or Set entry.");
@@ -48,7 +48,7 @@ public readonly partial struct QueryChunk
     public bool WasWritten<T>(ulong since) where T : struct
     {
         if (!ComponentType<T>.TracksWritesType || !Has<T>()) return false;
-        _chunk.Archetype.World.RequireValue<T>(false,
+        _chunk.Archetype.World.RequireValueRange<T>(false, _chunk, _start, Count,
             ComponentType<T>.Value.UsesStructureWrites ? WorldValueKind.Table : WorldValueKind.Changes);
         return _chunk.Changes![_chunk.Columns[ComponentType<T>.TypeId].ColumnPlusOne - 1].LastWrite > since;
     }
@@ -59,7 +59,7 @@ public readonly partial struct QueryChunk
     private bool Changed<T>(int row, ulong since, bool added) where T : struct
     {
         if (!ComponentType<T>.TracksWritesType || added && !ComponentType<T>.TracksAddedType || !Has<T>(row)) return false;
-        _chunk.Archetype.World.RequireValue<T>(false,
+        _chunk.Archetype.World.RequireValueRange<T>(false, _chunk, _start + row, 1,
             ComponentType<T>.Value.UsesStructureWrites ? WorldValueKind.Table : WorldValueKind.Changes);
         ref ComponentChanges changes = ref _chunk.Changes![_chunk.Columns[ComponentType<T>.TypeId].ColumnPlusOne - 1];
         ulong version = ComponentType<T>.TracksAddedType

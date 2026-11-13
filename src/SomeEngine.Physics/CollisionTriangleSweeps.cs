@@ -54,7 +54,7 @@ internal static partial class CollisionTriangles
         return found;
     }
 
-    private static bool Inside(Vector3 point, Vector3 a, Vector3 b, Vector3 c, Vector3 normal)
+    internal static bool Inside(Vector3 point, Vector3 a, Vector3 b, Vector3 c, Vector3 normal)
         => Vector3.Dot(Vector3.Cross(b - a, point - a), normal) >= 0
         && Vector3.Dot(Vector3.Cross(c - b, point - b), normal) >= 0
         && Vector3.Dot(Vector3.Cross(a - c, point - c), normal) >= 0;
@@ -100,7 +100,7 @@ internal static partial class CollisionTriangles
         return true;
     }
 
-    private static Vector3 ClosestPoint(Vector3 point, Vector3 a, Vector3 b, Vector3 c)
+    internal static Vector3 ClosestPoint(Vector3 point, Vector3 a, Vector3 b, Vector3 c)
     {
         Vector3 ab = b - a, ac = c - a, ap = point - a;
         float d1 = Vector3.Dot(ab, ap), d2 = Vector3.Dot(ac, ap);

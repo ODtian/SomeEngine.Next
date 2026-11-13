@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using SomeEngine.Animation;
+using SomeEngine.Core.ECS;
+using SomeEngine.Core.ECS.Systems;
 using SomeEngine.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
@@ -14,6 +16,7 @@ public enum FrameStage : byte
     PlatformInput,
     InterfaceInput,
     GameInputAndSimulation,
+    GameTransforms,
     ViewRebuild,
     InterfaceUpdate,
     Animation,
@@ -33,6 +36,7 @@ public readonly record struct ViewTiming(int RebuildCount, int ComputationCount,
 /// <summary>Game-world interface systems, with input before simulation and layout before extraction.</summary>
 public sealed class GameFrameSystems : IDisposable
 {
+    public IGameFramePhysics? Physics { get; set; }
     private readonly World _world;
     private readonly (FrameStage Stage, SystemGroup<ImmediateSystemContext>? Systems)[] _stages;
     private readonly ViewRebuildSystem _rebuild = new();
@@ -48,6 +52,7 @@ public sealed class GameFrameSystems : IDisposable
             stage is FrameStage.PlatformInput or FrameStage.Extraction
                 ? null : new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world)))).ToArray();
         AnimationSystems.AddDefaults(Group(FrameStage.Animation));
+        Group(FrameStage.GameTransforms).Add(new TransformSystem());
         if (includeInterface)
         {
             Group(FrameStage.InterfaceInput).Add(new HitTestSystem());
@@ -70,6 +75,21 @@ public sealed class GameFrameSystems : IDisposable
 
     /// <summary>Runs after simulation; the application extracts the completed result afterwards.</summary>
     public void UpdateViews(double deltaSeconds) => UpdateViewsCore(deltaSeconds, measure: false);
+
+    /// <summary>Consumes completed physics for this Game frame and submits the following due steps.</summary>
+    public void UpdateFrame(double deltaSeconds) => UpdateFrame(deltaSeconds, new NoFrameReader());
+
+    public void UpdateFrame<TReader>(double deltaSeconds, in TReader reader) where TReader : struct, IGameFrameReader
+    {
+        Physics?.AdvanceTime(deltaSeconds);
+        UpdateViews(deltaSeconds);
+        reader.Read(_world);
+        Physics?.SubmitDueSteps();
+    }
+    private readonly struct NoFrameReader : IGameFrameReader
+    {
+        public void Read(World world) { }
+    }
 
     /// <summary>Runs the same view stages and returns measurement data for the completed frame.</summary>
     public ViewTiming MeasureViews(double deltaSeconds) => UpdateViewsCore(deltaSeconds, measure: true);
@@ -106,6 +126,8 @@ public sealed class GameFrameSystems : IDisposable
             };
             using (site is null ? default : EngineTrace.Begin(site)) stage.Systems.Update(ref context);
             yield return stage.Systems.CompleteAsync();
+            if (stage.Stage == FrameStage.GameInputAndSimulation && Physics is { } physics)
+                yield return physics.ConsumeCompleted().WaitAsync();
             if (!measure) continue;
             double elapsed = Stopwatch.GetElapsedTime(stageStarted).TotalMilliseconds;
             switch (stage.Stage)
@@ -144,7 +166,11 @@ public sealed class GameFrameSystems : IDisposable
 
     public void Dispose()
     {
-        for (int index = _stages.Length - 1; index >= 0; index--)
-            _stages[index].Systems?.Dispose();
+        try { Physics?.Dispose(); }
+        finally
+        {
+            for (int index = _stages.Length - 1; index >= 0; index--)
+                _stages[index].Systems?.Dispose();
+        }
     }
 }
