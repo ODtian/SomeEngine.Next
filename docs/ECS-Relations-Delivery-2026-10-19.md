@@ -1,10 +1,12 @@
 # ECS 关系查询逐项交付证据（2026-10-19）
 
-本页逐项对应 [#231](https://github.com/ODtian/SomeEngine.Next/issues/231) 的功能、分包、NativeAOT 与性能验收。业务 Body/Hair 和 Number 属于可执行例子；固定查询族、借用读取、键/bitmap/空间实现由共享项目交付。固定输入见[测量配置](ECS-Relations-Measurement-Configuration.md)，每份报告的实际 SourceCommit、Backend、完整队列命令和原始输出见[持久证据](evidence/ECS-Relations-2026-10-19/)。
+> 原始测量归档已于 2026-11-13 移出仓库。本页提到的记录可在提交 `0cbf73dc` 的 `docs/evidence/ECS-Relations-2026-10-19/` 下读取。
+
+本页逐项对应 [#231](https://github.com/ODtian/SomeEngine.Next/issues/231) 的功能、分包、NativeAOT 与性能验收。业务 Body/Hair 和 Number 属于可执行例子；固定查询族、借用读取、键/bitmap/空间实现由共享项目交付。固定输入见[测量配置](ECS-Relations-Measurement-Configuration.md)，每份报告的实际 SourceCommit、Backend、完整队列命令和原始输出见持久证据。
 
 公开接口的原名去向、包归属、主要持有处与Wiki事实入口统一列在[接口调整表](ECS-Relations-API-Changes-2026-10-19.md)。
 
-最终 C# 源码为 `c0effa290eee225c296f779a85b9d79109d789a5`。本轮 r45 的稀疏和均匀并行反馈均等价，median/p95均满足≤1.01；按每个case最近一次实际完成记录汇总，108/108场景等价，126/126必验指标达到批准条件，原≤1.00严格通过114/126。[实际两项与完整来源](ECS-Relations-Performance-2026-10-19.md#几何空工作在分区形成处剔除r45)保留各自源码、原始报告、绝对ticks和队列边界。启用状态三入口成员维护、生成器签名公共规则和行为检查拆分已完成，[双轴审阅记录](evidence/ECS-Relations-2026-10-19/code-review-final.md)关联实际增量检查与分区压缩复核。
+最终 C# 源码为 `c0effa290eee225c296f779a85b9d79109d789a5`。本轮 r45 的稀疏和均匀并行反馈均等价，median/p95均满足≤1.01；按每个case最近一次实际完成记录汇总，108/108场景等价，126/126必验指标达到批准条件，原≤1.00严格通过114/126。[实际两项与完整来源](ECS-Relations-Performance-2026-10-19.md#几何空工作在分区形成处剔除r45)保留各自源码、原始报告、绝对ticks和队列边界。启用状态三入口成员维护、生成器签名公共规则和行为检查拆分已完成，双轴审阅记录关联实际增量检查与分区压缩复核。
 
 | 最新记录来源 | 场景数 | 必验指标数 | 对应实测 |
 | --- | ---: | ---: | --- |
@@ -13,9 +15,9 @@
 | `5b6c96e8` · r41 | 4 | 4 | 关联场景与大规模配对回归 |
 | `c0effa29` · r45 | 2 | 2 | 最终共享分区实现的稀疏及均匀并行反馈 |
 
-[逐case映射](evidence/ECS-Relations-2026-10-19/focused-native-r45/latest-case-coverage.json)依实际FinishedAtUtc取最新完整记录，[汇总](evidence/ECS-Relations-2026-10-19/focused-native-r45/latest-case-coverage-summary.json)与[CSV](evidence/ECS-Relations-2026-10-19/focused-native-r45/latest-case-coverage.csv)保存同一来源关系。H1/H2同函数对照见[独立记录](evidence/ECS-Relations-2026-10-19/final-hh-r38/control-summary.md)。
+逐case映射依实际FinishedAtUtc取最新完整记录，汇总与CSV保存同一来源关系。H1/H2同函数对照见独立记录。
 
-完整矩阵基线为 C# 源码 `51c8ce75949cf16d7190e14028c655f526d5697b` 的 r38：108个NativeAOT场景全部等价，126条必验记录中114条满足原精度median、p95均≤1.01。当次12条余项及各侧绝对耗时保留在[历史逐项表](evidence/ECS-Relations-2026-10-19/final-native-r38/approved-summary.json)。最终c0源码的14个包生产阶段全0、使用方JIT/NativeAOT实际运行和IL/四原生路径读取已完成，见[实际包证据](ECS-Relations-Packages-AOT-2026-10-19.md#243-最终实际包刷新)。
+完整矩阵基线为 C# 源码 `51c8ce75949cf16d7190e14028c655f526d5697b` 的 r38：108个NativeAOT场景全部等价，126条必验记录中114条满足原精度median、p95均≤1.01。当次12条余项及各侧绝对耗时保留在历史逐项表。最终c0源码的14个包生产阶段全0、使用方JIT/NativeAOT实际运行和IL/四原生路径读取已完成，见[实际包证据](ECS-Relations-Packages-AOT-2026-10-19.md#243-最终实际包刷新)。
 
 后续源码`393a9fbf009aa2e8269636fdf532551271a85bc5`的r39覆盖12条原余项和两个关联场景：14项全部等价，15条必验指标按≤1.01通过12条。9项相关行为检查通过；Default、Key、Mutual的逐结果输出地址读取已由实际原生指令确认消去。三条本轮余项及绝对ticks见[性能反馈](ECS-Relations-Performance-2026-10-19.md#输出与并行前缀改动反馈r39)。
 
@@ -54,8 +56,8 @@
 | 规格验收项 | 持久记录 |
 | --- | --- |
 | 九类全部变体×小/中/大、公开输入与等价 | [固定108场景配置](ECS-Relations-Measurement-Configuration.md)、[MeasurementCases](../benchmarks/SomeEngine.ECS.Relations.Benchmarks/MeasurementCases.cs)、[运行器](../benchmarks/SomeEngine.ECS.Relations.Benchmarks/RelationsMeasurements.cs)；逐case原始报告的Equivalence保存完整核对后的数量、消费数组和前16行 |
-| 各case原精度median及p95均≤1.01，并单列H1/H2同函数波动 | [实际结果与架构优化](ECS-Relations-Performance-2026-10-19.md)；[r38双口径原精度表](evidence/ECS-Relations-2026-10-19/final-native-r38/approved-summary.json)保留原生≤1.00的Passed及ApprovedRatioLimit=1.01判断；[同函数对照](evidence/ECS-Relations-2026-10-19/final-hh-r38/control-summary.md)独立列示 |
+| 各case原精度median及p95均≤1.01，并单列H1/H2同函数波动 | [实际结果与架构优化](ECS-Relations-Performance-2026-10-19.md)；r38双口径原精度表保留原生≤1.00的Passed及ApprovedRatioLimit=1.01判断；同函数对照独立列示 |
 | 维护+查询、完整帧、真实消费端到端 | 同一[结果报告](ECS-Relations-Performance-2026-10-19.md)中分别列出MaintenanceAndQuery、FrameTotal、PairsAndConsume |
 | 串并行提交至完成、吞吐量与真实内存 | 每份原始报告的ScheduledPairOutput、分布和IndexMemory；[内存统计范围](ECS-Relations-Measurement-Configuration.md)与[统计源码](../benchmarks/SomeEngine.ECS.Relations.Benchmarks/IndexMemory.cs) |
-| 原始波动、全线程分配、设备/提交/命令/队列 | [原始报告格式与读取](evidence/ECS-Relations-2026-10-19/README.md)；逐帧ticks、轮序、IQR/stddev、进程内存和各队列result/stdout/stderr |
+| 原始波动、全线程分配、设备/提交/命令/队列 | 原始报告格式与读取；逐帧ticks、轮序、IQR/stddev、进程内存和各队列result/stdout/stderr |
 | 实测差值落实优化并刷新实际包 | [架构成本与各轮证据](ECS-Relations-Performance-2026-10-19.md)；[最终八包、JIT与NativeAOT](ECS-Relations-Packages-AOT-2026-10-19.md) |

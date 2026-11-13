@@ -165,9 +165,9 @@ world.Replace(animation, parameters);
 
 `tools/SomeEngine.Animation.Checks` 在独立消费者程序及 NativeAOT 中复用完整泛型算法、公开叶节点、共享实例和条件。性能入口分别记录编译、实例化、图推进、算法求值、控制、分配和保留内存；冷期构建的对象与共享数组按实际记录，热帧按具体组合批次执行。队列编号、测量配置及原始输出沿 [[harness/Harness-Performance-Evidence|性能证据]] 保存。
 
-2026-10-16 的完整类型化图与核心定向检查通过 27 项，队列 `01c002753d7a438b89c8ff24354c7e7e` 退出码 0。该批包含独立共享实例、公式参数更新、编译截止时间重定目标、用户条件与公开叶回收；完整命令见 [[architecture/animation/Animation-Extension#Verification|核心验证]]，原始输出见 [[evidence/Animation/2026-10-16/Typed-Execution|类型化执行证据]]。
+2026-10-16 的完整类型化图与核心定向检查通过 27 项，队列 `01c002753d7a438b89c8ff24354c7e7e` 退出码 0。该批包含独立共享实例、公式参数更新、编译截止时间重定目标、用户条件与公开叶回收；完整命令见 [[architecture/animation/Animation-Extension#Verification|核心验证]]，原始输出位于提交 `0cbf73dc` 的 `wiki/evidence/Animation/2026-10-16/Typed-Execution.md`。
 
-既有 18 项公开图编排中，17 项在队列 `596e263075544938b03ffc9912204152` 通过；销毁句柄的清理路径修复后，在队列 `956116ffcd8044deb491f5d2a0900856` 专项通过。命令、生命周期说明及全部原始记录见 [[evidence/Animation/2026-10-16/Graph-Checks|图行为证据]]。
+既有 18 项公开图编排中，17 项在队列 `596e263075544938b03ffc9912204152` 通过；销毁句柄的清理路径修复后，在队列 `956116ffcd8044deb491f5d2a0900856` 专项通过。命令、生命周期说明及全部原始记录位于提交 `0cbf73dc` 的 `wiki/evidence/Animation/2026-10-16/Graph-Checks.md`。
 
 完整输出范围卸载在队列 `919494fbe0f443ef98a93f3e9c6ec2ba` 复用编译产物专项通过，移除的字段保持当前值，其余输出继续沿编译区间播放。
 

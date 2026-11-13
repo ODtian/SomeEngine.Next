@@ -26,7 +26,5 @@
 - [[architecture/shader/Shader-Block-Residency-Refactor|Shader Block and Residency]]
 
 ## Evidence and history
-- [[evidence/RHI/Performance-Evidence-2026-08-17]]
-- [[evidence/RHI/Performance-Evidence-2026-08-18]]
-- [[evidence/RHI/Performance-Evidence-2026-08-20]]
+- 2026-08-17、08-18、08-20 的性能测量记录位于提交 `0cbf73dc` 的 `wiki/evidence/RHI/`
 - [[history/RHI/Refactor-Checkpoint-2026-08-09]]

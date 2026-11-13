@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)][string]$Series,
-    [string]$Destination = 'docs/evidence/ECS-Relations-2026-10-19'
+    [string]$Destination = 'artifacts/ecs-relations/evidence'
 )
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))

@@ -1,5 +1,7 @@
 # 关系查询优化的公开接口去向
 
+> 原始测量归档已于 2026-11-13 移出仓库。本页提到的记录可在提交 `0cbf73dc` 的 `docs/evidence/ECS-Relations-2026-10-19/` 下读取。
+
 本页索引 #231/#243 实现、审阅和真实 NativeAOT 成本反馈中的接口调整。具体语义由各行链接的 Wiki 页面持有；实现、行为检查与包消费记录由[交付索引](ECS-Relations-Delivery-2026-10-19.md)关联。Body/Hair、DefaultContacts 和 Number/Total2 是业务例子，共享组件读取、关系族及许可操作属于库设计。
 
 | 原入口或读取方式 | 当前入口 | 包归属与数据持有 | 事实说明与实现 |
@@ -26,7 +28,7 @@
 | 查询来源只向输出转发身份行 | IQueryRelationOutput增加scoped QueryRow值参数重载，IQueryRelation增加相同行参数的Matches重载 | ECS.Relations查询绑定；QueryIdentityOutput在公开终端适配IRelationOutput.Add(in identity)，来源的泛型输出约束使用查询专用接口 | [借用行转发](../wiki/architecture/ECS/Relation-Queries.md#查询回调中的组件引用)、[查询专用输出与谓词接口](../src/SomeEngine.ECS.Relations/IQueryRelationOutput.cs) |
 | 筛选适配器与递归执行体逐层复制和回写输出值 | QueryIdentityOutput.Value持有唯一活动输出，各层RelationOutputReference借用该终端 | ECS.Relations；公开终端取得一次输出值并在finally一次归还状态，各层在同步范围持托管引用，支持Span输出和提前结束 | [输出状态](../wiki/architecture/ECS/Relation-Queries.md#语义关系查询)、[内部输出引用](../src/SomeEngine.ECS.Relations/RelationOutputReference.cs) |
 | 单成员来源经Access和成员两层读取 | IQueryRelationEnumerable.ReadsFromSingleQuery事实与QueryDefinition.CanWrite公开读取 | ECS.Relations来源声明全部参与者属于唯一集合；ECS定义持有访问模式 | [单集合读取范围](../wiki/architecture/ECS/Relation-Queries.md)、[RelationQuery](../src/SomeEngine.ECS.Relations/RelationQuery.cs)、[QueryDefinition](../src/SomeEngine.ECS/Queries/QueryDefinition.cs) |
-| 终端为同一只读定义重复登记和释放查询 | 单输入只读终端按定义引用相等借用原句柄，派生定义在终端范围取得和释放 | ECS.Relations；原查询的主要持有者管理句柄，终端保留实际ExecuteQuery范围与查询释放finally；手写入口使用同一复用规则 | [单集合读取范围](../wiki/architecture/ECS/Relation-Queries.md)、[RelationQuery](../src/SomeEngine.ECS.Relations/RelationQuery.cs)、[聚焦生命周期回执](evidence/ECS-Relations-2026-10-19/commands-r32-checks.json) |
+| 终端为同一只读定义重复登记和释放查询 | 单输入只读终端按定义引用相等借用原句柄，派生定义在终端范围取得和释放 | ECS.Relations；原查询的主要持有者管理句柄，终端保留实际ExecuteQuery范围与查询释放finally；手写入口使用同一复用规则 | [单集合读取范围](../wiki/architecture/ECS/Relation-Queries.md)、[RelationQuery](../src/SomeEngine.ECS.Relations/RelationQuery.cs)、聚焦生命周期回执 |
 | readonly RelationQuery与BitmapFilter来源字段经约束实例调用形成元数据临时副本 | 两类普通struct各以一个值字段持有具体描述，RelationQuery.Enumerable继续按值返回 | ECS.Relations；元数据方法直接读取描述声明，关系与具体实现按原只读语义调用，实际枚举由执行体值副本消费，输出原地更新 | [描述与执行范围](../wiki/architecture/ECS/Relation-Queries.md#语义关系查询)、[位图描述](../wiki/architecture/ECS/Bitmap-Relation-Queries.md#类型化实现)、[RelationQuery](../src/SomeEngine.ECS.Relations/RelationQuery.cs)、[BitmapFilter](../src/SomeEngine.ECS.Relations/BitmapFilter.cs) |
 | 固定身份例子在组件绑定前形成两端QueryRow | FixedCandidatePairs转发已形成的参与身份，BitmapRelation按第一行与组件、第二行与组件依次绑定 | 业务例子持候选身份；ECS.Relations持通用绑定行为；多层身份筛选各自在自身范围绑定，已知行来源沿原查询专用接口复用 | [固定身份设计与成本](../wiki/architecture/ECS/Bitmap-Relation-Queries.md#业务例子和手写对照)、[FixedCandidatePairs](../benchmarks/SomeEngine.ECS.Benchmarks/Relations/BitmapCandidatePairs.cs)、[BitmapRelation](../src/SomeEngine.ECS.Relations/BitmapRelation.cs) |
 | IKeyPairing.TryPair接收整份RelationQueryViews | TryPair以scoped in接收第一、第二成员查询；KeyPairs薄入口向桶循环传入具体成员与访问输入 | ECS.Relations；原查询持有成员与访问状态，语义和实现以scoped in保留只读调用含义 | [键枚举与组合](../wiki/architecture/ECS/Key-Relation-Queries.md#枚举和组合)、[IKeyPairing](../src/SomeEngine.ECS.Relations/IKeyPairing.cs)、[KeyPairs](../src/SomeEngine.ECS.Relations/KeyPairs.cs) |
