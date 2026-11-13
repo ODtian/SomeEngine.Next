@@ -1,8 +1,9 @@
+using SomeEngine.ECS.Systems;
 using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.ECS.Comparison;
 
-internal static class ChunkChecks
+internal static partial class ChunkChecks
 {
     internal static void Run()
     {
@@ -22,9 +23,9 @@ internal static class ChunkChecks
         var one = new ChangeHealth();
         var two = new Move();
         var three = new Calculate();
-        query.ForEach<Health, ChangeHealth>(ref one);
-        query.ForEach<Position, Velocity, Move>(ref two);
-        query.ForEach<Position, Velocity, Health, Calculate>(ref three);
+        one.Execute(world, query: query);
+        two.Execute(world, query: query);
+        three.Execute(world, query: query);
         int rowsSeen = 0, ranges = 0;
         long total = 0;
         using (var scope = query.Open())
@@ -81,18 +82,18 @@ internal static class ChunkChecks
     {
         if (!condition) throw new InvalidOperationException(message);
     }
-    private struct ChangeHealth : IComponentAction<Health>
+    private partial struct ChangeHealth : IJobChunk
     {
         public void Execute(Span<Health> values) { foreach (ref var value in values) value.Value++; }
     }
-    private struct Move : IComponentAction<Position, Velocity>
+    private partial struct Move : IJobChunk
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities)
         {
             for (int i = 0; i < positions.Length; i++) positions[i].X += velocities[i].X;
         }
     }
-    private struct Calculate : IComponentAction<Position, Velocity, Health>
+    private partial struct Calculate : IJobChunk
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<Health> health)
         {

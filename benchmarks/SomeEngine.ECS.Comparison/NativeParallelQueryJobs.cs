@@ -3,7 +3,7 @@ namespace SomeEngine.ECS.Comparison;
 internal sealed partial class SomeEngineWorld
 {
     internal override void PrepareNativeQueryJobs()
-        => QueryJobs = new SourceQueryJobs(new SomeEngine.ECS.Systems.SystemRunner(_world, GetJobScheduler(), ((Count + 3) / 4 + 63) & ~63),
+        => QueryJobs = new SourceQueryJobs(_world, new SomeEngine.ECS.Systems.SystemRunner(_world, GetJobScheduler(), ((Count + 3) / 4 + 63) & ~63),
             _world.Query<Position, Velocity>());
 }
 internal sealed partial class EasyEcsWorld

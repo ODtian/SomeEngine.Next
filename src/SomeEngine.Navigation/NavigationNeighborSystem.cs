@@ -102,7 +102,7 @@ public sealed class NavigationNeighbors(float cellSize = 2)
 
     internal void SetPrediction(Entity entity, ReadOnlySpan<NavigationTrajectoryPoint> points)
     {
-        if (!_indices.TryGetValue(entity, out int index)) return;
+        int index = _indices[entity];
         if (_predictions[index] is null || _predictions[index].Length < points.Length)
             _predictions[index] = new NavigationTrajectoryPoint[points.Length];
         points.CopyTo(_predictions[index]);
@@ -141,12 +141,13 @@ public sealed class NavigationNeighbors(float cellSize = 2)
 
 }
 
-public sealed class NavigationNeighborSystem<TMotion, TReader> : IDisposable
+public sealed partial class NavigationNeighborSystem<TMotion, TReader> : IDisposable
     where TMotion : unmanaged, IComponent
     where TReader : struct, INavigationMotionReader<TMotion>
 {
     private readonly World _world;
     private readonly Query _actors;
+    private readonly Query _predictedActors;
     private readonly SystemRunner _runner;
     private readonly JobResourceAccess[] _buildAccesses;
     private readonly JobResourceAccess _dataWrite;
@@ -160,6 +161,8 @@ public sealed class NavigationNeighborSystem<TMotion, TReader> : IDisposable
         _runner = new(world, scheduler);
         _actors = world.Query(new QueryDescription().With<NavigationAgent>().With<AvoidanceAgent>().With<TMotion>()
             .Optional<Buffer<NavigationTrajectoryPoint>>());
+        _predictedActors = world.Query(new QueryDescription().With<NavigationAgent>().With<AvoidanceAgent>().With<TMotion>()
+            .With<Buffer<NavigationTrajectoryPoint>>());
         _dataWrite = JobResourceAccess.Write(scheduler.GetResourceToken(Data));
         JobResourceAccess[] values = ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses()
             .ReadRandom<NavigationAgent>().ReadRandom<AvoidanceAgent>().ReadRandom<TMotion>()
@@ -175,7 +178,8 @@ public sealed class NavigationNeighborSystem<TMotion, TReader> : IDisposable
         JobHandle reset = Scheduler.Schedule(new ResetNeighbors(Data), _dataWrite,
             Scheduler.CombineDependencies([_completion, motionReady, predictionReady]));
         JobHandle collected = _runner.Schedule(_actors, new CollectNeighbors(Data), reset, parallel: false);
-        _completion = Scheduler.Schedule(new BuildNeighbors(_world, _actors, Data), _buildAccesses, collected);
+        JobHandle predicted = _runner.Schedule(_predictedActors, new CollectPredictions(Data), collected, parallel: false);
+        _completion = Scheduler.Schedule(new BuildNeighbors(_world, _actors, Data), _buildAccesses, predicted);
         return _completion;
     }
     public void Dispose()
@@ -187,31 +191,20 @@ public sealed class NavigationNeighborSystem<TMotion, TReader> : IDisposable
     private readonly struct ResetNeighbors(NavigationNeighbors data) : IJob
     { public void Execute() => data.BeginCollection(); }
 
-    private readonly struct CollectNeighbors(NavigationNeighbors data) : IChunkAction
+    private readonly partial struct CollectNeighbors(NavigationNeighbors data) : IJobEntity
     {
-        private static readonly ChunkAccess[] Inputs = [ChunkAccess.Read<NavigationAgent>(hasResources: true),
-            ChunkAccess.Read<AvoidanceAgent>(), ChunkAccess.Read<TMotion>(),
-            ChunkAccess.ReadOptionalBuffer<NavigationTrajectoryPoint>()];
-        public static ReadOnlySpan<ChunkAccess> Components => Inputs;
         public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(data);
-        public static void CollectResources(SystemChunk rows, ref JobResourceAccessBuilder resources) =>
-            ComponentResources.CollectRange<NavigationAgent, NavigationAgentResources>(rows.Read<NavigationAgent>(), ref resources);
-        public void Execute(SystemChunk rows)
-        {
-            ReadOnlySpan<TMotion> motions = rows.Read<TMotion>();
-            ReadOnlySpan<AvoidanceAgent> avoidances = rows.Read<AvoidanceAgent>();
-            ReadOnlySpan<NavigationAgent> agents = rows.Read<NavigationAgent>();
-            for (int row = 0; row < rows.Count; row++)
-            {
-                Entity entity = rows.Entities[row];
-                data.Add(new(entity, TReader.Read(in motions[row]), avoidances[row], agents[row].Profile));
-                if (rows.Has<Buffer<NavigationTrajectoryPoint>>(row))
-                {
-                    using ReadOnlyBuffer<NavigationTrajectoryPoint> prediction = rows.ReadBuffer<NavigationTrajectoryPoint>(row);
-                    data.SetPrediction(entity, prediction.AsSpan());
-                }
-            }
-        }
+        public void Execute(Entity entity, [JobResources<NavigationAgentResources>] in NavigationAgent agent,
+            in AvoidanceAgent avoidance, in TMotion motion)
+            => data.Add(new(entity, TReader.Read(in motion), avoidance, agent.Profile));
+    }
+
+    /// <summary>Runs after every actor was collected, so each predicted actor already has its index.</summary>
+    private readonly partial struct CollectPredictions(NavigationNeighbors data) : IJobEntity
+    {
+        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(data);
+        public void Execute(Entity entity, ReadOnlyBuffer<NavigationTrajectoryPoint> prediction)
+            => data.SetPrediction(entity, prediction.AsSpan());
     }
     private readonly struct BuildNeighbors(World world, Query actors, NavigationNeighbors data) : IJob
     { public void Execute() => data.BuildIndex(world, actors); }

@@ -61,20 +61,20 @@ internal sealed partial class SomeEngineWorld
     {
         if (randomMode == 3) { PrepareSystemGroupJobs(); return; }
         if (randomMode != 0) { PrepareRandomQueryJobs(randomMode); return; }
-        QueryJobs = new SourceQueryJobs(new SystemRunner(_world, GetJobScheduler()), _world.Query<Position, Velocity>());
+        QueryJobs = new SourceQueryJobs(_world, new SystemRunner(_world, GetJobScheduler()), _world.Query<Position, Velocity>());
     }
-    private sealed class SourceQueryJobs(SystemRunner runner, Query query) : IQueryJobs
+    private sealed class SourceQueryJobs(World world, SystemRunner runner, Query query) : IQueryJobs
     {
         public void Run(bool scheduled, bool parallel, bool dependent)
         {
             var action = new MovePositions();
             if (scheduled)
             {
-                JobHandle first = runner.Schedule<Position, Velocity, MovePositions>(query, action, parallel: parallel);
-                (dependent ? runner.Schedule<Position, Velocity, MovePositions>(query, action, dependency: first, parallel: parallel) : first).Complete();
+                JobHandle first = runner.Schedule(query, action, parallel: parallel);
+                (dependent ? runner.Schedule(query, action, first, parallel) : first).Complete();
             }
-            else if (parallel) runner.ExecuteParallel<Position, Velocity, MovePositions>(query, action);
-            else runner.Execute<Position, Velocity, MovePositions>(query, ref action);
+            else if (parallel) runner.ExecuteParallel(query, action);
+            else SystemRunner.Execute(world, action, query);
         }
         public void Dispose() { }
     }

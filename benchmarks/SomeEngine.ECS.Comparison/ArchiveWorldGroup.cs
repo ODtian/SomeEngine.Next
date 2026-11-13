@@ -25,16 +25,16 @@ internal sealed partial class NativeFullArchiveWorld<TValues>
     { var group = Store.ConnectArchiveGroup(scheduler, () => Version); Systems.Bind(group); return group; }
 }
 
-internal sealed class SourceArchiveGroup : ArchiveWorldGroup
+internal sealed partial class SourceArchiveGroup : ArchiveWorldGroup
 {
     private readonly SystemGroup _group;
     internal SourceArchiveGroup(World world, Scheduler scheduler)
     {
         _group = new(world, scheduler); Query query = world.Query<Position, Velocity>();
-        _group.Add<Position, Velocity, Move>(query, new());
-        _group.Add<Position, Velocity, Move>(query, new());
+        _group.Add(new Move(), query);
+        _group.Add(new Move(), query);
     }
-    private readonly struct Move : IComponentAction<Position, Velocity>
+    private readonly partial struct Move : IJobChunk
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities)
             => ComponentMath.Move(positions, velocities);

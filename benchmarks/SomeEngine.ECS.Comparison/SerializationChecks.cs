@@ -8,7 +8,7 @@ using System.Buffers;
 
 namespace SomeEngine.ECS.Comparison;
 
-internal static class SerializationChecks
+internal static partial class SerializationChecks
 {
     private struct ArchiveValue(int value) : IAddedComponent, IRemovedComponent { internal int Value = value; }
     private readonly record struct ArchiveStep(int Value) : IEnableableComponent;
@@ -27,7 +27,7 @@ internal static class SerializationChecks
         public object Clone() => new ArchiveResource(Items[0]);
         public void Dispose() => Released = true;
     }
-    private readonly struct AdvanceArchive : IComponentAction<ArchiveValue, ArchiveStep>
+    private readonly partial struct AdvanceArchive : IJobChunk
     {
         public void Execute(Span<ArchiveValue> values, ReadOnlySpan<ArchiveStep> steps)
         { for (int i = 0; i < values.Length; i++) values[i].Value += steps[i].Value; }
@@ -94,7 +94,7 @@ internal static class SerializationChecks
         var secondEdge = world.CreateRelation(firstParent, entities[1], new ArchiveEdge(32));
         Relations<ArchiveEdge>.SetOrdered(world, firstParent, RelationAdjacencyRole.Outgoing, true, [secondEdge.Entity, firstEdge.Entity]);
         var group = new SystemGroup(world, scheduler, 128);
-        SystemState state = group.Add<ArchiveValue, ArchiveStep, AdvanceArchive>(world.Query<ArchiveValue, ArchiveStep>(), new AdvanceArchive());
+        SystemState state = group.Add(new AdvanceArchive(), world.Query<ArchiveValue, ArchiveStep>());
         ulong baseline = world.Version;
         group.Execute();
         world.Remove<ArchiveValue>(entities[5]);

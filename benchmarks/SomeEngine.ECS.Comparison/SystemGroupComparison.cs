@@ -130,10 +130,10 @@ internal sealed partial class SomeEngineWorld
         {
             _frame = frame; _group = new(world, scheduler);
             Query query = world.Query<Position, Velocity>();
-            _first = _group.Add<Position, Velocity, MovePositions>(query, new(), commands: commands);
+            _first = _group.Add(new MovePositions(), query, commands);
             SystemState finish = _group.AddJob(new FinishGroup(frame), structureWrite: true);
             _group.After(finish, _first);
-            _second = _group.Add<Position, Velocity, MovePositions>(query, new());
+            _second = _group.Add(new MovePositions(), query);
             _group.After(_second, finish);
         }
         private readonly struct FinishGroup(SystemGroupFrame<Entity, DeferredEntity, SomeCommandComparison, SomeHierarchyComparison> frame) : IJob

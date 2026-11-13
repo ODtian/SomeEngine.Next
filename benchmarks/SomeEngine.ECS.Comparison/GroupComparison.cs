@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Systems;
 using Friflo.Engine.ECS;
 
 namespace SomeEngine.ECS.Comparison;
@@ -36,8 +37,7 @@ internal static class GroupInputs
     }
 }
 
-internal struct GroupPass(int[] output, int count, int key) : IComponentAction<Position, Velocity, GroupedNumber>,
-    EasyEcs.IForEachBatch<Position, Velocity, GroupedNumber>
+internal struct GroupPass(int[] output, int count, int key) : EasyEcs.IForEachBatch<Position, Velocity, GroupedNumber>
 {
     internal int Count = count;
     internal bool Valid = true;
@@ -346,6 +346,14 @@ internal readonly struct DefaultGrouping : IGroupingBackend<DefaultEcs.Entity, D
 internal sealed partial class SomeEngineWorld
 {
     private Query[]? _groupQueries;
+    private readonly JobResult<GroupPass> _groupPass = new();
+
+    private readonly partial struct GroupPassJob(JobResult<GroupPass> pass) : IJobChunk
+    {
+        public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<GroupedNumber> numbers)
+            => pass.Value.Execute(positions, velocities, numbers);
+        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(pass);
+    }
     private SomeEngine.ECS.Entities.Entity[] _groupChangedEntities = [];
     private GroupedNumber[] _groupChangedValues = [];
     private void PrepareGroups(string workload)
@@ -382,9 +390,9 @@ internal sealed partial class SomeEngineWorld
         GroupProjectionCalls = GroupProjection.Calls;
         for (int i = 0; i < 8; i++)
         {
-            var pass = new GroupPass(GroupMembers, GroupMemberCount, i + 4);
-            _groupQueries![i].ForEach<Position, Velocity, GroupedNumber, GroupPass>(ref pass);
-            FinishGroupPass(in pass);
+            _groupPass.Value = new GroupPass(GroupMembers, GroupMemberCount, i + 4);
+            new GroupPassJob(_groupPass).Execute(_world, query: _groupQueries![i]);
+            FinishGroupPass(in _groupPass.Value);
         }
     }
 }

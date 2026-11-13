@@ -4,11 +4,6 @@ using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.ECS;
 
-public interface IComponentAction<T> where T : struct
-{
-    void Execute(Span<T> values);
-}
-
 public sealed class QueryDescription
 {
     private QueryDefinition? _definition;
@@ -291,97 +286,6 @@ public partial struct Query
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private readonly void RefreshIfNeeded() => _data.RefreshIfNeeded(_world);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void ForEach<T, TAction>(ref TAction action)
-        where T : struct where TAction : struct, IComponentAction<T>
-    {
-        if (_world.Execution is null) ForEachValues<T, TAction>(ref action, false);
-        else ForEachWithExecution<T, TAction, WorldExecutionQueryPolicy>(ref action, new(_world.Execution));
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    internal void ForEachWithExecution<T, TAction, TExecution>(ref TAction action, TExecution execution)
-        where T : struct where TAction : struct, IComponentAction<T>
-        where TExecution : struct, IQueryExecutionPolicy
-    {
-        World world = _world;
-        execution.EnterQuery(this, [ComponentType<T>.TypeId]);
-        try
-        {
-            if (ComponentType<T>.IsControlledType || ComponentType<T>.IsIndexedType || ComponentType<T>.IsGroupedType)
-                throw new InvalidOperationException("Use the component's typed write view or Set entry.");
-            bool borrowRead = execution.CanBorrowStructureRead;
-            if (!borrowRead) world.BeginRead(true);
-            try
-            {
-                RefreshIfNeeded();
-                ForEachMatchedValues<T, TAction>(ref action);
-            }
-            finally { if (!borrowRead) world.EndRead(true); }
-        }
-        finally { execution.Exit(); }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void ForEachValues<T, TAction>(ref TAction action, bool withExecution)
-        where T : struct where TAction : struct, IComponentAction<T>
-    {
-        if (ComponentType<T>.IsControlledType || ComponentType<T>.IsIndexedType || ComponentType<T>.IsGroupedType) throw new InvalidOperationException("Use the component's typed write view or Set entry.");
-        World world = _world;
-        bool borrowRead = withExecution && world.Execution!.CanBorrowStructureRead;
-        if (!borrowRead) world.BeginRead(withExecution);
-        try
-        {
-            RefreshIfNeeded();
-            ForEachMatchedValues<T, TAction>(ref action);
-        }
-        finally { if (!borrowRead) world.EndRead(withExecution); }
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private void ForEachMatchedValues<T, TAction>(ref TAction action)
-        where T : struct where TAction : struct, IComponentAction<T>
-    {
-        if (_world.Execution is null && _data.AllRows && _singleValues is { } buffer
-            && buffer.TypeId == ComponentType<T>.TypeId)
-        {
-            buffer.ForEach<T, TAction>(ref action);
-            return;
-        }
-        if (_world.HasMultipleChunks) { ForEachChunks<T, TAction>(ref action); return; }
-        int type = ComponentType<T>.TypeId;
-        QueryMatch[] matches = _matches;
-        int length = _count;
-        ulong version = 0;
-        for (int i = 0; i < length; i++)
-        {
-            QueryMatch match = matches[i];
-            Chunk chunk = match.Archetype.PrimaryChunk;
-            int count = chunk.Count;
-            if (count == 0) continue;
-            Span<T> values = ColumnEntry.Span<T>(ref chunk.Columns[type], count);
-            if (match.Filter is null)
-            {
-                if (ComponentType<T>.TracksWritesType) _world.StampRange<T>(chunk, 0, count, ref version);
-                action.Execute(values);
-            }
-            else ExecuteFiltered<T, TAction>(chunk, match.Filter, values, ref action, ref version);
-        }
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private void ExecuteFiltered<T, TAction>(Chunk chunk, QueryRowFilter filter, Span<T> values, ref TAction action, ref ulong version)
-        where T : struct where TAction : struct, IComponentAction<T>
-    {
-        int next = 0;
-        while (filter.Next(chunk, _since, ref next, out int start, out int count))
-        {
-            if (ComponentType<T>.TracksWritesType) _world.StampRange<T>(chunk, start, count, ref version);
-            action.Execute(values.Slice(start, count));
-        }
-    }
-
 }
 
 public ref partial struct QueryScope

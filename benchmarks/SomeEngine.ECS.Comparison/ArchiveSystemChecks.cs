@@ -6,9 +6,9 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Comparison;
 
-internal static class ArchiveSystemChecks
+internal static partial class ArchiveSystemChecks
 {
-    private readonly struct Advance : IComponentAction<SaveCounter, Position>
+    private readonly partial struct Advance : IJobChunk
     {
         public void Execute(Span<SaveCounter> counters, ReadOnlySpan<Position> positions)
         { foreach (ref SaveCounter counter in counters) counter.Value++; }
@@ -21,8 +21,8 @@ internal static class ArchiveSystemChecks
         var entities = new Entity[128];
         for (int i = 0; i < entities.Length; i++) entities[i] = world.Create(new SaveCounter(2, i), new Position { X = i });
         var group = new SystemGroup(world, scheduler, 64);
-        group.Add<SaveCounter, Position, Advance>(world.Query<SaveCounter, Position>(), new Advance());
-        group.Add<SaveCounter, Position, Advance>(world.Query<SaveCounter, Position>(), new Advance());
+        group.Add(new Advance(), world.Query<SaveCounter, Position>());
+        group.Add(new Advance(), world.Query<SaveCounter, Position>());
         var registry = new SerializationRegistry()
             .Register<SaveCounter, SaveSchema.CounterCodec>(SaveSchema.Key(1, "SystemCounter"))
             .Register<Position, SaveSchema.PositionCodec>(SaveSchema.Key(2, "SystemPosition"));

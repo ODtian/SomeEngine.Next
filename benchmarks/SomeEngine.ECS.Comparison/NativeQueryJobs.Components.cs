@@ -11,12 +11,12 @@ internal interface INativeTripleQuery<T> where T : struct, INativeTripleRange
 {
     int EntityCount { get; }
     void Build(NativeQueryRanges<T> ranges);
-    void Execute<TAction>(ref TAction action) where TAction : struct, IComponentAction<Position, Velocity, JobOrdinal>;
+    void Execute<TAction>(ref TAction action) where TAction : struct, IColumnPass<Position, Velocity, JobOrdinal>;
 }
 
 internal sealed class NativeQueryJobs<T, TQuery, TAction> : IQueryJobs
     where T : struct, INativeTripleRange where TQuery : struct, INativeTripleQuery<T>
-    where TAction : struct, IComponentAction<Position, Velocity, JobOrdinal>
+    where TAction : struct, IColumnPass<Position, Velocity, JobOrdinal>
 {
     private readonly Scheduler _scheduler;
     private readonly TQuery _query;

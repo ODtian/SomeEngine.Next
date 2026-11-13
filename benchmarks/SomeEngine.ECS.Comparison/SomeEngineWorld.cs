@@ -1,4 +1,5 @@
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Systems;
 using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Comparison;
@@ -229,8 +230,7 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void IterateOneRanges()
     {
-        var action = new FlipHealth();
-        _one.ForEach<Health, FlipHealth>(ref action);
+        new FlipHealth().Execute(_world, query: _one);
     }
 
     internal override void IterateTwo()
@@ -242,8 +242,7 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void IterateTwoRanges()
     {
-        var action = new MovePositions();
-        _two.ForEach<Position, Velocity, MovePositions>(ref action);
+        new MovePositions().Execute(_world, query: _two);
     }
 
     internal override void IterateSimd()
@@ -255,8 +254,7 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void IterateSimdRanges()
     {
-        var action = new MoveVectors();
-        _two.ForEach<Position, Velocity, MoveVectors>(ref action);
+        new MoveVectors().Execute(_world, query: _two);
     }
 
     internal override void IterateThree()
@@ -269,8 +267,7 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void IterateThreeRanges()
     {
-        var action = new ReadThreeColumns();
-        _three.ForEach<Position, Velocity, Health, ReadThreeColumns>(ref action);
+        new ReadThreeColumns().Execute(_world, query: _three);
     }
 
     internal override void IterateFiltered()
@@ -282,8 +279,7 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void IterateFilteredRanges()
     {
-        var action = new FlipHealth();
-        _filtered.ForEach<Health, FlipHealth>(ref action);
+        new FlipHealth().Execute(_world, query: _filtered);
     }
 
     internal override void ReadRandom()
@@ -311,24 +307,24 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     internal override void ReplaceBatch()
         => _world.Set<Position>(_lookupEntities, ReplacementPosition);
 
-    private struct FlipHealth : IComponentAction<Health>
+    private partial struct FlipHealth : IJobChunk
     {
         public void Execute(Span<Health> values) => ComponentMath.Flip(values);
     }
 
-    private struct MovePositions : IComponentAction<Position, Velocity>
+    private partial struct MovePositions : IJobChunk
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities)
             => ComponentMath.Move(positions, velocities);
     }
 
-    private struct MoveVectors : IComponentAction<Position, Velocity>
+    private partial struct MoveVectors : IJobChunk
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities)
             => ComponentMath.MoveSimd(positions, velocities);
     }
 
-    private struct ReadThreeColumns : IComponentAction<Position, Velocity, Health>
+    private partial struct ReadThreeColumns : IJobChunk
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<Health> health)
             => ComponentMath.ReadThree(positions, velocities, health);

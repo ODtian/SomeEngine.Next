@@ -55,13 +55,11 @@ internal sealed partial class SourceFullArchiveWorld
     internal override TrackedArchiveJobs ConnectTrackedJobs(Scheduler scheduler) => new SourceTrackedArchiveJobs(this, scheduler);
 }
 
-internal sealed class SourceTrackedArchiveJobs : TrackedArchiveJobs
+internal sealed partial class SourceTrackedArchiveJobs : TrackedArchiveJobs
 {
     private readonly World _world;
     private readonly Query _query;
     private readonly SystemRunner _runner;
-    private readonly SystemAccesses _accesses = new SystemAccesses().ReadSparse<SaveLink>()
-        .ReadResource<ResourceData<ArchiveResources.Kind0>>().ReadRandom<Parent<SaveTree>>();
     private readonly Apply _action;
     private JobHandle _last;
     internal SourceTrackedArchiveJobs(SourceFullArchiveWorld world, Scheduler scheduler) : base(world, world.Entities)
@@ -72,12 +70,12 @@ internal sealed class SourceTrackedArchiveJobs : TrackedArchiveJobs
     internal override void Run(string mode)
     {
         bool dependent = mode == "dependent"; BeginRun(dependent);
-        if (mode == "execute") { Apply action = _action; _runner.Execute<SaveCounter, Position, Apply>(_query, ref action, _accesses); }
-        else if (mode == "parallel") _runner.ExecuteParallel<SaveCounter, Position, Apply>(_query, _action, _accesses);
+        if (mode == "execute") SystemRunner.Execute(_world, _action, _query);
+        else if (mode == "parallel") _runner.ExecuteParallel(_query, _action);
         else
         {
-            _last = _runner.Schedule<SaveCounter, Position, Apply>(_query, _action, _accesses);
-            if (dependent) _last = _runner.Schedule<SaveCounter, Position, Apply>(_query, _action, _accesses, _last);
+            _last = _runner.Schedule(_query, _action);
+            if (dependent) _last = _runner.Schedule(_query, _action, _last);
             _last.Complete();
         }
         EndRun();
@@ -91,7 +89,10 @@ internal sealed class SourceTrackedArchiveJobs : TrackedArchiveJobs
             || _world.Query(new QueryDescription().WithAdded<SaveCounter>(BeforeVersion)).Count != 0)
             throw new InvalidOperationException("Source tracked query exact changes and summaries differ.");
     }
-    private readonly struct Apply(World world, Entity[] entities, Entity secondRoot) : IComponentAction<SaveCounter, Position>
+    [JobRead(typeof(Parent<SaveTree>))]
+    [JobRead(typeof(SaveLink), JobStorage.Sparse)]
+    [JobRead(typeof(ResourceData<ArchiveResources.Kind0>), JobStorage.Resource)]
+    private readonly partial struct Apply(World world, Entity[] entities, Entity secondRoot) : IJobChunk
     {
         public void Execute(Span<SaveCounter> counters, ReadOnlySpan<Position> positions)
         {

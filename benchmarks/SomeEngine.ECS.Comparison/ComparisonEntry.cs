@@ -91,11 +91,6 @@ internal static class ComparisonEntry
             Console.WriteLine("All five system groups: cached graph, two row stages, command playback/results, deferred hierarchy maintenance and completed system baselines passed.");
             return 0;
         }
-        if (args[0] == "check-system-arities")
-        {
-            SystemChecks.CheckArities();
-            return 0;
-        }
         if (args[0] == "check-save-external")
         {
             ExternalReferenceChecks.Run();

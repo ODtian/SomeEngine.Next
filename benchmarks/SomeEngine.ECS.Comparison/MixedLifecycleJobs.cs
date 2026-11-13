@@ -22,18 +22,19 @@ internal abstract class MixedLifecycleJobs(int count) : IDisposable
     public abstract void Dispose();
 }
 
-internal sealed class SourceMixedLifecycleJobs : MixedLifecycleJobs
+internal sealed partial class SourceMixedLifecycleJobs : MixedLifecycleJobs
 {
     private readonly Query _query;
     private readonly SystemRunner _runner;
     internal SourceMixedLifecycleJobs(World world, Scheduler scheduler, int count) : base(count)
     { _query = world.Query<Position, Velocity>(); _runner = new(world, scheduler); }
     internal override void Schedule()
-    { Last = _runner.Schedule<Position, Velocity, Move>(_query, new(Rows), dependency: Last); Runs++; }
-    private readonly struct Move(LifecycleRows rows) : IComponentAction<Position, Velocity>
+    { Last = _runner.Schedule(_query, new Move(Rows), Last); Runs++; }
+    private readonly partial struct Move(LifecycleRows rows) : IJobChunk
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities)
         { ComponentMath.Move(positions, velocities); Interlocked.Add(ref rows.Count, positions.Length); }
+        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(rows);
     }
     public override void Dispose() => Complete();
 }

@@ -47,36 +47,6 @@ public sealed partial class SystemGroup(World world, Scheduler scheduler, int ra
         }
     }
 
-    public SystemState Add<T, TAction>(Query query, in TAction action,
-        SystemAccesses? accesses = null, CommandBatch? commands = null, bool parallel = true)
-        where T : struct where TAction : struct, IComponentAction<T>
-        => Add<T, T, SystemRunner.SingleAction<T, TAction>>(query, new(action), accesses, commands, parallel);
-
-    public SystemState Add<T1, T2, TAction>(Query query, in TAction action,
-        SystemAccesses? accesses = null, CommandBatch? commands = null,
-        bool parallel = true)
-        where T1 : struct where T2 : struct where TAction : struct, IComponentAction<T1, T2>
-    {
-        var system = new ComponentSystem<T1, T2, TAction>(_runner, world, scheduler, query,
-            action, accesses, commands, parallel);
-        system.State.Index = _systems.Count;
-        _systems.Add(system);
-        _changed = true;
-        return system.State;
-    }
-
-    public SystemState Add<T1, T2, T3, TAction>(Query query, in TAction action,
-        SystemAccesses? accesses = null, CommandBatch? commands = null, bool parallel = true)
-        where T1 : struct where T2 : struct where T3 : struct where TAction : struct, IComponentAction<T1, T2, T3>
-    {
-        var system = new ComponentSystem<T1, T2, T3, TAction>(_runner, world, scheduler, query,
-            action, accesses, commands, parallel);
-        system.State.Index = _systems.Count;
-        _systems.Add(system);
-        _changed = true;
-        return system.State;
-    }
-
     public void After(SystemState system, SystemState predecessor)
     {
         _systems[system.Index].ExplicitPredecessors.Add(predecessor.Index);
@@ -228,31 +198,6 @@ public sealed partial class SystemGroup(World world, Scheduler scheduler, int ra
         protected bool ChangesStructure => changesStructure;
     }
 
-    private sealed class ComponentSystem<T1, T2, TAction>(SystemRunner runner, World world, Scheduler scheduler,
-        Query query, TAction action, SystemAccesses? accesses, CommandBatch? commands,
-        bool parallel) : SystemEntry(accesses, commands is not null)
-        where T1 : struct where T2 : struct where TAction : struct, IComponentAction<T1, T2>
-    {
-        protected override void AddComponents()
-        {
-            Values.Add(new(ComponentType<T1>.TypeId, WorldValueKind.Table, true, ComponentType<T1>.TracksWritesType));
-            Values.Add(new(ComponentType<T2>.TypeId, WorldValueKind.Table, false, ComponentType<T2>.TracksWritesType));
-            AddQueryReads(query, ComponentType<T1>.TypeId, ComponentType<T2>.TypeId);
-            for (int type = 0; type < ComponentTypes.Count; type++)
-                if (query.Description.Changed.Has(type)) Values.Add(new(type, WorldValueKind.Table, false, true));
-        }
-
-        internal override JobHandle Schedule(JobHandle dependency)
-        {
-            var jobs = (WorldJobs)world.Execution!;
-            jobs.BeginUse();
-            JobHandle rows;
-            try { rows = runner.Schedule<T1, T2, TAction>(query, action, Accesses, dependency, parallel, State); }
-            catch { commands?.Clear(); jobs.EndUse(); throw; }
-            return scheduler.ScheduleStages(new SystemCompletion(world, jobs, State, commands), rows);
-        }
-    }
-
     private readonly struct SystemCompletion(World world, WorldJobs jobs, SystemState state, CommandBatch? commands) : IStagedJob
     {
         public static int StageCount => 1;
@@ -270,31 +215,6 @@ public sealed partial class SystemGroup(World world, Scheduler scheduler, int ra
         {
             try { commands?.Clear(); }
             finally { jobs.EndUse(); }
-        }
-    }
-
-    private sealed class ComponentSystem<T1, T2, T3, TAction>(SystemRunner runner, World world, Scheduler scheduler,
-        Query query, TAction action, SystemAccesses? accesses, CommandBatch? commands,
-        bool parallel) : SystemEntry(accesses, commands is not null)
-        where T1 : struct where T2 : struct where T3 : struct where TAction : struct, IComponentAction<T1, T2, T3>
-    {
-        protected override void AddComponents()
-        {
-            Values.Add(new(ComponentType<T1>.TypeId, WorldValueKind.Table, true, ComponentType<T1>.TracksWritesType));
-            Values.Add(new(ComponentType<T2>.TypeId, WorldValueKind.Table, false, ComponentType<T2>.TracksWritesType));
-            Values.Add(new(ComponentType<T3>.TypeId, WorldValueKind.Table, false, ComponentType<T3>.TracksWritesType));
-            AddQueryReads(query, ComponentType<T1>.TypeId, ComponentType<T2>.TypeId, ComponentType<T3>.TypeId);
-            for (int type = 0; type < ComponentTypes.Count; type++)
-                if (query.Description.Changed.Has(type)) Values.Add(new(type, WorldValueKind.Table, false, true));
-        }
-        internal override JobHandle Schedule(JobHandle dependency)
-        {
-            var jobs = (WorldJobs)world.Execution!;
-            jobs.BeginUse();
-            JobHandle rows;
-            try { rows = runner.Schedule<T1, T2, T3, TAction>(query, action, Accesses, dependency, parallel, State); }
-            catch { commands?.Clear(); jobs.EndUse(); throw; }
-            return scheduler.ScheduleStages(new SystemCompletion(world, jobs, State, commands), rows);
         }
     }
 }

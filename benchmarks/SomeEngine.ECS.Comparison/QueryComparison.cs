@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Systems;
 using EasyEcs;
 using Friflo.Engine.ECS;
 using System.Runtime.CompilerServices;
@@ -6,8 +7,7 @@ namespace SomeEngine.ECS.Comparison;
 
 // Fixed mode caps each public range at 256 rows. SomeEngine uses fixed 256-row storage chunks;
 // the references expose bounded views over their native chunks or columns.
-internal struct QueryAppendPass(int[] members, int rangeLimit) : IComponentAction<Position, Velocity, Health>,
-    EasyEcs.IForEachBatch<Position, Velocity, Health>
+internal struct QueryAppendPass(int[] members, int rangeLimit) : EasyEcs.IForEachBatch<Position, Velocity, Health>
 {
     internal int Count, Ranges, MaximumRange;
     internal long Total;
@@ -98,6 +98,14 @@ internal abstract partial class ComparisonWorld
 internal sealed partial class SomeEngineWorld
 {
     private Query _queryAppend;
+    private readonly JobResult<QueryAppendPass> _queryAppendPass = new();
+
+    private readonly partial struct QueryAppendJob(JobResult<QueryAppendPass> pass) : IJobChunk
+    {
+        public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<Health> health)
+            => pass.Value.Execute(positions, velocities, health);
+        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(pass);
+    }
     private SomeEngine.ECS.Entities.Entity[] _queryAdded = [];
     private void PrepareQueryAppend(string workload)
     {
@@ -142,7 +150,11 @@ internal sealed partial class SomeEngineWorld
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void QueryBindRanges(ref QueryAppendPass pass)
-        => _queryAppend.ForEach<Position, Velocity, Health, QueryAppendPass>(ref pass);
+    {
+        _queryAppendPass.Value = pass;
+        new QueryAppendJob(_queryAppendPass).Execute(_world, query: _queryAppend);
+        pass = _queryAppendPass.Value;
+    }
 
 }
 

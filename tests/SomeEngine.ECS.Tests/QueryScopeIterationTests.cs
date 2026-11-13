@@ -236,25 +236,6 @@ public class QueryScopeIterationTests
     }
 
     [Fact]
-    public void ExecuteReadWrite_UsesUpdatedTypedPlanAfterNewMatchingArchetype()
-    {
-        using var world = new World();
-        var query = world.Query(
-            new QueryDescription().WithStored<Position>().WithStored<Velocity>());
-
-        var first = CreatePositionVelocity(world, 1, 10);
-
-        Assert.Equal(1, AddVelocityToPosition(world, query));
-
-        var second = CreatePositionVelocity(world, 2, 20);
-        world.Add(second, default(PlayerTag));
-
-        Assert.Equal(2, AddVelocityToPosition(world, query));
-        Assert.Equal(21f, world.Read<Position>(first).X);
-        Assert.Equal(22f, world.Read<Position>(second).X);
-    }
-
-    [Fact]
     public void ExecuteReadWrite_MultiChunkPlanVisitsEveryRow()
     {
         using var world = new World();
@@ -306,23 +287,6 @@ public class QueryScopeIterationTests
         var entity = world.Create(new Position { X = x, Y = x + 1 });
         world.Add(entity, new Velocity { X = vx, Y = vx + 1 });
         return entity;
-    }
-
-    private static int AddVelocityToPosition(World world, Query query)
-    {
-        var add = new AddVelocity();
-        query.ForEach<Position, Velocity, AddVelocity>(ref add);
-        return add.Count;
-    }
-
-    private struct AddVelocity : IComponentAction<Position, Velocity>
-    {
-        public int Count;
-        public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities)
-        {
-            for (int index = 0; index < positions.Length; index++) positions[index].X += velocities[index].X;
-            Count += positions.Length;
-        }
     }
 
     private static Entity[] CollectEntities(World world, Query query)

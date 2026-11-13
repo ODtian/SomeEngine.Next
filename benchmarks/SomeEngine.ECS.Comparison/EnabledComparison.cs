@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Systems;
 using Arch.Core;
 using Friflo.Engine.ECS;
 
@@ -10,7 +11,7 @@ public struct Signal : IEnableableComponent, EasyEcs.IComponent, Friflo.Engine.E
 
 public struct DisabledSignal : IComponent, EasyEcs.IComponent, Friflo.Engine.ECS.IComponent;
 
-internal struct SignalPass(int value) : IComponentAction<Signal>, EasyEcs.IForEachBatch<Signal>
+internal struct SignalPass(int value) : EasyEcs.IForEachBatch<Signal>
 {
     internal int Count;
     public void Execute(Span<Signal> values)
@@ -24,6 +25,13 @@ internal struct SignalPass(int value) : IComponentAction<Signal>, EasyEcs.IForEa
 internal sealed partial class SomeEngineWorld
 {
     private Query? _enabledSignals, _disabledSignals;
+    private readonly JobResult<SignalPass> _activeSignalPass = new(), _disabledSignalPass = new();
+
+    private readonly partial struct SignalPassJob(JobResult<SignalPass> pass) : IJobChunk
+    {
+        public void Execute(Span<Signal> values) => pass.Value.Execute(values);
+        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(pass);
+    }
 
     private static class SignalQueries
     {
@@ -50,12 +58,12 @@ internal sealed partial class SomeEngineWorld
             if (_world.Has<Signal>(entity)) stored++;
             total += _world.Read<Signal>(entity).Value;
         }
-        var active = new SignalPass(7);
-        var disabled = new SignalPass(43);
-        _enabledSignals.GetValueOrDefault().ForEach<Signal, SignalPass>(ref active);
-        _disabledSignals.GetValueOrDefault().ForEach<Signal, SignalPass>(ref disabled);
-        EnabledActiveCount = active.Count;
-        EnabledDisabledCount = disabled.Count;
+        _activeSignalPass.Value = new SignalPass(7);
+        _disabledSignalPass.Value = new SignalPass(43);
+        new SignalPassJob(_activeSignalPass).Execute(_world, query: _enabledSignals.GetValueOrDefault());
+        new SignalPassJob(_disabledSignalPass).Execute(_world, query: _disabledSignals.GetValueOrDefault());
+        EnabledActiveCount = _activeSignalPass.Value.Count;
+        EnabledDisabledCount = _disabledSignalPass.Value.Count;
         EnabledStoredCount = stored;
         ReadTotal = total;
         for (int i = 0; i < Count; i += 4) _world.Enable<Signal>(_entities[i]);

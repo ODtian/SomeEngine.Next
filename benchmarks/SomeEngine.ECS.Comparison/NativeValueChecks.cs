@@ -1,6 +1,8 @@
+using SomeEngine.ECS.Systems;
+
 namespace SomeEngine.ECS.Comparison;
 
-internal static class NativeValueChecks
+internal static partial class NativeValueChecks
 {
     internal static void Run()
     {
@@ -17,9 +19,9 @@ internal static class NativeValueChecks
             Require(ranges.TryGetValues<Position, Velocity, Health>(out _, out _, out _), "filled chunks bind shared columns");
             chunks.Add(rows[0], new Extra());
             Require(!ranges.TryGetValues<Position, Velocity, Health>(out _, out _, out _), "partial chunks retain individual ranges");
-            var action = new CountRanges();
-            ranges.ForEach<Position, Velocity, Health, CountRanges>(ref action);
-            Require(action.Rows == 24 && action.Total == 276 && action.Maximum <= 8
+            var action = new JobResult<RangeCount>();
+            new CountRanges(action).Execute(chunks, query: ranges);
+            Require(action.Value.Rows == 24 && action.Value.Total == 276 && action.Value.Maximum <= 8
                 && chunks.Read<Position>(rows[0]).Y == 8 && chunks.Read<Position>(rows[23]).Y == 8,
                 "bound column ranges preserve chunk limits, membership and writes after layout changes");
         }
@@ -122,9 +124,9 @@ internal static class NativeValueChecks
         world.Destroy(removed);
         Require(!values.TryGetValues<Position, Velocity, Health>(out _, out _, out _) && values.Count == 8,
             "a gap between live rows retains individual ranges");
-        var action = new CountRanges();
-        values.ForEach<Position, Velocity, Health, CountRanges>(ref action);
-        Require(action.Rows == 8 && action.Total == expectedTotal && action.Maximum <= 4
+        var action = new JobResult<RangeCount>();
+        new CountRanges(action).Execute(world, query: values);
+        Require(action.Value.Rows == 8 && action.Value.Total == expectedTotal && action.Value.Maximum <= 4
             && world.Read<Position>(first).Y == 8 && world.Read<Position>(last).Y == 8,
             "individual ranges preserve the live values and writes around the gap");
     }
@@ -163,9 +165,9 @@ internal static class NativeValueChecks
                 Require(position.X == row && position.Y == row + 100 && nodes.Read(entities[row]) == expected[row],
                     "cached reads retain each later entity's complete values after earlier layout growth");
             }
-        var action = new MatchNodeRows(expected);
-        values.ForEach<Position, SomeCopyNode, MatchNodeRows>(ref action);
-        Require(action.Rows == entities.Length && action.OrdinalBits == (1UL << entities.Length) - 1,
+        var action = new JobResult<NodeMatch>();
+        new MatchNodeRows(expected, action).Execute(world, query: values);
+        Require(action.Value.Rows == entities.Length && action.Value.OrdinalBits == (1UL << entities.Length) - 1,
             "two-column ranges retain all corresponding rows after earlier layout growth");
     }
 
@@ -174,36 +176,41 @@ internal static class NativeValueChecks
         if (!condition) throw new InvalidOperationException(behavior);
     }
 
-    private struct MatchNodeRows(SomeCopyNode[] expected) : IComponentAction<Position, SomeCopyNode>
+    private struct NodeMatch { internal int Rows; internal ulong OrdinalBits; }
+
+    private readonly partial struct MatchNodeRows(SomeCopyNode[] expected, JobResult<NodeMatch> result) : IJobChunk
     {
-        internal int Rows;
-        internal ulong OrdinalBits;
         public void Execute(Span<Position> positions, ReadOnlySpan<SomeCopyNode> nodes)
         {
+            ref NodeMatch match = ref result.Value;
             for (int row = 0; row < positions.Length; row++)
             {
                 int ordinal = (int)positions[row].X;
                 Require(positions[row].Y == ordinal + 100 && nodes[row] == expected[ordinal],
                     "two-column callbacks pair each position with its complete node value");
-                Rows++;
-                OrdinalBits |= 1UL << ordinal;
+                match.Rows++;
+                match.OrdinalBits |= 1UL << ordinal;
             }
         }
+        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources)
+        { resources.Read(expected); resources.Write(result); }
     }
 
-    private struct CountRanges : IComponentAction<Position, Velocity, Health>
+    private struct RangeCount { internal int Rows, Maximum; internal long Total; }
+
+    private readonly partial struct CountRanges(JobResult<RangeCount> result) : IJobChunk
     {
-        internal int Rows, Maximum;
-        internal long Total;
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<Health> health)
         {
-            Rows += positions.Length;
-            Maximum = Math.Max(Maximum, positions.Length);
+            ref RangeCount count = ref result.Value;
+            count.Rows += positions.Length;
+            count.Maximum = Math.Max(count.Maximum, positions.Length);
             for (int row = 0; row < positions.Length; row++)
             {
-                Total += (int)positions[row].X;
+                count.Total += (int)positions[row].X;
                 positions[row].Y = velocities[row].X + health[row].Value;
             }
         }
+        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(result);
     }
 }
