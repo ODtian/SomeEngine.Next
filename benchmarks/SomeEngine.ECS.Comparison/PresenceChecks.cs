@@ -13,14 +13,14 @@ internal static class PresenceChecks
         Query present = world.Query(new QueryDescription().With<Position>().With<Velocity>());
         Query absent = world.Query(new QueryDescription().With<Position>().Without<Velocity>());
         Require(Count(present) == 130 && Count(absent) == 0, "queries observe the initial members");
-        using (var cached = world.OpenCachedRead<Velocity>()) Require(cached.Has(entities[0]), "cache binds before removal");
+        using (var cached = world.OpenRead<Velocity>()) Require(cached.Has(entities[0]), "cache binds before removal");
         for (int i = 0; i < entities.Length; i += 2) world.Remove<Velocity>(entities[i]);
         Require(Count(present) == 65 && Count(absent) == 65, "cached queries observe presence changes across words");
         world.Add(entities[0], new Extra { Value = 7 });
         world.Destroy(entities[1]);
         Require(!world.Has<Velocity>(entities[0]) && Count(present) == 64 && Count(absent) == 65,
             "migration and fill hole carry actual component presence");
-        using (var cached = world.OpenCachedRead<Velocity>())
+        using (var cached = world.OpenRead<Velocity>())
             Require(!cached.Has(entities[0]) && cached.Has(entities[3]), "cache follows removal and moved members");
         world.Set(entities[0], new Velocity { X = 9 });
         for (int i = 2; i < entities.Length; i += 2) world.Add(entities[i], new Velocity { X = 2 });

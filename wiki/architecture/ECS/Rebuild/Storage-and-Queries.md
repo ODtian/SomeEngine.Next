@@ -200,7 +200,7 @@ Systems构造范围时已通过Query.GetMatches刷新匹配，同一结构读取
 
 ## 已绑定类型的随机访问
 
-World.Read/Get沿实体记录与列目录定位。OpenRead<T>/OpenWrite<T>为批量随机访问绑定该类型的位置缓存和访问范围，首次使用时建立目录，后续范围复用；主值继续由列缓冲区或Chunk持有。OpenRead对Shared绑定共享主值数组及行编号，OpenWrite按普通可写类型规则开放。OpenCachedRead/Write提供普通类型的直接缓存范围，两组入口复用同一份CachedComponent<T>。
+World.Read/Get沿实体记录与列目录定位。OpenRead<T>/OpenWrite<T>为批量随机访问绑定该类型的位置缓存和访问范围，首次使用时建立目录，后续范围复用；主值继续由列缓冲区或Chunk持有。OpenRead对Shared绑定共享主值数组及行编号，OpenWrite按普通可写类型规则开放。两个入口复用同一份CachedComponent<T>。
 
 下面两列完成同一个含q次读取的批次。点入口逐次定位；类型范围在段外绑定结构/值访问和目录，段内复用。首次范围构造与后续维护进入完整周期。
 
@@ -220,7 +220,7 @@ World.Read/Get沿实体记录与列目录定位。OpenRead<T>/OpenWrite<T>为批
 
 缓存首次建立在BeginValueRead取得的结构/值范围内使用World的查询绑定锁，并在锁内重查类型目录、分配位置数组、登记实际表的紧密缓存列表、填充全部活跃行，最后写入类型目录。首次查询注册复用同一个World锁；后续范围直接取得已建立目录。结构读取范围固定表和行，结构写入沿统一访问规则完成迁移、填洞、新增、移除和列增长，并维护这些表实际登记的紧密缓存项。新增Archetype登记已建立的类型。
 
-QueryStages已持有本次任务的Core读取范围，具体回调执行时同World的HasRangeWrite上下文同时有效。此时OpenCachedRead保留RequireValue<T>(false)，并在这份外层保护内取得或惰性建立缓存，借用其reader及访问frame寿命；普通读取入口和写入继续沿BeginValueRead/EndValueRead配对。CachedReadLookup以release标记配对Dispose，x64沿World 8 B、Used 4 B、两bool与2 B对齐、四byref 32 B保持48 B，新增标记赋值W1，解除时B1，L0。范围内读取的reader增减及frame建立由外层任务承担一次，逐身份代数/组件存在性检查沿原读取内核执行。
+QueryStages已持有本次任务的Core读取范围，具体回调执行时同World的HasRangeWrite上下文同时有效。此时内部的缓存读取保留RequireValue<T>(false)，并在这份外层保护内取得或惰性建立缓存，借用其reader及访问frame寿命；普通读取入口和写入继续沿BeginValueRead/EndValueRead配对。CachedReadLookup以release标记配对Dispose，x64沿World 8 B、Used 4 B、两bool与2 B对齐、四byref 32 B保持48 B，新增标记赋值W1，解除时B1，L0。范围内读取的reader增减及frame建立由外层任务承担一次，逐身份代数/组件存在性检查沿原读取内核执行。
 
 完整周期按B+q·C_cached+m·C_update与q·C_direct比较：B是构建/初始化/发布，q是实际随机访问数，m包含各次行移动及列增长影响的行数。选择类型范围的条件为q·(C_direct−C_cached)>B+m·C_update，各C同时保留源码向量与实测时间。点入口服务逐项定位，类型范围服务重复随机访问。首次构造及后续维护费用分别进入[[Acceptance]]。
 
