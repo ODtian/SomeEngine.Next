@@ -49,7 +49,6 @@
   <Project Path="src\SomeEngine.ECS.SourceGen\SomeEngine.ECS.SourceGen.csproj" />
   <Project Path="src\SomeEngine.Job.Resources\SomeEngine.Job.Resources.csproj" />
   <Project Path="src\SomeEngine.Job\SomeEngine.Job.csproj" />
-  <Project Path="src\SomeEngine.Job.Dots\SomeEngine.Job.Dots.csproj" />
   <Project Path="src\SomeEngine.Generators\SomeEngine.Generators.csproj" />
   <Project Path="src\SomeEngine.Render\SomeEngine.Render.csproj" />
   <Project Path="src\SomeEngine.Render.MaterialBindless\SomeEngine.Render.MaterialBindless.csproj" />
@@ -69,7 +68,6 @@
   <Project Path="tests\SomeEngine.ECS.Fuzz.Tests\SomeEngine.ECS.Fuzz.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.SourceGen.Tests\SomeEngine.ECS.SourceGen.Tests.csproj" />
   <Project Path="tests\SomeEngine.Job.Tests\SomeEngine.Job.Tests.csproj" />
-  <Project Path="tests\SomeEngine.Job.Dots.Tests\SomeEngine.Job.Dots.Tests.csproj" />
   <Project Path="tests\SomeEngine.Assets.Tests\SomeEngine.Assets.Tests.csproj" />
   <Project Path="tests\SomeEngine.Serialization.Tests\SomeEngine.Serialization.Tests.csproj" />
   <Project Path="tests\SomeEngine.Core.Tests\SomeEngine.Core.Tests.csproj" />
