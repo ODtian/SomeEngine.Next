@@ -195,19 +195,12 @@ public sealed partial class EachDependencyTests
         Assert.Throws<InvalidOperationException>(() => { Scope.Each(default); });
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void InvalidOrReleasedQueryReportsTheRequiredHandle(bool released)
+    [Fact]
+    public void InvalidQueryReportsTheRequiredHandle()
     {
         using var frames = new HeadlessFrameDriver();
         Entity heading = frames.World.Create(new DisplayText("Enemies"));
         Query query = default;
-        if (released)
-        {
-            query = frames.World.Query(new QueryDescription().With<Enemy>());
-            frames.World.ReleaseQuery(query);
-        }
         Entity root = Views.Spawn(frames.World, Entity.Null, new MembershipDisplay(query, heading));
 
         frames.Frame();

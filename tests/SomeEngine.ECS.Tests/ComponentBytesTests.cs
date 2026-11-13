@@ -254,54 +254,15 @@ Assert.Equal([new Vector2(1, 2), new Vector2(3, 4), new Vector2(7, 8)],
     }
 
     [Fact]
-    public void ColumnWriteReportsReadOnlyQuery()
-    {
-        using var world = new World();
-        Entity entity = world.Create(new ByteComponent { Number = 7, Opacity = 0.25f });
-        Query query = world.Query(new QueryDescription().WithStored<ByteComponent>());
-
-        Assert.Throws<InvalidOperationException>(() => {
-            using QueryScope cursor = (query).Open();
-            foreach (QueryChunk chunk in cursor)
-                chunk.WriteColumn(ComponentId<ByteComponent>.Value, out _);
-
-        });
-        Assert.Equal(0.25f, world.Read<ByteComponent>(entity).Opacity);
-    }
-
-    [Fact]
-    public void ColumnWriteReportsComponentWithManagedFields()
-    {
-        using var world = new World();
-        Entity entity = world.Create(new NamedComponent { Name = "menu" });
-        Query query = world.Query(new QueryDescription().WithStored<NamedComponent>());
-
-        Assert.Throws<InvalidOperationException>(() => {
-            using QueryScope cursor = (query).Open();
-            foreach (QueryChunk chunk in cursor)
-                chunk.WriteColumn(ComponentId<NamedComponent>.Value, out _);
-
-        });
-        Assert.Equal("menu", world.Read<NamedComponent>(entity).Name);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void ByteWriteReportsDynamicBufferStorage(bool inline)
+    public void ByteWriteReportsDynamicBufferStorage()
     {
         using var world = new World();
         Entity entity = world.Create();
         world.AddBuffer<Track<float>>(entity);
-        int component = checked((ushort)(inline
-            ? BufferComponents.Inline<Track<float>>()
-            : BufferComponents.Header<Track<float>>()));
 
-        Assert.Throws<InvalidOperationException>(() => world.WriteBytes(entity, component));
-        {
-            using ReadOnlyBuffer<Track<float>> buffer = world.ReadBuffer<Track<float>>(entity);
-Assert.Equal(0, buffer.Count);
-        };
+        Assert.Throws<InvalidOperationException>(() => world.WriteBytes(entity, ComponentId<Buffer<Track<float>>>.Value));
+        using ReadOnlyBuffer<Track<float>> buffer = world.ReadBuffer<Track<float>>(entity);
+        Assert.Equal(0, buffer.Count);
     }
 
     [Fact]

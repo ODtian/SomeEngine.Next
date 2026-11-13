@@ -181,7 +181,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
     [Fact]
     public void InvalidImageFittingIsReportedThroughDevelopmentChecks()
     {
-        using Texture texture = CreateTexture(80, 40);
+        Texture texture = CreateTexture(80, 40);
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());

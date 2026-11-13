@@ -326,10 +326,8 @@ public sealed partial class ChildSourceTests
 
     private static InvalidOperationException ReadBuildException(World world)
     {
-        InvalidOperationException? exception = null;
-        world.ExecuteSparseRead<BuildError>((entities, errors) =>
-            exception = Assert.IsType<InvalidOperationException>(Assert.Single(errors.ToArray()).Exception));
-        return exception!;
+        using SparseReadScope<BuildError> errors = world.OpenSparseRead<BuildError>();
+        return Assert.IsType<InvalidOperationException>(Assert.Single(errors.Values.ToArray()).Exception);
     }
 
     private readonly record struct RepeatedChildren(int Count) : IView, IComponent
