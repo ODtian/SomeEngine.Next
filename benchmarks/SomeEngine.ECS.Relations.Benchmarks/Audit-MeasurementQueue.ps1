@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $reports = Join-Path $repositoryRoot "artifacts/ecs-relations/measurements/$Series"
-$destination = Join-Path $repositoryRoot "docs/evidence/ECS-Relations-2026-10-19/$Series/queue-boundaries.json"
+$destination = Join-Path $repositoryRoot "artifacts/ecs-relations/evidence/$Series/queue-boundaries.json"
 $preparation = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot "artifacts/benchmark-queue/$PreparationQueueId/result.json") | ConvertFrom-Json
 $submission = Get-Content -Raw -LiteralPath (Join-Path $reports 'queue-submission.json') | ConvertFrom-Json
 $cases = @(Get-Content -Raw -LiteralPath (Join-Path $reports 'submissions.json') | ConvertFrom-Json | ForEach-Object {

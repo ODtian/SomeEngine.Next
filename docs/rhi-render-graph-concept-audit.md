@@ -74,11 +74,11 @@ v4统计口径已经锁定：同时读取当前工作树的 Roslyn semantic sour
 
 机器图还记录每个节点显式声明的 instance data member、普通方法和 constructor 数量，仅用于定位 wrapper 候选，不自动作删除判断。当前定位到 28 个“一个 data member、没有普通 instance method”的 class/struct（7 public、21 internal/private）；它们仍须逐个检查是否有独立身份、生命周期、不变量或协议角色。
 
-- [完整节点索引](rhi-render-graph-type-dependencies.md)
-- [可直接打开的完整 SVG 图](rhi-render-graph-type-dependencies.svg)
-- [机器可读图](rhi-render-graph-type-dependencies.json)
-- [Graphviz 图](rhi-render-graph-type-dependencies.dot)
-- 生成器：`tools/RhiTypeGraph`；运行 `dotnet run --project tools/RhiTypeGraph/RhiTypeGraph.csproj -- <repository-root>` 可重建 JSON、DOT、SVG 和索引。
+- 完整节点索引：`artifacts/type-graphs/rhi-render-graph-type-dependencies.md`
+- 可直接打开的完整 SVG 图：`artifacts/type-graphs/rhi-render-graph-type-dependencies.svg`
+- 机器可读图：`artifacts/type-graphs/rhi-render-graph-type-dependencies.json`
+- Graphviz 图：`artifacts/type-graphs/rhi-render-graph-type-dependencies.dot`
+- 生成器：`tools/RhiTypeGraph`；运行 `dotnet run --project tools/RhiTypeGraph/RhiTypeGraph.csproj -- <repository-root>` 可在 `artifacts/type-graphs/` 重建 JSON、DOT、SVG 和索引。
 
 这 12 个 rank 只表示“先审计依赖叶子，再审计上层消费者”的工作顺序，不是 12 层架构，也不允许被解释成新的心智模型层级。
 

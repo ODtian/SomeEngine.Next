@@ -1,5 +1,7 @@
 # 关系性能测量配置
 
+> 原始测量归档已于 2026-11-13 移出仓库。本页提到的记录可在提交 `0cbf73dc` 的 `docs/evidence/ECS-Relations-2026-10-19/` 下读取。
+
 来源规格：#231，第 12 票 #243。配置在首轮性能测量前固定，实际列表由 `benchmarks/SomeEngine.ECS.Relations.Benchmarks/MeasurementCases.cs` 的 `MeasurementCases.All` 形成；`--mode list` 输出同一份完整 JSON。业务 Body/Hair、运动与类别规则来自 benchmark 的 Relations 夹具，属于本次业务例子。
 
 设备读取：Intel Xeon E5-2698B v3 @ 2.00GHz，16核/32线程；总内存68,552,818,688字节；Windows 11专业工作站版10.0.26200（build26200）。SDK10.0.113、Runtime10.0.13、win-x64。各份正式报告继续保存其实际CPU标识、处理器数、OS、Framework、GC、JIT配置、WorkerCount、计时频率与完整命令。
@@ -56,7 +58,7 @@
 
 Release NativeAOT 为必验后端，JIT 独立记录。每轮双方各执行8帧，共32轮；每个frame立即依次执行双方，round顺序E/H、H/E交替，因此SideSwitchIntervalFrames=1。每侧256个实际样本，其中128帧先执行、128帧后执行。预热16帧、冷初始化7对、每帧实际调用一次，FramesPerSample=1。最小场景仍执行真实 World/查询和成组候选。分区容量16，实际分区数随树记录。Scheduler采用Fast，双方参数一致。
 
-r31及以前系列保留31×8原始配置，每侧248帧、128先/120后；[r30 HH按SideOrder统计](evidence/ECS-Relations-2026-10-19/controlled-reads-r30/handwritten-order.json)逐项列出这份原始分组。后继统一使用32×8，单帧计时、observer、输入、16warm、7cold与原精度严格门槛沿当前定义。
+r31及以前系列保留31×8原始配置，每侧248帧、128先/120后；r30 HH按SideOrder统计逐项列出这份原始分组。后继统一使用32×8，单帧计时、observer、输入、16warm、7cold与原精度严格门槛沿当前定义。
 
 JIT在同一Release输出目录以PublishAot=false、SelfContained=false及实际SourceRevisionId构建普通托管入口，采用.NET10默认TieredCompilation/ReadyToRun配置，环境项记录为default；双方在同一进程使用相同配置和上述固定预热/采样。JIT报告独立记录Backend、实际命令、源码、原始样本和阶段，NativeAOT验收使用其独立报告。
 

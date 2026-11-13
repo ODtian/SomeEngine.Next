@@ -27,6 +27,6 @@ return await result.ConfigureAwait(false);
 
 查询、删除、扩容及终结释放共用同步范围。公共句柄访问结束处通过 `GC.KeepAlive(this)` 维持索引的存活期。索引自身被 GC 回收时，内部终结路径统一释放其余弱句柄。业务仍持有的值继续按普通引用使用。
 
-行为检查通过普通对象和公开入口验证复用、创建交接、失败/取消重试、回收、分批清理及增长。记录布局、四条检查预算及一次释放顺序由源码核对。命中、托管保留、原生句柄表及清理成本分别记录在 [2026-10-16 性能证据](../evidence/Core/Weak-Values-2026-10-16.md)。
+行为检查通过普通对象和公开入口验证复用、创建交接、失败/取消重试、回收、分批清理及增长。记录布局、四条检查预算及一次释放顺序由源码核对。命中、托管保留、原生句柄表及清理成本分别记录在 2026-10-16 的性能证据，位于提交 `0cbf73dc` 的 `wiki/evidence/Core/Weak-Values-2026-10-16.md`。
 
 .NET 的短弱句柄目标和释放行为参见 [WeakGCHandle<T>](https://learn.microsoft.com/en-us/dotnet/api/system.runtime.interopservices.weakgchandle-1?view=net-10.0)。

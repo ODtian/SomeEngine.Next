@@ -1,10 +1,12 @@
 # ECS 关系包、生成元数据与 NativeAOT 证据
 
+> 原始测量归档已于 2026-11-13 移出仓库。本页提到的记录可在提交 `0cbf73dc` 的 `docs/evidence/ECS-Relations-2026-10-19/` 下读取。
+
 验证日期：2026-10-20。最终八包及使用方验证统一对应 C# 源码 `c0effa290eee225c296f779a85b9d79109d789a5`。工作树为 `F:\.codex\worktrees\ecs-relations-worker-3\SomeEngine.Next`，实际包版本沿用 `0.1.0-relations.231`，feed/cache/Release输出族沿用原目录。性能来源及最终分区实现见[性能记录](ECS-Relations-Performance-2026-10-19.md#几何空工作在分区形成处剔除r45)。
 
 ## #243 最终实际包刷新
 
-[实际生产阶段](evidence/ECS-Relations-2026-10-19/final-packages-r45/codegen-producer-stages.json)保存14个原始阶段的argv、UTC和ExitCode。14项全部Exit0，时间范围01:22:50.2645177Z–01:23:52.0444656Z；原始生产命令归为两个公共任务。六个直接引用恢复到八个SomeEngine包，实际包与生成数量见[产物事实](evidence/ECS-Relations-2026-10-19/final-packages-r45/package-facts.json)。
+实际生产阶段保存14个原始阶段的argv、UTC和ExitCode。14项全部Exit0，时间范围01:22:50.2645177Z–01:23:52.0444656Z；原始生产命令归为两个公共任务。六个直接引用恢复到八个SomeEngine包，实际包与生成数量见产物事实。
 
 | 公共生产任务 | 原始阶段数 | 实际队列编号 | 阶段结果 |
 | --- | ---: | --- | --- |
@@ -13,15 +15,15 @@
 
 两次实际执行均通过1–8元、Item8、加权和204、Count/Any/ref输出与提前结束、Number点读取字面值1、schema/Job元数据、边、键/bitmap/空间组合。串并行首轮均为5对，更新后3对，接触累计为2,2,0,2。Body/Hair、Number和相关规则属于业务例子。
 
-八份nuspec的RepositoryCommit均为本节c0源码。实际消费生成27文件、78个薄入口，按普通关系30、边8、键8、bitmap4、空间28登记；库固定族生成9文件、41个类型声明。使用方IL实际读取17项存储及2项schema注册。[产物事实](evidence/ECS-Relations-2026-10-19/final-packages-r45/package-facts.json)与[登记及恢复包](evidence/ECS-Relations-2026-10-19/final-packages-r45/package-registration-and-packages.json)分别保存这些源数据。
+八份nuspec的RepositoryCommit均为本节c0源码。实际消费生成27文件、78个薄入口，按普通关系30、边8、键8、bitmap4、空间28登记；库固定族生成9文件、41个类型声明。使用方IL实际读取17项存储及2项schema注册。产物事实与登记及恢复包分别保存这些源数据。
 
-本轮使用方DLL为69,120B、UTC01:23:34.4962378Z；Native对象24,930,157B、UTC01:23:50.7250812Z；Native exe为3,997,696B、UTC01:23:51.4308191Z。读取前后对象的时间和尺寸记录在[实际输入事实](evidence/ECS-Relations-2026-10-19/final-packages-r45/package-frozen-inputs.json)。
+本轮使用方DLL为69,120B、UTC01:23:34.4962378Z；Native对象24,930,157B、UTC01:23:50.7250812Z；Native exe为3,997,696B、UTC01:23:51.4308191Z。读取前后对象的时间和尺寸记录在实际输入事实。
 
 ### 最终使用方IL与原生路径
 
-消费任务附加的初次读者使用r38旧产物时间和对象尺寸，输入门控返回2；[初次读者](evidence/ECS-Relations-2026-10-19/final-packages-r45/package-initial-reader-stage.json)及[父任务回执](evidence/ECS-Relations-2026-10-19/final-packages-r45/package-initial-parent-result.json)保存该实际失败。修正读者按本轮products中的实际路径关联时间和尺寸，继续读取同一批成功产物。
+消费任务附加的初次读者使用r38旧产物时间和对象尺寸，输入门控返回2；初次读者及父任务回执保存该实际失败。修正读者按本轮products中的实际路径关联时间和尺寸，继续读取同一批成功产物。
 
-续接公共CPU任务`5bc38d23ffdd4c2fa48b9a115101dbbb`实际01:29:14.3362221Z–01:29:59.5279665Z执行，Exit0。其中r45性能归档01:29:15.2583546Z–01:29:17.8895118Z、IL/四原生函数读取01:29:17.9387633Z–01:29:59.4771984Z均Exit0。生产前置以14个原始阶段全0、两个实际生产QueueId及同一Source为准，原父任务2和续接读者0分别保留。[完整证明](evidence/ECS-Relations-2026-10-19/final-packages-r45/package-codegen-proof.md)、[选定完整IL](evidence/ECS-Relations-2026-10-19/final-packages-r45/package-selected-methods.il)、[四函数原文](evidence/ECS-Relations-2026-10-19/final-packages-r45/package-four-functions.raw.asm)及[读取回执](evidence/ECS-Relations-2026-10-19/final-packages-r45/package-codegen-queue-result.json)关联实际Source和上述产物。
+续接公共CPU任务`5bc38d23ffdd4c2fa48b9a115101dbbb`实际01:29:14.3362221Z–01:29:59.5279665Z执行，Exit0。其中r45性能归档01:29:15.2583546Z–01:29:17.8895118Z、IL/四原生函数读取01:29:17.9387633Z–01:29:59.4771984Z均Exit0。生产前置以14个原始阶段全0、两个实际生产QueueId及同一Source为准，原父任务2和续接读者0分别保留。完整证明、选定完整IL、四函数原文及读取回执关联实际Source和上述产物。
 
 | 原生函数定位 | 完整节内范围 | 指令行数 | 该函数的实际工作 |
 | --- | --- | ---: | --- |
@@ -30,11 +32,11 @@
 | World.ReadEntityQueryRef&lt;Number&lt;int&gt;&gt; | 0x197ea0–0x198293 | 300 | 读取查询数据及版本并返回组件引用 |
 | SpatialTraversal并行PairArrayOutput填充 | 0x1d4180–0x1d502a | 987 | 闭合Default、Mutual许可、角色键与实际实体对输出 |
 
-四行用于定位各自承担的工作；[统计](evidence/ECS-Relations-2026-10-19/final-packages-r45/package-native-statistics.json)与[实际符号](evidence/ECS-Relations-2026-10-19/final-packages-r45/package-native-symbols.json)各记录一次命中。实际IL还保留Item8、17项存储及2项schema注册、QueryJobAccess读取、空间叶判断和并行count/fill，见[登记与恢复包](evidence/ECS-Relations-2026-10-19/final-packages-r45/package-registration-and-packages.json)。
+四行用于定位各自承担的工作；统计与实际符号各记录一次命中。实际IL还保留Item8、17项存储及2项schema注册、QueryJobAccess读取、空间叶判断和并行count/fill，见登记与恢复包。
 
 ## 51c实际包刷新（历史）
 
-[最终阶段与实际命令](evidence/ECS-Relations-2026-10-19/final-packages-r38/package-stages.json)记录14个真实阶段、7个公共队列任务及逐项退出；[八包子阶段](evidence/ECS-Relations-2026-10-19/final-packages-r38/package-pack-stages.json)保留同一独占任务内8条原始 no-build 打包命令的起止与退出。[实际包与生成事实](evidence/ECS-Relations-2026-10-19/final-packages-r38/package-facts.json)记录六个直接 PackageReference、八个实际恢复包，八份 nuspec 的 RepositoryCommit 全部为 `51c8ce75949cf16d7190e14028c655f526d5697b`。生产控制过程使用显式 SourceCommit 与 session，在公共队列外提交和收集各任务。
+最终阶段与实际命令记录14个真实阶段、7个公共队列任务及逐项退出；八包子阶段保留同一独占任务内8条原始 no-build 打包命令的起止与退出。实际包与生成事实记录六个直接 PackageReference、八个实际恢复包，八份 nuspec 的 RepositoryCommit 全部为 `51c8ce75949cf16d7190e14028c655f526d5697b`。生产控制过程使用显式 SourceCommit 与 session，在公共队列外提交和收集各任务。
 
 | 公共任务 | 真实阶段数 | 队列编号 | 结果 |
 | --- | ---: | --- | --- |
@@ -48,13 +50,13 @@
 
 两次实际运行均验证1–8元、Item8、加权和204、Count/Any/ref输出提前结束、NumberPointValue经公开TryReadRef取得字面值1、生成元数据和查询读取、边维护、键/bitmap/空间组合。空间输出均为 `parallel/serial=5; updated=3; consumed counts=2,2,0,2`。Body/Hair、Number与相关规则是业务例子。
 
-fresh 生成目录实际为27文件、78个薄入口：普通关系30、边8、键8、bitmap4、空间28；存储登记17项、schema登记2项。Relations库的固定生成输出为9文件、41个类型声明。[登记源码](evidence/ECS-Relations-2026-10-19/final-packages-r38/EcsTypeRegistration.g.cs.txt)及[完整生产说明](evidence/ECS-Relations-2026-10-19/final-packages-r38/package-validation.md)与本次实际产物相对应。
+fresh 生成目录实际为27文件、78个薄入口：普通关系30、边8、键8、bitmap4、空间28；存储登记17项、schema登记2项。Relations库的固定生成输出为9文件、41个类型声明。登记源码及完整生产说明与本次实际产物相对应。
 
-消费方DLL为69,120B，UTC `2026-10-19T22:01:17.5611514Z`；Native对象为25,066,602B，UTC `2026-10-19T22:01:35.5801336Z`。同源IL和四角色Native证据与这些冻结产物共同保存于[本次包证据目录](evidence/ECS-Relations-2026-10-19/final-packages-r38/)。
+消费方DLL为69,120B，UTC `2026-10-19T22:01:17.5611514Z`；Native对象为25,066,602B，UTC `2026-10-19T22:01:35.5801336Z`。同源IL和四角色Native证据与这些冻结产物共同保存于本次包证据目录。
 
 ### 同源IL与四条原生路径
 
-公共CPU读者 `cb3aed562ed146e69b3467d2735f174a` 于22:07:43.0262901Z–22:08:25.1513559Z执行，exit0；读取前核对全部7个生产任务及14个实际阶段。[完整证明入口](evidence/ECS-Relations-2026-10-19/final-packages-r38/package-codegen-proof.md)、[选定完整IL](evidence/ECS-Relations-2026-10-19/final-packages-r38/package-selected-methods.il)与[四函数原文](evidence/ECS-Relations-2026-10-19/final-packages-r38/package-four-functions.raw.asm)保存实际调用路径。四个符号各命中一次。
+公共CPU读者 `cb3aed562ed146e69b3467d2735f174a` 于22:07:43.0262901Z–22:08:25.1513559Z执行，exit0；读取前核对全部7个生产任务及14个实际阶段。完整证明入口、选定完整IL与四函数原文保存实际调用路径。四个符号各命中一次。
 
 | 实际闭合函数 | 完整节内范围 | 指令行数 | 实际工作 |
 | --- | --- | ---: | --- |
@@ -67,7 +69,7 @@ fresh 生成目录实际为27文件、78个薄入口：普通关系30、边8、�
 
 ## 前次7f8/3b包刷新（历史）
 
-[完整阶段回执](evidence/ECS-Relations-2026-10-19/commands-packages-final.json)保留16个实际执行阶段及生成计数任务的result/stdout/stderr；[生成与包元数据](evidence/ECS-Relations-2026-10-19/package-final-metadata.json)记录两份源码提交、实际包依赖、生成数量与产物时间/字节。六个直接PackageReference恢复到八个`type: package`的SomeEngine依赖，版本均为`0.1.0-relations.231`。全部操作沿下文同一feed/cache/Release/native目录完成。
+完整阶段回执保留16个实际执行阶段及生成计数任务的result/stdout/stderr；生成与包元数据记录两份源码提交、实际包依赖、生成数量与产物时间/字节。六个直接PackageReference恢复到八个`type: package`的SomeEngine依赖，版本均为`0.1.0-relations.231`。全部操作沿下文同一feed/cache/Release/native目录完成。
 
 既有脚本的完整成功流程为14阶段。本次在第12阶段的真实JIT消费中发现Number点读取需要显式读取声明，随后给原成员查询追加`Read<Number<int>>`并提交使用方修正；已生成八个包继续复用，再完成Rebuild/JIT/publish/exe四阶段。使用方实际AssemblyInformationalVersion为`1.0.0+3b582fe541d86d7f556b3f9d6854962d292454ef`，发布命令也显式传入该SourceRevisionId。
 
@@ -107,7 +109,7 @@ fresh 生成目录实际为27文件、78个薄入口：普通关系30、边8、�
 
 此次生成17个Job存储登记、2个schema登记。Relations库的9个固定族/视图文件定义41个固定类型。普通IRelationOutput的Span输出继续只实现身份Add；库内查询输出复用借用行，实际组件引用、行版本、许可回调与输出状态沿各自既有主要持有处。
 
-[最终IL与Native完整方法](evidence/ECS-Relations-2026-10-19/commands-packages-code-final.json)保留使用方与实际包DLL的选定IL块，以及冻结原生对象中四个闭合函数的完整输出；四个原生符号均精确匹配一次。IL队列为`60d0895422044ab1ac184826a2c3d6ee`，Native队列为`e29cdab130204f68a7a777dd5fe27522`，均exit0，DLL/obj的实际时间与字节见同一生成元数据文件。
+最终IL与Native完整方法保留使用方与实际包DLL的选定IL块，以及冻结原生对象中四个闭合函数的完整输出；四个原生符号均精确匹配一次。IL队列为`60d0895422044ab1ac184826a2c3d6ee`，Native队列为`e29cdab130204f68a7a777dd5fe27522`，均exit0，DLL/obj的实际时间与字节见同一生成元数据文件。
 
 ### 前次3b源码的IL与原生四角色（历史）
 

@@ -88,7 +88,7 @@ schedule.Add(new TimelineEndSystem());
 
 `MotionTests` 从消费者程序集验证缓动、值运算、包含托管引用的参数与状态、生命周期、Spring 速度、共享关键帧、逐元素时间和专用批量。`tools/SomeEngine.Animation.Checks` 复用同一消费者源码，提供 Release / NativeAOT 行为与 `--benchmark` 规模成本入口。
 
-2026-10-16 的 Release 定向检查通过 27 项，覆盖 Motion、Timeline、ValueOps 与完整类型化图公开行为；行为规则检查为 0 项违规。队列 `01c002753d7a438b89c8ff24354c7e7e` 退出码 0，原始日志与结果保存在 [[evidence/Animation/2026-10-16/Typed-Execution|类型化执行证据]]。
+2026-10-16 的 Release 定向检查通过 27 项，覆盖 Motion、Timeline、ValueOps 与完整类型化图公开行为；行为规则检查为 0 项违规。队列 `01c002753d7a438b89c8ff24354c7e7e` 退出码 0，原始日志与结果位于提交 `0cbf73dc` 的 `wiki/evidence/Animation/2026-10-16/Typed-Execution.md`。
 
 ```powershell
 & 'F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1' dotnet test tests/SomeEngine.Animation.Tests/SomeEngine.Animation.Tests.csproj -c Release '--filter=FullyQualifiedName~TypedGraphTests|FullyQualifiedName~MotionTests|FullyQualifiedName~TimelineTests|FullyQualifiedName~ValueOpsTests' --disable-build-servers '-m:1' '-nodeReuse:false' '--property:UseSharedCompilation=false' '--property:PublishAot=false'

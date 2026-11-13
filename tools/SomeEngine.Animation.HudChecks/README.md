@@ -16,7 +16,7 @@ Build and execution use the common benchmark queue:
 The JSON output records the adapter, publishing configuration, 128 warmup frames,
 512 samples, animation CPU, full CPU frame, GPU timestamps, Present call intervals,
 allocations, first-frame time and retained memory. The animation P95 budget is
-1 ms, fixed in `wiki/evidence/Animation/2026-10-16/Hud-Workload.md` before measurement.
+1 ms, fixed for #52 before the first measurement.
 The full frame target is 300 Hz, approximately 3.33 ms.
 
 `Phases` separates Views target submission, Animation, Layout, FLIP, extraction,

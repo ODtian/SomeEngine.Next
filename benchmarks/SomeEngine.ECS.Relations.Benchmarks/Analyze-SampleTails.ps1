@@ -2,7 +2,7 @@ param([Parameter(Mandatory)][string]$Series)
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $reports = Join-Path $repositoryRoot "artifacts/ecs-relations/measurements/$Series"
-$destination = Join-Path $repositoryRoot "docs/evidence/ECS-Relations-2026-10-19/$Series/sample-tails.json"
+$destination = Join-Path $repositoryRoot "artifacts/ecs-relations/evidence/$Series/sample-tails.json"
 $submissions = Get-Content -Raw -LiteralPath (Join-Path $reports 'submissions.json') | ConvertFrom-Json
 
 function Percentile([object[]]$Values, [double]$Fraction) {

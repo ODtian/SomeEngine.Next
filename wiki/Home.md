@@ -40,9 +40,9 @@
 
 
 
-## Evidence and history
+## History
 
-Architecture pages define current design. `evidence/` records measurements and source evidence. `history/` preserves superseded decisions and past reconstruction notes; neither overrides current architecture pages.
+Architecture pages define current design. `history/` preserves superseded decisions and past reconstruction notes and does not override current architecture pages. Measurement archives were removed from the repository on 2026-11-13; they remain readable in commit `0cbf73dc` under `wiki/evidence/` and `docs/evidence/`.
 
 ## Assets
 

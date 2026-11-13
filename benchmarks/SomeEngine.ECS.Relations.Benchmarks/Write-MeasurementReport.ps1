@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)][string]$Series,
-    [string]$Destination = 'docs/evidence/ECS-Relations-2026-10-19',
+    [string]$Destination = 'artifacts/ecs-relations/evidence',
     [double]$ApprovedRatioLimit = 1.01
 )
 $ErrorActionPreference = 'Stop'

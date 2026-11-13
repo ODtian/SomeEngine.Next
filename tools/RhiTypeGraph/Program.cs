@@ -39,7 +39,9 @@ if (args.Length != 1)
 
 string repository = Path.GetFullPath(args[0]);
 string sourceRoot = Path.Combine(repository, "src");
-string docsRoot = Path.Combine(repository, "docs");
+// Generated graphs stay in the ignored artifacts tree; the audit pages in docs/ link to this directory.
+string graphRoot = Path.Combine(repository, "artifacts", "type-graphs");
+Directory.CreateDirectory(graphRoot);
 
 MSBuildLocator.RegisterDefaults();
 using MSBuildWorkspace workspace = MSBuildWorkspace.Create();
@@ -656,16 +658,16 @@ var graph = new
 };
 
 var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
-string jsonPath = Path.Combine(docsRoot, documentStem + ".json");
+string jsonPath = Path.Combine(graphRoot, documentStem + ".json");
 await File.WriteAllTextAsync(jsonPath, JsonSerializer.Serialize(graph, jsonOptions) + Environment.NewLine);
 
-string dotPath = Path.Combine(docsRoot, documentStem + ".dot");
+string dotPath = Path.Combine(graphRoot, documentStem + ".dot");
 await File.WriteAllTextAsync(dotPath, BuildDot());
 
-string svgPath = Path.Combine(docsRoot, documentStem + ".svg");
+string svgPath = Path.Combine(graphRoot, documentStem + ".svg");
 await File.WriteAllTextAsync(svgPath, BuildSvg());
 
-string markdownPath = Path.Combine(docsRoot, documentStem + ".md");
+string markdownPath = Path.Combine(graphRoot, documentStem + ".md");
 await File.WriteAllTextAsync(markdownPath, BuildMarkdown());
 
 Console.WriteLine($"nodes={nodes.Count}");
@@ -1352,14 +1354,13 @@ string BuildMarkdown()
         .Append(documentStem).AppendLine(".svg)");
 #if ECS_GRAPH
     builder.AppendLine("- 重新生成：`dotnet run --project tools/RhiTypeGraph/RhiTypeGraph.csproj -p:DefineConstants=ECS_GRAPH -- <repository-root>`");
-    builder.AppendLine("- 所有权判断台账：[`ecs-ownership-audit.md`](ecs-ownership-audit.md)");
+    builder.AppendLine("- 所有权判断台账：[`ecs-ownership-audit.md`](../../docs/ecs-ownership-audit.md)");
 #else
     builder.Append("- 重新生成：`dotnet run --project tools/").Append(toolName).Append('/')
         .Append(toolName).AppendLine(".csproj -- <repository-root>`");
 #endif
 #if !ECS_GRAPH
-    builder.AppendLine("- PNG 预览：[`rhi-render-graph-type-dependencies.png`](rhi-render-graph-type-dependencies.png)");
-    builder.AppendLine("- 判断台账：[`rhi-render-graph-concept-audit.md`](rhi-render-graph-concept-audit.md)");
+    builder.AppendLine("- 判断台账：[`rhi-render-graph-concept-audit.md`](../../docs/rhi-render-graph-concept-audit.md)");
 #endif
     builder.AppendLine();
     builder.AppendLine("## 边口径对账");

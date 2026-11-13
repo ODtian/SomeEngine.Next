@@ -17,5 +17,5 @@ foreach ($script in @('Collect-Measurements.ps1', 'Export-Evidence.ps1', 'Write-
     Write-Host ($stage | ConvertTo-Json -Depth 6 -Compress)
     if ($code -ne 0) { exit $code }
 }
-$evidence = Join-Path $repositoryRoot "docs/evidence/ECS-Relations-2026-10-19/$Series"
+$evidence = Join-Path $repositoryRoot "artifacts/ecs-relations/evidence/$Series"
 Copy-Item -LiteralPath (Join-Path $reportDirectory 'postprocess-stages.json') -Destination (Join-Path $evidence 'postprocess-stages.json') -Force

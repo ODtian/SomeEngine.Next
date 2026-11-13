@@ -11,7 +11,7 @@
 - 当前终态类型：330（Graphics 171，D3D12 42，Null 30，RenderGraph 68，Diagnostics 19）
 - 原始非保留类型残留：0
 - 当前以 `Row` / `Kind` / `Use` / `Owner` 结尾的领域类型：0
-- 当前完整类型与依赖图：[rhi-render-graph-type-dependencies.md](rhi-render-graph-type-dependencies.md)
+- 当前完整类型与依赖图：`artifacts/type-graphs/rhi-render-graph-type-dependencies.md`
 - 机器可读迁移表：[rhi-render-graph-naming-migration.tsv](rhi-render-graph-naming-migration.tsv)
 
 ## 严格 GPU 命令迁移
