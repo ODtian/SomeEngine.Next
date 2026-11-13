@@ -53,7 +53,7 @@ internal static class ChangeChecks
             "destroyed entities remain readable until their old values are consumed");
         world.ClearRemoved<Score>();
         Require(!world.IsAlive(retained), "consuming the final retained fact completes identity release");
-        using (var values = world.OpenCachedWrite<Score>()) values.Set(entities[100], new Score { Value = 8 });
+        using (var values = world.OpenWrite<Score>()) values.Set(entities[100], new Score { Value = 8 });
         changed.Since(beforeRead);
         Require(Count(changed) == 1, "cached writes publish their version to ordinary changed queries");
         Console.WriteLine("Added, Changed, Removed and cleanup lifecycle behavior: passed.");

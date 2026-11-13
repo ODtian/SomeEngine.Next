@@ -10,7 +10,7 @@
 | Core表存储 | Find(types)、GetGroupTables(types).Get(keys)、ReserveRows、MoveKnown | 最终Archetype/Chunk/row；每次范围重取列基址 | 创建、组合修改、恢复 |
 | Core值存储 | 闭合类型Read/Set/Move/Release | 值、索引、版本及容器生命周期一起完成 | 普通入口、批次、命令 |
 | 查询 | Bind(description)、TryGetValues、Open、ForEach、Count、Any | 连续值span、Archetype匹配与本次Chunk范围；寿命见下文 | 同步调用、系统、Job |
-| 随机类型访问 | OpenRead<T>()、OpenWrite<T>()；OpenCachedRead/Write<T>() | POD绑定基址和字节偏移/代数目录，含引用类型绑定typed位置目录；Shared绑定共享读取；Dispose释放访问 | 重复随机读取/普通值写入 |
+| 随机类型访问 | OpenRead<T>()、OpenWrite<T>() | POD绑定基址和字节偏移/代数目录，含引用类型绑定typed位置目录；Shared绑定共享读取；Dispose释放访问 | 重复随机读取/普通值写入 |
 | 生命周期 | 注册实体销毁消费者；PrepareDestroy/ApplyDestroy | 实际局部修改集与完成；每个注册服务一次入口 | Hierarchy、Relations |
 | 关系 | SetParent/SetParentDeferred、Retarget/RetargetDeferred、Maintain | Core主值、原生Children、Applied、差额索引 | 业务、命令、系统 |
 | Job | ExecuteRanges及分阶段访问追加 | 同步返回或工作handle；摘要后释放资源 | SystemRunner |
@@ -18,7 +18,7 @@
 
 检查点实施同时沿[Serialization的原型持有者与预算适用性](Serialization.md#隔离原型的持有者与预算适用性)区分c391670紧凑基线的Generations/FreeIds表示与D的16 B记录副本、独立数组容量复用。405969c已落实D布局及退出块/服务的释放，030ac09把关系头目录增长改为在最终数组填入源字段并复用旧成员数组。容量复用沿该页的目录引用/CaptureNumber刷新规则与独立有效数量字段同步实施；每次Capture的实际临时目录、主值复制、绑定重建及结束寿命进入对应分配/保留账。D目标的达标结论使用匹配其布局及复用策略的实现证据。
 
-OpenRead/OpenWrite先取得结构读，再用[[Jobs]]的同一资源键登记全部类型值/摘要访问。普通类型范围首次建立位置目录，随后一次绑定Used、POD基址及偏移/代数目录首项ref；含引用类型绑定typed位置目录首项ref。OpenCachedRead/Write直接绑定同一目录。Shared读取由OpenRead绑定共享主值数组与行编号。Get/Read引用随范围结束。普通值拷贝入口在调用末释放，索引和拓扑修改走结构写入口。多类型重载一次登记全部声明。Core同步模式保留相同范围寿命，执行连接选择由E承担。
+OpenRead/OpenWrite先取得结构读，再用[[Jobs]]的同一资源键登记全部类型值/摘要访问。普通类型范围首次建立位置目录，随后一次绑定Used、POD基址及偏移/代数目录首项ref；含引用类型绑定typed位置目录首项ref。Shared读取由OpenRead绑定共享主值数组与行编号。Get/Read引用随范围结束。普通值拷贝入口在调用末释放，索引和拓扑修改走结构写入口。多类型重载一次登记全部声明。Core同步模式保留相同范围寿命，执行连接选择由E承担。
 
 动态类型调用先绑定已注册的类型化操作，后续整批复用。Parent、Children和endpoints提供普通只读查询，修改由拓扑入口生成相同Core操作；生成器为受控类型与索引类型限定可写入口。内置Children的公开成员为只读目标视图。
 
@@ -52,10 +52,8 @@ OpenRead/OpenWrite先取得结构读，再用[[Jobs]]的同一资源键登记全
 ```csharp
 ReadLookup<T> OpenRead<T>();
 WriteLookup<T> OpenWrite<T>();
-CachedReadLookup<T> OpenCachedRead<T>();
-CachedWriteLookup<T> OpenCachedWrite<T>();
 
-// 四种范围均为ref struct，持有访问至Dispose。
+// 两种范围均为ref struct，持有访问至Dispose。
 ref readonly T ReadLookup<T>.Read(Entity entity);
 ref readonly T ReadLookup<T>.ReadKnown(Entity entity);
 ref T WriteLookup<T>.Get(Entity entity);
@@ -76,7 +74,7 @@ bool Query.TryGetValues<T1, T2, T3>(out Span<T1> first,
     out ReadOnlySpan<T2> second, out ReadOnlySpan<T3> third);
 ```
 
-Cached范围提供对应Read/Get/Set/Has/Dispose方法。WriteLookup.Set修改该范围内已经存在的普通列。类型注册限定普通可写值、索引值和受控拓扑值的入口，动态调用使用同一类型操作表。
+ReadLookup提供Read/ReadKnown/Has/Dispose，WriteLookup提供Get/GetKnown/Set/SetKnown/Has/Dispose。WriteLookup.Set修改该范围内已经存在的普通列。类型注册限定普通可写值、索引值和受控拓扑值的入口，动态调用使用同一类型操作表。
 
 同步Core的World.Read/Get引用沿既有结构寿命使用。TryGetValues沿同一寿命返回连续值视图：从取得视图到最后一次使用，调用方保持World的结构；下一次结构修改或World释放结束该次借用。连接Job的World.Read/Get从调用方现有访问范围取得凭据；独立调用使用OpenRead/OpenWrite，范围对象持有资源到最后一次引用使用。Open/ForEach返回或传入的ref/span由查询范围持有。值拷贝的TryGet/ReadValue在方法内完成读取与访问释放。
 

@@ -13,7 +13,7 @@ internal static class ChunkChecks
         for (int i = 0; i < original.Length; i++)
             original[i] = world.Create(new Position { X = i }, new Velocity { X = 2 }, new Health { Value = 7 });
         Require(query.Count == 80, "a query observes the initial fixed chunks");
-        using (var cached = world.OpenCachedRead<Position>()) Require(cached.Read(original[63]).X == 63, "bind across initial chunks");
+        using (var cached = world.OpenRead<Position>()) Require(cached.Read(original[63]).X == 63, "bind across initial chunks");
 
         Entity extra = world.Create(new Position(), new Velocity { X = 5 }, new Health { Value = 11 }, new Extra());
         var added = new Entity[96];
@@ -41,7 +41,7 @@ internal static class ChunkChecks
                 }
             }
         Require(rowsSeen == 177 && ranges == 7 && total == 1585, "all fixed ranges produce the requested row results");
-        using (var cached = world.OpenCachedRead<Position>())
+        using (var cached = world.OpenRead<Position>())
             Require(cached.Read(original[63]).X == 10 && cached.Read(added[^1]).X == 8 && cached.Read(extra).X == 17,
                 "cached positions include newly appended chunks and tables");
         world.Destroy(added);
@@ -49,7 +49,7 @@ internal static class ChunkChecks
         var reused = new Entity[64];
         world.Create(reused, new Position { X = 9 }, new Velocity(), new Health());
         Require(query.Count == 145, "reclaimed chunk capacity accepts new rows");
-        using (var cached = world.OpenCachedRead<Position>())
+        using (var cached = world.OpenRead<Position>())
             Require(!cached.Has(added[0]) && !cached.Has(added[^1]) && cached.Read(reused[^1]).X == 9
                 && cached.Read(original[0]).X == 10,
                 "reclaimed chunks invalidate old bindings and retain current values after reuse");

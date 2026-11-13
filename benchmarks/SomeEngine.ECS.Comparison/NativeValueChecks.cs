@@ -148,15 +148,15 @@ internal static class NativeValueChecks
                 entities[(row + groupCount) % entities.Length], row, row * 3 + 7);
             world.Set(entities[row], expected[row]);
         }
-        using (var positions = world.OpenCachedRead<Position>())
-        using (var nodes = world.OpenCachedRead<SomeCopyNode>())
+        using (var positions = world.OpenRead<Position>())
+        using (var nodes = world.OpenRead<SomeCopyNode>())
             Require(positions.Has(entities[groupCount]) && nodes.Has(entities[groupCount]),
                 "cached columns include the later layout before growth");
         Query values = world.Query<Position, SomeCopyNode>();
         _ = values.TryGetValues<Position, SomeCopyNode>(out _, out _);
         world.Reserve<Position, SomeCopyNode, Team>(128);
-        using (var positions = world.OpenCachedRead<Position>())
-        using (var nodes = world.OpenCachedRead<SomeCopyNode>())
+        using (var positions = world.OpenRead<Position>())
+        using (var nodes = world.OpenRead<SomeCopyNode>())
             for (int row = groupCount; row < entities.Length; row++)
             {
                 Position position = positions.Read(entities[row]);
