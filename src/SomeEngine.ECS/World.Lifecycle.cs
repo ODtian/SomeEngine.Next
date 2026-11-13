@@ -154,6 +154,18 @@ public sealed partial class World
         _lifecycleCount = 0;
     }
 
+    /// <summary>
+    /// Ends one step of this World's event producers (destroyed entities and query membership).
+    /// System groups call this once per update; a reader that stays behind for the configured
+    /// number of steps is reported in Debug builds.
+    /// </summary>
+    public void EndStep()
+    {
+        using WorldAccess access = OpenStructure(false);
+        _destroyedLog?.EndStep();
+        foreach (QueryData query in _membershipQueries) query.MembershipLog?.EndStep();
+    }
+
     private void DisposeEventLogs()
     {
         _destroyedLog?.Dispose();

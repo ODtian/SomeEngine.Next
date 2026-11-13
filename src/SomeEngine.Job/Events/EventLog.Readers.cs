@@ -25,7 +25,7 @@ public sealed partial class EventLog<T> where T : unmanaged
         if (_readers.Length == _readerCount) Array.Resize(ref _readers, Math.Max(4, _readerCount * 2));
         var reader = new EventReader<T>(this, _readerCount);
         _readers[_readerCount++] = new ReaderEntry
-        { Id = id, Position = position, LastAdvance = _publishCount, Reader = reader };
+        { Id = id, Position = position, LastAdvance = _stepCount, Reader = reader };
         return reader;
     }
 
@@ -82,7 +82,7 @@ public sealed partial class EventLog<T> where T : unmanaged
             ref ReaderEntry entry = ref _readers[reader.Index];
             DevelopmentCheck.Require(position >= _first && position <= _through && (restore || position >= entry.Position),
                 "The event reader advances within its retained published interval.");
-            if (position != entry.Position) entry.LastAdvance = _publishCount;
+            if (position != entry.Position) entry.LastAdvance = _stepCount;
             entry.Position = position;
         }
     }
@@ -140,7 +140,7 @@ public sealed partial class EventLog<T> where T : unmanaged
             for (int i = 0; i < _readerCount; i++)
             {
                 _readers[i].Position = _through;
-                _readers[i].LastAdvance = _publishCount;
+                _readers[i].LastAdvance = _stepCount;
                 _readers[i].Reader.ClearRead();
             }
         }
@@ -158,7 +158,7 @@ public sealed partial class EventLog<T> where T : unmanaged
             _first = data.Through - (ulong)data.Count;
             _through = _reservedThrough = _allocatedThrough = data.Through;
             _ready = _publishReady = _spaceReady = default;
-            _publishCount = 0;
+            _stepCount = 0;
             for (int i = 0; i < _readerCount; i++)
             {
                 _readers[i].Position = _through;

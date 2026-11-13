@@ -280,15 +280,32 @@ public sealed class EventLogTests
     }
 
     [Fact]
-    public void AnUnadvancedReaderTriggersTheConfiguredDevelopmentCheck()
+    public void AReaderUnadvancedForTheConfiguredStepsTriggersTheDevelopmentCheck()
     {
-        using var log = new EventLog<int>(stalledPublishLimit: 2);
+        using var log = new EventLog<int>(stalledStepLimit: 2);
         using EventReader<int> reader = log.Watch();
         Append(log, 1);
+        log.EndStep();
         Append(log, 2);
-        Assert.Throws<InvalidOperationException>(() => Append(log, 3));
+        Append(log, 3);
+        Assert.Throws<InvalidOperationException>(log.EndStep);
         using EventRead<int> read = reader.Open();
-        Assert.Equal([1, 2], read.First.ToArray());
+        Assert.Equal([1, 2, 3], read.First.ToArray());
+    }
+
+    [Fact]
+    public void ManyPublishesWithinOneStepDoNotReportAReaderThatAdvancesEachStep()
+    {
+        using var log = new EventLog<int>(stalledStepLimit: 2);
+        using EventReader<int> reader = log.Watch();
+        for (int step = 0; step < 4; step++)
+        {
+            for (int value = 0; value < 200; value++) Append(log, value);
+            ulong through;
+            using (EventRead<int> read = reader.Open()) through = read.Through;
+            reader.Advance(through);
+            log.EndStep();
+        }
     }
 #endif
 

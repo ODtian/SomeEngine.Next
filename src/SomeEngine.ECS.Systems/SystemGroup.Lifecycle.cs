@@ -316,9 +316,10 @@ public sealed class SystemGroup<TContext> : IDisposable, ISystemVersions
             ThrowIfDisposed();
             Volatile.Write(ref _lifecycleControlState, LifecycleControlActive);
         }
-
         try
         {
+            // Each group update is one step of the World's event producers.
+            _driver.World?.EndStep();
             // Registration and teardown wait for this execution boundary. The collection cannot
             // change, but no lock is held while drivers or user systems run or wait for Jobs.
             for (int i = 0; i < _nodes.Count; i++)

@@ -12,10 +12,10 @@ public sealed partial class EventLog<T> : IDisposable where T : unmanaged
     private JobResourceToken _storage, _changes;
     private T[] _values;
     private int _start, _openReads;
-    private ulong _first, _through, _reservedThrough, _allocatedThrough, _publishCount;
+    private ulong _first, _through, _reservedThrough, _allocatedThrough, _stepCount;
     private JobHandle _ready, _spaceReady, _publishReady;
     private bool _disposed;
-    private readonly int _stalledPublishLimit;
+    private readonly int _stalledStepLimit;
     private ReaderEntry[] _readers = [];
     private int _readerCount;
     private Dictionary<Guid, EventReader<T>>? _named;
@@ -27,10 +27,10 @@ public sealed partial class EventLog<T> : IDisposable where T : unmanaged
         internal EventReader<T> Reader;
     }
 
-    public EventLog(Scheduler? scheduler = null, int initialCapacity = 0, int stalledPublishLimit = 120)
+    public EventLog(Scheduler? scheduler = null, int initialCapacity = 0, int stalledStepLimit = 120)
     {
         _values = initialCapacity == 0 ? [] : new T[initialCapacity];
-        _stalledPublishLimit = stalledPublishLimit;
+        _stalledStepLimit = stalledStepLimit;
         if (scheduler is not null) BindScheduler(scheduler);
     }
 
@@ -160,6 +160,26 @@ public sealed partial class EventLog<T> : IDisposable where T : unmanaged
         }
     }
 
+    /// <summary>
+    /// Marks the end of one producer step. A reader that still has published events to read and has not
+    /// advanced for the configured number of steps is reported in Debug builds.
+    /// </summary>
+    public void EndStep()
+    {
+        lock (_gate)
+        {
+            CheckActive();
+            ulong step = ++_stepCount;
+            for (int i = 0; i < _readerCount; i++)
+            {
+                ref ReaderEntry reader = ref _readers[i];
+                if (reader.Position >= _through) reader.LastAdvance = step;
+                DevelopmentCheck.Require(_stalledStepLimit <= 0 || step - reader.LastAdvance < (ulong)_stalledStepLimit,
+                    "An event reader has not advanced for the configured number of steps while the log retains its events.");
+            }
+        }
+    }
+
     private void Commit(ulong through, JobHandle ready)
     {
         lock (_gate)
@@ -167,15 +187,6 @@ public sealed partial class EventLog<T> : IDisposable where T : unmanaged
             CheckActive();
             DevelopmentCheck.Require(through >= _through && through <= _allocatedThrough,
                 "Publishing requires an ordered interval of written events.");
-            ulong number = ++_publishCount;
-            for (int i = 0; i < _readerCount; i++)
-            {
-                ref ReaderEntry reader = ref _readers[i];
-                if (reader.Position >= _through) reader.LastAdvance = number;
-                DevelopmentCheck.Require(_stalledPublishLimit <= 0 || reader.Position >= through
-                    || number - reader.LastAdvance < (ulong)_stalledPublishLimit,
-                    "An event reader has stopped advancing while the log retains its events.");
-            }
             _through = through;
             _ready = ready;
         }
