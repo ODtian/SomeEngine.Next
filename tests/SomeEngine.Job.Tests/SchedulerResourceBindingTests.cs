@@ -33,7 +33,7 @@ public sealed class SchedulerResourceBindingTests
     }
 
     [Fact]
-    public void DotsAndResourceProvidersUseEachSelectedScheduler()
+    public void ResourceProvidersUseEachSelectedScheduler()
     {
         using var first = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         using var second = new Scheduler(new JobConfiguration { WorkerCount = 0 });
@@ -41,17 +41,16 @@ public sealed class SchedulerResourceBindingTests
         var secondData = new CounterData([5, 7]);
         int[] result = new int[2];
 
-        JobHandle incremented = new IncrementValues(firstData.Values).Schedule(
-            first, JobResourceAccess.Write<CounterData, CounterResources>(first, ref firstData));
-        JobHandle scaled = new ScaleValues(firstData.Values).Schedule(
-            first, 2, 1, JobResourceAccess.Write(first, firstData.Values), incremented);
-        JobHandle added = new AddValues(firstData.Values).ScheduleParallel(
-            first, 2, 1, JobResourceAccess.Write(first, firstData.Values.AsMemory()), scaled);
-        new CopyChunk(firstData.Values, result).Schedule(
-            first, new TwoChunks(), 1,
+        JobHandle incremented = first.Schedule(new IncrementValues(firstData.Values),
+            JobResourceAccess.Write<CounterData, CounterResources>(first, ref firstData));
+        JobHandle scaled = first.ScheduleParallel(new ScaleValues(firstData.Values), 2, 1,
+            [JobResourceAccess.Write(first, firstData.Values)], incremented);
+        JobHandle added = first.ScheduleParallel(new AddValues(firstData.Values), 2, 1,
+            [JobResourceAccess.Write(first, firstData.Values.AsMemory())], scaled);
+        first.ScheduleParallel(new CopyValues(firstData.Values, result), 2, 1,
             [JobResourceAccess.Read(first, firstData.Values), JobResourceAccess.Write(first, result)], added).Complete();
-        new IncrementValues(secondData.Values).Schedule(
-            second, JobResourceAccess.Write<CounterData, CounterResources>(second, ref secondData)).Complete();
+        second.Schedule(new IncrementValues(secondData.Values),
+            JobResourceAccess.Write<CounterData, CounterResources>(second, ref secondData)).Complete();
 
         Assert.Equal([9, 11, 6, 8], result.Concat(secondData.Values));
     }
@@ -79,7 +78,7 @@ public sealed class SchedulerResourceBindingTests
         }
     }
 
-    private readonly record struct ScaleValues(int[] Values) : IJobFor
+    private readonly record struct ScaleValues(int[] Values) : IJobParallelFor
     {
         public void Execute(int index) => Values[index] *= 2;
     }
@@ -89,15 +88,9 @@ public sealed class SchedulerResourceBindingTests
         public void Execute(int index) => Values[index] += 3;
     }
 
-    private readonly struct TwoChunks : IJobChunkSource
+    private readonly record struct CopyValues(int[] Values, int[] Result) : IJobParallelFor
     {
-        public int ChunkCount => 2;
-        public JobChunk GetChunk(int index) => new(index, index, 1);
-    }
-
-    private readonly record struct CopyChunk(int[] Values, int[] Result) : IJobChunk
-    {
-        public void Execute(JobChunk chunk) => Result[chunk.Start] = Values[chunk.Start];
+        public void Execute(int index) => Result[index] = Values[index];
     }
 
     private readonly record struct WriteValue(
