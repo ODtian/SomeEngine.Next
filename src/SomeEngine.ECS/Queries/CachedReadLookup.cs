@@ -169,7 +169,7 @@ internal sealed class CachedComponent<T> : CachedComponent where T : struct
     }
 }
 
-public unsafe ref struct CachedReadLookup<T> where T : struct
+internal unsafe ref struct CachedReadLookup<T> where T : struct
 {
     private readonly World _world;
     private readonly int _used;
@@ -311,7 +311,7 @@ public unsafe ref struct CachedReadLookup<T> where T : struct
     }
 }
 
-public ref struct CachedWriteLookup<T> where T : struct
+internal ref struct CachedWriteLookup<T> where T : struct
 {
     private CachedReadLookup<T> _read;
     private ulong _version;
@@ -343,15 +343,11 @@ public sealed partial class World
     private readonly List<CachedComponent> _cachedTypes = [];
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public CachedWriteLookup<T> OpenCachedWrite<T>() where T : struct
+    internal CachedWriteLookup<T> OpenCachedWrite<T>() where T : struct
     {
         if (ComponentType<T>.IsControlledType || ComponentType<T>.IsIndexedType || ComponentType<T>.IsGroupedType) throw new InvalidOperationException("Use the component's typed write view or Set entry.");
         return new(OpenCached<T>(true));
     }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public CachedReadLookup<T> OpenCachedRead<T>() where T : struct
-        => OpenCached<T>(false);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal CachedReadLookup<T> OpenCached<T>(bool write) where T : struct

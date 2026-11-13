@@ -10,9 +10,9 @@ internal static class AccessChecks
         Entity first = world.Create(new Position { X = 1 });
         Entity second = world.Create(new Position { X = 2 });
         using (var values = world.OpenWrite<Position>()) values.Get(first).X = 11;
-        using (var values = world.OpenCachedWrite<Position>()) values.Set(second, new Position { X = 22 });
+        using (var values = world.OpenWrite<Position>()) values.Set(second, new Position { X = 22 });
         world.Add(first, new Extra { Value = 3 });
-        using (var values = world.OpenCachedRead<Position>())
+        using (var values = world.OpenRead<Position>())
             Require(values.Has(first) && values.Read(first).X == 11 && values.Read(second).X == 22,
                 "both write scopes update the component subsequently read through the location cache");
 
@@ -30,7 +30,7 @@ internal static class AccessChecks
         Entity replacement = world.Create(new Position { X = 33 });
         Require(!world.HasSparse<Label>(replacement) && world.ReadSparse<Extra>(second).Value == 21,
             "destroy releases every attached type while preserving another entity's sparse value");
-        using (var values = world.OpenCachedRead<Position>())
+        using (var values = world.OpenRead<Position>())
             Require(!values.Has(first) && values.Has(replacement) && values.Read(replacement).X == 33
                 && values.Read(second).X == 22,
                 "location bindings follow the replacement identity and retain another entity's value");
@@ -45,7 +45,7 @@ internal static class AccessChecks
         world.Clear();
         Entity afterClear = world.Create(new Position { X = 44 });
         world.SetSparse(afterClear, new Extra { Value = 44 });
-        using (var values = world.OpenCachedRead<Position>())
+        using (var values = world.OpenRead<Position>())
             Require(!values.Has(replacement) && !values.Has(second) && values.Has(afterClear)
                 && values.ReadKnown(afterClear).X == 44,
                 "clear binds the new identity and position through the existing location directory");

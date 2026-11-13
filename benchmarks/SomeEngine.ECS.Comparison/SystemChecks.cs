@@ -236,7 +236,7 @@ internal static class SystemChecks
         var entities = new Entity[128];
         for (int i = 0; i < entities.Length; i++)
             entities[i] = world.Create(new Position { X = i }, new Velocity { X = 1, Y = 2 }, new JobOrdinal(i));
-        using (var binding = world.OpenCachedWrite<Position>()) { }
+        using (var binding = world.OpenWrite<Position>()) { }
         var runner = new SystemRunner(world, scheduler, 64);
         runner.Schedule<Position, Velocity, JobOrdinal, WriteCurrentRows>(world.Query<Position, Velocity, JobOrdinal>(), new(world, entities)).Complete();
         for (int i = 0; i < entities.Length; i++)
@@ -250,7 +250,7 @@ internal static class SystemChecks
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<JobOrdinal> ordinals)
         {
-            using var writes = world.OpenCachedWrite<Position>();
+            using var writes = world.OpenWrite<Position>();
             for (int row = 0; row < positions.Length; row++)
             {
                 Entity entity = entities[ordinals[row].Value];

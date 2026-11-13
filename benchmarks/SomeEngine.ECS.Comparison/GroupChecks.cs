@@ -11,7 +11,7 @@ internal static class GroupChecks
         for (int i = 0; i < entities.Length; i++)
             entities[i] = world.Create(new Position { X = i }, new Zone { Group = i % 16, Ordinal = i });
         var seventh = world.Query(new QueryDescription().InGroup<Zone>(7));
-        using (var positions = world.OpenCachedRead<Position>()) Require(positions.Read(entities[7]).X == 7, "bind positions before grouping");
+        using (var positions = world.OpenRead<Position>()) Require(positions.Read(entities[7]).X == 7, "bind positions before grouping");
         Zone.Groups = 0;
         world.GroupBy<Zone>();
         Require(Zone.Groups == entities.Length && seventh.Count == 13, "activation projects every main value once and refreshes existing queries");
@@ -42,7 +42,7 @@ internal static class GroupChecks
         Require(world.Query(new QueryDescription().InGroup<Zone>(3).InGroup<Layer>(5)).Count == 1,
             "typed creation publishes the final grouped layout");
         Entity copy = world.Clone(entities[39]);
-        using (var positions = world.OpenCachedRead<Position>())
+        using (var positions = world.OpenRead<Position>())
             Require(positions.Read(copy).X == 39 && positions.Read(entities[7]).X == 7, "group moves and clone maintain bound positions");
         world.Disable<Zone>(entities[39]);
         Zone.Keys = 0;

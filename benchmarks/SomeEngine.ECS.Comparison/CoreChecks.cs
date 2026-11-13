@@ -41,7 +41,7 @@ internal static class CoreChecks
         Entity replacement = world.Create(new Position { X = 40 });
         Require(world.EntityCount == 2 && world.IsAlive(replacement) && world.Read<Position>(replacement).X == 40,
             "recycled identities contain the new value");
-        using (var cached = world.OpenCachedRead<Position>())
+        using (var cached = world.OpenRead<Position>())
             Require(!cached.Has(batch[0]) && !cached.Has(batch[^1]) && cached.Read(second).X == 21
                 && cached.Has(replacement) && cached.Read(replacement).X == 40,
                 "batch reclamation clears old bindings and binds the recycled identity");

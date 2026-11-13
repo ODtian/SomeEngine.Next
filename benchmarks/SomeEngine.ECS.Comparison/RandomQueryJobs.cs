@@ -51,8 +51,8 @@ internal sealed partial class SomeEngineWorld
         if (!_randomJobColumnsReady)
             for (int i = 0; i < _entities.Length; i++)
             { _world.Add(_entities[i], new JobOrdinal(i)); if (mode == 2) _world.Add(_entities[i], new JobExtra()); }
-        if (mode == 1) { using var binding = _world.OpenCachedRead<Velocity>(); }
-        else { using var binding = _world.OpenCachedWrite<JobExtra>(); }
+        if (mode == 1) { using var binding = _world.OpenRead<Velocity>(); }
+        else { using var binding = _world.OpenWrite<JobExtra>(); }
         Query query = _world.Query<Position, Velocity, JobOrdinal>();
         var runner = new SystemRunner(_world, GetJobScheduler());
         QueryJobs = mode == 1
@@ -63,7 +63,7 @@ internal sealed partial class SomeEngineWorld
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<JobOrdinal> ordinals)
         {
-            using CachedReadLookup<Velocity> lookup = world.OpenCachedRead<Velocity>();
+            using ReadLookup<Velocity> lookup = world.OpenRead<Velocity>();
             for (int row = 0; row < positions.Length; row++)
             {
                 positions[row].X += velocities[row].X + lookup.Read(entities[RandomJobInputs.Pick(ordinals[row].Value, entities.Length)]).X;
@@ -75,7 +75,7 @@ internal sealed partial class SomeEngineWorld
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<JobOrdinal> ordinals)
         {
-            using CachedWriteLookup<JobExtra> lookup = world.OpenCachedWrite<JobExtra>();
+            using WriteLookup<JobExtra> lookup = world.OpenWrite<JobExtra>();
             for (int row = 0; row < positions.Length; row++)
             {
                 positions[row].X += velocities[row].X; positions[row].Y += velocities[row].Y;

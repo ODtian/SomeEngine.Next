@@ -349,14 +349,14 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
 
     internal override void WriteRandomCached()
     {
-        using var positions = _world.OpenCachedWrite<Position>();
+        using var positions = _world.OpenWrite<Position>();
         positions.SetKnown(_lookupEntities, ReplacementPosition);
     }
 
     internal override void ReadRandomCached()
     {
         long total = 0;
-        using var positions = _world.OpenCachedRead<Position>();
+        using var positions = _world.OpenRead<Position>();
         foreach (ref readonly var entity in _lookupEntities.AsSpan()) total += (int)positions.ReadKnown(entity).X;
         ReadTotal = total;
     }
@@ -364,28 +364,28 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     internal override void ReadRandomCachedChecked()
     {
         long total = 0;
-        using var positions = _world.OpenCachedRead<Position>();
+        using var positions = _world.OpenRead<Position>();
         foreach (ref readonly var entity in _lookupEntities.AsSpan()) total += (int)positions.Read(entity).X;
         ReadTotal = total;
     }
     internal override void WriteRandomCachedChecked()
     {
         long replacement = ReplacementBits;
-        using var positions = _world.OpenCachedWrite<Position>();
+        using var positions = _world.OpenWrite<Position>();
         foreach (ref readonly var entity in _lookupEntities.AsSpan()) ComponentMath.WritePosition(ref positions.Get(entity), replacement);
     }
 
     internal override void ReadRandomKnown()
     {
         long total = 0;
-        using var positions = _world.OpenCachedRead<Position>();
+        using var positions = _world.OpenRead<Position>();
         foreach (ref readonly var entity in _lookupEntities.AsSpan()) total += (int)positions.ReadKnown(entity).X;
         ReadTotal = total;
     }
 
     internal override void WriteRandomKnown()
     {
-        using var positions = _world.OpenCachedWrite<Position>();
+        using var positions = _world.OpenWrite<Position>();
         positions.SetKnown(_lookupEntities, ReplacementPosition);
     }
 
