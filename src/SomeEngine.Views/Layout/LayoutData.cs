@@ -117,7 +117,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
             _subtrees.Clear();
             foreach (NodeLayout node in _order)
                 if (node.Parent == node.Canvas) AddSubtree(node, default, node.Canvas, true);
-            if (coordinatesChanged) ChunkJobs.Run(new RectangleJob(this), _subtrees.Count, parallel, chunkSize: 1);
+            if (coordinatesChanged) ChunkJobs.Run(new RectangleJob(this), _subtrees.Count, parallel, batchSize: 1);
             foreach (NodeLayout node in _order) WriteRectangle(node.Entity, node.Rectangle);
             CompleteCacheReads();
             foreach (var canvas in _canvases)
@@ -486,7 +486,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         }
         foreach (Subtree subtree in _subtrees) SetMeasurementRoot(subtree.Entity, subtree.Entity);
         _parallelMeasurement = parallel;
-        try { ChunkJobs.Run(new MeasureJob(this), _subtrees.Count, parallel, chunkSize: 1); }
+        try { ChunkJobs.Run(new MeasureJob(this), _subtrees.Count, parallel, batchSize: 1); }
         finally { _parallelMeasurement = false; }
         if (_subtrees.Any(subtree => subtree.ResultsConnected || subtree.ReadsRequired))
         {
@@ -542,28 +542,21 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         foreach (Entity child in node.Children) CalculateRectangles(child, node.CanvasPosition - node.Scroll);
     }
 
-    private readonly struct MeasureJob(LayoutData data) : IJobChunk
+    private readonly struct MeasureJob(LayoutData data) : IJobParallelFor
     {
-        public void Execute(JobChunk chunk)
+        public void Execute(int index)
         {
-            for (int index = chunk.Start; index < chunk.Start + chunk.Length; index++)
-            {
-                Subtree subtree = data._subtrees[index];
-                try { data.Measure(subtree.Entity, in subtree.Constraints, subtree.Parent, subtree.ParentMeasurement); }
-                catch (LayoutInputRequired) { subtree.ReadsRequired = true; }
-                catch (LayoutResultsConnected) { subtree.ResultsConnected = true; }
-                catch (Exception error) { subtree.Error = error; }
-            }
+            Subtree subtree = data._subtrees[index];
+            try { data.Measure(subtree.Entity, in subtree.Constraints, subtree.Parent, subtree.ParentMeasurement); }
+            catch (LayoutInputRequired) { subtree.ReadsRequired = true; }
+            catch (LayoutResultsConnected) { subtree.ResultsConnected = true; }
+            catch (Exception error) { subtree.Error = error; }
         }
     }
 
-    private readonly struct RectangleJob(LayoutData data) : IJobChunk
+    private readonly struct RectangleJob(LayoutData data) : IJobParallelFor
     {
-        public void Execute(JobChunk chunk)
-        {
-            for (int index = chunk.Start; index < chunk.Start + chunk.Length; index++)
-                data.CalculateRectangles(data._subtrees[index].Entity, Vector2.Zero);
-        }
+        public void Execute(int index) => data.CalculateRectangles(data._subtrees[index].Entity, Vector2.Zero);
     }
 
     private sealed class Subtree(Entity entity)

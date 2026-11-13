@@ -188,18 +188,15 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
 
     private readonly record struct ShapeWork(TextShapeBuffer Shape, string Text, TextStyle Style, TextInputs Inputs);
 
-    private readonly struct ShapeJob(List<ShapeWork> shapes) : SomeEngine.Job.IJobChunk
+    private readonly struct ShapeJob(List<ShapeWork> shapes) : IJobParallelFor
     {
-        public void Execute(JobChunk chunk)
+        public void Execute(int index)
         {
-            for (int index = chunk.Start; index < chunk.Start + chunk.Length; index++)
-            {
-                ShapeWork work = shapes[index];
-                Shaper.Shape(work.Text, new TextStyleData(work.Style.Font!, work.Style.Size,
-                    LineHeight: work.Style.LineHeight), work.Shape.Width, work.Shape.Buffer);
-                work.Shape.Inputs = work.Inputs;
-                work.Shape.HasShape = true;
-            }
+            ShapeWork work = shapes[index];
+            Shaper.Shape(work.Text, new TextStyleData(work.Style.Font!, work.Style.Size,
+                LineHeight: work.Style.LineHeight), work.Shape.Width, work.Shape.Buffer);
+            work.Shape.Inputs = work.Inputs;
+            work.Shape.HasShape = true;
         }
     }
 }
