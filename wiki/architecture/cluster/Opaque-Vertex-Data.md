@@ -13,7 +13,7 @@ Cluster execution 不解释 vertex representation；运行时连统一 stride �
 ## Vertex implementation knows
 position/normal/UV/color 布局、量化、bit packing、压缩方式和私有 blob header。
 
-位置编码器在导入时交付完整不透明字节及保守 AABB。运行时页组合复制生产者的字节和边界，用户 Shader 解释位置编码。
+位置编码器在导入时交付完整不透明字节及保守 AABB。导入阶段把生产者的字节和边界打包为 `ClusterMeshBlock`，运行时读取已打包的页，用户 Shader 解释位置编码。
 
 几何与属性分别由 `ClusterGeometryBlock` 和 `ClusterVertexAttributesBlock` 持有。构建侧通过几何的来源映射共享顶点身份。属性 Importer 交付全部来源属性及其 Shader 字节，编码选择由 Importer 和材质 Shader 对应解释。
 

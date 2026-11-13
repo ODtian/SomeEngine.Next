@@ -1,4 +1,4 @@
-using SomeEngine.Render.Instances;
+﻿using SomeEngine.Render.Instances;
 using SomeEngine.Render.Components;
 
 namespace SomeEngine.Render.Cluster;
@@ -10,13 +10,11 @@ public static class ClusterShaderSources
     {
         int boundsExpansion = layout.Resolve<float>(ClusterRenderFeature.BoundsExpansionKey)
             .Descriptor.MetadataWordOffset;
-        int blendOcclusion = layout.Resolve<uint>(ClusterRenderFeature.BlendOcclusionKey)
-            .Descriptor.MetadataWordOffset;
         int deformBounds = layout.Resolve<RenderDeformBounds>(ClusterRenderFeature.DeformBoundsKey)
             .Descriptor.MetadataWordOffset;
         int bvhRoot = layout.Resolve<uint>(ClusterRenderFeature.BvhRootKey)
             .Descriptor.MetadataWordOffset;
-        int materialIndex = layout.Resolve<uint>(ClusterRenderFeature.MaterialSlotOffsetKey)
+        int materialIndex = layout.Resolve<uint>(ClusterRenderFeature.MaterialOffsetKey)
             .Descriptor.MetadataWordOffset;
         int currentTransform = layout.Resolve(RenderInstanceTransformProperties.CurrentTransform)
             .Descriptor.MetadataWordOffset;
@@ -25,8 +23,6 @@ public static class ClusterShaderSources
         int depthCacheClass = layout.Resolve<uint>(ClusterRenderFeature.DepthCacheClassKey)
             .Descriptor.MetadataWordOffset;
         int firstPerson = layout.Resolve<FirstPersonMeshData>(ClusterRenderFeature.FirstPersonKey)
-            .Descriptor.MetadataWordOffset;
-        int xray = layout.Resolve<RenderXray>(ClusterRenderFeature.XrayKey)
             .Descriptor.MetadataWordOffset;
 
         return $$"""
@@ -50,7 +46,6 @@ public static class ClusterShaderSources
                 return metadata.PackedWords[wordIndex >> 2u][wordIndex & 3u];
             }
 
-            static const uint CLUSTER_BLEND_OCCLUSION_METADATA_WORD = {{blendOcclusion}}u;
             static const uint CLUSTER_BOUNDS_EXPANSION_METADATA_WORD = {{boundsExpansion}}u;
             static const uint CLUSTER_BVH_ROOT_METADATA_WORD = {{bvhRoot}}u;
             static const uint CLUSTER_DEFORM_BOUNDS_METADATA_WORD = {{deformBounds}}u;
@@ -59,7 +54,6 @@ public static class ClusterShaderSources
             static const uint RENDER_PREVIOUS_TRANSFORM_METADATA_WORD = {{previousTransform}}u;
             static const uint RENDER_DEPTH_CACHE_CLASS_METADATA_WORD = {{depthCacheClass}}u;
             static const uint RENDER_FIRST_PERSON_METADATA_WORD = {{firstPerson}}u;
-            static const uint RENDER_XRAY_METADATA_WORD = {{xray}}u;
 
             #endif
             """;

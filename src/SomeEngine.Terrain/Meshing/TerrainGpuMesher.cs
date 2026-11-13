@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.RenderGraph;
@@ -6,10 +6,13 @@ using SomeEngine.Resources;
 
 namespace SomeEngine.Terrains;
 
+public readonly record struct TerrainShaderEntry(Shader Shader, string EntryPoint);
+
 /// <summary>GPU surface extraction, including the capacity needed before generated counts are available.</summary>
 public interface ITerrainMesherGpu
 {
     int ReadBorder { get; }
+    IReadOnlyList<TerrainShaderEntry> Entries { get; }
     ClusterGpuMeshCapacity GetCapacity(TerrainChunkBounds bounds);
     GraphPassId Record(ref TerrainGpuMesherContext context);
 }
@@ -18,6 +21,7 @@ public interface ITerrainMesherGpu
 public sealed class MarchingCubesTerrainMesherGpu(Shader shader, string entryPoint = "ExtractHeightSurface") : ITerrainMesherGpu
 {
     public int ReadBorder => 1;
+    public IReadOnlyList<TerrainShaderEntry> Entries { get; } = [new(shader, entryPoint)];
     public ClusterGpuMeshCapacity GetCapacity(TerrainChunkBounds bounds)
     {
         uint cells = (uint)(bounds.CellCount * bounds.CellCount * bounds.CellCount);

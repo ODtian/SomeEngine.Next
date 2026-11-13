@@ -20,7 +20,7 @@ public sealed class PassDataAndQueueTests
         {
             pass = edit.AddCopyPass<ObservationState, int>(
                 "retained pass data",
-                PassQueueSelection.Exact(support.GraphicsQueue),
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
                 new ObservationState(observed),
                 new PassOptions(
                     Culling: PassCullingMode.NeverCull,
@@ -62,7 +62,7 @@ public sealed class PassDataAndQueueTests
         {
             pass = edit.AddCopyFramePass(
                 "retained frame-only data",
-                PassQueueSelection.Exact(support.GraphicsQueue),
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
                 new ObservationState(observed),
                 new PassOptions(
                     Culling: PassCullingMode.NeverCull,
@@ -107,7 +107,7 @@ public sealed class PassDataAndQueueTests
             support.Device,
             [support.GraphicsQueue, support.CopyQueue]);
         using RenderGraphEdit edit = graph.BeginEdit();
-        _ = edit.DeclareGeneralPass("General on Copy", PassQueueSelection.Exact(support.CopyQueue));
+        _ = edit.DeclareGeneralPass("General on Copy", PassQueueSelection.OnQueue(support.CopyQueue));
         bool rejected = false;
         try
         {
@@ -141,15 +141,15 @@ public sealed class PassDataAndQueueTests
             support.Device,
             [support.GraphicsQueue]);
 
-        GraphTextureId slot;
+        GraphTextureId index;
         GraphPassId consumer;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            slot = edit.DeclareExternalTexture(description);
+            index = edit.RegisterExternalTexture(texture);
             consumer = edit.AddGeneralFramePass(
                 "retained texture consumer",
-                PassQueueSelection.Exact(support.GraphicsQueue),
-                slot,
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
+                index,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition access, ref GraphTextureId state) =>
                     _ = access.Read(
@@ -165,19 +165,11 @@ public sealed class PassDataAndQueueTests
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         using (RenderGraphFrame frame = graph.BeginFrame())
         {
-            frame.BindExternalTexture(
-                slot,
-                texture,
-                [new TextureBoundaryState(
-                    new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
-                    texture.InitialSync,
-                    texture.InitialAccess,
-                    texture.InitialLayout,
-                    ResourceContentState.Undefined)]);
+
             GraphPassId upload = frame.AddGeneralPass(
                 "late frame upload",
-                PassQueueSelection.Exact(support.GraphicsQueue),
-                slot,
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
+                index,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition access, ref GraphTextureId state) =>
                     _ = access.Write(
@@ -208,7 +200,7 @@ public sealed class PassDataAndQueueTests
         bool rejected = false;
         try
         {
-            _ = frame.DeclareGeneralPass("General on Copy", PassQueueSelection.Exact(support.CopyQueue));
+            _ = frame.DeclareGeneralPass("General on Copy", PassQueueSelection.OnQueue(support.CopyQueue));
         }
         catch (NotSupportedException)
         {

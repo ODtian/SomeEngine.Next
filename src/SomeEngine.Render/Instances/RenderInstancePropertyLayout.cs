@@ -69,7 +69,7 @@ public sealed class RenderInstancePropertyLayout : IEquatable<RenderInstanceProp
             throw new ArgumentException("The render-instance property token is uninitialized.", nameof(property));
         RenderInstancePropertyDeclaration declaration = property.Declaration;
         if (!_propertiesByKey.TryGetValue(declaration.Key, out RenderInstancePropertyDescriptor? descriptor)
-            || !descriptor.HasSameContract(declaration))
+            || !descriptor.Matches(declaration))
         {
             throw new ArgumentException(
                 $"Property '{declaration.Key}' is not part of this composed metadata contract with the same encoding.",
@@ -149,7 +149,7 @@ public sealed class RenderInstancePropertyLayout : IEquatable<RenderInstanceProp
 
     public override int GetHashCode() => _hashCode;
 
-    internal bool HasSameContract(RenderInstancePropertyLayout other) => Equals(other);
+    internal bool Matches(RenderInstancePropertyLayout other) => Equals(other);
 
     internal void Validate<T>(ResolvedRenderInstanceProperty<T> property, string parameterName)
         where T : unmanaged

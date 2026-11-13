@@ -1,5 +1,7 @@
 # 引擎 Trace 基础设施
 
+Shader 库的编译线程使用 `shader.Slang.CreateSession`、`shader.Slang.LoadModule` 和 `shader.Slang.Link` 记录 session 建立、首次输入加载与链接。运行时库复用同一 session 和已加载输入；内容构建的每个并发任务使用独立编译器。
+
 引擎的统一插桩入口为 `SomeEngine.Diagnostics.EngineTrace`。它只记录原始区间、帧标记、因果关联和计数；聚合、成本分析及未来的图形界面属于独立工具。当前 `tools/SomeEngine.Trace` 提供无头读取和分析，不向引擎增加性能阈值或评测标准。
 
 采集端使用原生 C# 实现，不通过 Tracy 或 EventPipe 转发插桩事件。统计采样继续使用 `.nettrace` 链路。插桩得到的是线程经过时间，包含调度和阻塞；不能把它直接称为 CPU 忙碌时间。

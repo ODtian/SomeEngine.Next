@@ -1,7 +1,7 @@
-#include "resource_effects.slang"
+__exported import resource_effects;
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
-#include "vsm_work_throttle.slang"
+__exported import vsm_work_throttle;
 
 struct VirtualShadowWorkThrottleUniforms
 {

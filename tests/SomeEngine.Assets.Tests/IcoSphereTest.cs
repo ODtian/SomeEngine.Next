@@ -45,7 +45,7 @@ public class IcoSphereTest
 
         await meshAsset.SaveAsync(outputPath);
         using MeshAsset roundTrip = await MeshAsset.OpenAsync(outputPath);
-        ClusterGeometryBlock reopened = roundTrip.GetBlock<ClusterGeometryBlock>();
+        ClusterGeometryBlock reopened = await roundTrip.GetBlockAsync<ClusterGeometryBlock>();
         Assert.Equal(geometry.Clusters.Count, reopened.Clusters.Count);
         for (int cluster = 0; cluster < geometry.Clusters.Count; cluster++)
             Assert.Equal(geometry.Clusters[cluster].PositionData.ToArray(), reopened.Clusters[cluster].PositionData.ToArray());

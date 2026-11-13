@@ -1,7 +1,7 @@
-#include "cluster_bin_common.slang"
-#include "cluster_view_access.slang"
+__exported import cluster_bin_common;
+__exported import cluster_view_access;
 #include "cluster_instance_properties.slang"
-#include "resource_effects.slang"
+__exported import resource_effects;
 
 ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 ByteAddressBuffer InstanceData;
@@ -18,12 +18,12 @@ ByteAddressBuffer PageHeap;
 
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> PolicyRasterWorkCounter;
-#include "cluster_raster_target_view.slang"
+__exported import cluster_raster_target_view;
 
-void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware, bool depthBuckets)
+bool WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware, bool depthBuckets)
 {
-    if (!IsBin(bin)) return;
-    if (Uniforms.PolicyTarget != 0u)
+    if (!IsBin(bin)) return true;
+    if (Uniforms.PolicyTarget == 1u)
     {
         uint4 pages = ClusterUnpackRasterTargetPageWindow(VisibleClusterRasterWindow(VisibleClusters[visibleIndex]));
         uint2 extent = pages.zw - pages.xy + 1u;
@@ -40,15 +40,16 @@ void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftwa
         InterlockedAdd(DepthBuckets[bin * 512u + (isSoftware ? 0u : 256u) +
             VisibleClusterDepthBucket(VisibleClusters[visibleIndex])], 1u, ignored);
     }
+    return true;
 }
 
 #include "cluster_bin_batches.slang"
-#include "cluster_work_status.slang"
+__exported import cluster_work_status;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> DepthBuckets;
 
 StructuredBuffer<ClusterRasterTargetView> WorkTargetViews;
-#include "cluster_depth_cache.slang"
+__exported import cluster_depth_cache;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> DepthWorkCounter;
 
@@ -74,8 +75,7 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         isSoftware);
 
     DrawRequest entry = VisibleClusterRequest(VisibleClusters[visibleIndex]);
-    if (Uniforms.PolicyTarget == 0u && LoadInstanceXray(InstanceData, InstanceProperties, entry.InstanceID).Enabled != 0u) return;
-    if (Uniforms.PolicyTarget != 0u)
+    if (Uniforms.PolicyTarget == 1u)
     {
         ClusterRasterTargetView target = WorkTargetViews[ClusterPhysicalViewIndex(DrawRequestViewIndex(entry))];
         if ((target.Padding.y & 1u) != 0u)

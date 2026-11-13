@@ -1,4 +1,4 @@
-using SomeEngine.ECS.Queries;
+﻿using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Cluster;
@@ -24,7 +24,7 @@ public sealed class ApplicationGeometryTests(SceneContentFixture content)
         var scene = new ApplicationScene(content.DirectoryPath)
         {
             GeometryBvhMemoryBytes = clusters.BvhLength * 3,
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "20"]),
             UpdateFrame = frame =>
             {
@@ -49,7 +49,7 @@ public sealed class ApplicationGeometryTests(SceneContentFixture content)
         var inspection = new GeometryInspection();
         var scene = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
             {

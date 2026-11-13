@@ -8,12 +8,14 @@ public sealed partial class ValidationLayer
         MemoryType memoryType = MemoryType.DeviceLocal)
     {
         RequireDevice(device);
+        ValidateBufferDescription(device, desc, memoryType);
         return Backend.GetBufferMemoryRequirements(device, desc, memoryType);
     }
 
     public MemoryRequirements GetTextureMemoryRequirements(Device device, in TextureDesc desc)
     {
         RequireDevice(device);
+        ValidateTextureDescription(device, desc);
         return Backend.GetTextureMemoryRequirements(device, desc);
     }
 
@@ -24,12 +26,18 @@ public sealed partial class ValidationLayer
         ulong requestedBufferOffset = 0)
     {
         RequireDevice(device);
+        ValidateTextureDescription(device, desc);
+        if (requestedBufferOffset % device.Capabilities.Limits.TextureDataPlacementAlignment != 0)
+            throw new ArgumentOutOfRangeException(nameof(requestedBufferOffset));
+        ValidateTextureRegion(TextureInfoFromDescription(desc), copy.MipLevel, copy.ArrayLayer, copy.Aspect,
+            copy.X, copy.Y, copy.Z, copy.Width, copy.Height, copy.Depth);
         return Backend.GetTextureCopyFootprint(device, desc, copy, requestedBufferOffset);
     }
 
     public Heap CreateHeap(Device device, in HeapDesc desc)
     {
         RequireDevice(device);
+        ValidateHeapDescription(device, desc);
         var metadata = new HeapValidationState(desc.VisibleNodeMask);
         HeapDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(device);
@@ -67,6 +75,7 @@ public sealed partial class ValidationLayer
         MemoryType memoryType = MemoryType.DeviceLocal)
     {
         RequireDevice(device);
+        ValidateBufferDescription(device, desc, memoryType);
         var state = new ResourceValidationState(buffer: true);
         BufferDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(device);
@@ -103,6 +112,10 @@ public sealed partial class ValidationLayer
     {
         RequireDevice(device);
         RequireOnDevice(device, heap, "Heap");
+        ValidateBufferDescription(device, desc, heap.Info.MemoryType);
+        ValidatePlacedResourceNodePlacement(desc.NodePlacement, heap.Info, nameof(desc));
+        ValidatePlacement(heap, offset, Backend.GetBufferMemoryRequirements(device, desc, heap.Info.MemoryType),
+            HeapFlags.Buffers, (desc.Usages & BufferUsages.Shareable) != 0);
         var state = new ResourceValidationState(buffer: true);
         BufferDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(heap);
@@ -138,6 +151,7 @@ public sealed partial class ValidationLayer
     public Texture CreateTexture(Device device, in TextureDesc desc)
     {
         RequireDevice(device);
+        ValidateTextureDescription(device, desc);
         var state = new ResourceValidationState(buffer: false);
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -173,6 +187,12 @@ public sealed partial class ValidationLayer
     {
         RequireDevice(device);
         RequireOnDevice(device, heap, "Heap");
+        if (heap.Info.MemoryType != MemoryType.DeviceLocal) throw new ArgumentException("Textures require device-local heap memory.", nameof(heap));
+        ValidateTextureDescription(device, desc);
+        ValidatePlacedResourceNodePlacement(desc.NodePlacement, heap.Info, nameof(desc));
+        ValidatePlacement(heap, offset, Backend.GetTextureMemoryRequirements(device, desc),
+            (desc.Usages & (TextureUsages.ColorAttachment | TextureUsages.DepthStencilAttachment)) != 0 ? HeapFlags.Attachments : HeapFlags.Textures,
+            (desc.Usages & TextureUsages.Shareable) != 0);
         var state = new ResourceValidationState(buffer: false);
         var objectInfo = new ValidationObjectInfo(heap);
         lock (_gate)
@@ -208,6 +228,7 @@ public sealed partial class ValidationLayer
     {
         RequireDevice(device);
         RequireOnDevice(device, desc.Buffer, "Buffer");
+        ValidateConstantBufferRange(device, desc.Buffer, desc.Range);
         BufferCbvDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(desc.Buffer);
         lock (_gate)
@@ -236,6 +257,7 @@ public sealed partial class ValidationLayer
     {
         RequireDevice(device);
         RequireOnDevice(device, desc.Buffer, "Buffer");
+        ValidateBufferView(desc.Buffer, desc.Range, BufferUsages.ShaderRead, desc.Format, desc.StructureStride);
         BufferSrvDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(desc.Buffer);
         lock (_gate)
@@ -264,6 +286,8 @@ public sealed partial class ValidationLayer
     {
         RequireDevice(device);
         RequireOnDevice(device, desc.Buffer, "Buffer");
+        ValidateBufferView(desc.Buffer, desc.Range, BufferUsages.ShaderWrite, desc.Format, desc.StructureStride);
+        ValidateCounter(device, desc);
         if (desc.CounterBuffer is not null)
             RequireOnDevice(device, desc.CounterBuffer, "Counter Buffer");
         BufferUavDesc createDesc = desc;
@@ -294,6 +318,7 @@ public sealed partial class ValidationLayer
     {
         RequireDevice(device);
         RequireOnDevice(device, desc.Texture, "Texture");
+        ValidateTextureView(desc.Texture, desc.Range, desc.Format, desc.Dimension, TextureViewKind.ShaderResource);
         TextureSrvDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(desc.Texture);
         lock (_gate)
@@ -322,6 +347,7 @@ public sealed partial class ValidationLayer
     {
         RequireDevice(device);
         RequireOnDevice(device, desc.Texture, "Texture");
+        ValidateTextureView(desc.Texture, desc.Range, desc.Format, desc.Dimension, TextureViewKind.UnorderedAccess);
         TextureUavDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(desc.Texture);
         lock (_gate)
@@ -352,6 +378,7 @@ public sealed partial class ValidationLayer
     {
         RequireDevice(device);
         RequireOnDevice(device, desc.Texture, "Texture");
+        ValidateTextureView(desc.Texture, desc.Range, desc.Format, desc.Dimension, TextureViewKind.ColorAttachment);
         ColorAttachmentViewDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(desc.Texture);
         lock (_gate)
@@ -382,6 +409,7 @@ public sealed partial class ValidationLayer
     {
         RequireDevice(device);
         RequireOnDevice(device, desc.Texture, "Texture");
+        ValidateTextureView(desc.Texture, desc.Range, desc.Format, desc.Dimension, TextureViewKind.DepthStencil);
         DepthStencilViewDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(desc.Texture);
         lock (_gate)
@@ -409,6 +437,7 @@ public sealed partial class ValidationLayer
     public Sampler CreateSampler(Device device, in SamplerDesc desc)
     {
         RequireDevice(device);
+        ValidateSampler(desc);
         SamplerDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -436,13 +465,23 @@ public sealed partial class ValidationLayer
     public MappedBuffer Map(Buffer buffer, MapType type, in BufferRange range)
     {
         Require(buffer);
+        if (buffer.Mapping?.IsActive == true) throw new InvalidOperationException("The buffer already has an active mapping.");
+        if (!Enum.IsDefined(type)) throw new ArgumentOutOfRangeException(nameof(type));
+        BufferRange resolved = range.Resolve(buffer.Info.Size);
+        ValidateBufferRange(buffer, resolved.Offset, resolved.Size);
+        if (buffer.Device.Capabilities.CompileTarget == SlangShaderSharp.SlangCompileTarget.Spirv)
+        {
+            if (buffer.Info.MemoryType == MemoryType.DeviceLocal) throw new NotSupportedException("Device-local buffers cannot be mapped.");
+            if (type != MapType.Read && buffer.Info.MemoryType == MemoryType.Readback)
+                throw new ArgumentException("Readback buffers require a read mapping.", nameof(type));
+        }
         return Backend.Map(buffer, type, range);
     }
 
     private void RequireSameDevice(Device expected, Device actual, string objectType)
     {
         if (!ReferenceEquals(expected, actual))
-            Reject("Ownership", $"{objectType} belongs to another Device.");
+            RejectArgument("Ownership", $"{objectType} belongs to another Device.");
     }
 
 }

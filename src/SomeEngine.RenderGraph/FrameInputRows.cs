@@ -1,6 +1,6 @@
 namespace SomeEngine.RenderGraph;
 
-internal sealed partial class FrameExecutor
+internal sealed partial class FrameRecording
 {
     private readonly HashSet<GraphTextureInput> _changedTextureInputs = [];
     private readonly ConditionalWeakTable<GraphBufferInput, BufferInputLocation> _bufferInputLocations = new();
@@ -99,14 +99,14 @@ internal sealed partial class FrameExecutor
     private bool FindInputView(GraphIdentity identity, out int index)
     {
         index = -1;
-        return _rowsReady && _viewIndices.TryGetValue(identity, out index) &&
+        return HasRows && _viewIndices.TryGetValue(identity, out index) &&
             (uint)index < (uint)_views.Count && _views[index].Identity == identity;
     }
 
     private bool FindInputAccess(GraphIdentity identity, out int index)
     {
         index = -1;
-        return _rowsReady && _accessIndices.TryGetValue(identity, out index) &&
+        return HasRows && _accessIndices.TryGetValue(identity, out index) &&
             (uint)index < (uint)_accesses.Count && _accesses[index].Identity == identity;
     }
 }

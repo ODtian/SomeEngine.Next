@@ -1,14 +1,15 @@
 #ifndef CLUSTER_VISIBILITY_RASTER_OUTPUT_SLANG
 #define CLUSTER_VISIBILITY_RASTER_OUTPUT_SLANG
 
-#include "resource_effects.slang"
+__exported import resource_effects;
 
-// Depth and visibility are one indivisible winner. Splitting these fields into two 32-bit
-// stores permits a losing fragment to publish its id after another fragment won the depth race.
+// A64 outputs publish depth and identity together. NonAtomic selects independent 32-bit stores.
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWTexture2DArray<uint64_t> VisibilityWinnerImage;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer VisibilityWinnerBuffer;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
+RWByteAddressBuffer VisibilityNonAtomicBuffer;
 
 uint64_t PackVisibilityWinner(float depth, uint visibilityValue)
 {
@@ -43,6 +44,24 @@ void WriteVisibilityWinnerBuffer(
     uint64_t ignored = VisibilityWinnerBuffer.InterlockedMaxU64(
         uint(linear * 8u),
         PackVisibilityWinner(depth, visibilityValue));
+}
+
+uint ReadVisibilityNonAtomicDepth(int2 pixel, uint viewIndex, uint width, uint height)
+{
+    uint offset = ((viewIndex * height + uint(pixel.y)) * width + uint(pixel.x)) * 8u;
+    return asuint(1.0 - asfloat(VisibilityNonAtomicBuffer.Load(offset + 4u)));
+}
+
+void WriteVisibilityNonAtomic(int2 pixel, uint viewIndex, uint width, uint height,
+    float depth, uint visibilityValue)
+{
+    uint offset = ((viewIndex * height + uint(pixel.y)) * width + uint(pixel.x)) * 8u;
+    depth = saturate(depth);
+    if (depth <= asfloat(VisibilityNonAtomicBuffer.Load(offset + 4u)))
+    {
+        VisibilityNonAtomicBuffer.Store(offset + 4u, asuint(depth));
+        VisibilityNonAtomicBuffer.Store(offset, visibilityValue);
+    }
 }
 
 #endif

@@ -1,3 +1,6 @@
+using SomeEngine.Assets;
+using SomeEngine.Assets.Importers;
+using SomeEngine.Render;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SlangShaderSharp;
@@ -14,10 +17,10 @@ public sealed class ImageMaterial : Material
     public static Guid TypeId { get; } = new("ad789793-f54a-472c-8a16-14d4e147b6cc");
     public override IReadOnlyList<MaterialPropertyDefinition> Properties => [];
 
-    /// <summary>Uses the shared built-in shader compiled for the requested graphics target.</summary>
-    public static ImageMaterial Create(SlangCompileTarget target) => new()
+    /// <summary>Uses the shared built-in shader held by the supplied shader library.</summary>
+    public static ImageMaterial Create(ShaderLibrary shaders, AssetLoader files) => new()
     {
-        Shader = ElementShaders.Get("Image", target),
+        Shader = shaders.GetAsync(files, EngineShaderAssets.CanvasImage).AsTask().GetAwaiter().GetResult(),
     };
 
 }
@@ -25,18 +28,28 @@ public sealed class ImageMaterial : Material
 /// <summary>Image's shader-specific pipeline, sampler and instance bytes.</summary>
 internal sealed class ImageDrawing : IDisposable
 {
+
+    private readonly RenderPipelines _renderPipelines;
     private const int InstanceByteCount = 80;
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
-    private readonly Shader _shader;
+    private Shader _shader;
+    private readonly Material _material;
     private readonly Format _format;
     private readonly Dictionary<(Format Format, CompareOperation Comparison), Pipeline> _depthPipelines = [];
-    internal Pipeline Pipeline { get; }
-    internal VariableLayoutReflection Parameters { get; }
+    internal Pipeline Pipeline { get; private set; }
+    internal VariableLayoutReflection Parameters { get; private set; }
     internal Sampler Sampler { get; }
 
-    internal ImageDrawing(IGraphicsBackend backend, Device device, ImageMaterial material, Format format)
-    {
+    internal ImageDrawing(
+        IGraphicsBackend backend,
+        Device device,
+        RenderPipelines pipelines,
+        ImageMaterial material,
+        Format format)    {
+
+        _renderPipelines = pipelines;
+        _material = material;
         DevelopmentCheck.Require(material.Shader is not null, "An Image material requires its shader.");
         _backend = backend;
         _device = device;
@@ -54,7 +67,7 @@ internal sealed class ImageDrawing : IDisposable
                 FilterType.Linear, AddressType.ClampToEdge, AddressType.ClampToEdge, AddressType.ClampToEdge,
                 Label: "Image sampler"));
         }
-        catch { Pipeline.Dispose(); throw; }
+        catch {  throw; }
     }
 
     internal Pipeline GetPipeline(in CanvasPassTarget target)
@@ -66,13 +79,25 @@ internal sealed class ImageDrawing : IDisposable
         return pipeline;
     }
 
+    internal bool ReplaceShader(Shader previous, Shader next)
+    {
+        if (!ReferenceEquals(_shader, previous)) return false;
+        _shader = next;
+        _material.Shader = next;
+        Pipeline = CreatePipeline();
+        Parameters = next.GetSlangReflection(next.RequireSlangTarget(_device.Capabilities.CompileTarget))
+            .GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        _depthPipelines.Clear();
+        return true;
+    }
+
     private Pipeline CreatePipeline(Format? depthFormat = null, CompareOperation comparison = CompareOperation.LessOrEqual)
     {
         int target = _shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
         ShaderReflection reflection = _shader.GetSlangReflection(target);
         EntryPointReflection vertex = _shader.RequireSlangEntry(target, "vertexMain", SlangStage.Vertex);
         EntryPointReflection pixel = _shader.RequireSlangEntry(target, "pixelMain", SlangStage.Fragment);
-        return _backend.CreateGraphicsPipeline(_device, new GraphicsPipelineDesc(
+        return _renderPipelines.CreateGraphics(new GraphicsPipelineDesc(
             _shader.SlangCode, reflection, vertex, _shader.GetSlangEntryBytes(target, vertex),
             pixel, _shader.GetSlangEntryBytes(target, pixel), [], [], PrimitiveTopology.TriangleList,
             StripCut.Disabled, new RasterizerState(Cull: CullType.None), new MultisampleState(),
@@ -82,40 +107,32 @@ internal sealed class ImageDrawing : IDisposable
                 SourceAlpha: BlendFactor.One, DestinationAlpha: BlendFactor.OneMinusSourceAlpha)]),
             new AttachmentFormatSignature([_format], depthFormat), DynamicStates.Viewport | DynamicStates.Scissor,
             "Image", vertexCodeBlob: _shader.GetSlangEntryBlob(target, vertex),
-            pixelCodeBlob: _shader.GetSlangEntryBlob(target, pixel)));
+            pixelCodeBlob: _shader.GetSlangEntryBlob(target, pixel))).GetAwaiter().GetResult();
     }
 
-    internal InstanceBuffer CreateInstances(ReadOnlySpan<ImageInstance> instances)
+    internal InstanceBuffer CreateInstances(global::SomeEngine.RenderGraph.RenderGraph graph, ReadOnlySpan<ImageInstance> instances, InstanceBuffer? previous = null)
     {
-        ulong byteCount = (ulong)Math.Max(1, instances.Length) * InstanceByteCount;
-        Buffer buffer = _backend.CreateBuffer(_device, new BufferDesc(byteCount, BufferUsages.ShaderRead,
-            "Image instances"), MemoryType.Upload);
-        try
+        int byteCount = Math.Max(1, instances.Length) * InstanceByteCount;
+        var bytes = new byte[byteCount];
+        Span<Vector4> data = MemoryMarshal.Cast<byte, Vector4>(bytes.AsSpan());
+        for (int index = 0; index < instances.Length; index++)
         {
-            using MappedBuffer mapped = _backend.Map(buffer, MapType.Write, BufferRange.Whole);
-            mapped.Bytes.Clear();
-            Span<Vector4> data = MemoryMarshal.Cast<byte, Vector4>(mapped.Bytes);
-            for (int index = 0; index < instances.Length; index++)
-            {
-                ref readonly ImageInstance image = ref instances[index];
-                int start = index * 5;
-                data[start] = new(image.Rectangle.X, image.Rectangle.Y, image.Rectangle.Width, image.Rectangle.Height);
-                data[start + 1] = new(image.Uv.X, image.Uv.Y, image.Uv.Width, image.Uv.Height);
-                data[start + 2] = new(image.ClipRectangle.X, image.ClipRectangle.Y,
-                    image.ClipRectangle.Width, image.ClipRectangle.Height);
-                data[start + 3] = new(image.Matrix.M11, image.Matrix.M12, image.Matrix.M21, image.Matrix.M22);
-                data[start + 4] = new(image.Matrix.M31, image.Matrix.M32, image.Alpha, 0);
-            }
-            mapped.Flush(new BufferRange(0, byteCount));
-            return InstanceBuffer.Create(_backend, _device, buffer, instances.Length, InstanceByteCount);
+            ref readonly ImageInstance image = ref instances[index];
+            int start = index * 5;
+            data[start] = new(image.Rectangle.X, image.Rectangle.Y, image.Rectangle.Width, image.Rectangle.Height);
+            data[start + 1] = new(image.Uv.X, image.Uv.Y, image.Uv.Width, image.Uv.Height);
+            data[start + 2] = new(image.ClipRectangle.X, image.ClipRectangle.Y,
+                image.ClipRectangle.Width, image.ClipRectangle.Height);
+            data[start + 3] = new(image.Matrix.M11, image.Matrix.M12, image.Matrix.M21, image.Matrix.M22);
+            data[start + 4] = new(image.Matrix.M31, image.Matrix.M32, image.Alpha, 0);
         }
-        catch { buffer.Dispose(); throw; }
+        return InstanceBuffer.Create(_backend, _device, graph, bytes, instances.Length, InstanceByteCount, "Image instances", previous);
     }
 
     public void Dispose()
     {
         Sampler.Dispose();
-        Pipeline.Dispose();
-        foreach (Pipeline pipeline in _depthPipelines.Values) pipeline.Dispose();
+        
+        _depthPipelines.Clear();
     }
 }

@@ -1,36 +1,45 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 28,
-  "input_hash": "9ba9dc3de81f152e82719dfb29662ddb70f47b111679864c9d133891422690f6",
+  "importer_version": 36,
+  "input_hash": "33c32f7d87c36e86997abdb8a63ab628756c968fcc804108e2da97afbe9cc49f",
   "inputs": [
     {
-      "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
-    },
-    {
       "relative_path": "assets/Shaders/vsm_page_hiz_common.slang",
-      "content_hash": "dee7ba9a7248593d702d468cabfcbe553dc291c90876f1736f57efca562ab53b"
+      "content_hash": "a322b63d3e083bfb0470ebbdc3f305cbc9b914f5e9b8f8295b4629d3da39d89f"
     },
     {
       "relative_path": "assets/Shaders/vsm_page_hiz_reduce.shader",
-      "content_hash": "89cb26e525b9e5e53877be141da92fd3d418620b723bba5c25b740052502ec76"
+      "content_hash": "48ec157de96bb2e54f40e7be5079ceb792ea21908b69165e06ec34977604f921"
     },
     {
       "relative_path": "assets/Shaders/vsm_page_hiz_reduce.slang",
-      "content_hash": "2560bedfecc41bd172713b06e5aced5f3a715c515cfc739c97c8c15e2382914f"
+      "content_hash": "b54d70aa1a4d05e4a5cff04aecf4f5954d04c8346b8aaad08c7139953d61c757"
     }
   ],
   "reported_inputs": [],
+  "asset_inputs": [
+    "1677033a-b10f-492d-9379-3f3cc8ab3399",
+    "928f32a6-22ab-401e-9c48-a2a9c9d00eda",
+    "37d3be3a-aba3-4b6a-bd0c-2d90175bd2a5",
+    "289d5d93-babf-4329-8e23-c47b465a620b",
+    "5468582d-af2a-4bc7-a38a-33a3e848f2bd"
+  ],
   "outputs": [
     {
       "asset_guid": "c54545f1-3b34-5be8-b087-af5ede9f704c",
       "sub_asset_key": "",
-      "input_hash": "9ba9dc3de81f152e82719dfb29662ddb70f47b111679864c9d133891422690f6",
+      "input_hash": "33c32f7d87c36e86997abdb8a63ab628756c968fcc804108e2da97afbe9cc49f",
       "dependencies": [],
       "asset_path": "vsm_page_hiz_reduce.shader.asset",
-      "version": "ce80024f-66c4-d2d3-ede0-3f66de670432",
-      "content_hash": "D6205E46387FE45B676A1A852153F31DA1D6EE4CAA320BC8F868D1F49082BC48",
-      "asset_dependencies": []
+      "version": "bf9cdb9d-9f57-e5f9-2bd5-095d6f737750",
+      "content_hash": "7FAE53BFEDCF1E5AB0CB982632A6F9469AA9970AD3A8F96E0738DA5879D72111",
+      "asset_dependencies": [
+        "1677033a-b10f-492d-9379-3f3cc8ab3399",
+        "289d5d93-babf-4329-8e23-c47b465a620b",
+        "37d3be3a-aba3-4b6a-bd0c-2d90175bd2a5",
+        "5468582d-af2a-4bc7-a38a-33a3e848f2bd",
+        "928f32a6-22ab-401e-9c48-a2a9c9d00eda"
+      ]
     }
   ]
 }

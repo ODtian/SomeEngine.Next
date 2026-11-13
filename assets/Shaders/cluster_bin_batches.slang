@@ -10,14 +10,15 @@ bool RasterBatchUsesSoftware(uint slotOffset, uint material, bool software)
     return software && (Uniforms.PolicyTarget != 0u || !pixelMeshlet);
 }
 
-void EmitRasterBatch(uint bin, uint visible, uint workIndex, bool software, bool depthBuckets, inout uint batchCount)
+void EmitRasterBatch(uint bin, uint visible, uint workIndex, bool software, bool depthBuckets,
+    inout uint batchCount, inout bool spilled)
 {
     if (!IsBin(bin)) return;
     batchCount++;
-    WriteRasterBatch(bin, visible, workIndex, software, depthBuckets);
+    if (!WriteRasterBatch(bin, visible, workIndex, software, depthBuckets)) spilled = true;
 }
 
-void BuildRasterBatches(
+bool BuildRasterBatches(
     uint visibleIndex,
     uint slotOffset,
     ClusterMaterialRanges materials,
@@ -26,9 +27,10 @@ void BuildRasterBatches(
     bool isSoftware)
 {
     if (triangleCount == 0u)
-        return;
+        return false;
 
     uint emittedBatches = 0u;
+    bool spilled = false;
     uint rangeCount = ClusterMaterialRangeCount(materials, triangleCount);
     uint triangleStart = 0u;
     uint flatBatchIndex = 0u;
@@ -65,7 +67,7 @@ void BuildRasterBatches(
             }
 
             EmitRasterBatch(bin, visibleIndex,
-                RasterRangeWorkIndex(rangeIndex, mergedRangeCount), software, depthBuckets, emittedBatches);
+                RasterRangeWorkIndex(rangeIndex, mergedRangeCount), software, depthBuckets, emittedBatches, spilled);
             flatBatchIndex += mergedBatchCount;
             rangeIndex += mergedRangeCount;
             uint2 last = ClusterMaterialRange(PageHeap, materials, triangleCount, rangeIndex - 1u);
@@ -75,7 +77,7 @@ void BuildRasterBatches(
 
         for (uint rangeBatchIndex = 0u; rangeBatchIndex < batchCount; rangeBatchIndex++)
         {
-            EmitRasterBatch(bin, visibleIndex, flatBatchIndex, software, depthBuckets, emittedBatches);
+            EmitRasterBatch(bin, visibleIndex, flatBatchIndex, software, depthBuckets, emittedBatches, spilled);
             triangleStart = min(
                 triangleStart + ClusterMaterialBatchBits(PageHeap, materials,
                     max(rangeCount, 3u) * 4u + flatBatchIndex * 5u, 5u) + 1u,
@@ -85,6 +87,7 @@ void BuildRasterBatches(
         triangleStart = rangeEnd;
         rangeIndex++;
     }
+    return spilled;
 }
 
 #endif

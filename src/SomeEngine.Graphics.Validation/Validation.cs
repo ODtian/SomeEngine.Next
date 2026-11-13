@@ -31,7 +31,7 @@ public readonly record struct ValidationMessage(
 /// <para><b>After Dispose:</b> This type has no RHI Dispose state.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
-public interface IValidationMessageSink
+public interface IValidationReporter
 {
     void Report(in ValidationMessage message);
 }
@@ -42,11 +42,11 @@ public interface IValidationMessageSink
 /// <para><b>After Dispose:</b> This type has no RHI Dispose state.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
-public sealed class DelegateValidationMessageSink : IValidationMessageSink
+public sealed class DelegateValidationReporter : IValidationReporter
 {
     private readonly Action<ValidationMessage> _report;
 
-    public DelegateValidationMessageSink(Action<ValidationMessage> report)
+    public DelegateValidationReporter(Action<ValidationMessage> report)
     {
         _report = report ?? throw new ArgumentNullException(nameof(report));
     }
@@ -60,10 +60,10 @@ public sealed class DelegateValidationMessageSink : IValidationMessageSink
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
-/// <param name="MessageSink">Receives validation messages when supplied.</param>
+/// <param name="Reporter">Receives validation messages when supplied.</param>
 /// <param name="ReportLiveObjectsOnDispose">Reports device objects that remain alive when the layer is disposed.</param>
 /// <param name="NativeValidationDisabled">Keep engine validation active without enabling the backend's native validation layer.</param>
 public readonly record struct ValidationOptions(
-    IValidationMessageSink? MessageSink = null,
+    IValidationReporter? Reporter = null,
     bool ReportLiveObjectsOnDispose = true,
     bool NativeValidationDisabled = false);

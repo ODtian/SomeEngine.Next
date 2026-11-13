@@ -13,6 +13,13 @@ internal sealed class RangeAllocator
         _free = [new Range(0, capacity)];
     }
 
+    private RangeAllocator(RangeAllocator source)
+    {
+        _capacity = source._capacity;
+        _free = [.. source._free];
+    }
+    internal RangeAllocator Copy() => new(this);
+
     internal uint Allocate(uint count)
     {
         if (count == 0)

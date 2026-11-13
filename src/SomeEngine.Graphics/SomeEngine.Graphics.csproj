@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -22,7 +22,7 @@
       <_SlangToolchainIdentityLine Include="internal static class SlangToolchainIdentity" />
       <_SlangToolchainIdentityLine Include="{" />
       <_SlangToolchainIdentityLine Include="    internal const string Version = &quot;$(SlangToolchainVersion)&quot;%3B" />
-      <_SlangToolchainIdentityLine Include="    internal const string StandardModuleDirectory = &quot;$(SlangStandardModuleDirectory)&quot;%3B" />
+      <_SlangToolchainIdentityLine Include="    internal const string StandardLibraryDirectory = &quot;$(SlangStandardModuleDirectory)&quot;%3B" />
       <_SlangToolchainIdentityLine Include="}" />
       <Compile Include="$(_SlangToolchainIdentitySource)" />
     </ItemGroup>

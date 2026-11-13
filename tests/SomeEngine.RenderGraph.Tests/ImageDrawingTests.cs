@@ -67,13 +67,13 @@ public sealed class ImageDrawingTests
 
     private static void CheckImage(IGraphicsBackend backend, Device device, ImageFit fit, bool mixed = false)
     {
-        using var renderDevice = new RenderDevice(backend, device);
-        using var frames = new RenderFrameCoordinator(renderDevice);
+        using var pipelines = new global::SomeEngine.Render.RenderPipelines(backend, device);
         using var graph = new RenderGraph(backend, device, [backend.GetQueue(device, QueueType.Graphics)]);
+        using var renderDevice = new RenderDevice(graph, pipelines);
         using var game = new World();
         using var render = new RenderWorld();
-        using Texture texture = CreateTexture(mixed ? [255, 0, 0, 128] : null);
-        using Texture secondTexture = CreateTexture([0, 255, 0, 128]);
+        Texture texture = CreateTexture(mixed ? [255, 0, 0, 128] : null);
+        Texture secondTexture = CreateTexture([0, 255, 0, 128]);
         Texture? ready = null;
         var source = new AssetId<TextureAsset>(Guid.NewGuid());
         var secondSource = new AssetId<TextureAsset>(Guid.NewGuid());
@@ -97,9 +97,11 @@ public sealed class ImageDrawingTests
             game.Add(overlay, new Surface { Fill = new Color(1, 1, 1, 0.5f) });
         }
         using var extraction = new RenderExtractionSystems(render, new CanvasRenderExtractor());
-        using SurfaceMaterial surfaces = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
-        using ImageMaterial images = ImageMaterial.Create(device.Capabilities.CompileTarget);
-        using var renderer = new CanvasRenderer(backend, device, graph, render, surfaces,
+        using var shaderLibrary = new SomeEngine.Resources.ShaderLibrary(device.Capabilities.CompileTarget);
+        using var shaderFiles = new SomeEngine.Tests.EngineShaderFiles();
+        SurfaceMaterial surfaces = SurfaceMaterial.Create(shaderLibrary, shaderFiles.Files);
+        ImageMaterial images = ImageMaterial.Create(shaderLibrary, shaderFiles.Files);
+        using var renderer = new CanvasRenderer(backend, device, pipelines, graph, render, surfaces,
             Format.R8G8B8A8UNorm, images, renderDevice);
         using SomeEngine.Graphics.Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(64 * 256, BufferUsages.CopyDestination), MemoryType.Readback);
@@ -112,13 +114,7 @@ public sealed class ImageDrawingTests
             Assert.Equal(new Rect(8, 8, 32, 32), game.Read<LayoutRect>(image).Value);
             extraction.Extract(game);
             using var prepare = new RenderPrepareSystems(render, extraction);
-            Assert.True(frames.TryBeginPrepare(out var scope));
-            using (scope)
-            {
-                try { Assert.True(prepare.ApplyExtraction(scope)); }
-                finally { prepare.Shutdown(scope); }
-                scope.Commit();
-            }
+                Assert.True(prepare.ApplyExtraction());
             renderer.ReconcileGraph(target);
             Assert.True(renderer.TryGetPass(extraction.RequireMirror(canvas), out GraphPassId drawing));
             if (index == 0)
@@ -144,9 +140,9 @@ public sealed class ImageDrawingTests
             {
                 renderer.UpdateFrame(ref frame);
                 var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
-                int count = frame.Execute(completions);
-                renderDevice.TrackSubmission(completions.AsSpan(0, count));
-                renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+                ulong identity = frame.FrameIdentity;
+                frame.Execute();
+                Assert.Equal(WaitStatus.Completed, graph.WaitForFrame(identity, TimeSpan.FromSeconds(10)));
             }
             finally { frame.Dispose(); }
             using MappedBuffer pixels = backend.Map(readback, MapType.Read, BufferRange.Whole);
@@ -205,8 +201,7 @@ public sealed class ImageDrawingTests
                 pass.ColorAttachment(0, view, LoadType.Clear, StoreType.Store, WriteCoverage.Complete,
                     new Vector4(0, 0, 0, 1)),
             static (ref RasterPassCommandScope _, in GraphColorAttachmentViewId _) => { });
-        GraphBufferId output = edit.RegisterExternalBuffer(readback,
-            [new(BufferRange.Whole, readback.InitialSync, readback.InitialAccess, ResourceContentState.Undefined)]);
+        GraphBufferId output = edit.RegisterExternalBuffer(readback);
         copy = edit.AddCopyFramePass("Read image pixels", PassQueueSelection.AnyOfType(QueueType.Graphics),
             (target, output), new PassOptions(Culling: PassCullingMode.NeverCull),
             static (ref PassDefinition pass, ref (GraphTextureId Texture, GraphBufferId Buffer) data) =>

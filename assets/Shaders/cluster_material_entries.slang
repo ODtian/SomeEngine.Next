@@ -1,5 +1,9 @@
+#include "raster_faces.slang"
 #ifndef CLUSTER_VERTEX_ENCODING
 #define CLUSTER_VERTEX_ENCODING "someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1"
+#endif
+#ifndef CLUSTER_RASTER_BOUNDS
+#define CLUSTER_RASTER_BOUNDS "finite"
 #endif
 
 #ifndef CLUSTER_MATERIAL_ENTRIES_SLANG
@@ -14,9 +18,10 @@
 typedef VertexEvaluate RasterVertexEvaluate;
 typedef VisibilityEvaluate RasterVisibilityEvaluate;
 #endif
+#include "cluster_material_spill_entries.slang"
 
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("finite")]
+[ConservativeBounds(CLUSTER_RASTER_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
@@ -32,7 +37,7 @@ void ClusterRasterSoftwareImageAtomic64(
 }
 
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("finite")]
+[ConservativeBounds(CLUSTER_RASTER_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
@@ -49,11 +54,29 @@ void ClusterRasterSoftwareBufferAtomic64(
     SWRasterKernel(vertex, visibility, output, groupID, groupThreadIndex);
 }
 
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
+[ConservativeBounds(CLUSTER_RASTER_BOUNDS)]
+[shader("compute")]
+[numthreads(32, 1, 1)]
+[WaveSize(32)]
+[RasterMaterialInputs("evaluators")]
+void ClusterRasterSoftwareNonAtomic(
+    uniform RasterVertexEvaluate vertex,
+    uniform RasterVisibilityEvaluate visibility,
+    uint3 groupID : SV_GroupID,
+    uint groupThreadIndex : SV_GroupThreadID)
+{
+    ClusterRasterOutputNonAtomic output;
+    output.Width = ClusterSoftwareRasterUniformData.ScreenWidth;
+    output.Height = ClusterSoftwareRasterUniformData.ScreenHeight;
+    SWRasterKernel(vertex, visibility, output, groupID, groupThreadIndex);
+}
+
 #if defined(CLUSTER_SOFTWARE_MESHLET_RASTER)
 // Opt in when keeping two evaluated user vertices per lane fits the material's
 // register budget. The same entry still accepts individual vertex-reuse batches.
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("finite")]
+[ConservativeBounds(CLUSTER_RASTER_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
@@ -67,7 +90,7 @@ void ClusterRasterSoftwareMeshletImageAtomic64(
 }
 
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("finite")]
+[ConservativeBounds(CLUSTER_RASTER_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
@@ -81,10 +104,26 @@ void ClusterRasterSoftwareMeshletBufferAtomic64(
     output.Height = ClusterSoftwareRasterUniformData.ScreenHeight;
     SWRasterKernel(vertex, visibility, output, groupID, groupThreadIndex, true);
 }
+
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
+[ConservativeBounds(CLUSTER_RASTER_BOUNDS)]
+[shader("compute")]
+[numthreads(32, 1, 1)]
+[WaveSize(32)]
+[RasterMaterialInputs("evaluators")]
+void ClusterRasterSoftwareMeshletNonAtomic(
+    uniform RasterVertexEvaluate vertex, uniform RasterVisibilityEvaluate visibility,
+    uint3 groupID : SV_GroupID, uint groupThreadIndex : SV_GroupThreadID)
+{
+    ClusterRasterOutputNonAtomic output;
+    output.Width = ClusterSoftwareRasterUniformData.ScreenWidth;
+    output.Height = ClusterSoftwareRasterUniformData.ScreenHeight;
+    SWRasterKernel(vertex, visibility, output, groupID, groupThreadIndex, true);
+}
 #endif
 
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("finite")]
+[ConservativeBounds(CLUSTER_RASTER_BOUNDS)]
 [shader("vertex")]
 [RasterMaterialInputs("evaluators")]
 ClusterRasterPixelInput<RasterVisibilityEvaluate.Varying> ClusterRasterVertex(
@@ -98,7 +137,7 @@ ClusterRasterPixelInput<RasterVisibilityEvaluate.Varying> ClusterRasterVertex(
 }
 
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("finite")]
+[ConservativeBounds(CLUSTER_RASTER_BOUNDS)]
 [shader("mesh")]
 [outputtopology("triangle")]
 [numthreads(32, 1, 1)]
@@ -118,7 +157,7 @@ void ClusterRasterMesh(
 // Opt in only when the user varying payload fits the larger mesh output.
 #if defined(CLUSTER_MESHLET_RASTER)
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("finite")]
+[ConservativeBounds(CLUSTER_RASTER_BOUNDS)]
 [shader("mesh")]
 [outputtopology("triangle")]
 [numthreads(32, 1, 1)]
@@ -142,14 +181,13 @@ void EvaluateClusterRasterPixelImageAtomic64(
     ClusterRasterPixelInput<RasterVisibilityEvaluate.Varying> input)
 {
     ClusterViewUniforms view = LoadClusterView(HardwareRasterViews, HardwareRasterPolicyViews, input.ViewIndex);
-    input.Pos.xy += float2(ClusterRasterTargetPixelOrigin(input.VisibleClusterIndex, view));
+    input.Pos.xy += float2(ClusterRasterTargetPixelOrigin<ClusterRasterOutputImageAtomic64>(input.VisibleClusterIndex, view));
     ClusterRasterOutputPixel outputPixel;
-    bool accepted = ResolveClusterHardwareRasterPixel(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
-    uint encodedDepth = accepted ? (view.TargetPolicy != 0u
-        ? ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy) : uint(VisibilityWinnerImage[uint3(outputPixel.Position, view.TargetViewIndex)] >> 32u)) : 0u;
+    bool accepted = ResolveClusterHardwareRasterPixel<ClusterRasterOutputImageAtomic64>(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
+    uint encodedDepth = accepted ? (uint(VisibilityWinnerImage[uint3(outputPixel.Position, view.TargetViewIndex)] >> 32u)) : 0u;
     float rasterDepth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
     accepted = accepted && ClusterRasterDepthAccepts(rasterDepth, encodedDepth,
-        HardwareRasterDispatchUniformData.EarlyDepthEnabled, view.TargetPolicy);
+        HardwareRasterDispatchUniformData.EarlyDepthEnabled, 0u);
     if (!ClusterRasterQuadAcceptsPixel(accepted))
         discard;
     VisibilityPixelResult pixelResult =
@@ -157,11 +195,6 @@ void EvaluateClusterRasterPixelImageAtomic64(
             encodedDepth);
     if (!accepted || pixelResult.Visible == 0u)
         discard;
-    if (view.TargetPolicy != 0u)
-    {
-        WriteRasterTargetPixelDepth(uint2(outputPixel.Position), pixelResult.Depth, outputPixel.DepthCacheClass);
-        discard;
-    }
     WriteVisibilityWinnerImage(
         int2(input.Pos.xy),
         view.TargetViewIndex,
@@ -175,14 +208,13 @@ void EvaluateClusterRasterPixelBufferAtomic64(
     ClusterRasterPixelInput<RasterVisibilityEvaluate.Varying> input)
 {
     ClusterViewUniforms view = LoadClusterView(HardwareRasterViews, HardwareRasterPolicyViews, input.ViewIndex);
-    input.Pos.xy += float2(ClusterRasterTargetPixelOrigin(input.VisibleClusterIndex, view));
+    input.Pos.xy += float2(ClusterRasterTargetPixelOrigin<ClusterRasterOutputImageAtomic64>(input.VisibleClusterIndex, view));
     ClusterRasterOutputPixel outputPixel;
-    bool accepted = ResolveClusterHardwareRasterPixel(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
-    uint encodedDepth = accepted ? (view.TargetPolicy != 0u
-        ? ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy) : VisibilityWinnerBuffer.Load(((view.TargetViewIndex * HardwareRasterUniformData.ScreenHeight + uint(outputPixel.Position.y)) * HardwareRasterUniformData.ScreenWidth + uint(outputPixel.Position.x)) * 8u + 4u)) : 0u;
+    bool accepted = ResolveClusterHardwareRasterPixel<ClusterRasterOutputImageAtomic64>(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
+    uint encodedDepth = accepted ? (VisibilityWinnerBuffer.Load(((view.TargetViewIndex * HardwareRasterUniformData.ScreenHeight + uint(outputPixel.Position.y)) * HardwareRasterUniformData.ScreenWidth + uint(outputPixel.Position.x)) * 8u + 4u)) : 0u;
     float rasterDepth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
     accepted = accepted && ClusterRasterDepthAccepts(rasterDepth, encodedDepth,
-        HardwareRasterDispatchUniformData.EarlyDepthEnabled, view.TargetPolicy);
+        HardwareRasterDispatchUniformData.EarlyDepthEnabled, 0u);
     if (!ClusterRasterQuadAcceptsPixel(accepted))
         discard;
     VisibilityPixelResult pixelResult =
@@ -190,12 +222,36 @@ void EvaluateClusterRasterPixelBufferAtomic64(
             encodedDepth);
     if (!accepted || pixelResult.Visible == 0u)
         discard;
-    if (view.TargetPolicy != 0u)
-    {
-        WriteRasterTargetPixelDepth(uint2(outputPixel.Position), pixelResult.Depth, outputPixel.DepthCacheClass);
-        discard;
-    }
     WriteVisibilityWinnerBuffer(
+        int2(input.Pos.xy),
+        view.TargetViewIndex,
+        HardwareRasterUniformData.ScreenWidth,
+        HardwareRasterUniformData.ScreenHeight,
+        saturate(pixelResult.Depth),
+        EncodeVisBuffer(input.VisibleClusterIndex, input.TriangleID));
+}
+
+[ForceInline]
+void EvaluateClusterRasterPixelNonAtomic(
+    uniform RasterVisibilityEvaluate visibility,
+    ClusterRasterPixelInput<RasterVisibilityEvaluate.Varying> input)
+{
+    ClusterViewUniforms view = LoadClusterView(HardwareRasterViews, HardwareRasterPolicyViews, input.ViewIndex);
+    input.Pos.xy += float2(ClusterRasterTargetPixelOrigin<ClusterRasterOutputImageAtomic64>(input.VisibleClusterIndex, view));
+    ClusterRasterOutputPixel outputPixel;
+    bool accepted = ResolveClusterHardwareRasterPixel<ClusterRasterOutputImageAtomic64>(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
+    uint encodedDepth = accepted ? (ReadVisibilityNonAtomicDepth(outputPixel.Position, view.TargetViewIndex, HardwareRasterUniformData.ScreenWidth, HardwareRasterUniformData.ScreenHeight)) : 0u;
+    float rasterDepth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
+    accepted = accepted && ClusterRasterDepthAccepts(rasterDepth, encodedDepth,
+        HardwareRasterDispatchUniformData.EarlyDepthEnabled, 0u);
+    if (!ClusterRasterQuadAcceptsPixel(accepted))
+        discard;
+    VisibilityPixelResult pixelResult =
+        EvaluateHardwareRasterPixel<RasterVertexEvaluate.Vertex, RasterVisibilityEvaluate>(visibility, input, view,
+            encodedDepth);
+    if (!accepted || pixelResult.Visible == 0u)
+        discard;
+    WriteVisibilityNonAtomic(
         int2(input.Pos.xy),
         view.TargetViewIndex,
         HardwareRasterUniformData.ScreenWidth,
@@ -210,13 +266,13 @@ PSVisBufferOutput EvaluateClusterRasterPixelHardwareOnly(
     ClusterRasterPixelInput<RasterVisibilityEvaluate.Varying> input)
 {
     ClusterViewUniforms view = LoadClusterView(HardwareRasterViews, HardwareRasterPolicyViews, input.ViewIndex);
-    input.Pos.xy += float2(ClusterRasterTargetPixelOrigin(input.VisibleClusterIndex, view));
+    input.Pos.xy += float2(ClusterRasterTargetPixelOrigin<ClusterRasterOutputImageAtomic64>(input.VisibleClusterIndex, view));
     ClusterRasterOutputPixel outputPixel;
-    bool accepted = ResolveClusterHardwareRasterPixel(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
-    uint encodedDepth = ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted);
+    bool accepted = ResolveClusterHardwareRasterPixel<ClusterRasterOutputImageAtomic64>(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
+    uint encodedDepth = 0u;
     float rasterDepth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
     accepted = accepted && ClusterRasterDepthAccepts(rasterDepth, encodedDepth,
-        HardwareRasterDispatchUniformData.EarlyDepthEnabled, view.TargetPolicy);
+        HardwareRasterDispatchUniformData.EarlyDepthEnabled, 0u);
     if (!ClusterRasterQuadAcceptsPixel(accepted))
         discard;
     VisibilityPixelResult pixelResult =
@@ -224,11 +280,6 @@ PSVisBufferOutput EvaluateClusterRasterPixelHardwareOnly(
             encodedDepth);
     if (!accepted || pixelResult.Visible == 0u)
         discard;
-    if (view.TargetPolicy != 0u)
-    {
-        WriteRasterTargetPixelDepth(uint2(outputPixel.Position), pixelResult.Depth, outputPixel.DepthCacheClass);
-        discard;
-    }
     PSVisBufferOutput output;
     output.Visibility = EncodeVisBuffer(input.VisibleClusterIndex, input.TriangleID);
     output.Depth = saturate(pixelResult.Depth);
@@ -244,7 +295,7 @@ void ClusterShade(
     uniform SurfaceEvaluate surface,
     uint3 tid : SV_DispatchThreadID)
 {
-    CSShade(vertex, domain, surface, tid);
+    CSShade<VertexEvaluate, DomainEvaluate, SurfaceEvaluate, 0u>(vertex, domain, surface, tid);
 }
 
 
@@ -256,21 +307,11 @@ void ClusterShade(
 void ClusterShadeMode<let debugMode : uint>(uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
     uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
 {
-    CSShade(vertex, domain, surface, tid, debugMode);
+    CSShade<VertexEvaluate, DomainEvaluate, SurfaceEvaluate, debugMode>(vertex, domain, surface, tid);
 }
 #endif
 
 #if defined(CLUSTER_FORWARD_SHADING)
-[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[shader("compute")]
-[numthreads(64, 1, 1)]
-void ClusterShadowRequests<let visibilityDepth : uint, let debugMode : uint>(
-    uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
-    uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
-{
-    CSRequestShadowPages(vertex, domain, surface, tid, visibilityDepth);
-}
-
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -304,6 +345,19 @@ void ClusterRasterMeshPixelBufferAtomic64(
     [[vk::perprimitive]] ClusterMeshPrimitive primitive)
 {
     EvaluateClusterRasterPixelBufferAtomic64(
+        visibility,
+        MakeMeshPixelInput<RasterVisibilityEvaluate.Varying>(vertex, primitive));
+}
+
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
+[shader("pixel")]
+[RasterMaterialInputs("evaluators")]
+void ClusterRasterMeshPixelNonAtomic(
+    uniform RasterVisibilityEvaluate visibility,
+    ClusterRasterVertexData<RasterVisibilityEvaluate.Varying> vertex,
+    [[vk::perprimitive]] ClusterMeshPrimitive primitive)
+{
+    EvaluateClusterRasterPixelNonAtomic(
         visibility,
         MakeMeshPixelInput<RasterVisibilityEvaluate.Varying>(vertex, primitive));
 }
@@ -345,6 +399,16 @@ void ClusterRasterPixelBufferAtomic64(
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
 [RasterMaterialInputs("evaluators")]
+void ClusterRasterPixelNonAtomic(
+    uniform RasterVisibilityEvaluate visibility,
+    ClusterRasterPixelInput<RasterVisibilityEvaluate.Varying> input)
+{
+    EvaluateClusterRasterPixelNonAtomic(visibility, input);
+}
+
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
+[shader("pixel")]
+[RasterMaterialInputs("evaluators")]
 PSVisBufferOutput ClusterRasterPixelHardwareOnly(
     uniform RasterVisibilityEvaluate visibility,
     ClusterRasterPixelInput<RasterVisibilityEvaluate.Varying> input)
@@ -354,7 +418,7 @@ PSVisBufferOutput ClusterRasterPixelHardwareOnly(
 
 // Optional depth-target entries leave the primary visibility output unused.
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("finite")]
+[ConservativeBounds(CLUSTER_RASTER_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
@@ -369,7 +433,7 @@ void ClusterRasterSoftwareTarget(
 
 #if defined(CLUSTER_SOFTWARE_MESHLET_RASTER)
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("finite")]
+[ConservativeBounds(CLUSTER_RASTER_BOUNDS)]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 [WaveSize(32)]
@@ -392,17 +456,17 @@ void EvaluateClusterRasterPixelTarget(
 {
     ClusterViewUniforms view = LoadClusterView(
         HardwareRasterViews, HardwareRasterPolicyViews, input.ViewIndex);
-    input.Pos.xy += float2(ClusterRasterTargetPixelOrigin(input.VisibleClusterIndex, view));
+    input.Pos.xy += float2(ClusterRasterTargetPixelOrigin<ShadowPageOutput>(input.VisibleClusterIndex, view));
     ClusterRasterOutputPixel outputPixel;
-    bool accepted = ResolveClusterHardwareRasterPixel(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
-    uint encodedDepth = ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted);
-    float rasterDepth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
+    bool accepted = ResolveClusterHardwareRasterPixel<ShadowPageOutput>(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
+    uint encodedDepth = ReadClusterRasterTargetDepth(outputPixel, 1u, accepted);
+    float rasterDepth = ReadClusterRasterDepth<ShadowPageOutput>(input.Pos, input.ClipDepth, view);
     accepted = accepted && ClusterRasterDepthAccepts(rasterDepth, encodedDepth,
-        HardwareRasterDispatchUniformData.EarlyDepthEnabled, view.TargetPolicy);
+        HardwareRasterDispatchUniformData.EarlyDepthEnabled, 1u);
     if (!ClusterRasterQuadAcceptsPixel(accepted))
         discard;
     VisibilityPixelResult result =
-        EvaluateHardwareRasterPixel<RasterVertexEvaluate.Vertex, RasterVisibilityEvaluate>(visibility, input, view,
+        EvaluateHardwareRasterPixel<RasterVertexEvaluate.Vertex, RasterVisibilityEvaluate,ShadowPageOutput>(visibility, input, view,
             encodedDepth);
     if (!accepted || result.Visible == 0u)
         discard;
@@ -430,5 +494,33 @@ void ClusterRasterMeshPixelTarget(
     EvaluateClusterRasterPixelTarget(visibility,
         MakeMeshPixelInput<RasterVisibilityEvaluate.Varying>(vertex, primitive));
 }
+
+
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
+[ConservativeBounds(CLUSTER_RASTER_BOUNDS)]
+[shader("vertex")][RasterMaterialInputs("evaluators")]
+ClusterRasterPixelInput<RasterVisibilityEvaluate.Varying> ClusterRasterVertexTarget(
+    uniform RasterVertexEvaluate vertex,uniform RasterVisibilityEvaluate visibility,
+    uint vertexID:SV_VertexID,uint instanceID:SV_InstanceID)
+{ return BuildVisBufferVertex<RasterVertexEvaluate,RasterVisibilityEvaluate,RasterBatchesInput,ShadowPageOutput>(vertex,visibility,vertexID,instanceID); }
+
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
+[ConservativeBounds(CLUSTER_RASTER_BOUNDS)]
+[shader("mesh")][outputtopology("triangle")][numthreads(32,1,1)][RasterMaterialInputs("evaluators")]
+void ClusterRasterMeshTarget(uniform RasterVertexEvaluate vertex,uniform RasterVisibilityEvaluate visibility,
+    uint3 group:SV_GroupID,uint lane:SV_GroupIndex,
+    out vertices ClusterRasterVertexData<RasterVisibilityEvaluate.Varying> vertices[32],
+    out indices uint3 indices[32],out primitives ClusterMeshPrimitive primitives[32])
+{ BuildVisBufferMesh<RasterVertexEvaluate,RasterVisibilityEvaluate,ShadowPageOutput>(vertex,visibility,group,lane,vertices,indices,primitives); }
+
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
+[ConservativeBounds(CLUSTER_RASTER_BOUNDS)]
+[shader("mesh")][outputtopology("triangle")][numthreads(32,1,1)][RasterMaterialInputs("evaluators")]
+void ClusterRasterMeshletTarget(uniform RasterVertexEvaluate vertex,uniform RasterVisibilityEvaluate visibility,
+    uint3 group:SV_GroupID,uint lane:SV_GroupIndex,
+    out vertices ClusterRasterVertexData<RasterVisibilityEvaluate.Varying> vertices[64],
+    out indices uint3 indices[128],out primitives ClusterMeshPrimitive primitives[128])
+{ BuildVisBufferMeshlet<RasterVertexEvaluate,RasterVisibilityEvaluate,ShadowPageOutput>(vertex,visibility,group,lane,vertices,indices,primitives); }
+
 
 #endif

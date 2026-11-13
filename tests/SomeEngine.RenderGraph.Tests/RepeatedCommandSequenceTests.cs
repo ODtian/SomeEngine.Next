@@ -21,8 +21,7 @@ public sealed class RepeatedCommandSequenceTests
         var passes = new GraphPassId[count];
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            destination = edit.RegisterExternalBuffer(output,
-                [new(BufferRange.Whole, output.InitialSync, output.InitialAccess, ResourceContentState.Undefined)]);
+            destination = edit.RegisterExternalBuffer(output);
             for (int index = 0; index < count; index++)
             {
                 var value = new BufferWord(destination, (ulong)index * sizeof(uint), (uint)index + 1);

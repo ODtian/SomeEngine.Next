@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Text.Json.Nodes;
+using SlangShaderSharp;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Pipeline;
@@ -19,9 +20,9 @@ public static partial class BehaviorScenes
     public static async Task CreateTessellatedSpheresAsync(string source, string destination, string engineRoot)
     {
         CopyContent(source, destination);
-        string shader = File.ReadAllText(Path.Combine(destination, "assets/Shaders/unlit.slang"))
-            .Replace("typedef LinearSurface DomainEvaluate;", "#include \"phong_tessellation.slang\"\ntypedef PhongTessellation DomainEvaluate;")
-            + "\n#include \"cluster_tessellation_entries.slang\"\n";
+        string shader = ReadUnlitSource(engineRoot)
+            .Replace("import triangle_surface;", "import triangle_surface;\nimport phong_tessellation;")
+            .Replace("typedef LinearSurface Domain;", "typedef PhongTessellation Domain;");
         await SetGreenShaderAsync(destination, engineRoot, "tessellated-unlit", shader);
     }
 
@@ -29,17 +30,17 @@ public static partial class BehaviorScenes
     {
         CopyContent(source, destination);
         var project = new AssetProject(destination, []);
-        await using var loader = new AssetLoader(project.CreateStorage());
-        AssetEntry entry = project.Manifest.Assets.Values.Single(value => value.Name == "green sphere" && value.AssetType == MaterialAsset.FileType);
+        await using var loader = SomeEngine.Assets.Importers.EngineShaderContent.OpenFiles(project.RootPath, project.Manifest);
+        AssetEntry entry = FindContentAsset(project, "green sphere", MaterialAsset.FileType);
         using var material = await UnlitMaterialAsset.OpenAsync(loader, new(entry.AssetGuid));
-        material.GetBlock<MaterialBlock>().Shader = new(project.Resolve("assets/Shaders/deformed-phong.shader")!.Value);
+        material.GetBlock<MaterialBlock>().Shader = new(FindContentAsset(project, "Deformed Phong", ShaderAsset.FileType).AssetGuid);
         _ = new UnlitMaterialParameters(material.GetBlock<MaterialBlock>())
         {
-            AlbedoMap = new(project.Manifest.Assets.Values.Single(value => value.Name == "Blend checker" && value.AssetType == TextureAsset.FileType).AssetGuid),
+            AlbedoMap = new(FindContentAsset(project, "Blend checker", TextureAsset.FileType).AssetGuid),
         };
         project.RegisterAsset(await material.SaveAsync(Path.Combine(destination, entry.Path)));
         using var red = await MeshAsset.OpenAsync(loader,
-            new(project.Manifest.Assets.Values.Single(value => value.Name == "red sphere" && value.AssetType == MeshAsset.FileType).AssetGuid));
+            new(FindContentAsset(project, "red sphere", MeshAsset.FileType).AssetGuid));
         var (vertices, indices, attributes) = PrimitiveMeshGenerator.CreateIcoSphere(0);
         using MeshAsset green = ClusterBuilder.ProcessRaw(vertices, attributes, indices, [new(material.Id)], "green Phong sphere");
         project.RegisterAsset(await green.SaveAsync(Path.Combine(destination, "assets/Meshes/green-phong.mesh.asset")));
@@ -57,12 +58,18 @@ public static partial class BehaviorScenes
     {
         CopyContent(source, destination);
         var project = new AssetProject(destination, []);
-        await using var loader = new AssetLoader(project.CreateStorage());
+        await using var loader = SomeEngine.Assets.Importers.EngineShaderContent.OpenFiles(project.RootPath, project.Manifest);
         using var part = await MeshAsset.OpenAsync(loader,
-            new(project.Manifest.Assets.Values.Single(value => value.Name == "Blend part" && value.AssetType == MeshAsset.FileType).AssetGuid));
+            new(FindContentAsset(project, "Blend part", MeshAsset.FileType).AssetGuid));
+        AssetEntry materialEntry = FindContentAsset(project, "Deformed Phong", MaterialAsset.FileType);
+        using (var material = await MaterialAsset.OpenAsync(loader, new(materialEntry.AssetGuid)))
+        {
+            material.GetBlock<MaterialBlock>().Shader = new(FindContentAsset(project, "Deformed Phong both faces", ShaderAsset.FileType).AssetGuid);
+            project.RegisterAsset(await material.SaveAsync(Path.Combine(destination, materialEntry.Path)));
+        }
         using var curved = part.CreateCopy();
         curved.GetBlock<MeshMaterialsBlock>().Materials =
-            [new(project.Manifest.Assets.Values.Single(value => value.Name == "Deformed Phong" && value.AssetType == MaterialAsset.FileType).AssetGuid)];
+            [new(materialEntry.AssetGuid)];
         project.RegisterAsset(await curved.SaveAsync(Path.Combine(destination, "assets/Meshes/phong-part.mesh.asset")));
         using var world = new World();
         for (int group = 0; group < 4; group++)
@@ -86,9 +93,9 @@ public static partial class BehaviorScenes
     {
         CopyContent(source, destination);
         string material = File.ReadAllText(Path.Combine(engineRoot, "assets/Shaders/unlit_material.slang"))
-            .Replace("albedoSample.rgb * scalars.BaseColorTint.rgb", "albedoSample.rgb * scalars.BaseColorTint.bgr");
-        string shader = File.ReadAllText(Path.Combine(destination, "assets/Shaders/unlit.slang"))
-            .Replace("#include \"unlit_material.slang\"", material);
+            .Replace("albedo.rgb * scalars.BaseColorTint.rgb", "albedo.rgb * scalars.BaseColorTint.bgr");
+        string shader = ReadUnlitSource(engineRoot)
+            .Replace("import unlit_material;", material);
         await SetGreenShaderAsync(destination, engineRoot, "swapped-unlit", shader);
     }
 
@@ -96,9 +103,9 @@ public static partial class BehaviorScenes
     {
         CopyContent(source, destination);
         var project = new AssetProject(destination, []);
-        await using var loader = new AssetLoader(project.CreateStorage());
+        await using var loader = SomeEngine.Assets.Importers.EngineShaderContent.OpenFiles(project.RootPath, project.Manifest);
         using var receiver = await MeshAsset.OpenAsync(loader,
-            new(project.Manifest.Assets.Values.Single(value => value.Name == "Blend panel" && value.AssetType == MeshAsset.FileType).AssetGuid));
+            new(FindContentAsset(project, "Blend panel", MeshAsset.FileType).AssetGuid));
         using var application = await ApplicationSettingsAsset.OpenAsync(loader,
             new(project.Manifest.List(ApplicationSettingsAsset.FileType).Single().AssetGuid));
         using var scene = await WorldAsset.OpenAsync(loader, application.GetBlock<ApplicationSettingsBlock>().Scene);
@@ -119,9 +126,9 @@ public static partial class BehaviorScenes
     {
         CopyContent(source, destination);
         var project = new AssetProject(destination, []);
-        await using var loader = new AssetLoader(project.CreateStorage());
+        await using var loader = SomeEngine.Assets.Importers.EngineShaderContent.OpenFiles(project.RootPath, project.Manifest);
         using var material = await UnlitMaterialAsset.OpenAsync(loader,
-            new(project.Manifest.Assets.Values.Single(entry => entry.Name == "red sphere" && entry.AssetType == MaterialAsset.FileType).AssetGuid));
+            new(FindContentAsset(project, "red sphere", MaterialAsset.FileType).AssetGuid));
         var (vertices, indices, attributes) = PrimitiveMeshGenerator.CreateIcoSphere(5);
         using MeshAsset mesh = ClusterBuilder.ProcessRaw(vertices, attributes, indices,
             [new(material.Id)], "streaming sphere");
@@ -136,11 +143,10 @@ public static partial class BehaviorScenes
     {
         CopyContent(source, destination);
         var project = new AssetProject(destination, []);
-        await using var loader = new AssetLoader(project.CreateStorage());
+        await using var loader = SomeEngine.Assets.Importers.EngineShaderContent.OpenFiles(project.RootPath, project.Manifest);
         using var original = await MeshAsset.OpenAsync(loader,
-            new(project.Manifest.Assets.Values.Single(entry => entry.Name == "red sphere" && entry.AssetType == MeshAsset.FileType).AssetGuid));
-        using var material = await StandardMaterialAsset.OpenAsync(loader,
-            new(project.Manifest.Assets.Values.Single(entry => entry.Name == "Standard" && entry.AssetType == MaterialAsset.FileType).AssetGuid));
+            new(FindContentAsset(project, "red sphere", MeshAsset.FileType).AssetGuid));
+        using var material = await StandardMaterialAsset.OpenAsync(loader, MaterialTemplates.Standard);
         using var mesh = original.CreateCopy();
         mesh.GetBlock<MeshMaterialsBlock>().Materials = [material.Reference];
         project.RegisterAsset(await mesh.SaveAsync(Path.Combine(destination, "assets/Meshes/receiver.mesh.asset")));
@@ -154,26 +160,27 @@ public static partial class BehaviorScenes
         await SceneContent.SetOutputSizeAsync(destination, 128, 128);
     }
 
+    private static string ReadUnlitSource(string engineRoot) =>
+        File.ReadAllText(Path.Combine(engineRoot, "samples", "DefaultGame", "assets", "Shaders", "unlit.slang"));
+
     private static async Task SetGreenShaderAsync(string directory, string engineRoot, string name, string source)
     {
         string shaderDirectory = Path.Combine(directory, "assets/Shaders");
+        string sampleShaders = Path.Combine(engineRoot, "samples", "DefaultGame", "assets", "Shaders");
+        Directory.CreateDirectory(shaderDirectory);
         File.WriteAllText(Path.Combine(shaderDirectory, name + ".slang"), source);
-        JsonNode document = JsonNode.Parse(File.ReadAllText(Path.Combine(shaderDirectory, "unlit.shader")))!;
-        document["Fields"]!["Id"] = Guid.NewGuid().ToString();
-        document["Fields"]!["Name"] = name;
-        document["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray("cluster_transparency.slang", name + ".slang");
-        JsonArray specializations = document["Blocks"]![0]!["Fields"]!["Specializations"]!.AsArray();
-        for (int index = specializations.Count - 1; index >= 0; index--)
-            if (specializations[index]!["EntryPoint"]!.GetValue<string>() is
-                "BuildTransparentGeometry" or "RequestTransparentShadows" or "RequestProjectedTransparentShadows" or
-                "ResolveTransparentColor" or "ResolveProjectedTransparentColor")
-                specializations.RemoveAt(index);
+        using ShaderAsset template = await ShaderAsset.OpenSourceAsync(Path.Combine(sampleShaders, "unlit.shader"));
+        using ShaderAsset definition = template.CreateCopy();
+        definition.Name = name;
+        definition.GetBlock<ShaderSourceBlock>().SourceNames = [name + ".slang"];
         string path = Path.Combine(shaderDirectory, name + ".shader");
-        File.WriteAllText(path, document.ToJsonString());
-        var project = new AssetProject(directory, [], shaderIncludeDirectories: [Path.Combine(engineRoot, "assets/Shaders")]);
+        await definition.SaveSourceAsync(path);
+        var project = new AssetProject(directory, [],
+            shaderIncludeDirectories: [sampleShaders, Path.Combine(engineRoot, "assets/Shaders")],
+            shaderTargets: [SlangCompileTarget.Dxil]);
         await project.BuildAsync(path);
-        await using var loader = new AssetLoader(project.CreateStorage());
-        AssetEntry entry = project.Manifest.Assets.Values.Single(entry => entry.Name == "green sphere" && entry.AssetType == MaterialAsset.FileType);
+        await using var loader = SomeEngine.Assets.Importers.EngineShaderContent.OpenFiles(project.RootPath, project.Manifest);
+        AssetEntry entry = FindContentAsset(project, "green sphere", MaterialAsset.FileType);
         using var material = await UnlitMaterialAsset.OpenAsync(loader, new(entry.AssetGuid));
         material.GetBlock<MaterialBlock>().Shader = new(project.Resolve(path)!.Value);
         project.RegisterAsset(await material.SaveAsync(Path.Combine(directory, entry.Path)));
@@ -181,7 +188,7 @@ public static partial class BehaviorScenes
 
     private static async Task WriteSceneAsync(AssetProject project, World world)
     {
-        await using var loader = new AssetLoader(project.CreateStorage());
+        await using var loader = SomeEngine.Assets.Importers.EngineShaderContent.OpenFiles(project.RootPath, project.Manifest);
         AssetEntry entry = project.Manifest.List(ApplicationSettingsAsset.FileType).Single();
         using var application = await ApplicationSettingsAsset.OpenAsync(loader, new(entry.AssetGuid));
         using var scene = await WorldAsset.OpenAsync(loader, application.GetBlock<ApplicationSettingsBlock>().Scene);
@@ -189,6 +196,22 @@ public static partial class BehaviorScenes
             VerticalFieldOfView = MathF.PI / 3, NearPlane = .1f, FarPlane = 100 });
         scene.WriteWorld(world, SceneSerialization.CreateRegistry());
         project.RegisterAsset(await scene.SaveAsync(Path.Combine(project.RootPath, project.Manifest.Assets[scene.Id].Path)));
+    }
+
+    private static AssetEntry FindContentAsset(AssetProject project, string name, string assetType) =>
+        ContentAssets(project).DistinctBy(entry => entry.AssetGuid)
+            .Single(entry => entry.Name == name && entry.AssetType == assetType);
+
+    private static IEnumerable<AssetEntry> ContentAssets(AssetProject project)
+    {
+        foreach (AssetEntry entry in project.Manifest.Assets.Values) yield return entry;
+        string references = Path.Combine(project.RootPath, "Library", "AssetManifest", EngineShaderContent.ContentDirectoriesFileName);
+        foreach (JsonNode? directory in JsonNode.Parse(File.ReadAllText(references))!.AsArray())
+        {
+            string root = Path.GetFullPath(directory!.GetValue<string>(), project.RootPath);
+            AssetManifest manifest = AssetManifest.Load(Path.Combine(root, "Library", "AssetManifest"));
+            foreach (AssetEntry entry in manifest.Assets.Values) yield return entry;
+        }
     }
 
     private static void CopyContent(string source, string destination)
@@ -199,5 +222,9 @@ public static partial class BehaviorScenes
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.Copy(file, path);
         }
+        string references = Path.Combine(source, "Library", "AssetManifest", EngineShaderContent.ContentDirectoriesFileName);
+        string[] directories = JsonNode.Parse(File.ReadAllText(references))!.AsArray()
+            .Select(directory => Path.GetFullPath(directory!.GetValue<string>(), source)).ToArray();
+        EngineShaderContent.SetContentDirectories(new AssetProject(destination, []), directories);
     }
 }

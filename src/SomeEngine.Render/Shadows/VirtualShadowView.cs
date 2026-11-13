@@ -37,8 +37,8 @@ public struct VirtualShadowView
     public uint VirtualResolution;
     public uint PageSize;
     public uint AtlasSize;
-    public uint PhysicalPagesPerRow;
-    public uint MaxPhysicalPages;
+    public uint AtlasPagesPerRow;
+    public uint MaxPages;
     public int VirtualPageOriginX;
     public float DepthBias;
     public uint PageTableOffset;
@@ -77,7 +77,7 @@ public struct VirtualShadowView
     public long WorldPageOriginX;
     public long WorldPageOriginY;
     public float PageDilationBorder;
-    private float AddressPadding;
+    public uint RangeId;
     public Vector3 LightDirection;
     /// <summary>Local emitter radius in engine world units.</summary>
     public float SourceRadius;
@@ -88,11 +88,27 @@ public struct VirtualShadowView
     public float TexelDitherScale;
     /// <summary>Translation from the current world data into this view's near coordinates.</summary>
     public Vector3 WorldTranslation;
-    private float TranslationPadding;
+    public uint RangeGeneration;
     private Matrix4x4 _shadowUvNormal;
     public readonly Matrix4x4 ShadowUvNormal => _shadowUvNormal;
     private Matrix4x4 _shadowUv;
     public readonly Matrix4x4 ShadowUv => _shadowUv;
+
+    public readonly uint PageTableEntryCount
+    {
+        get
+        {
+            if ((Flags & VirtualShadowViewFlags.SinglePage) != 0u) return 1u;
+            uint dimension = VirtualResolution / PageSize;
+            uint count = 0u;
+            for (uint mip = 0; mip < MipLevelCount; mip++)
+            {
+                count += dimension * dimension;
+                dimension = Math.Max(dimension >> 1, 1u);
+            }
+            return count;
+        }
+    }
 
     /// <summary>Projects a position expressed relative to the current world data origin.</summary>
     public readonly Vector4 ProjectPosition(Vector3 position) =>
@@ -114,4 +130,5 @@ public static class VirtualShadowViewFlags
     public const uint CachedDistantLight = 1u << 9;
     public const uint PrefilteredDistant = 1u << 10;
     public const uint FirstPersonShadow = 1u << 11;
+    public const uint DirectionalDynamicDepthCache = 1u << 12;
 }

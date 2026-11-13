@@ -15,7 +15,7 @@ public class ShaderSourcePolicyTests
     {
         string path = TestProjectPaths.ShaderPath(shaderFile);
         using var definition = await ShaderAsset.OpenSourceAsync(path);
-        using var asset = SlangShaderImporter.CompileDefinition(definition, path);
+        using var asset = SlangShaderImporter.CompileDefinition(definition, path, [SlangShaderSharp.SlangCompileTarget.Dxil, SlangShaderSharp.SlangCompileTarget.Spirv]);
         Shader shader = await ShaderTestCompilation.CreateAsync(asset);
 
         foreach (string entryPoint in entryPoints)
@@ -44,7 +44,7 @@ public class ShaderSourcePolicyTests
             ? Path.Combine(TestProjectPaths.ProjectRoot(), "templates", "DefaultProject", "assets", "Shaders", shaderFile)
             : TestProjectPaths.ShaderPath(shaderFile);
         using var definition = await ShaderAsset.OpenSourceAsync(path);
-        using var asset = SlangShaderImporter.CompileDefinition(definition, path,
+        using var asset = SlangShaderImporter.CompileDefinition(definition, path, [SlangShaderSharp.SlangCompileTarget.Dxil, SlangShaderSharp.SlangCompileTarget.Spirv],
             includeDirectories: [TestProjectPaths.ShaderDirectory()]);
 
         ShaderBlock code = asset.GetBlock<ShaderBlock>();

@@ -13,7 +13,7 @@ public readonly record struct GpuPosePlayback(int State, int SourceState, float 
     float SourceSampleTime, float TransitionWeight, bool Finished);
 
 /// <summary>Independently retained, read-only matrices and calculation data from one submitted GPU input.</summary>
-public sealed record GpuPoseReadback(uint Starts, ulong InputNumber, double CalculationTime, float SampleTime,
+public sealed record GpuPoseReadbackResult(uint Starts, ulong InputNumber, double CalculationTime, float SampleTime,
     ReadOnlyMemory<Matrix4x4> Current, ReadOnlyMemory<Matrix4x4> Previous)
 {
     public GpuPoseIdentity Identity { get; init; }
@@ -27,55 +27,75 @@ public sealed record GpuPoseReadback(uint Starts, ulong InputNumber, double Calc
     public ReadOnlyMemory<GpuPoseSampleTimes> SourceSamples { get; init; }
 }
 
-/// <summary>A selected own-bone range from the current input, delivered after its GPU copy completes.</summary>
-public sealed class GpuPoseReadbackRequest
+/// <summary>A selected own-bone range from one extracted GPU input.</summary>
+public readonly record struct GpuPoseReadbackRequest(GpuPoseIdentity Identity, PoseRange Range);
+
+/// <summary>One completed bone observation carried through the render feedback queue.</summary>
+public readonly record struct GpuPoseReadback(Entity Target, uint Starts, ulong InputNumber, uint AnimationStarts,
+    PoseRange Range, int BoneIndex, Matrix4x4 Current, Matrix4x4 Previous, PoseCalculation Calculation,
+    bool Sampled, GpuPoseSampleTimes SourceSamples, GpuPoseFeedbackPresentation Presentation, GpuPosePlayback Playback,
+    ulong Version, double CalculationTime, double SourceCalculationTime, float SampleTime);
+
+public readonly record struct GpuPoseFeedbackInput(Entity Target, uint Starts, ulong InputNumber, uint AnimationStarts)
 {
-    private readonly TaskCompletionSource<GpuPoseReadback> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    public GpuPoseIdentity Identity { get; }
-    public PoseRange Range { get; }
-    public Task<GpuPoseReadback> Completion => _completion.Task;
+    public static GpuPoseFeedbackInput From(in GpuPoseIdentity identity) =>
+        new(identity.Target, identity.Starts, identity.InputNumber, identity.AnimationStarts);
+    public GpuPoseIdentity WithInstance(SkeletonInstance instance) => new(Target, instance, Starts, InputNumber, AnimationStarts);
+}
 
-    internal GpuPoseReadbackRequest(GpuPoseIdentity identity, PoseRange range) => (Identity, Range) = (identity, range);
-
-    /// <summary>Called by the extracted GPU producer after the accepted copy's queue completion.</summary>
-    public void Deliver(GpuPoseReadback result) => _completion.SetResult(result);
-
-    /// <summary>Called by the extracted GPU producer when this input's copy is abandoned before submission.</summary>
-    public void Cancel() => _completion.SetCanceled();
+public readonly record struct GpuPoseFeedbackPresentation(double PreviousTime, double CurrentTime, double Time,
+    float Amount, GpuPoseFeedbackInput PreviousInput, GpuPoseFeedbackInput CurrentInput)
+{
+    public static GpuPoseFeedbackPresentation From(in GpuPosePresentation value) =>
+        new(value.PreviousTime, value.CurrentTime, value.Time, value.Amount,
+            GpuPoseFeedbackInput.From(value.PreviousInput), GpuPoseFeedbackInput.From(value.CurrentInput));
+    public GpuPosePresentation WithInstance(SkeletonInstance instance) => new(PreviousTime, CurrentTime, Time, Amount)
+    { PreviousInput = PreviousInput.WithInstance(instance), CurrentInput = CurrentInput.WithInstance(instance) };
 }
 
 public static partial class GpuPoseAnimation
 {
-    /// <summary>Requests own bones after this update's GPU input has been formed, before extraction.</summary>
     public static GpuPoseReadbackRequest RequestReadback(World world, Entity target, PoseRange range)
     {
         GpuPoseTarget input = world.Read<GpuPoseTarget>(target);
-        var request = new GpuPoseReadbackRequest(new(target, input.Skeleton, input.Starts, input.InputNumber, input.AnimationStarts), range);
-        var requests = new List<GpuPoseReadbackRequest>();
-        foreach (GpuPoseReadbackRequest previous in input.Readbacks.Span)
-            if (!previous.Completion.IsCompleted) requests.Add(previous);
-        requests.Add(request);
-        input.Readbacks = requests.ToArray();
-        world.Replace(target, input);
+        var request = new GpuPoseReadbackRequest(new(target, input.Skeleton, input.Starts, input.InputNumber,
+            input.AnimationStarts), range);
+        if (!input.Readbacks.Span.Contains(request))
+        {
+            input.Readbacks = input.Readbacks.ToArray().Append(request).ToArray();
+            world.Replace(target, input);
+        }
         return request;
     }
 
-    /// <summary>Submits running until the requested input's completed feedback matches this leaf's current execution.</summary>
+    public static bool TryGetReadback(World world, in GpuPoseReadbackRequest request, out GpuPoseReadbackResult result)
+    {
+        foreach (GpuPoseReadbackResult value in world.Read<GpuPoseTarget>(request.Identity.Target).CompletedReadbacks.Span)
+            if (value.Identity == request.Identity && value.Range == request.Range) { result = value; return true; }
+        result = null!;
+        return false;
+    }
+
+    public static void ApplyReadback(World world, GpuPoseReadbackResult result)
+    {
+        GpuPoseTarget target = world.Read<GpuPoseTarget>(result.Identity.Target);
+        var request = new GpuPoseReadbackRequest(result.Identity, result.Range);
+        if (!target.Readbacks.Span.Contains(request)) return;
+        target.Readbacks = target.Readbacks.ToArray().Where(value => value != request).ToArray();
+        target.CompletedReadbacks = target.CompletedReadbacks.ToArray().Append(result).ToArray();
+        world.Replace(result.Identity.Target, target);
+    }
+
     public static bool SubmitFeedback(World world, Entity animation, Entity target, in AnimationLeafPlacement placement,
         GpuPoseReadbackRequest request, bool finished)
     {
         AnimationLeafTime time = AnimationGraph.ReadTime(world, animation, in placement);
         if (!time.Active) return false;
         GpuPoseTarget input = world.Read<GpuPoseTarget>(target);
-        bool accepted = false;
-        if (request.Completion.IsCompletedSuccessfully)
-        {
-            GpuPoseReadback result = request.Completion.Result;
-            accepted = result.Identity == request.Identity && result.Range == request.Range
-                && result.Identity.Target == target && ReferenceEquals(result.Identity.Instance, input.Skeleton)
-                && result.Identity.Starts == time.Starts && input.Starts == time.Starts
-                && result.Identity.AnimationStarts == placement.Starts && input.AnimationStarts == placement.Starts;
-        }
+        bool accepted = TryGetReadback(world, in request, out GpuPoseReadbackResult result)
+            && result.Identity.Target == target && ReferenceEquals(result.Identity.Instance, input.Skeleton)
+            && result.Identity.Starts == time.Starts && input.Starts == time.Starts
+            && result.Identity.AnimationStarts == placement.Starts && input.AnimationStarts == placement.Starts;
         AnimationGraph.Submit(world, animation, in placement, !accepted || !finished);
         return accepted;
     }

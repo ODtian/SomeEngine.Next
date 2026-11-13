@@ -10,29 +10,23 @@ internal sealed class GraphicsObjectRegistry
     private readonly object _gate;
     private readonly HashSet<GraphicsObject> _children =
         new(ReferenceEqualityComparer.Instance);
-    private bool _accepting = true;
     private bool _retainedFailure;
 
     internal GraphicsObjectRegistry(object gate)
     {
-        _gate = gate ?? throw new ArgumentNullException(nameof(gate));
+        _gate = gate;
     }
+
+    internal int Count { get { lock (_gate) return _children.Count; } }
 
     internal void Add(GraphicsObject value)
     {
-        ArgumentNullException.ThrowIfNull(value);
         lock (_gate)
-        {
-            if (!_accepting)
-                throw new ObjectDisposedException(nameof(GraphicsObjectRegistry));
-            if (!_children.Add(value))
-                throw new InvalidOperationException("The graphics object is already registered.");
-        }
+            _children.Add(value);
     }
 
     internal void Remove(GraphicsObject value)
     {
-        ArgumentNullException.ThrowIfNull(value);
         lock (_gate)
             _children.Remove(value);
     }
@@ -41,7 +35,6 @@ internal sealed class GraphicsObjectRegistry
     {
         lock (_gate)
         {
-            _accepting = false;
             GraphicsObject? head = null;
             foreach (GraphicsObject child in _children)
             {

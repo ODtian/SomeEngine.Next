@@ -8,6 +8,7 @@ namespace SomeEngine.Render.Terrain;
 internal abstract class TerrainGpuRequest(long sequence, JobHandle dependency, TerrainCompletion completion)
     : TerrainDataRequest(sequence, dependency, completion)
 {
+    internal abstract void Prepare(RenderTerrainData data);
     internal abstract GraphPassId Record(RenderTerrainData data, ref RenderGraphFrame frame,
         ref TerrainFrameCommands extension);
     internal virtual void CheckResult() { }
@@ -17,6 +18,11 @@ internal sealed class HeightGpuRequest<TBrush>(long sequence, JobHandle dependen
     HeightGrid grid, float initialHeight, HeightFieldData source, HeightRegion range, HeightPageWrite[] outputs, TBrush brush)
     : TerrainGpuRequest(sequence, dependency, completion) where TBrush : struct, IHeightBrushGpu
 {
+    internal override void Prepare(RenderTerrainData data)
+    {
+        foreach (TerrainFieldPage page in source.Pages.Values) data.PreparePage(page);
+        foreach (HeightPageWrite output in outputs) data.PreparePage(output.Page);
+    }
     internal override GraphPassId Record(RenderTerrainData data, ref RenderGraphFrame frame,
         ref TerrainFrameCommands extension)
     {
@@ -40,6 +46,7 @@ internal sealed class HeightGpuRequest<TBrush>(long sequence, JobHandle dependen
 internal sealed class TerrainPageReadRequest(long sequence, TerrainFieldPage page, float[] samples,
     TerrainCompletion completion) : TerrainGpuRequest(sequence, page.Completion, completion)
 {
+    internal override void Prepare(RenderTerrainData data) => data.PreparePage(Page);
     internal TerrainFieldPage Page { get; } = page;
     internal float[] Samples { get; } = samples;
     internal override GraphPassId Record(RenderTerrainData data, ref RenderGraphFrame frame,

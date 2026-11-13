@@ -1,7 +1,7 @@
 #ifndef CLUSTER_WORK_QUEUE_SLANG
 #define CLUSTER_WORK_QUEUE_SLANG
-#include "resource_effects.slang"
-#include "cluster_work_status.slang"
+__exported import resource_effects;
+__exported import cluster_work_status;
 
 // One count holder: dispatch XYZ, node write/read/outstanding, cluster batch read/count.
 static const uint CLUSTER_NODE_WRITE = 12u;

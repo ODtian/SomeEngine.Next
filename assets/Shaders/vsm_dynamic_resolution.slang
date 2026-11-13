@@ -1,9 +1,9 @@
-#include "resource_effects.slang"
+__exported import resource_effects;
 #define VSM_PAGE_LIST_READ_ONLY 1
 
 struct VirtualShadowDynamicResolutionUniforms
 {
-    uint MaxPhysicalPages;
+    uint MaxPages;
     uint PadRasterWork;
     float PagePoolLoadStart;
     float MaxLodBias;
@@ -32,8 +32,8 @@ void UpdateVirtualShadowDynamicResolution(uint3 threadId : SV_DispatchThreadID)
         return;
     }
 
-    uint maxPages = max(DynamicResolution.MaxPhysicalPages, 1u);
-    uint availablePages = ShadowPageListCount(VSM_PAGE_LIST_AVAILABLE, DynamicResolution.MaxPhysicalPages);
+    uint maxPages = max(DynamicResolution.MaxPages, 1u);
+    uint availablePages = ShadowPageListCount(VSM_PAGE_LIST_AVAILABLE, DynamicResolution.MaxPages);
     uint freePages = min(availablePages, maxPages);
     float pageLoad = float(maxPages - freePages + AllocationFailures[0]) / float(maxPages);
     float allocationRatio = DynamicResolution.PagePoolLoadStart > 0.0

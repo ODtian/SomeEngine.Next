@@ -48,7 +48,7 @@ internal sealed class GraphRows<T>
         return new GraphRows<T>(this);
     }
 
-    internal GraphIdentity Add(ulong owner, T value)
+    internal GraphIdentity Add(ulong scopeId, T value)
     {
         int index = _firstFree >= 0 ? _firstFree : _entries.Count;
         uint generation;
@@ -70,7 +70,7 @@ internal sealed class GraphRows<T>
         }
         else
             _entries.Add(new Entry(generation, Count, -1));
-        GraphIdentity identity = new(owner, index, generation, _domain);
+        GraphIdentity identity = new(scopeId, index, generation, _domain);
         _rows.Add(value);
         _identities.Add(identity);
         _writableRows.Add(index);
@@ -79,18 +79,18 @@ internal sealed class GraphRows<T>
 
     internal bool Contains(in GraphIdentity id)
     {
-        if (!id.IsValid || id.Domain != _domain || (uint)id.Slot >= (uint)_entries.Count)
+        if (!id.IsValid || id.Domain != _domain || (uint)id.Index >= (uint)_entries.Count)
             return false;
-        Entry entry = _entries[id.Slot];
+        Entry entry = _entries[id.Index];
         return !entry.Retired && entry.DenseIndex >= 0 && entry.Generation == id.Generation &&
-            _identities[entry.DenseIndex].Owner == id.Owner;
+            _identities[entry.DenseIndex].ScopeId == id.ScopeId;
     }
 
     internal int DenseIndex(in GraphIdentity id)
     {
         if (!Contains(id))
             throw new ArgumentException("The graph identity is invalid, stale, or belongs to another graph.", nameof(id));
-        return _entries[id.Slot].DenseIndex;
+        return _entries[id.Index].DenseIndex;
     }
 
     internal T Get(in GraphIdentity id) => _rows[DenseIndex(id)];
@@ -98,7 +98,7 @@ internal sealed class GraphRows<T>
     internal T GetMutable(in GraphIdentity id)
     {
         int index = DenseIndex(id);
-        if (_clone is not null && _writableRows.Add(id.Slot))
+        if (_clone is not null && _writableRows.Add(id.Index))
             _rows.Set(index, _clone(_rows[index]));
         return _rows[index];
     }
@@ -106,7 +106,7 @@ internal sealed class GraphRows<T>
     internal void Set(in GraphIdentity id, T value)
     {
         _rows.Set(DenseIndex(id), value);
-        _writableRows.Add(id.Slot);
+        _writableRows.Add(id.Index);
     }
 
     internal T Remove(in GraphIdentity id)
@@ -121,20 +121,20 @@ internal sealed class GraphRows<T>
             GraphIdentity moved = _identities[last];
             _rows.Set(dense, _rows[last]);
             _identities.Set(dense, moved);
-            _entries.Set(moved.Slot, _entries[moved.Slot] with { DenseIndex = dense });
+            _entries.Set(moved.Index, _entries[moved.Index] with { DenseIndex = dense });
         }
         _rows.RemoveLast();
         _identities.RemoveLast();
-        Entry entry = _entries[id.Slot];
+        Entry entry = _entries[id.Index];
         bool retired = entry.Generation == uint.MaxValue;
-        _entries.Set(id.Slot, new Entry(
+        _entries.Set(id.Index, new Entry(
             retired ? entry.Generation : entry.Generation + 1, -1, retired ? -1 : _firstFree, retired));
-        if (!retired) _firstFree = id.Slot;
-        _writableRows.Remove(id.Slot);
+        if (!retired) _firstFree = id.Index;
+        _writableRows.Remove(id.Index);
         return removed;
     }
 
-    internal GraphIdentity IdentityAt(ulong owner, int denseIndex) => _identities[denseIndex];
+    internal GraphIdentity IdentityAt(ulong scopeId, int denseIndex) => _identities[denseIndex];
 }
 
 internal sealed class GraphOrders : IEnumerable<ExplicitPassOrder>
@@ -255,12 +255,11 @@ internal sealed class GraphBuffer
 {
     internal required BufferDesc Description;
     internal required MemoryType MemoryType;
-    internal required RenderGraphResourceOwnership Ownership;
+    internal required RenderGraphResourceSource Source;
     internal required RenderGraphResourceLifetime Lifetime;
     internal MemoryRequirements Requirements;
     internal Buffer? PersistentResource;
     internal Buffer? RegisteredResource;
-    internal Buffer? BoundResource;
     internal BufferRange? CurrentViewRange;
     internal GraphPassId BufferUploadPass;
     internal BufferBoundaries Boundaries = new([]);
@@ -276,12 +275,11 @@ internal sealed class GraphBuffer
         BufferUploadPass = BufferUploadPass,
         Description = Description,
         MemoryType = MemoryType,
-        Ownership = Ownership,
+        Source = Source,
         Lifetime = Lifetime,
         Requirements = Requirements,
         PersistentResource = PersistentResource,
         RegisteredResource = RegisteredResource,
-        BoundResource = BoundResource,
         CurrentViewRange = CurrentViewRange,
         Boundaries = new((BufferBoundaryState[])BoundaryStates.Clone(), Boundaries.CompletionItems),
     };
@@ -289,8 +287,6 @@ internal sealed class GraphBuffer
 
 internal sealed class GraphTexture
 {
-    private GraphTextureState? _state;
-    internal GraphTextureState GetState(GraphTextureId id) => _state ??= new(this, id);
     internal required TextureDimension Dimension;
     internal required uint Width;
     internal required uint Height;
@@ -303,12 +299,11 @@ internal sealed class GraphTexture
     internal required Format[] PermittedViewFormats;
     internal required string? Label;
     internal required ResourceNodePlacement NodePlacement;
-    internal required RenderGraphResourceOwnership Ownership;
+    internal required RenderGraphResourceSource Source;
     internal required RenderGraphResourceLifetime Lifetime;
     internal MemoryRequirements Requirements;
     internal Texture? PersistentResource;
     internal Texture? RegisteredResource;
-    internal Texture? BoundResource;
     internal TextureBoundaryState[] BoundaryStates = [];
 
     internal GraphTexture Clone() => new()
@@ -325,12 +320,11 @@ internal sealed class GraphTexture
         PermittedViewFormats = (Format[])PermittedViewFormats.Clone(),
         Label = Label,
         NodePlacement = NodePlacement,
-        Ownership = Ownership,
+        Source = Source,
         Lifetime = Lifetime,
         Requirements = Requirements,
         PersistentResource = PersistentResource,
         RegisteredResource = RegisteredResource,
-        BoundResource = BoundResource,
         BoundaryStates = (TextureBoundaryState[])BoundaryStates.Clone(),
     };
 
@@ -540,7 +534,7 @@ internal sealed class PassResourceAccess
 }
 
 internal readonly record struct GraphColorAttachment(
-    uint Slot,
+    uint Index,
     GraphIdentity View,
     LoadType Load,
     StoreType Store,

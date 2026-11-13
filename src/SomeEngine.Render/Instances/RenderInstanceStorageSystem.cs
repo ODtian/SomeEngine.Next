@@ -1,207 +1,39 @@
-using System.Runtime.CompilerServices;
-using SomeEngine.Graphics;
-using SomeEngine.Render.Frame;
 using SomeEngine.Render.Systems;
+using SomeEngine.RenderGraph;
 
 namespace SomeEngine.Render.Instances;
 
-/// <summary>
-/// The single instance-storage owner for one RenderWorld and graphics device. Pipeline systems
-/// submit classified entity sets and producers to this owner; only this type opens allocation,
-/// publication, and retirement scopes. Producers receive restricted write slices and consumers
-/// receive read-only storage views.
-/// </summary>
+/// <summary>Instance data for one RenderWorld and its graph.</summary>
 public sealed class RenderInstanceStorageSystem : IDisposable
 {
-    private static readonly ConditionalWeakTable<RenderWorld, WorldClaims> s_worldClaims = new();
+    private readonly RenderInstanceData _storage;
 
-    private readonly RenderWorld _world;
-    private readonly Device _device;
-    private readonly RenderInstanceResources _storage;
-    private readonly WorldClaims _claims;
-    private readonly object _claim = new();
-    private bool _disposed;
-
-    public RenderInstanceStorageSystem(
-        IGraphicsBackend backend,
-        Device device,
-        RenderFrameCoordinator coordinator,
-        RenderWorld world,
-        RenderInstancePropertyLayout layout,
-        RenderInstanceOptions? options = null)
+    public RenderInstanceStorageSystem(global::SomeEngine.RenderGraph.RenderGraph graph, RenderWorld world,
+        RenderInstancePropertyLayout layout, RenderInstanceOptions? options = null)
     {
-        ArgumentNullException.ThrowIfNull(backend);
-        ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(coordinator);
-        _world = world ?? throw new ArgumentNullException(nameof(world));
-        ArgumentNullException.ThrowIfNull(layout);
-
-        _claims = s_worldClaims.GetValue(world, static _ => new WorldClaims());
-        lock (_claims.Gate)
-        {
-            if (_claims.Owners.ContainsKey(device))
-            {
-                throw new InvalidOperationException(
-                    "This RenderWorld already has instance storage for the graphics device.");
-            }
-            _claims.Owners.Add(device, _claim);
-        }
-
-        try
-        {
-            _storage = new RenderInstanceResources(
-                backend,
-                device,
-                coordinator,
-                layout,
-                options);
-        }
-        catch
-        {
-            ReleaseClaim(device);
-            throw;
-        }
-        _device = device;
+        World = world;
+        _storage = new(graph, layout, options);
     }
 
-    public RenderWorld World => _world;
+    public RenderWorld World { get; }
+    public RenderInstancePropertyLayout Layout => _storage.Layout;
+    public RenderInstanceOptions Options => _storage.Options;
+    public int PropertyDataBytes => _storage.PropertyDataBytes;
+    public GraphBufferId PropertyData => _storage.PropertyData;
+    public GraphBufferId Metadata => _storage.Metadata;
+    internal RenderInstanceData Storage => _storage;
 
-    public RenderInstancePropertyLayout Layout => Storage.Layout;
+    internal RenderInstanceWriteHandle AllocateBatch(RenderInstancePropertyLayout layout, int instanceCount) =>
+        new(new RenderInstanceBatchComposition(_storage, _storage.AllocateBatch(layout, instanceCount)));
 
-    public RenderInstanceOptions Options => Storage.Options;
+    internal RenderInstanceWriteHandle RewriteBatch(RenderInstanceBatch batch, RenderInstancePropertyLayout properties,
+        RenderInstancePropertyLayout? replacedProperties) => new(new RenderInstanceBatchComposition(_storage,
+            _storage.BeginBatchUpdate(batch, properties, replacedProperties), batch, properties, replacedProperties));
 
-    public int PropertyDataBytes => Storage.PropertyDataBytes;
-
-    /// <summary>
-    /// Gets the shared GPU transfer for this store and graph. Call before opening an edit or
-    /// frame; the first call installs its buffer and passes in a committed graph edit.
-    /// </summary>
-    public RenderInstanceDataTransfer GetDataTransfer(global::SomeEngine.RenderGraph.RenderGraph graph) =>
-        Storage.GetDataTransfer(graph);
-
-    internal RenderInstanceResources Storage
-    {
-        get
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            return _storage;
-        }
-    }
-
-    internal RenderTimeline Timeline => Storage.Timeline;
-
-    internal RenderInstanceBorrowerLease AcquireBorrower() => Storage.AcquireBorrower();
-
-    internal int AdmitFrameResources() => Storage.AdmitFrameResources();
-
-    internal bool TryAdmitFrameResources(
-        out int availableGenerationCount,
-        out QueueCompletion[] retirementFences) =>
-        Storage.TryAdmitFrameResources(
-            out availableGenerationCount,
-            out retirementFences);
-
-    internal RenderInstanceWriteScope OpenWrite(RenderPrepareScope scope) =>
-        Storage.BeginPrepare(scope);
-
-    /// <summary>
-    /// Allocates an unclassified logical batch for a pipeline system. The returned capability can
-    /// write only this allocation and must publish or dispose before the prepare boundary closes.
-    /// </summary>
-    internal RenderInstanceWriteHandle AllocateBatch(
-        RenderPrepareScope scope,
-        RenderInstanceWriteScope write,
-        RenderInstancePropertyLayout exactLayout,
-        int instanceCount)
-    {
-        ArgumentNullException.ThrowIfNull(scope);
-        RequireWriteScope(scope, write);
-        ArgumentNullException.ThrowIfNull(exactLayout);
-        RenderInstanceBatchComposition composition =
-            write.BeginBatch(exactLayout, instanceCount);
-        return new RenderInstanceWriteHandle(write, composition);
-    }
-
-    /// <summary>
-    /// Opens selected properties of an existing batch for an in-place value rewrite. Membership
-    /// changes must authorize and rewrite the complete exact layout.
-    /// </summary>
-    internal RenderInstanceWriteHandle RewriteBatch(
-        RenderPrepareScope scope,
-        RenderInstanceWriteScope write,
-        RenderInstanceBatch batch,
-        RenderInstancePropertyLayout properties,
-        RenderInstancePropertyLayout? replacedProperties)
-    {
-        ArgumentNullException.ThrowIfNull(scope);
-        RequireWriteScope(scope, write);
-        ArgumentNullException.ThrowIfNull(batch);
-        ArgumentNullException.ThrowIfNull(properties);
-
-        RenderInstanceBatchComposition composition =
-            write.BeginBatchUpdate(batch, properties, replacedProperties);
-        return new RenderInstanceWriteHandle(write, composition);
-    }
-
-    /// <summary>Retires one live batch at an exclusive prepare boundary.</summary>
-    internal void Retire(
-        RenderPrepareScope scope,
-        RenderInstanceWriteScope write,
-        RenderInstanceBatch batch)
-    {
-        ArgumentNullException.ThrowIfNull(scope);
-        RequireWriteScope(scope, write);
-        ArgumentNullException.ThrowIfNull(batch);
-        write.ReleaseBatch(batch);
-    }
-
-    internal RenderInstanceStorageView OpenRead(RenderFrame frame) => Storage.OpenRead(frame);
-
-    public RenderInstanceDiagnostics CaptureDiagnostics() => Storage.CaptureDiagnostics();
-
-    public void Shutdown(RenderPrepareScope scope) => Storage.Shutdown(scope);
-
-    public void Dispose()
-    {
-        if (_disposed)
-            return;
-        _storage.Dispose();
-        ReleaseClaim(_device);
-        _disposed = true;
-    }
-
-    private void ReleaseClaim(Device device)
-    {
-        lock (_claims.Gate)
-        {
-            if (!_claims.Owners.TryGetValue(device, out object? owner)
-                || !ReferenceEquals(owner, _claim))
-            {
-                throw new InvalidOperationException(
-                    "Render-instance storage ownership was lost.");
-            }
-            _claims.Owners.Remove(device);
-        }
-    }
-
-    private void RequireWriteScope(
-        RenderPrepareScope scope,
-        RenderInstanceWriteScope write)
-    {
-        ArgumentNullException.ThrowIfNull(write);
-        if (!write.BelongsTo(scope, Storage))
-        {
-            throw new ArgumentException(
-                "The render-instance write capability belongs to a different prepare boundary or storage owner.",
-                nameof(write));
-        }
-    }
-
-    private sealed class WorldClaims
-    {
-        internal object Gate { get; } = new();
-
-        internal Dictionary<Device, object> Owners { get; } =
-            new(ReferenceEqualityComparer.Instance);
-    }
+    internal void Retire(RenderInstanceBatch batch) => _storage.ReleaseBatch(batch);
+    internal RenderInstanceStorageView OpenRead() => _storage.OpenRead();
+    internal void FinishWrites() => _storage.FinishWrites();
+    internal void Upload(ref RenderGraphFrame frame) => _storage.Upload(ref frame);
+    public RenderInstanceDiagnostics CaptureDiagnostics() => _storage.CaptureDiagnostics();
+    public void Dispose() => _storage.Dispose();
 }

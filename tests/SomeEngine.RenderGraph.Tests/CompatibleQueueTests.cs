@@ -19,8 +19,7 @@ public sealed class CompatibleQueueTests
         {
             input = edit.CreateBufferInput(BufferUsages.CopySource);
             GraphBufferId buffer = edit.CreateBuffer(new(32, BufferUsages.CopySource | BufferUsages.CopyDestination));
-            GraphBufferId destination = edit.RegisterExternalBuffer(result,
-                [new(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId destination = edit.RegisterExternalBuffer(result);
             edit.AddCopyFramePass("produce on graphics", PassQueueSelection.AnyOfType(QueueType.Graphics),
                 (input, buffer), default,
                 static (ref PassDefinition pass, ref (GraphBufferInput Input, GraphBufferId Buffer) data) =>
@@ -88,8 +87,7 @@ public sealed class CompatibleQueueTests
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
             input = edit.CreateBufferInput(BufferUsages.CopySource);
-            GraphBufferId destination = edit.RegisterExternalBuffer(result,
-                [new(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId destination = edit.RegisterExternalBuffer(result);
             edit.AddCopyFramePass("copy on compatible queue", PassQueueSelection.AnyCompatible(),
                 (input, destination), new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition pass, ref (GraphBufferInput Input, GraphBufferId Destination) data) =>

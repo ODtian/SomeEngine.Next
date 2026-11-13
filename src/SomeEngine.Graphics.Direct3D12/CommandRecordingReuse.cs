@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D12;
@@ -7,45 +6,22 @@ namespace SomeEngine.Graphics.Direct3D12;
 
 internal sealed unsafe partial class D3D12Backend
 {
-    private static readonly ConcurrentDictionary<nint, D3D12CommandSlot> CommandRecordings = new();
-    [ThreadStatic] private static D3D12CommandSlot? _threadRecording;
-    [ThreadStatic] private static bool _replayingCommands;
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static NativeCommandData? CollectCommandData(ref ID3D12GraphicsCommandList10* target)
+    internal static NativeCommandData? GetCommandData(CommandContext? context, ref ID3D12GraphicsCommandList10* target)
     {
-        if (_replayingCommands)
-            return null;
-        D3D12CommandSlot? recording = FindRecording(target);
-        if (recording is null || !recording.CollectingCommands)
-        {
-            if (recording is not null)
-                target = recording.List;
-            return null;
-        }
-        return recording.CommandData;
+        if (context is null) return null;
+        D3D12CommandBuffer recording = ((D3D12CommandContext)context).Recording;
+        if (recording.CollectingCommands) return recording.CommandData;
+        target = recording.List;
+        return null;
     }
 
-    internal static ID3D12GraphicsCommandList10* RequireNativeRecording(ID3D12GraphicsCommandList10* target)
+    internal static ID3D12GraphicsCommandList10* GetNativeRecording(CommandContext? context, ID3D12GraphicsCommandList10* target)
     {
-        if (_replayingCommands)
-            return target;
-        D3D12CommandSlot? recording = FindRecording(target);
-        if (recording is null)
-            return target;
+        if (context is null) return target;
+        D3D12CommandBuffer recording = ((D3D12CommandContext)context).Recording;
         recording.FlushCollectedCommands();
         return recording.List;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static D3D12CommandSlot? FindRecording(ID3D12GraphicsCommandList10* target)
-    {
-        D3D12CommandSlot? current = _threadRecording;
-        if (current is not null && current.RecordingAddress == (nint)target)
-            return current;
-        CommandRecordings.TryGetValue((nint)target, out current);
-        _threadRecording = current;
-        return current;
     }
 
     private sealed class CachedNativeCommands
@@ -57,18 +33,6 @@ internal sealed unsafe partial class D3D12Backend
         internal bool Complete;
         private ID3D12DescriptorHeap* _resources;
         private ID3D12DescriptorHeap* _samplers;
-
-        internal bool Matches(NativeCommandData data, List<object> references)
-        {
-            if (!Complete || !Data.Bytes.SequenceEqual(data.Bytes) || References.Count != references.Count)
-                return false;
-            for (int index = 0; index < references.Count; index++)
-            {
-                if (!ReferenceEquals(References[index], references[index]))
-                    return false;
-            }
-            return true;
-        }
 
         internal void Invalidate()
         {
@@ -98,7 +62,7 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    private sealed partial class D3D12CommandSlot
+    private sealed partial class D3D12CommandBuffer
     {
         private readonly CachedNativeCommands?[] _cachedCommands = new CachedNativeCommands?[2];
         private readonly List<object> _commandReferences = [];
@@ -107,53 +71,35 @@ internal sealed unsafe partial class D3D12Backend
         private int _nextCommands;
         private bool _collectingCommands;
         private bool _nativeRecordingOpen;
-        private nint _recordingAddress;
 
         internal bool CollectingCommands => _collectingCommands;
         internal NativeCommandData CommandData => _commandData;
-        internal nint RecordingAddress => _recordingAddress;
 
-        private void BeginCommandData()
+        private void BeginCommandData(bool repeatable)
         {
             _repeatParameters.Clear();
             _commandData.Clear();
             _commandReferences.Clear();
             _nativeRecordingOpen = false;
-            _collectingCommands = true;
-            _recordingAddress = (nint)List;
-            _threadRecording = this;
-            if (_context.Bundle)
+            _collectingCommands = repeatable && !_context.Bundle;
+            if (!_collectingCommands)
                 FlushCollectedCommands();
         }
 
         internal void FinishCommandData()
         {
-            _repeatRestrictions = (!_collectingCommands ? 1 : 0) | (_transientObjects.Count != 0 ? 2 : 0) |
-                (_capturedBundles.Count != 0 ? 4 : 0) | (SwapchainUseCount != 0 ? 8 : 0) |
-                (_captures.SparseCount != 0 ? 16 : 0) | (_temporaryRtvUsed != 0 ? 32 : 0) | (_temporaryDsvUsed != 0 ? 64 : 0);
             bool reusable = _collectingCommands &&
-                _transientObjects.Count == 0 && _capturedBundles.Count == 0 &&
-                SwapchainUseCount == 0 && _captures.SparseCount == 0 &&
+                _transientObjects.Count == 0 &&
+                SwapchainUseCount == 0 &&
                 _temporaryRtvUsed == 0 && _temporaryDsvUsed == 0;
             if (reusable)
             {
-                _captures.AppendReferences(_commandReferences);
                 foreach (D3D12PersistentParameterData data in _capturedParameterData)
                     _commandReferences.Add(data);
                 if (_descriptorGeneration is not null)
                     _commandReferences.Add(_descriptorGeneration);
                 foreach (D3D12OrdinaryDataChunk chunk in _ordinaryDataChunks)
                     _commandReferences.Add(chunk);
-                foreach (CachedNativeCommands? cached in _cachedCommands)
-                {
-                    if (cached is not null && cached.Matches(_commandData, _commandReferences))
-                    {
-                        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.ReuseNativeCommands);
-                        _nativeRecording = cached;
-                        FinishCommandRecording();
-                        return;
-                    }
-                }
             }
 
             if (_collectingCommands)
@@ -173,10 +119,7 @@ internal sealed unsafe partial class D3D12Backend
         private void FinishCommandRecording()
         {
             _collectingCommands = false;
-            _recordingAddress = 0;
             _commandReferences.Clear();
-            if (ReferenceEquals(_threadRecording, this))
-                _threadRecording = null;
         }
 
         internal void AbortCommandData()
@@ -190,8 +133,7 @@ internal sealed unsafe partial class D3D12Backend
 
         internal void FlushCollectedCommands()
         {
-            if (!_collectingCommands)
-                return;
+            if (_nativeRecordingOpen) return;
             using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.EncodeNativeCommands);
             CachedNativeCommands cached = _cachedCommands[_nextCommands] ??= CreateCachedCommands();
             _nextCommands = (_nextCommands + 1) % _cachedCommands.Length;
@@ -203,15 +145,7 @@ internal sealed unsafe partial class D3D12Backend
                 NativeOperationType.Ordinary, "ID3D12GraphicsCommandList::Reset");
             _nativeRecordingOpen = true;
             _collectingCommands = false;
-            _replayingCommands = true;
-            try
-            {
-                _commandData.Execute(cached.List);
-            }
-            finally
-            {
-                _replayingCommands = false;
-            }
+            _commandData.Execute(cached.List);
         }
 
         private CachedNativeCommands CreateCachedCommands()
@@ -233,7 +167,6 @@ internal sealed unsafe partial class D3D12Backend
                 SetNativeName(allocator, $"{name} Allocator");
                 SetNativeName(list, $"{name} Command List");
                 CachedNativeCommands commands = new() { Allocator = allocator, List = list };
-                CommandRecordings.TryAdd((nint)list, this);
                 return commands;
             }
             catch
@@ -253,7 +186,6 @@ internal sealed unsafe partial class D3D12Backend
             {
                 if (cached is null)
                     continue;
-                CommandRecordings.TryRemove((nint)cached.List, out _);
                 cached.Invalidate();
                 _ = CommandExecutionTrace.Release(cached.List);
                 _ = ResourceTrace.Release(cached.Allocator);

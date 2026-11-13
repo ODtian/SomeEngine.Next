@@ -3,7 +3,7 @@
 本页记录公开的完成后计时接口；源码入口为
 [`GpuTimes.cs`](../../../src/SomeEngine.RenderGraph/GpuTimes.cs)、
 [`FrameRecording`](../../../src/SomeEngine.RenderGraph/FrameRecording.cs)、
-[`FrameSlot`](../../../src/SomeEngine.RenderGraph/FrameSlot.cs)
+[`FrameResources`](../../../src/SomeEngine.RenderGraph/FrameResources.cs)
 和 [`ApplicationFrameTiming`](../../../src/SomeEngine.Runtime/ApplicationFrameTiming.cs)。
 
 ## 图入口

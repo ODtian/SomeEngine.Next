@@ -395,11 +395,7 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     internal static D3D12DeviceLossReport? GetDeviceLossReport(Device device) =>
-        device is D3D12Device native
-            ? native.DeviceLossReport
-            : throw new ArgumentException(
-                "The Device was not created by the Direct3D 12 backend.",
-                nameof(device));
+        ((D3D12Device)device).DeviceLossReport;
 
     private sealed partial class D3D12Device
     {

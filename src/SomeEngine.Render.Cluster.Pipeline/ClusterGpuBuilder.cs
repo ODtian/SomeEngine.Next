@@ -28,21 +28,20 @@ public sealed class ClusterGpuBuilder : IDisposable
     private readonly ClusterRenderResources _resources;
     private readonly ClusterGpuVertexEncoder _encoder;
     private readonly ClusterComputePipeline _pipeline;
-    private readonly ClusterLinkedStageLayout _bindings;
+    private readonly ShaderParameterResources _bindings;
     private readonly ulong _encoding;
     private readonly GraphBufferId _pages;
     private readonly GraphBufferId _bvh;
 
-    public ClusterGpuBuilder(IGraphicsBackend backend, Device device, ClusterRenderResources resources,
+    public ClusterGpuBuilder(IGraphicsBackend backend, Device device, RenderPipelines pipelines, ClusterRenderResources resources,
         global::SomeEngine.RenderGraph.RenderGraph graph, ClusterGpuVertexEncoder encoder)
     {
         _resources = resources;
         _encoder = encoder;
-        _pipeline = ClusterComputePipeline.Create(backend, device, encoder.Shader, encoder.EntryPoint,
+        _pipeline = ClusterComputePipeline.Create(pipelines, encoder.Shader, encoder.EntryPoint,
             "Build Cluster geometry");
-        _bindings = ClusterLinkedStageLayout.Create(_pipeline.ParameterLayout);
+        _bindings = ShaderParameterResources.Create(_pipeline.ParameterLayout);
         _encoding = VertexEncodingCompatibility.Hash(encoder.VertexEncoding);
-        resources.Residency.InstallGeometryBuffers(graph);
         ClusterGeometryBuffers buffers = resources.GeometryBuffers;
         _pages = buffers.PageHeap;
         _bvh = buffers.Bvh;
@@ -81,7 +80,6 @@ public sealed class ClusterGpuBuilder : IDisposable
     public GraphPassId Record(ref RenderFrameSystemContext context, ClusterGeometry geometry,
         in ClusterGpuMeshInput input, uint materialIndex = 0)
     {
-        using RenderFrameUseLease use = _resources.UseGpu(context.ActiveFrame);
         RenderGraphFrame graph = context.Graph;
         ClusterGpuAllocation allocation = _resources.GetGpu(geometry);
         ClusterGpuBufferSizes sizes = allocation.Sizes;
@@ -99,7 +97,7 @@ public sealed class ClusterGpuBuilder : IDisposable
         GraphBufferUavId outputBvh = graph.CreateBufferUav(_bvh,
             new BufferRange(allocation.Bvh.Offset, allocation.Bvh.Length));
         var bindings = new List<GraphParameterResourceBinding>();
-        foreach (ClusterLinkedStageResource resource in _bindings.Resources)
+        foreach (ShaderParameterResource resource in _bindings.Resources)
             bindings.Add(resource.Name switch
             {
                 "ClusterBuildParameters" => GraphParameterResourceBinding.ConstantBuffer(parameters, PipelineSync.ComputeShading),
@@ -122,7 +120,7 @@ public sealed class ClusterGpuBuilder : IDisposable
                 foreach (GraphParameterResourceBinding binding in value.Bindings) access.Bind(binding);
             },
             static (ref ComputePassCommandScope commands, in BuildPass _) => commands.Dispatch(new(1, 1, 1)));
-        _resources.AddGeometryBuild(graph.FrameIdentity, pass);
+        _resources.AddGeometryBuild(ref graph, pass);
         return pass;
 
         static GraphParameterResourceBinding Read(GraphBufferSrvId view) =>

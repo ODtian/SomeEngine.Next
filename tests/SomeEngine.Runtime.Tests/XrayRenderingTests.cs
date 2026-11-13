@@ -3,7 +3,7 @@ using System.Numerics;
 using DefaultGame.Content;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Entities;
-using SomeEngine.Render.Components;
+using SomeEngine.Resources.Layers;
 
 namespace SomeEngine.Runtime.Tests;
 
@@ -17,6 +17,7 @@ public sealed class XrayRenderingTests(TransparencyContentFixture content)
     {
         SceneLinearImage? hardware = null, xray = null, unshadowed = null;
         Entity part = default, panel = default, caster = default;
+        var xrayMaterial = new StandardMaterial();
         await SceneImages.RunAsync(backend, new SceneScript(content.Lit, 32,
         [
             new(0, edit =>
@@ -27,6 +28,7 @@ public sealed class XrayRenderingTests(TransparencyContentFixture content)
                         case StandardMaterial material when material.Name == "lit panel":
                             part = entity;
                             material.BaseColorTint = material.BaseColorTint with { W = 1 };
+                            xrayMaterial.Update(material);
                             break;
                         case UnlitMaterial material when material.Name == "unlit panel":
                             panel = entity;
@@ -45,12 +47,24 @@ public sealed class XrayRenderingTests(TransparencyContentFixture content)
             new(12, edit =>
             {
                 edit.SetEntityTransform(panel, new(new Vector3(0, 0, 6), Quaternion.Identity));
-                edit.SetXray(part, new(new XrayBlend(0), new XrayBlend(1), 0, 20));
+                edit.ReplaceMaterial(part, xrayMaterial);
             }),
             new(23, edit => edit.CaptureLinearImage(image => xray = image)),
             new(24, edit => edit.SetEntityTransform(caster, new(new Vector3(20, 1, 5.625f), Quaternion.Identity, .25f))),
             new(31, edit => edit.CaptureLinearImage(image => unshadowed = image)),
-        ]) { WaitForFrames = false }, "--hardware-raster", "--shading-path", "forward", "--no-taa");
+        ])
+        {
+            WaitForFrames = false,
+            CreateFrameFeatures = rendering =>
+            {
+                LayerPassId pass = rendering.Layers!.AddPass(new("Shadowed X-ray material", ClipByOpaqueDepth: false));
+                xrayMaterial.Layer = new(pass, 0, new LayerOperation
+                {
+                    XRay = true, VisibleColor = new(Vector3.One, 0), OccludedColor = Vector4.One,
+                });
+                return [];
+            },
+        }, "--hardware-raster", "--shading-path", "forward", "--no-taa");
 
         const int width = 16, height = 20;
         Half[] expected = new Half[width * height * 4], actual = new Half[expected.Length];
@@ -80,7 +94,8 @@ public sealed class XrayRenderingTests(TransparencyContentFixture content)
         Entity part = default, panel = default;
         TransformQvvs inside = new(new Vector3(0, 0, 6), Quaternion.Identity);
         TransformQvvs outside = new(new Vector3(20, 0, 6), Quaternion.Identity);
-        var rules = new Xray(new XrayBlend(.25f), new XrayBlend(.7f), 0, 20);
+        var solid = new StandardMaterial();
+        var xrayMaterial = new StandardMaterial();
         await SceneImages.RunAsync(backend, new SceneScript(content.Lit, 56,
         [
             new(0, edit =>
@@ -92,6 +107,9 @@ public sealed class XrayRenderingTests(TransparencyContentFixture content)
                         case StandardMaterial material when material.Name == "lit panel":
                             part = entity;
                             material.BaseColorTint = material.BaseColorTint with { W = 1 };
+                            solid.Update(material);
+                            xrayMaterial.Update(material);
+                            edit.ReplaceMaterial(entity, solid);
                             edit.SetEntityTransform(entity, outside);
                             break;
                         case UnlitMaterial material when material.Name == "unlit panel":
@@ -109,22 +127,34 @@ public sealed class XrayRenderingTests(TransparencyContentFixture content)
             new(24, edit =>
             {
                 edit.SetEntityTransform(panel, inside);
-                edit.SetXray(part, rules);
+                edit.ReplaceMaterial(part, xrayMaterial);
             }),
             new(31, edit => edit.CaptureLinearImage(image => xray = image)),
-            new(32, edit => edit.RemoveXray(part)),
+            new(32, edit => edit.ReplaceMaterial(part, solid)),
             new(39, edit => edit.CaptureLinearImage(image => removed = image)),
             new(40, edit =>
             {
                 Entity previous = part;
                 part = edit.AddEntity(previous, new(new Vector3(.75f, 0, 6), Quaternion.Identity));
-                edit.SetXray(part, rules);
+                edit.ReplaceMaterial(part, xrayMaterial);
                 edit.DeleteEntity(previous);
             }),
             new(47, edit => edit.CaptureLinearImage(image => moved = image)),
             new(48, edit => edit.SetEntityTransform(part, inside)),
             new(55, edit => edit.CaptureLinearImage(image => returned = image)),
-        ]) { WaitForFrames = false }, "--hardware-raster", "--shading-path", "forward", "--no-taa", "--no-vsm");
+        ])
+        {
+            WaitForFrames = false,
+            CreateFrameFeatures = rendering =>
+            {
+                LayerPassId pass = rendering.Layers!.AddPass(new("Textured X-ray material", ClipByOpaqueDepth: false));
+                xrayMaterial.Layer = new(pass, 0, new LayerOperation
+                {
+                    XRay = true, VisibleColor = new(Vector3.One, .25f), OccludedColor = new(Vector3.One, .7f),
+                });
+                return [];
+            },
+        }, "--hardware-raster", "--shading-path", "forward", "--no-taa", "--no-vsm");
 
         const int first = 52, size = 24;
         Half[] expected = new Half[size * size * 4], actual = new Half[expected.Length];

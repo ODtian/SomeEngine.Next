@@ -1,15 +1,15 @@
 #ifndef CLUSTER_RASTER_TARGET_RESOURCES_SLANG
 #define CLUSTER_RASTER_TARGET_RESOURCES_SLANG
 
-#include "cluster_raster_target_view.slang"
-#include "vsm_page_entry.slang"
+__exported import cluster_raster_target_view;
+__exported import vsm_page_entry;
 
 StructuredBuffer<ClusterRasterTargetView> RasterTargetViews;
 StructuredBuffer<uint2> RasterTargetPageHierarchy;
 StructuredBuffer<uint> RasterTargetPageTable;
 Texture2D<uint> RasterTargetReceiverMasks;
-#include "cluster_depth_cache.slang"
-#include "vsm_receiver_mask_bits.slang"
+__exported import cluster_depth_cache;
+__exported import vsm_receiver_mask_bits;
 
 
 uint2 ClusterTargetReceiverMaskOrigin(ClusterRasterTargetView target)
@@ -39,7 +39,7 @@ bool ClusterRasterTargetResolvePage(
     tableIndex = ClusterRasterTargetTableIndex(target, localPage);
     uint entry = RasterTargetPageTable[tableIndex];
     if ((entry & VSM_PAGE_RENDERING) == 0u ||
-        !DecodeVirtualShadowPage(entry, target.PhysicalPagesPerRow, page))
+        !DecodeVirtualShadowPage(entry, target.AtlasPagesPerRow, page))
     {
         page = 0xffffffffu;
         return false;

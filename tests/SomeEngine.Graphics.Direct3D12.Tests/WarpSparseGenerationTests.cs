@@ -1,3 +1,4 @@
+using SomeEngine.Graphics.Validation;
 using SomeEngine.Graphics.Direct3D12;
 using System.Reflection;
 using Xunit;
@@ -12,7 +13,7 @@ public sealed class WarpSparseGenerationTests
     [Fact]
     public void Sparse_mapping_validates_heap_class_offset_and_ignored_linear_dimensions()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? capability));
         Assert.NotNull(capability);
@@ -54,7 +55,7 @@ public sealed class WarpSparseGenerationTests
     [Fact]
     public void TextureSparseMappingCommandsAcceptBoxAndMipRegions()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? capability));
         Assert.NotNull(capability);
@@ -198,7 +199,7 @@ public sealed class WarpSparseGenerationTests
     [Fact]
     public void RemappingOneTileChangesOnlyThatTilesReadback()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? sparse));
         Assert.NotNull(sparse);
@@ -229,7 +230,7 @@ public sealed class WarpSparseGenerationTests
     [Fact]
     public void SparseMappingCopyCommandsCompleteWithSelfOverlap()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? capability));
         Assert.NotNull(capability);
@@ -297,7 +298,7 @@ public sealed class WarpSparseGenerationTests
     [Fact]
     public void SubmittedSparseCommandsCompleteAfterUnmapAndHeapDisposal()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? capability));
         Assert.NotNull(capability);
@@ -340,7 +341,7 @@ public sealed class WarpSparseGenerationTests
     [Fact]
     public void ConcurrentSparseMappingCommandsComplete()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? capability));
         Assert.NotNull(capability);
@@ -394,7 +395,7 @@ public sealed class WarpSparseGenerationTests
     [Fact]
     public void InvalidSparseMappingBatchIsRejectedAndCorrectedBatchCompletes()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? capability));
         Assert.NotNull(capability);

@@ -24,7 +24,7 @@ public sealed partial class AssetProject
                 || entry.AssetType != description.AssetType || !PathsEqual(FullPath(entry.Path), outputPath)
                 || !PathsEqual(FullPath(entry.DefinitionPath), definitionPath)) return false;
 
-        ImportInputs? inputs = SlangShaderImporter.GetDefinitionInputs(definition, definitionPath,
+        ImportInputs? inputs = SlangShaderImporter.GetDefinitionInputs(definition, definitionPath, ShaderTargets,
             record.Inputs, includePaths, _projectRoot);
         if (inputs is null || inputs.InputHash != record.InputHash || inputs.ImporterVersion != record.ImporterVersion)
             return false;

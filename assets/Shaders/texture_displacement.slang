@@ -1,7 +1,7 @@
 #ifndef TEXTURE_DISPLACEMENT_SLANG
 #define TEXTURE_DISPLACEMENT_SLANG
 
-#include "triangle_surface_inverse.slang"
+__exported import triangle_surface_inverse;
 
 struct TextureDisplacement : IDomainEvaluate<StandardVertex>
 {

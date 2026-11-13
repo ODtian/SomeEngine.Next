@@ -259,6 +259,7 @@ public sealed class ClusterGeometryImportTests
         Assert.Equal(4, imported.Geometry.Vertices.Count);
         Assert.Equal([0,1], imported.Geometry.Clusters.Where(cluster => cluster.Level == 0).SelectMany(cluster => cluster.TriangleRegions).Order());
         Assert.All(imported.Geometry.Clusters.SelectMany(cluster => cluster.TriangleMaterials), material => Assert.Equal(3, material));
+        Assert.Equal([0, 1], imported.Asset.GetBlock<ClusterMeshBlock>().RegionIndices);
     }
 
     [Fact]
@@ -380,7 +381,7 @@ public sealed class ClusterGeometryImportTests
             ServiceProvider provider = services.BuildServiceProvider();
             context.Hold(provider);
             foreach (AssetImporterCapability capability in provider.GetServices<AssetImporterCapability>()
-                .Where(value => value.ImporterType == typeof(ClusterGeometryImporter) || value.ImporterType == typeof(ClusterVertexAttributesImporter)))
+                .Where(value => value.ImporterType == typeof(ClusterGeometryImporter)))
                 context.EnableImporter<GltfMesh, MeshAsset>(capability.Bind<GltfMesh>(provider));
             GltfMesh source = ModelRoot.CreateModel().CreateMesh("Test mesh");
             string key = $"mesh/{source.LogicalIndex}";

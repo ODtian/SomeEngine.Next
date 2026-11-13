@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using SomeEngine.Animation;
 using SomeEngine.Animation.Pose;
 using SomeEngine.Core.ECS.Components;
@@ -32,7 +32,7 @@ public sealed partial class SkinningRenderingTests
         using SkeletonInstance referenceFirst = storage.CreateInstance(skeleton), referenceSecond = storage.CreateInstance(skeleton);
         SkeletonInstance[] bodies = [first, second], referenceBodies = [referenceFirst, referenceSecond];
         Entity[] targets = new Entity[2];
-        var reads = new List<GpuPoseReadback>();
+        var reads = new List<GpuPoseReadbackResult>();
         var expected = new List<Matrix4x4[][]>();
         var locals = new List<BoneTransform[][]>();
         var binding = new SkinBinding([Matrix4x4.CreateTranslation(0, -2, 0), Matrix4x4.CreateTranslation(0, -1, 0)], [3, 5]);
@@ -102,7 +102,7 @@ public sealed partial class SkinningRenderingTests
         for (int sample = 0; sample < 2; sample++)
         for (int character = 0; character < 2; character++)
         {
-            GpuPoseReadback result = reads[sample * 2 + character];
+            GpuPoseReadbackResult result = reads[sample * 2 + character];
             for (int bone = 0; bone < skeleton.BoneCount; bone++)
             {
                 GpuPoseExamples.Near(expected[sample + 1][character][bone], result.Current.Span[bone]);

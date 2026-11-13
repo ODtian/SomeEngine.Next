@@ -1,5 +1,5 @@
-#include "vertex_evaluate_interfaces.slang"
-#include "material_interfaces.slang"
+__exported import vertex_evaluate_interfaces;
+__exported import material_interfaces;
 
 // Example material: normalized lift squared, displaced along the terrain height axis in world metres.
 [MaterialScalars]
@@ -61,6 +61,7 @@ struct GroundSurface
     float2 TexCoord;
 };
 
+[TessellatedSurface]
 struct GroundDisplacement : IDomainEvaluate<GroundVertex>
 {
     typedef GroundTriangle TriangleData;
@@ -195,30 +196,27 @@ struct GroundDisplacement : IDomainEvaluate<GroundVertex>
     }
 };
 
-struct GroundMaterial : ISurfaceEvaluate<GroundSurface, GroundTriangle>
+[VertexEncoding("example.terrain.position_uv_lift.v1")]
+[ConservativeBounds("finite")]
+struct GroundMaterial : IMaterial
 {
-    void evaluateSurface(SurfacePixelInput input, GroundSurface surface, float3 barycentric,
-        GroundTriangle triangle, RWTexture2DArray<float4> outputColor)
+    typedef GroundVertexEvaluate Vertex;
+    typedef GroundDisplacement Domain;
+    typedef OpaqueVisibilityEvaluate<GroundVertex> Visibility;
+
+    void evaluateSurface<TOutput : ISurfaceOutput>(SurfacePixelInput input, GroundSurface surface, float3 barycentric,
+        GroundTriangle triangle, TOutput output)
     {
         TerrainDisplacementScalars values = LoadMaterialScalars<TerrainDisplacementScalars>(input.MaterialIndex);
-        outputColor[input.PixelCoord] = values.BaseColorTint;
+        output.Write(input.PixelCoord, values.BaseColorTint);
     }
 
-    void evaluateDebug(uint debugMode, SurfacePixelInput input, GroundSurface surface, float3 barycentric,
-        GroundTriangle triangle, RWTexture2DArray<float4> outputColor)
+    void evaluateDebug<TOutput : ISurfaceOutput>(uint debugMode, SurfacePixelInput input, GroundSurface surface, float3 barycentric,
+        GroundTriangle triangle, TOutput output)
     {
-        if (debugMode == 8u) outputColor[input.PixelCoord] = float4(barycentric, 1);
-        else if (debugMode == 9u) outputColor[input.PixelCoord] = float4(surface.Normal * .5f + .5f, 1);
-        else if (debugMode == 10u) outputColor[input.PixelCoord] = float4(frac(surface.TexCoord), 0, 1);
-        else evaluateSurface(input, surface, barycentric, triangle, outputColor);
+        if (debugMode == 8u) output.Write(input.PixelCoord, float4(barycentric, 1));
+        else if (debugMode == 9u) output.Write(input.PixelCoord, float4(surface.Normal * .5f + .5f, 1));
+        else if (debugMode == 10u) output.Write(input.PixelCoord, float4(frac(surface.TexCoord), 0, 1));
+        else evaluateSurface<TOutput>(input, surface, barycentric, triangle, output);
     }
 };
-
-typedef GroundVertexEvaluate VertexEvaluate;
-typedef GroundDisplacement DomainEvaluate;
-typedef OpaqueVisibilityEvaluate<GroundVertex> VisibilityEvaluate;
-typedef GroundMaterial SurfaceEvaluate;
-#define CLUSTER_VERTEX_ENCODING "example.terrain.position_uv_lift.v1"
-#define CLUSTER_TESSELLATION_BOUNDS "finite"
-#include "Pipeline/cluster_material.slang"
-#include "cluster_tessellation_entries.slang"

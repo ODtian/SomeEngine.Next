@@ -1,7 +1,7 @@
 #ifndef CLUSTER_VIEW_ACCESS_SLANG
 #define CLUSTER_VIEW_ACCESS_SLANG
 
-#include "cluster_view.slang"
+__exported import cluster_view;
 
 // Draw and traversal work keeps primary and policy-backed views in one 20-bit
 // index space without forcing their metadata into one maximum-sized buffer.
@@ -30,11 +30,9 @@ ClusterViewUniforms LoadClusterCullView(
     StructuredBuffer<ClusterViewUniforms> policyViews,
     uint viewIndex, bool targetFilters = true)
 {
-    // Views without target filters are uploaded with TargetPolicy zero.
     if (!targetFilters)
     {
         ClusterViewUniforms view = primaryViews[viewIndex];
-        view.TargetPolicy = 0u;
         return view;
     }
     return ClusterIsPolicyViewIndex(viewIndex)

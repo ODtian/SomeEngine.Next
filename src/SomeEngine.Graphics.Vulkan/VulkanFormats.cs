@@ -1,7 +1,6 @@
 using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Vulkan;
-
 internal static unsafe class VulkanFormats
 {
     internal static bool TryFromNative(VkFormat format, out RhiFormat result)
@@ -13,47 +12,10 @@ internal static unsafe class VulkanFormats
             result = candidate;
             return true;
         }
+
         result = default;
         return false;
     }
-
-    internal static bool IsDepthStencil(RhiFormat format) => format is
-        RhiFormat.D16UNorm or
-        RhiFormat.D24UNormS8UInt or
-        RhiFormat.D32Float or
-        RhiFormat.D32FloatS8UInt;
-
-    internal static ImageAspectFlags Aspects(RhiFormat format) => format switch
-    {
-        RhiFormat.D16UNorm or RhiFormat.D32Float => ImageAspectFlags.DepthBit,
-        RhiFormat.D24UNormS8UInt or RhiFormat.D32FloatS8UInt =>
-            ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
-        _ => ImageAspectFlags.ColorBit,
-    };
-
-    internal static (uint Width, uint Height, uint Bytes) GetBlockInfo(RhiFormat format) => format switch
-    {
-        RhiFormat.R8UNorm or RhiFormat.R8SNorm or RhiFormat.R8UInt or RhiFormat.R8SInt => (1, 1, 1),
-        RhiFormat.R8G8UNorm or RhiFormat.R8G8SNorm or RhiFormat.R8G8UInt or RhiFormat.R8G8SInt or
-        RhiFormat.R16UNorm or RhiFormat.R16SNorm or RhiFormat.R16UInt or RhiFormat.R16SInt or
-        RhiFormat.R16Float or RhiFormat.D16UNorm => (1, 1, 2),
-        RhiFormat.R8G8B8A8UNorm or RhiFormat.R8G8B8A8UNormSrgb or RhiFormat.R8G8B8A8SNorm or
-        RhiFormat.R8G8B8A8UInt or RhiFormat.R8G8B8A8SInt or RhiFormat.B8G8R8A8UNorm or
-        RhiFormat.B8G8R8A8UNormSrgb or RhiFormat.R10G10B10A2UNorm or RhiFormat.R11G11B10Float or
-        RhiFormat.R16G16UNorm or RhiFormat.R16G16SNorm or RhiFormat.R16G16UInt or RhiFormat.R16G16SInt or
-        RhiFormat.R16G16Float or RhiFormat.R32UInt or RhiFormat.R32SInt or RhiFormat.R32Float or
-        RhiFormat.D24UNormS8UInt or RhiFormat.D32Float => (1, 1, 4),
-        RhiFormat.R16G16B16A16UNorm or RhiFormat.R16G16B16A16SNorm or RhiFormat.R16G16B16A16UInt or
-        RhiFormat.R16G16B16A16SInt or RhiFormat.R16G16B16A16Float or RhiFormat.R64UInt or RhiFormat.R32G32UInt or
-        RhiFormat.R32G32SInt or RhiFormat.R32G32Float or RhiFormat.D32FloatS8UInt => (1, 1, 8),
-        RhiFormat.R32G32B32Float => (1, 1, 12),
-        RhiFormat.R32G32B32A32UInt or RhiFormat.R32G32B32A32SInt or RhiFormat.R32G32B32A32Float => (1, 1, 16),
-        RhiFormat.BC1UNorm or RhiFormat.BC1UNormSrgb or RhiFormat.BC4UNorm or RhiFormat.BC4SNorm => (4, 4, 8),
-        RhiFormat.BC2UNorm or RhiFormat.BC2UNormSrgb or RhiFormat.BC3UNorm or RhiFormat.BC3UNormSrgb or
-        RhiFormat.BC5UNorm or RhiFormat.BC5SNorm or RhiFormat.BC6HUFloat or RhiFormat.BC6HSFloat or
-        RhiFormat.BC7UNorm or RhiFormat.BC7UNormSrgb => (4, 4, 16),
-        _ => throw new ArgumentOutOfRangeException(nameof(format)),
-    };
 
     internal static VkFormat ToNative(RhiFormat format) => format switch
     {
@@ -118,15 +80,15 @@ internal static unsafe class VulkanFormats
         RhiFormat.BC6HSFloat => VkFormat.BC6HSfloatBlock,
         RhiFormat.BC7UNorm => VkFormat.BC7UnormBlock,
         RhiFormat.BC7UNormSrgb => VkFormat.BC7SrgbBlock,
-        _ => throw new ArgumentOutOfRangeException(nameof(format)),
+        _ => default!,
     };
-
     internal static DeviceCapabilities CreateCapabilities(
         Vk vk,
-        VkPhysicalDevice physicalDevice,
+        VkPhysicalDevice adapterDevice,
         in PhysicalDeviceFeatures nativeFeatures,
         in PhysicalDeviceVulkan12Features features12,
-        VulkanExtendedFeatureSupport extendedFeatures)
+        VulkanExtendedFeatureSupport extendedFeatures
+    )
     {
         PhysicalDeviceMaintenance4Properties maintenance4 = new()
         {
@@ -142,11 +104,10 @@ internal static unsafe class VulkanFormats
             SType = StructureType.PhysicalDeviceProperties2,
             PNext = &descriptorIndexing,
         };
-        vk.GetPhysicalDeviceProperties2(physicalDevice, &properties2);
+        vk.GetPhysicalDeviceProperties2(adapterDevice, &properties2);
         PhysicalDeviceLimits limits = properties2.Properties.Limits;
         const uint bindlessHeapTypeCount = 9;
-        uint allPoolShare = descriptorIndexing.MaxUpdateAfterBindDescriptorsInAllPools /
-            bindlessHeapTypeCount;
+        uint allPoolShare = descriptorIndexing.MaxUpdateAfterBindDescriptorsInAllPools / bindlessHeapTypeCount;
         uint resourceDescriptorCapacity = MinPositive(
             1_000_000,
             allPoolShare,
@@ -154,11 +115,9 @@ internal static unsafe class VulkanFormats
             descriptorIndexing.MaxDescriptorSetUpdateAfterBindStorageBuffers,
             descriptorIndexing.MaxDescriptorSetUpdateAfterBindSampledImages,
             descriptorIndexing.MaxDescriptorSetUpdateAfterBindStorageImages,
-            extendedFeatures.MaximumDescriptorSetUpdateAfterBindAccelerationStructures);
-        uint samplerDescriptorCapacity = MinPositive(
-            1_000_000,
-            allPoolShare,
-            descriptorIndexing.MaxDescriptorSetUpdateAfterBindSamplers);
+            extendedFeatures.MaximumDescriptorSetUpdateAfterBindAccelerationStructures
+        );
+        uint samplerDescriptorCapacity = MinPositive(1_000_000, allPoolShare, descriptorIndexing.MaxDescriptorSetUpdateAfterBindSamplers);
         DeviceLimits deviceLimits = new(
             maintenance4.MaxBufferSize,
             limits.MaxImageDimension1D,
@@ -173,24 +132,13 @@ internal static unsafe class VulkanFormats
             checked((uint)Math.Max(1, Math.Max(limits.MinStorageBufferOffsetAlignment, limits.MinTexelBufferOffsetAlignment))),
             checked((uint)Math.Max(limits.OptimalBufferCopyRowPitchAlignment, 1)),
             checked((uint)Math.Max(limits.OptimalBufferCopyOffsetAlignment, 1)),
-            limits.MaxUniformBufferRange);
-
+            limits.MaxUniformBufferRange
+        );
         RhiFormat[] formats = Enum.GetValues<RhiFormat>();
         FormatSupport[] support = new FormatSupport[formats.Length];
         for (int index = 0; index < formats.Length; index++)
-            support[index] = QueryFormat(
-                vk,
-                physicalDevice,
-                formats[index],
-                nativeFeatures,
-                extendedFeatures.TransformFeedback);
-
-        DynamicStates dynamicStates =
-            DynamicStates.Viewport |
-            DynamicStates.Scissor |
-            DynamicStates.BlendConstants |
-            DynamicStates.StencilReference |
-            DynamicStates.DepthBias;
+            support[index] = QueryFormat(vk, adapterDevice, formats[index], nativeFeatures, extendedFeatures.TransformFeedback);
+        DynamicStates dynamicStates = DynamicStates.Viewport | DynamicStates.Scissor | DynamicStates.BlendConstants | DynamicStates.StencilReference | DynamicStates.DepthBias;
         if (nativeFeatures.DepthBounds)
             dynamicStates |= DynamicStates.DepthBounds;
         if (extendedFeatures.ExtendedDynamicState)
@@ -198,29 +146,20 @@ internal static unsafe class VulkanFormats
         if (extendedFeatures.ExtendedDynamicState2)
             dynamicStates |= DynamicStates.StripCut;
         FormatFeatures r64Features = support[(int)RhiFormat.R64UInt].Features;
-        const FormatFeatures requiredImageA64Features =
-            FormatFeatures.ShaderLoad |
-            FormatFeatures.Storage |
-            FormatFeatures.StorageStore |
-            FormatFeatures.StorageAtomic;
-        bool supportsImageInt64Atomics =
-            nativeFeatures.ShaderInt64 &&
-            extendedFeatures.ShaderImageInt64Atomics &&
-            (r64Features & requiredImageA64Features) == requiredImageA64Features;
+        const FormatFeatures requiredImageA64Features = FormatFeatures.ShaderLoad | FormatFeatures.Storage | FormatFeatures.StorageStore | FormatFeatures.StorageAtomic;
+        bool supportsImageInt64Atomics = nativeFeatures.ShaderInt64 && extendedFeatures.ShaderImageInt64Atomics && (r64Features & requiredImageA64Features) == requiredImageA64Features;
         return new DeviceCapabilities(
             deviceLimits,
             supportsBundles: false,
             supportsPipelineStatistics: nativeFeatures.PipelineStatisticsQuery,
-            supportsStreamOutputStatistics:
-                extendedFeatures.TransformFeedback &&
-                extendedFeatures.TransformFeedbackQueries,
+            supportsStreamOutputStatistics: extendedFeatures.TransformFeedback && extendedFeatures.TransformFeedbackQueries,
             supportsDepthBounds: nativeFeatures.DepthBounds,
             dynamicStates,
             support,
             SlangCompileTarget.Spirv,
-            supportsBufferInt64Atomics:
-                nativeFeatures.ShaderInt64 && features12.ShaderBufferInt64Atomics,
-            supportsImageInt64Atomics: supportsImageInt64Atomics);
+            supportsBufferInt64Atomics: nativeFeatures.ShaderInt64 && features12.ShaderBufferInt64Atomics,
+            supportsImageInt64Atomics: supportsImageInt64Atomics
+        );
     }
 
     private static uint MinPositive(params uint[] values)
@@ -234,14 +173,15 @@ internal static unsafe class VulkanFormats
 
     private static FormatSupport QueryFormat(
         Vk vk,
-        VkPhysicalDevice physicalDevice,
+        VkPhysicalDevice adapterDevice,
         RhiFormat format,
         in PhysicalDeviceFeatures nativeFeatures,
-        bool transformFeedback)
+        bool transformFeedback
+    )
     {
         VkFormat native = ToNative(format);
         FormatProperties properties;
-        vk.GetPhysicalDeviceFormatProperties(physicalDevice, native, &properties);
+        vk.GetPhysicalDeviceFormatProperties(adapterDevice, native, &properties);
         FormatFeatureFlags optimal = properties.OptimalTilingFeatures;
         FormatFeatureFlags buffer = properties.BufferFeatures;
         FormatFeatures features = FormatFeatures.None;
@@ -255,8 +195,7 @@ internal static unsafe class VulkanFormats
             features |= FormatFeatures.StreamOutput;
         if ((optimal & FormatFeatureFlags.SampledImageBit) != 0)
             features |= FormatFeatures.ShaderLoad | FormatFeatures.ShaderSample;
-        if (IsDepthStencil(format) &&
-            (features & FormatFeatures.ShaderSample) != 0)
+        if (IsDepthStencil(format) && (features & FormatFeatures.ShaderSample) != 0)
             features |= FormatFeatures.ShaderSampleComparison;
         if ((optimal & FormatFeatureFlags.SampledImageFilterLinearBit) != 0)
             features |= FormatFeatures.Mipmaps;
@@ -272,41 +211,43 @@ internal static unsafe class VulkanFormats
             features |= FormatFeatures.StorageAtomic;
         if (nativeFeatures.LogicOp && (features & FormatFeatures.ColorAttachment) != 0)
             features |= FormatFeatures.LogicOperation;
-
         SampleCounts sampleCounts = SampleCounts.None;
-        if (TryImage(vk, physicalDevice, native, ImageType.Type1D, out ImageFormatProperties oneDimensional))
+        if (TryImage(vk, adapterDevice, native, ImageType.Type1D, out ImageFormatProperties oneDimensional))
         {
             features |= FormatFeatures.Texture1D;
             sampleCounts |= ToSampleCounts(oneDimensional.SampleCounts);
         }
-        if (TryImage(vk, physicalDevice, native, ImageType.Type2D, out ImageFormatProperties twoDimensional))
+
+        if (TryImage(vk, adapterDevice, native, ImageType.Type2D, out ImageFormatProperties twoDimensional))
         {
             features |= FormatFeatures.Texture2D | FormatFeatures.TextureCube;
             sampleCounts |= ToSampleCounts(twoDimensional.SampleCounts);
         }
-        if (TryImage(vk, physicalDevice, native, ImageType.Type3D, out ImageFormatProperties threeDimensional))
+
+        if (TryImage(vk, adapterDevice, native, ImageType.Type3D, out ImageFormatProperties threeDimensional))
         {
             features |= FormatFeatures.Texture3D;
             sampleCounts |= ToSampleCounts(threeDimensional.SampleCounts);
         }
+
         features = AddMultisampleFeatures(features, sampleCounts);
         SampleCounts sparseSampleCounts = SampleCounts.None;
-        if (TrySparseImage(vk, physicalDevice, native, ImageType.Type2D, out ImageFormatProperties sparse2D))
+        if (TrySparseImage(vk, adapterDevice, native, ImageType.Type2D, out ImageFormatProperties sparse2D))
         {
             features |= FormatFeatures.SparseTexture2D;
             sparseSampleCounts |= ToSampleCounts(sparse2D.SampleCounts);
         }
-        if (TrySparseImage(vk, physicalDevice, native, ImageType.Type3D, out ImageFormatProperties sparse3D))
+
+        if (TrySparseImage(vk, adapterDevice, native, ImageType.Type3D, out ImageFormatProperties sparse3D))
         {
             features |= FormatFeatures.SparseTexture3D;
             sparseSampleCounts |= ToSampleCounts(sparse3D.SampleCounts);
         }
+
         return new FormatSupport(format, features, sampleCounts, sparseSampleCounts);
     }
 
-    private static FormatFeatures AddMultisampleFeatures(
-        FormatFeatures features,
-        SampleCounts sampleCounts)
+    private static FormatFeatures AddMultisampleFeatures(FormatFeatures features, SampleCounts sampleCounts)
     {
         if ((sampleCounts & ~SampleCounts.One) == 0)
             return features;
@@ -314,55 +255,53 @@ internal static unsafe class VulkanFormats
             features |= FormatFeatures.MultisampleLoad;
         if ((features & FormatFeatures.ColorAttachment) != 0)
         {
-            features |= FormatFeatures.MultisampleColorAttachment |
-                FormatFeatures.MultisampleResolve;
+            features |= FormatFeatures.MultisampleColorAttachment | FormatFeatures.MultisampleResolve;
         }
+
         return features;
     }
 
-    private static bool IsTransformFeedbackFormat(RhiFormat format) => format is
-        RhiFormat.R32UInt or RhiFormat.R32SInt or RhiFormat.R32Float or RhiFormat.R64UInt or
-        RhiFormat.R32G32UInt or RhiFormat.R32G32SInt or RhiFormat.R32G32Float or
-        RhiFormat.R32G32B32Float or
-        RhiFormat.R32G32B32A32UInt or RhiFormat.R32G32B32A32SInt or
-        RhiFormat.R32G32B32A32Float;
-
+    private static bool IsTransformFeedbackFormat(RhiFormat format) => format is RhiFormat.R32UInt or RhiFormat.R32SInt or RhiFormat.R32Float or RhiFormat.R64UInt or RhiFormat.R32G32UInt or RhiFormat.R32G32SInt or RhiFormat.R32G32Float or RhiFormat.R32G32B32Float or RhiFormat.R32G32B32A32UInt or RhiFormat.R32G32B32A32SInt or RhiFormat.R32G32B32A32Float;
     private static bool TrySparseImage(
         Vk vk,
-        VkPhysicalDevice physicalDevice,
+        VkPhysicalDevice adapterDevice,
         VkFormat format,
         ImageType type,
-        out ImageFormatProperties properties)
+        out ImageFormatProperties properties
+    )
     {
         ImageFormatProperties nativeProperties = default;
         Result result = vk.GetPhysicalDeviceImageFormatProperties(
-            physicalDevice,
+            adapterDevice,
             format,
             type,
             ImageTiling.Optimal,
             ImageUsageFlags.SampledBit,
             ImageCreateFlags.CreateSparseBindingBit | ImageCreateFlags.CreateSparseResidencyBit,
-            &nativeProperties);
+            &nativeProperties
+        );
         properties = nativeProperties;
         return result == Result.Success;
     }
 
     private static bool TryImage(
         Vk vk,
-        VkPhysicalDevice physicalDevice,
+        VkPhysicalDevice adapterDevice,
         VkFormat format,
         ImageType type,
-        out ImageFormatProperties properties)
+        out ImageFormatProperties properties
+    )
     {
         ImageFormatProperties nativeProperties = default;
         Result result = vk.GetPhysicalDeviceImageFormatProperties(
-            physicalDevice,
+            adapterDevice,
             format,
             type,
             ImageTiling.Optimal,
             ImageUsageFlags.SampledBit,
             ImageCreateFlags.None,
-            &nativeProperties);
+            &nativeProperties
+        );
         properties = nativeProperties;
         return result == Result.Success;
     }
@@ -370,12 +309,31 @@ internal static unsafe class VulkanFormats
     private static SampleCounts ToSampleCounts(SampleCountFlags flags)
     {
         SampleCounts result = SampleCounts.None;
-        if ((flags & SampleCountFlags.Count1Bit) != 0) result |= SampleCounts.One;
-        if ((flags & SampleCountFlags.Count2Bit) != 0) result |= SampleCounts.Two;
-        if ((flags & SampleCountFlags.Count4Bit) != 0) result |= SampleCounts.Four;
-        if ((flags & SampleCountFlags.Count8Bit) != 0) result |= SampleCounts.Eight;
-        if ((flags & SampleCountFlags.Count16Bit) != 0) result |= SampleCounts.Sixteen;
-        if ((flags & SampleCountFlags.Count32Bit) != 0) result |= SampleCounts.ThirtyTwo;
+        if ((flags & SampleCountFlags.Count1Bit) != 0)
+            result |= SampleCounts.One;
+        if ((flags & SampleCountFlags.Count2Bit) != 0)
+            result |= SampleCounts.Two;
+        if ((flags & SampleCountFlags.Count4Bit) != 0)
+            result |= SampleCounts.Four;
+        if ((flags & SampleCountFlags.Count8Bit) != 0)
+            result |= SampleCounts.Eight;
+        if ((flags & SampleCountFlags.Count16Bit) != 0)
+            result |= SampleCounts.Sixteen;
+        if ((flags & SampleCountFlags.Count32Bit) != 0)
+            result |= SampleCounts.ThirtyTwo;
         return result;
+    }
+
+    internal static bool IsDepthStencil(RhiFormat format) => (FormatLayouts.Get(format).Aspects & (TextureAspects.Depth | TextureAspects.Stencil)) != 0;
+    internal static ImageAspectFlags Aspects(RhiFormat format) => FormatLayouts.Get(format).Aspects switch
+    {
+        TextureAspects.Depth => ImageAspectFlags.DepthBit,
+        TextureAspects.Depth | TextureAspects.Stencil => ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
+        _ => ImageAspectFlags.ColorBit
+    };
+    internal static (uint Width, uint Height, uint Bytes) GetBlockInfo(RhiFormat format)
+    {
+        FormatLayout layout = FormatLayouts.Get(format);
+        return (layout.BlockWidth, layout.BlockHeight, layout.BlockBytes);
     }
 }

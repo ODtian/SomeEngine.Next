@@ -1,4 +1,4 @@
-namespace SomeEngine.Render.Cluster;
+﻿namespace SomeEngine.Render.Cluster;
 
 public enum ClusterPageLoadFailureKind : byte
 {
@@ -18,7 +18,7 @@ public enum ClusterCleanupFailureKind : byte
 {
     Registration,
     PageLoad,
-    Publication,
+    GeometryChanges,
     Disposal,
 }
 
@@ -29,12 +29,12 @@ public sealed record ClusterCleanupError(
     string Message);
 
 public sealed record ClusterResidencyDiagnostics(
-    bool HasPendingPublication,
+    bool HasChanges,
     uint RegisteredPages,
     uint ResidentPages,
     uint MissingPages,
-    int PendingPageLoads,
-    int PendingPageEvictions,
+    int UploadingPages,
+    int EvictingPages,
     uint PageHeapUsedBytes,
     uint PageHeapFreeBytes,
     long GpuReservedBytes,
@@ -52,7 +52,7 @@ internal enum ClusterLifecycle : byte
     Disposed,
 }
 
-internal readonly record struct ClusterPageStateSnapshot(
+internal readonly record struct ClusterPageDiagnostics(
     uint Registered,
     uint Resident,
     uint Missing,
@@ -60,21 +60,21 @@ internal readonly record struct ClusterPageStateSnapshot(
     int UncompletedEvictions,
     uint TotalCompletedEvictions);
 
-internal readonly record struct ClusterHeapSnapshot(
+internal readonly record struct ClusterHeapDiagnostics(
     uint CapacityBytes,
     uint UsedBytes,
     uint FreeBytes,
     uint LargestFreeBlockBytes,
     int FreeBlockCount);
 
-internal readonly record struct ClusterResidencySnapshot(
+internal readonly record struct ClusterResidencyMemoryDiagnostics(
     long GpuUsedBytes);
 
 internal enum ClusterCleanupStage : byte
 {
     Registration,
     PageLoad,
-    Publication,
+    GeometryChanges,
     Disposal,
 }
 
@@ -84,14 +84,14 @@ internal readonly record struct ClusterCleanupFailure(
     string ErrorType,
     string Message);
 
-internal readonly record struct ClusterMeshesSnapshot(
+internal readonly record struct ClusterMeshesDiagnostics(
     ClusterEpochId EpochId,
     ClusterLifecycle Lifecycle,
     ulong ManagerStateRevision,
-    ClusterPageStateSnapshot Pages,
-    ClusterHeapSnapshot Heap,
-    bool HasPendingPublication,
-    ClusterResidencySnapshot Residency,
+    ClusterPageDiagnostics Pages,
+    ClusterHeapDiagnostics Heap,
+    bool HasChanges,
+    ClusterResidencyMemoryDiagnostics Residency,
     int RegisteredMeshCount,
     int PublishedMeshCount,
     int ActivePageStreams,
@@ -101,7 +101,7 @@ internal enum PageFaultResolutionKind : byte
 {
     Unknown,
     Satisfied,
-    Pending,
+    UploadQueued,
     NeedsLoad,
 }
 
@@ -131,7 +131,7 @@ internal sealed record PageStreamFailure(
     PageStreamFailureCode Code,
     string Message);
 
-internal readonly record struct PageStreamUpdateSnapshot(
+internal readonly record struct PageStreamUpdateDiagnostics(
     ulong ReportedFaults,
     ulong StoredFaults,
     ulong DroppedFaults,
@@ -141,22 +141,22 @@ internal readonly record struct PageStreamUpdateSnapshot(
     uint FailedPages,
     uint BackpressuredPages);
 
-internal readonly record struct PageStreamTotalsSnapshot(
+internal readonly record struct PageStreamTotalsDiagnostics(
     ulong DroppedFaults,
     ulong LoadFailures,
     ulong BackpressuredPages);
 
-internal readonly record struct PageStreamWorkSnapshot(
+internal readonly record struct PageStreamWorkDiagnostics(
     int QueuedPages,
     int InFlightPages,
     long InFlightBytes,
     int PermanentlyFailedPages);
 
-internal readonly record struct PageStreamSnapshot(
+internal readonly record struct PageStreamDiagnostics(
     ClusterEpochId EpochId,
     PageStreamLifecycle Lifecycle,
     ulong UpdateRevision,
-    PageStreamUpdateSnapshot LastUpdate,
-    PageStreamTotalsSnapshot Totals,
-    PageStreamWorkSnapshot Work,
+    PageStreamUpdateDiagnostics LastUpdate,
+    PageStreamTotalsDiagnostics Totals,
+    PageStreamWorkDiagnostics Work,
     PageStreamFailure? LastFailure);

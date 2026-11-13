@@ -1,14 +1,14 @@
-#include "cluster_structures.slang"
-#include "common.slang"
+__exported import cluster_structures;
+__exported import common;
 #include "cluster_instance_properties.slang"
-#include "cluster_view_access.slang"
+__exported import cluster_view_access;
 #include "cluster_bvh_cull_common.slang"
-#include "cluster_hiz_shared.slang"
-#include "cluster_target_policy_contract.slang"
-#include "resource_effects.slang"
-#include "wave_aggregation.slang"
-#include "cluster_page_requests.slang"
-#include "cluster_view_work.slang"
+__exported import cluster_hiz_shared;
+#include "cluster_target_policy.slang"
+__exported import resource_effects;
+__exported import wave_aggregation;
+__exported import cluster_page_requests;
+__exported import cluster_view_work;
 
 StructuredBuffer<ClusterViewUniforms> Views;
 
@@ -61,7 +61,7 @@ ConstantBuffer<ClusterTraversalLevelUniforms> TraversalLevel;
 globallycoherent RWStructuredBuffer<ClusterTraversalNode> TraversalNodes;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 globallycoherent RWByteAddressBuffer NodeIndirectArgs;
-#include "cluster_work_queue.slang"
+__exported import cluster_work_queue;
 #else
 StructuredBuffer<ClusterTraversalNode> CurrentTraversalNodes;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
@@ -105,7 +105,7 @@ void CountPersistentCandidates(uint amount)
     CandidateArgs.InterlockedMax(0u, (first + amount + 63u) / 64u, ignored);
 }
 
-void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters);
+void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters, bool layerTiles);
 #endif
 
 void PublishCandidateDispatchArgs(uint start, uint count, uint maxCandidates)
@@ -154,12 +154,10 @@ uint ClusterHierarchyNodeState(
     ClusterProjectedBounds projectedBounds,
     uint viewIndex,
     ClusterViewUniforms view,
-    uint depthCacheClass,
-    uint instanceID)
+    uint depthCacheClass, bool shadowPages)
 {
-    if (!ClusterTargetPolicyAccepts(projectedBounds, view, depthCacheClass))
+    if (shadowPages && !ClusterTargetPolicyAccepts(projectedBounds, view, depthCacheClass))
         return 0u;
-    if (KeepBlendOcclusion(InstanceData, InstanceProperties, instanceID, view)) return 1u;
     if (view.CullingEnabled == 0u ||
         view.HasPrevHistory == 0u ||
         view.HiZMipCount == 0u)
@@ -169,7 +167,7 @@ uint ClusterHierarchyNodeState(
 
     bool usePrevious = TraversalLevel.TraversalMode != 2u;
     bool occluded;
-    if (view.TargetPolicy != 0u)
+    if (shadowPages)
     {
         occluded = ClusterTargetPolicyWorldBoundsOccluded(
             worldMin,
@@ -218,7 +216,7 @@ void AppendDeferredTraversalNode(ClusterTraversalNode node, uint maxNodes)
 
 void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint childIndex,
     uint viewLane = 0u, uint viewLanes = 1u, uint groupChild = 0u,
-    bool targetFilters = true, bool multipleViews = true)
+    bool targetFilters = true, bool multipleViews = true, bool layerTiles = false)
 {
     uint nodeIndex = ClusterTraversalNodeIndex(parent);
     ClusterHierarchySlice node = (ClusterHierarchySlice)0;
@@ -288,7 +286,7 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters);
         view = ApplyClusterInstanceBounds(MaterialBounds, InstanceData, InstanceProperties, instanceID, view);
         view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
-        if (view.TargetPolicy != 0u && !ClusterTargetPolicyWorldDepthAccepts(
+        if (targetFilters && !ClusterTargetPolicyWorldDepthAccepts(
                 worldMin, worldMax, view,
                 LoadTargetDepthCacheClass(instanceID)))
             continue;
@@ -298,7 +296,7 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
             !ClusterNodePassesLod(node, lodBounds, view))
             continue;
         uint state = ClusterHierarchyNodeState(historyMin, historyMax, projectedBounds, viewIndex, view,
-            view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u, instanceID);
+            targetFilters ? LoadTargetDepthCacheClass(instanceID) : 1u, targetFilters);
         if (state == 2u)
             AppendDeferredTraversalNode(
                 MakeClusterTraversalNode(ClusterTraversalSlice(nodeIndex, childIndex), instanceID, viewIndex, 1u), TraversalLevel.MaxNodes);
@@ -435,7 +433,7 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
             ClusterCandidate candidate = MakeClusterCandidate(MakeDrawRequest(
                 ClusterSlicePageOffset(node), firstCluster + cluster, instanceID, viewBase + bit), 1u);
 #ifdef CLUSTER_PERSISTENT_CULL
-            CullClusterCandidateData(candidate, targetFilters);
+            CullClusterCandidateData(candidate, targetFilters, layerTiles);
 #else
             if (output < TraversalLevel.MaxNodes)
                 CandidateClusters[output] = candidate;
@@ -456,4 +454,4 @@ void ProcessTraversalLevel(uint groupID, uint groupThreadIndex)
 }
 #endif
 
-#include "cluster_work_status.slang"
+__exported import cluster_work_status;

@@ -1,4 +1,4 @@
-using SomeEngine.Graphics;
+﻿using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
 using EngineTexture = SomeEngine.Resources.Texture;
 using RhiTexture = SomeEngine.Graphics.Texture;
@@ -18,13 +18,13 @@ public sealed partial class RenderDevice
         RhiTexture texture = PrepareTexture(ref frame, ReadOnlySpan<GraphPassId>.Empty, asset);
         TextureRealization realization = GetOrCreateTexture(asset);
         OrderTextureInputs(ref frame, realization, inputs);
-        hasFrameUploads = realization.UploadPasses.Count != 0;
+        hasFrameUploads = GetTextureFrame(ref frame, realization, asset, asset.GetUploadContent()).HasUploads;
         TextureSrv? srv = null;
         TextureUav? uav = null;
         foreach (GraphParameterInput input in inputs)
             if (input.Type == ResourceBindingType.TextureSrv) srv ??= GetTextureSrv(asset);
             else if (input.Type == ResourceBindingType.TextureUav)
-                uav ??= GetTextureUav(asset, realization.Shape.ResidentRange(realization.FirstResidentMip));
+                uav ??= GetTextureUav(asset, realization.Shape.ResidentRange(FirstAvailableMip(asset.GetUploadContent())));
         return new(texture, srv, uav);
     }
 
@@ -34,20 +34,22 @@ public sealed partial class RenderDevice
         _ = PrepareMissingTexture(ref frame, ReadOnlySpan<GraphPassId>.Empty);
         TextureRealization texture = RequireMissingTexture();
         OrderTextureInputs(ref frame, texture, inputs);
-        hasFrameUploads = texture.UploadPasses.Count != 0;
+        hasFrameUploads = GetTextureFrame(ref frame, texture, null, null).HasUploads;
         TextureSrv view = MissingTextureSrv;
         UpdateSampledDescriptor(texture, view);
         return view;
     }
 
-    private static void OrderTextureInputs(ref RenderGraphFrame frame, TextureRealization texture,
+    private void OrderTextureInputs(ref RenderGraphFrame frame, TextureRealization texture,
         scoped ReadOnlySpan<GraphParameterInput> inputs)
     {
-        if (texture.UploadPasses.Count == 0) return;
+        TextureFrame uploads = frame.GetFrameData(texture, () => new TextureFrame(this, texture, null, null));
+        if (!uploads.HasUploads) return;
+        TextureTransfers transfers = GetTextureTransfers(ref frame);
         foreach (GraphParameterInput input in inputs)
         {
-            foreach (GraphPassId upload in texture.UploadPasses) frame.OrderAfter(input, upload);
-            frame.OrderAfter(texture.FinalizationPass, input);
+            frame.OrderAfter(input, transfers.CopyPass);
+            frame.OrderAfter(transfers.CompletionPass, input);
         }
     }
 
@@ -59,11 +61,10 @@ public sealed partial class RenderDevice
         {
             TextureShape shape = texture.Shape;
             texture.SampledDescriptor = _backend.CreateDescriptorTable(_device,
-                [new DescriptorSlotDesc(ResourceBindingType.TextureSrv, shape.SampledFormat,
+                [new DescriptorEntryDesc(ResourceBindingType.TextureSrv, shape.SampledFormat,
                     TextureDimension: shape.SampledDimension)], "Material sampled texture");
             texture.SampledIndex = _backend.GetDescriptorIndex(texture.SampledDescriptor, 0).Value;
-            if (texture.FirstResidentMip < shape.MipLevelCount)
-                UpdateSampledDescriptor(texture, asset is null ? MissingTextureSrv : GetTextureSrv(asset));
+            UpdateSampledDescriptor(texture, asset is null ? MissingTextureSrv : GetTextureSrv(asset));
         }
         return texture.SampledIndex;
     }
@@ -71,6 +72,16 @@ public sealed partial class RenderDevice
     private void UpdateSampledDescriptor(TextureRealization texture, TextureSrv view)
     {
         if (texture.SampledDescriptor is null || ReferenceEquals(texture.SampledView, view)) return;
+        if (texture.SampledView is not null)
+        {
+            DescriptorTable previous = texture.SampledDescriptor;
+            TextureShape shape = texture.Shape;
+            texture.SampledDescriptor = _backend.CreateDescriptorTable(_device,
+                [new DescriptorEntryDesc(ResourceBindingType.TextureSrv, shape.SampledFormat,
+                    TextureDimension: shape.SampledDimension)], "Material sampled texture");
+            texture.SampledIndex = _backend.GetDescriptorIndex(texture.SampledDescriptor, 0).Value;
+            _graph.RetireAfterSubmittedFrames(previous);
+        }
         _backend.WriteDescriptor(texture.SampledDescriptor, 0, ResourceBinding.SampledTexture(view));
         texture.SampledView = view;
     }

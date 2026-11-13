@@ -2,6 +2,9 @@ using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
+[StructLayout(LayoutKind.Sequential, Size = 16)]
+internal readonly record struct LayerCullParameters(uint TileSize, uint HardwareWindowTiles);
+
 // Managed mirrors of the cooked Cluster frame contracts. Explicit sizes retain HLSL constant-
 // buffer register padding and make accidental ABI drift fail at construction rather than on GPU.
 
@@ -28,8 +31,8 @@ internal struct ClusterDrawDispatchUniforms
 {
     internal uint DrawArgsByteOffset;
     internal uint EarlyDepthEnabled;
-    internal uint Pad1;
-    internal uint Pad2;
+    internal uint CurrentBin;
+    internal uint MaxVisibleClusters;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
@@ -41,7 +44,7 @@ internal struct ClusterSoftwareRasterUniforms
     internal uint DebugDump;
     internal uint CurrentBin;
     internal uint EarlyDepthEnabled;
-    internal uint Pad1;
+    internal uint MaxVisibleClusters;
     internal uint Pad2;
 }
 
@@ -49,14 +52,14 @@ internal struct ClusterSoftwareRasterUniforms
 internal struct ClusterRasterBinningUniforms
 {
     internal uint RasterMaxBins;
-    internal uint SlotCapacity;
+    internal uint MaterialAddressCapacity;
     internal uint MaxVisibleClusters;
     internal uint CollectMetrics;
     internal uint PolicyTarget;
     internal uint ScreenWidth;
     internal uint ScreenHeight;
     internal uint ViewCount;
-    internal uint BinnedEntriesPerCluster;
+    internal uint BatchCapacity;
     internal uint DepthBucketsEnabled;
     internal uint Padding1;
     internal uint Padding2;
@@ -90,7 +93,7 @@ internal struct ClusterShadeBinUniforms
     internal uint ScreenWidth;
     internal uint ScreenHeight;
     internal uint ShadeBinCount;
-    internal uint SlotCapacity;
+    internal uint MaterialAddressCapacity;
     internal uint BinItemCapacity;
     private uint _padding0;
     internal uint ViewCount;
@@ -105,7 +108,7 @@ internal struct ClusterShadeUniforms
     internal uint ScreenHeight;
     internal uint ShadingBin;
     internal uint ShadeBinCount;
-    internal uint MaterialSlotCapacity;
+    internal uint MaterialAddressCapacity;
     internal uint ViewCount;
     private uint _padding;
     internal uint VisibilityDepth;

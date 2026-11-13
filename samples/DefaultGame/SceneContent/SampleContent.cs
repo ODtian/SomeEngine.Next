@@ -22,8 +22,39 @@ namespace DefaultGame.Content;
 public static class SampleContent
 {
     /// <summary>Writes the default Cluster configuration against the project's existing shader assets.</summary>
-    public static Guid BuildClusterShaders(string projectRoot) =>
-        BuildClusterShaders(new AssetProject(Path.GetFullPath(projectRoot), []));
+    public static Guid BuildClusterShaders(string projectRoot, string engineRoot) =>
+        BuildClusterShaders(new AssetProject(Path.GetFullPath(projectRoot), []), engineRoot);
+
+    /// <summary>Writes the sample's shadow configuration against its existing shared shaders.</summary>
+    public static Guid BuildShadowShaders(string projectRoot, string engineRoot) =>
+        BuildShadowShaders(new AssetProject(Path.GetFullPath(projectRoot), []), engineRoot);
+
+    /// <summary>Writes the current sample renderer configuration for an explicitly imported scene.</summary>
+    public static void BuildApplicationSettings(AssetProject project, string engineRoot, AssetId<WorldAsset> scene)
+    {
+        EngineShaderContent.SetContentDirectory(project, engineRoot);
+        Guid pipeline = BuildClusterShaders(project, engineRoot);
+        Guid shadows = BuildShadowShaders(project, engineRoot);
+        BuildApplicationSettings(project, engineRoot, scene.Value, pipeline, shadows);
+    }
+
+    /// <summary>Refreshes the sample renderer settings while keeping the existing scene and dimensions.</summary>
+    public static async Task RefreshApplicationSettingsAsync(AssetProject project, string engineRoot,
+        CancellationToken cancellationToken = default)
+    {
+        engineRoot = Path.GetFullPath(engineRoot);
+        EngineShaderContent.SetContentDirectory(project, engineRoot);
+        const string outputPath = "assets/Runtime/default.runtime.asset";
+        string path = Path.Combine(project.RootPath, outputPath);
+        using ApplicationSettingsAsset asset = await ApplicationSettingsAsset.OpenAsync(path,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        ApplicationSettingsBlock settings = asset.GetBlock<ApplicationSettingsBlock>();
+        settings.Pipeline = new(BuildClusterShaders(project, engineRoot));
+        settings.VirtualShadowMap = new(BuildShadowShaders(project, engineRoot));
+        SetApplicationShaders(project, engineRoot, settings);
+        project.RegisterAsset(await asset.SaveAsync(path, cancellationToken).ConfigureAwait(false));
+        Console.WriteLine($"  Application: {outputPath}");
+    }
 
     /// <summary>Rebuilds one project shader with the selected engine shader library.</summary>
     public static async Task RefreshShaderAsync(string projectRoot, string shaderSource, string engineRoot,
@@ -31,12 +62,9 @@ public static class SampleContent
     {
         projectRoot = Path.GetFullPath(projectRoot);
         string shaders = Path.Combine(projectRoot, "assets", "Shaders");
-        string engineShaders = Path.Combine(Path.GetFullPath(engineRoot), "assets", "Shaders");
         WriteInstanceLayout(shaders);
-        WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
-            File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
-        var project = new AssetProject(projectRoot, [], shaderIncludeDirectories: [engineShaders]);
-        await project.BuildAsync(Path.GetFullPath(shaderSource, projectRoot), cancellationToken: cancellationToken)
+        await EngineShaderContent.BuildShaderAsync(projectRoot, shaderSource, engineRoot,
+            [SlangShaderSharp.SlangCompileTarget.Dxil], cancellationToken)
             .ConfigureAwait(false);
         Console.WriteLine($"Shader: {Path.GetFileName(shaderSource)}");
     }
@@ -48,26 +76,23 @@ public static class SampleContent
         string shaders = Path.Combine(projectRoot, "assets", "Shaders");
         string engineShaders = Path.Combine(engineRoot, "assets", "Shaders");
         WriteInstanceLayout(shaders);
-        WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
-            File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
         var project = new AssetProject(projectRoot, [StandardGltfSceneImporter.CreateSourceImporter()],
-            shaderIncludeDirectories: [engineShaders]);
-        await BuildEngineShadersAsync(project, shaders, engineShaders, cancellationToken).ConfigureAwait(false);
-        foreach (string source in Directory.EnumerateFiles(shaders, "*.shader").Order(StringComparer.Ordinal))
-        {
-            if (Path.GetFileNameWithoutExtension(source) is "standard" or "unlit") continue;
-            cancellationToken.ThrowIfCancellationRequested();
-            await project.BuildAsync(source, cancellationToken: cancellationToken).ConfigureAwait(false);
-            Console.WriteLine($"Shader: {Path.GetFileName(source)}");
-        }
-        await SampleMaterials.BuildAsync(project, cancellationToken).ConfigureAwait(false);
+            shaderIncludeDirectories: [engineShaders], shaderTargets: [SlangShaderSharp.SlangCompileTarget.Dxil]);
+        WriteInstanceLayout(engineShaders);
+        await EngineShaderContent.BuildAsync(engineRoot, project.ShaderTargets, cancellationToken).ConfigureAwait(false);
+        EngineShaderContent.SetContentDirectory(project, engineRoot);
+        string[] shaderSources = Directory.EnumerateFiles(shaders, "*.shader").Order(StringComparer.Ordinal)
+            .Where(source => Path.GetFileNameWithoutExtension(source) is not ("standard" or "unlit")
+                && !File.Exists(Path.Combine(engineShaders, Path.GetFileName(source)))).ToArray();
+        await project.BuildAllAsync(shaderSources, 8, cancellationToken).ConfigureAwait(false);
+        await SampleMaterials.BuildAsync(project, engineRoot, cancellationToken).ConfigureAwait(false);
         await SampleBlendContent.BuildAsync(project, engineRoot, cancellationToken).ConfigureAwait(false);
-        Guid pipeline = BuildClusterShaders(project);
-        Guid shadows = BuildShadowShaders(project);
+        Guid pipeline = BuildClusterShaders(project, engineRoot);
+        Guid shadows = BuildShadowShaders(project, engineRoot);
         IReadOnlyList<Guid> imported = await project.ImportAsync("assets/Models/ico_sphere.glb", cancellationToken).ConfigureAwait(false);
         Guid mesh = imported.Single(id => project.Manifest.Assets[id].AssetType == MeshAsset.FileType);
         Guid scene = await BuildSceneAsync(project, mesh, cancellationToken).ConfigureAwait(false);
-        BuildApplicationSettings(project, scene, pipeline, shadows);
+        BuildApplicationSettings(project, engineRoot, scene, pipeline, shadows);
         AssetDiagnostic[] errors = project.Validate().Where(static item => item.Severity == AssetDiagnosticSeverity.Error).ToArray();
         if (errors.Length != 0) throw new InvalidDataException(string.Join(Environment.NewLine, errors.Select(static error => error.Message)));
         Console.WriteLine($"Built {project.Manifest.Assets.Count} project assets from project sources and the engine shader library.");
@@ -95,35 +120,7 @@ public static class SampleContent
         File.WriteAllText(path, normalizedContent);
     }
 
-    private static async Task BuildEngineShadersAsync(AssetProject project, string shaders,
-        string engineShaders, CancellationToken cancellationToken)
-    {
-        string generated = Path.Combine(shaders, "generated", "EngineSources");
-        foreach (string source in Directory.EnumerateFiles(engineShaders, "*.shader").Order(StringComparer.Ordinal))
-        {
-            string name = Path.GetFileName(source);
-            if (File.Exists(Path.Combine(shaders, name))) continue;
-            cancellationToken.ThrowIfCancellationRequested();
-            string content = File.ReadAllText(source);
-            string destination = Path.Combine(generated, name);
-            WriteGeneratedFile(destination, content);
-            using JsonDocument document = JsonDocument.Parse(content);
-            foreach (JsonElement block in document.RootElement.GetProperty("Blocks").EnumerateArray())
-            {
-                if (!block.GetProperty("Fields").TryGetProperty("SourceNames", out JsonElement names)) continue;
-                foreach (JsonElement sourceName in names.EnumerateArray())
-                {
-                    string sourcePath = sourceName.GetString()!;
-                    WriteGeneratedFile(Path.Combine(generated, sourcePath),
-                        File.ReadAllText(Path.Combine(engineShaders, sourcePath)));
-                }
-            }
-            await project.BuildAsync(destination, cancellationToken: cancellationToken).ConfigureAwait(false);
-            Console.WriteLine($"Engine shader: {name}");
-        }
-    }
-
-    private static Guid BuildClusterShaders(AssetProject project)
+    private static Guid BuildClusterShaders(AssetProject project, string engineRoot)
     {
         const string outputPath = "assets/Pipelines/default_cluster.clusterrender.asset";
         using var settings = new ClusterShadersBlock
@@ -131,135 +128,135 @@ public static class SampleContent
             Operations =
             [
                 ComputeOperation(
-                    ClusterShaderOperationRole.MaterialDecalCells,
-                    ResolveRequired(project, "assets/Shaders/generated/EngineSources/material_decal_cells.shader"),
-                    "CountMaterialDecalCells"),
+                    ClusterShaderOperationRole.MaterialDecalBinning,
+                    ResolveRequired(project, engineRoot, "assets/Shaders/material_decal_binning.shader"),
+                    "CountScreenItems"),
                 ComputeOperation(
                     ClusterShaderOperationRole.BvhTraversal,
-                    ResolveRequired(project, "assets/Shaders/cluster_bvh_traverse.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_bvh_traverse.shader"),
                     "CullClusterWork"),
                 ComputeOperation(
                     ClusterShaderOperationRole.LeafFlagFixups,
-                    ResolveRequired(project, "assets/Shaders/cluster_leaf_flags.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_leaf_flags.shader"),
                     "ApplyClusterLeafFlags"),
                 ComputeOperation(
                     ClusterShaderOperationRole.PageRequests,
-                    ResolveRequired(project, "assets/Shaders/cluster_page_request_complete.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_page_request_complete.shader"),
                     "CompleteClusterPageRequests"),
                 ComputeOperation(
                     ClusterShaderOperationRole.BvhTraversalInitialize,
-                    ResolveRequired(project, "assets/Shaders/cluster_bvh_traverse_seed.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_bvh_traverse_seed.shader"),
                     "SeedHierarchyRoots"),
                 ComputeOperation(
                     ClusterShaderOperationRole.SceneBounds,
-                    ResolveRequired(project, "assets/Shaders/cluster_scene_bounds.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_scene_bounds.shader"),
                     "BuildClusterSceneBounds"),
                 ComputeOperation(
                     ClusterShaderOperationRole.BvhDeferredResume,
-                    ResolveRequired(project, "assets/Shaders/cluster_deferred_resume.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_deferred_resume.shader"),
                     "ResumeDeferredClusterWork"),
                 ComputeOperation(
                     ClusterShaderOperationRole.CullReset,
-                    ResolveRequired(project, "assets/Shaders/cluster_cull_reset.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_cull_reset.shader"),
                     "ClearCull"),
                 ComputeOperation(
                     ClusterShaderOperationRole.CullPhaseOne,
-                    ResolveRequired(project, "assets/Shaders/cluster_cull_phase1.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_cull_phase1.shader"),
                     "CullPhaseOne"),
                 ComputeOperation(
                     ClusterShaderOperationRole.CullPhaseTwo,
-                    ResolveRequired(project, "assets/Shaders/cluster_cull_phase2.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_cull_phase2.shader"),
                     "CullPhaseTwo"),
                 ComputeOperation(
                     ClusterShaderOperationRole.RasterBinningReset,
-                    ResolveRequired(project, "assets/Shaders/cluster_bin_reset.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_bin_reset.shader"),
                     "ResetBins"),
                 ComputeOperation(
                     ClusterShaderOperationRole.RasterBinningCount,
-                    ResolveRequired(project, "assets/Shaders/cluster_bin_count.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_bin_count.shader"),
                     "CountBins"),
                 ComputeOperation(
                     ClusterShaderOperationRole.RasterBinningReserve,
-                    ResolveRequired(project, "assets/Shaders/cluster_bin_reserve.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_bin_reserve.shader"),
                     "ReserveBins"),
                 ComputeOperation(
                     ClusterShaderOperationRole.RasterBinningScatter,
-                    ResolveRequired(project, "assets/Shaders/cluster_bin_scatter.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_bin_scatter.shader"),
                     "ScatterBins"),
                 ComputeOperation(
                     ClusterShaderOperationRole.TessellationBinningReset,
-                    ResolveRequired(project, "assets/Shaders/cluster_tessellation_bin.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_tessellation_bin.shader"),
                     "ResetTessellationBins"),
                 ComputeOperation(
                     ClusterShaderOperationRole.TessellationBinningCount,
-                    ResolveRequired(project, "assets/Shaders/cluster_tessellation_bin.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_tessellation_bin.shader"),
                     "CountTessellationBins"),
                 ComputeOperation(
                     ClusterShaderOperationRole.TessellationBinningReserve,
-                    ResolveRequired(project, "assets/Shaders/cluster_tessellation_bin.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_tessellation_bin.shader"),
                     "ReserveTessellationBins"),
                 ComputeOperation(
                     ClusterShaderOperationRole.TessellationBinningScatter,
-                    ResolveRequired(project, "assets/Shaders/cluster_tessellation_bin.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_tessellation_bin.shader"),
                     "ScatterTessellationBins"),
                 ComputeOperation(
                     ClusterShaderOperationRole.SoftwareVisibilityRaster,
-                    ResolveRequired(project, "assets/Shaders/sw_raster.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/sw_raster.shader"),
                     "CSSWRasterBufferAtomic64"),
                 RasterOperation(
                     ClusterShaderOperationRole.HardwareVisibilityRaster,
-                    ResolveRequired(project, "assets/Shaders/cluster_draw.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_draw.shader"),
                     "VSVisBuffer",
                     "PSVisBufferHardwareOnly"),
                 ComputeOperation(
                     ClusterShaderOperationRole.VisibilityClearImage,
-                    ResolveRequired(project, "assets/Shaders/visibility_clear_image.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/visibility_clear_image.shader"),
                     "ClearVisibilityWinner"),
                 ComputeOperation(
                     ClusterShaderOperationRole.VisibilityClearBuffer,
-                    ResolveRequired(project, "assets/Shaders/visibility_clear_buffer.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/visibility_clear_buffer.shader"),
                     "ClearVisibilityWinner"),
                 RasterOperation(
                     ClusterShaderOperationRole.VisibilityResolveImage,
-                    ResolveRequired(project, "assets/Shaders/visibility_resolve_image.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/visibility_resolve_image.shader"),
                     "VSFullscreen",
                     "PSResolveVisibilityWinner"),
                 RasterOperation(
                     ClusterShaderOperationRole.VisibilityResolveBuffer,
-                    ResolveRequired(project, "assets/Shaders/visibility_resolve_buffer.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/visibility_resolve_buffer.shader"),
                     "VSFullscreen",
                     "PSResolveVisibilityWinner"),
                 ComputeOperation(
                     ClusterShaderOperationRole.HiZInitialize,
-                    ResolveRequired(project, "assets/Shaders/hiz_init.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/hiz_init.shader"),
                     "InitHiZ"),
                 ComputeOperation(
                     ClusterShaderOperationRole.HiZReduce,
-                    ResolveRequired(project, "assets/Shaders/hiz_reduce.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/hiz_reduce.shader"),
                     "ReduceHiZ"),
                 ComputeOperation(
                     ClusterShaderOperationRole.HiZReducePair,
-                    ResolveRequired(project, "assets/Shaders/hiz_reduce_pair.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/hiz_reduce_pair.shader"),
                     "ReduceHiZPair"),
                 ComputeOperation(
                     ClusterShaderOperationRole.MaterialBinningReset,
-                    ResolveRequired(project, "assets/Shaders/shade_bin_reset.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/shade_bin_reset.shader"),
                     "ResetShadeBins"),
                 ComputeOperation(
                     ClusterShaderOperationRole.MaterialBinningCount,
-                    ResolveRequired(project, "assets/Shaders/shade_bin_count.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/shade_bin_count.shader"),
                     "CountShadeBins"),
                 ComputeOperation(
                     ClusterShaderOperationRole.MaterialBinningReserve,
-                    ResolveRequired(project, "assets/Shaders/shade_bin_reserve.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/shade_bin_reserve.shader"),
                     "ReserveShadeBins"),
                 ComputeOperation(
                     ClusterShaderOperationRole.MaterialBinningScatter,
-                    ResolveRequired(project, "assets/Shaders/shade_bin_scatter.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/shade_bin_scatter.shader"),
                     "ScatterShadeBins"),
                 ComputeOperation(
                     ClusterShaderOperationRole.VisibilityResolve,
-                    ResolveRequired(project, "assets/Shaders/cluster_resolve.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/cluster_resolve.shader"),
                     "CSResolve"),
             ],
         };
@@ -312,24 +309,39 @@ public static class SampleContent
         return id;
     }
 
-    private static void BuildApplicationSettings(AssetProject project, Guid sceneGuid, Guid clusterPipelineGuid, Guid virtualShadowMapGuid)
+    private static void BuildApplicationSettings(AssetProject project, string engineRoot, Guid sceneGuid, Guid clusterPipelineGuid, Guid virtualShadowMapGuid)
     {
         const string outputPath = "assets/Runtime/default.runtime.asset";
         using var settings = new ApplicationSettingsBlock
         {
             Scene = new(sceneGuid), Pipeline = new(clusterPipelineGuid), VirtualShadowMap = new(virtualShadowMapGuid),
-            UiShader = new(ResolveRequired(project, "assets/Shaders/imgui.shader")), UiVertexEntry = "VSMain", UiPixelEntry = "PSMain",
-            PresentationShader = new(ResolveRequired(project, "assets/Shaders/post_tonemap.shader")), PresentationVertexEntry = "VSMain", PresentationPixelEntry = "PSMain",
-            LightingShader = new(ResolveRequired(project, "assets/Shaders/clustered_light_grid.shader")), LightingEntryPoint = "BuildClusteredLightGrid",
-            TemporalShader = new(ResolveRequired(project, "assets/Shaders/temporal_resolve.shader")), TemporalVertexEntry = "VSMain", TemporalPixelEntry = "PSMain",
-            TranslucencyShader = new(ResolveRequired(project, "assets/Shaders/translucency_composite.shader")), TranslucencyVertexEntry = "VSMain", TranslucencyPixelEntry = "PSMain",
-            DebugShader = new(ResolveRequired(project, "assets/Shaders/render_debug_overlay.shader")), DebugVertexEntry = "VSMain", DebugPixelEntry = "PSMain",
             Width = 1280, Height = 720,
         };
+        SetApplicationShaders(project, engineRoot, settings);
         using var asset = new ApplicationSettingsAsset(SampleAssetIds.ApplicationSettings) { Name = "Default Game" };
         asset.SetBlock(settings);
         project.RegisterAsset(asset.SaveAsync(Path.Combine(project.RootPath, outputPath)).AsTask().GetAwaiter().GetResult());
         Console.WriteLine($"  Application: {outputPath}");
+    }
+
+    private static void SetApplicationShaders(AssetProject project, string engineRoot, ApplicationSettingsBlock settings)
+    {
+        settings.UiShader = new(ResolveRequired(project, engineRoot, "assets/Shaders/imgui.shader"));
+        settings.UiVertexEntry = "VSMain";
+        settings.UiPixelEntry = "PSMain";
+        settings.PresentationShader = new(ResolveRequired(project, engineRoot, "assets/Shaders/post_tonemap.shader"));
+        settings.PresentationVertexEntry = "VSMain";
+        settings.PresentationPixelEntry = "PSMain";
+        settings.LightingShader = new(ResolveRequired(project, engineRoot, "assets/Shaders/clustered_light_binning.shader"));
+        settings.TemporalShader = new(ResolveRequired(project, engineRoot, "assets/Shaders/temporal_resolve.shader"));
+        settings.TemporalVertexEntry = "VSMain";
+        settings.TemporalPixelEntry = "PSMain";
+        settings.TranslucencyShader = new(ResolveRequired(project, engineRoot, "assets/Shaders/translucency_composite.shader"));
+        settings.TranslucencyVertexEntry = "VSMain";
+        settings.TranslucencyPixelEntry = "PSMain";
+        settings.DebugShader = new(ResolveRequired(project, engineRoot, "assets/Shaders/render_debug_overlay.shader"));
+        settings.DebugVertexEntry = "VSMain";
+        settings.DebugPixelEntry = "PSMain";
     }
 
     private static ShaderRef ShaderReference(Guid shaderGuid, string entryPoint)
@@ -339,71 +351,74 @@ public static class SampleContent
             EntryPoint = entryPoint,
         };
 
-    private static Guid BuildShadowShaders(AssetProject project)
+    private static Guid BuildShadowShaders(AssetProject project, string engineRoot)
     {
         const string outputPath = "assets/Pipelines/default_virtual_shadow.virtualshadow.asset";
         using var settings = new VirtualShadowMapShadersBlock
             {
                 BlueNoise = new AssetId<TextureAsset>(SampleAssetIds.ShadowBlueNoise),
                 ResetReceiverMasks = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_receiver_mask_reset.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_receiver_mask_reset.shader"),
                     "ResetVirtualShadowReceiverMasks"),
                 ResetFrame = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_frame_reset.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_frame_reset.shader"),
                     "ResetVirtualShadowFrame"),
+                OpaqueRequests = ShaderReference(
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_visibility_request_entries.shader"),
+                    "RequestOpaqueShadowPages"),
                 MarkCoarsePages = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_mark_coarse_pages.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_mark_coarse_pages.shader"),
                     "MarkVirtualShadowCoarsePages"),
                 AllocatePages = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_allocate_pages.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_allocate_pages.shader"),
                     "AllocateVirtualShadowPages"),
                 ResidentPages = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_resident_propagation.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_resident_propagation.shader"),
                     "PropagateVirtualShadowResidentPages"),
                 Prefilter = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_prefilter.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_prefilter.shader"),
                     "PrefilterVirtualShadowDistant"),
                 PrefilterReset = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_prefilter_work.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_prefilter_work.shader"),
                     "ResetVirtualShadowFilterWork"),
                 PrefilterSelect = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_prefilter_work.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_prefilter_work.shader"),
                     "SelectVirtualShadowFilterPages"),
                 PrefilterRequests = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_prefilter_requests.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_prefilter_requests.shader"),
                     "PropagateVirtualShadowFilterRequests"),
                 MergeStatic = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_merge_static.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_merge_static.shader"),
                     "MergeVirtualShadowStaticDepth"),
                 ClearPages = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_clear_pages.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_clear_pages.shader"),
                     "ClearVirtualShadowPages"),
                 InitializeState = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_state_init.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_state_init.shader"),
                     "InitializeVirtualShadowState"),
                 InvalidateCasters = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_caster_invalidation.shader"),
-                    "InvalidateMovedVirtualShadowCasters"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_caster_binning.shader"),
+                    "CountScreenItems"),
                 BuildPagePool = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_page_pool.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_page_pool.shader"),
                     "BuildVirtualShadowPagePool"),
                 CompactViews = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_view_compact.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_view_compact.shader"),
                     "CompactVirtualShadowViews"),
                 InitializePageHiZ = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_page_hiz.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_page_hiz.shader"),
                     "InitializeVirtualShadowPageHiZ"),
                 ReducePageHiZ = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_page_hiz_reduce.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_page_hiz_reduce.shader"),
                     "ReduceVirtualShadowPageHiZ"),
                 CompletePageDepth = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_page_depth_complete.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_page_depth_complete.shader"),
                     "CompleteVirtualShadowPageDepth"),
                 WorkFeedback = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_work_feedback.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_work_feedback.shader"),
                     "UpdateVirtualShadowWorkThrottle"),
                 DynamicResolution = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_dynamic_resolution.shader"),
+                    ResolveRequired(project, engineRoot, "assets/Shaders/vsm_dynamic_resolution.shader"),
                     "UpdateVirtualShadowDynamicResolution"),
             };
         using var asset = new VirtualShadowMapShadersAsset(SampleAssetIds.ShadowShaders) { Name = "Default Virtual Shadow" };
@@ -438,9 +453,10 @@ public static class SampleContent
             ],
         };
 
-    private static Guid ResolveRequired(AssetProject project, string sourcePath) =>
-        project.Resolve(sourcePath)
-        ?? project.Resolve("assets/Shaders/generated/EngineSources/" + Path.GetFileName(sourcePath))
-        ?? throw new InvalidOperationException($"Required asset '{sourcePath}' was not imported.");
-
+    private static Guid ResolveRequired(AssetProject project, string engineRoot, string sourcePath)
+    {
+        string definition = Path.Combine(engineRoot, "assets", "Shaders", Path.GetFileName(sourcePath));
+        return File.Exists(definition) ? EngineShaderContent.GetShaderId(engineRoot, sourcePath)
+            : project.Resolve(sourcePath) ?? throw new InvalidOperationException($"Required shader '{sourcePath}' has no definition.");
+    }
 }

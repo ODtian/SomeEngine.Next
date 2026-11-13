@@ -44,13 +44,14 @@ public sealed class GpuVoxelTerrainExample : IDisposable
         async Task<Shader> Load(string source, string directory)
         {
             var description = SlangShaderImporter.CreateSessionDescription(Path.Combine(directory, source),
-                SlangShaderImporter.CreateDefaultTargets(SlangShaderImporter.GlobalSession), [ProjectPaths.EngineShaders, shaders]);
+                SlangShaderImporter.CreateTargets(SlangShaderImporter.GlobalSession, [SlangShaderSharp.SlangCompileTarget.Dxil, SlangShaderSharp.SlangCompileTarget.Spirv]), [ProjectPaths.EngineShaders, shaders]);
             using var block = new ShaderSourceBlock { SourceNames = [source] };
-            return await block.CreateAsync(SlangShaderImporter.GlobalSession, description, source);
+            return await SomeEngine.Resources.ShaderLibrary.CreateAsync(block, SlangShaderImporter.GlobalSession, description, source);
         }
         return new(scheduler, await Load("terrain_voxel_surface.slang", ProjectPaths.EngineShaders),
             await Load("gpu_terrain_attributes.slang", shaders), await Load("gpu_terrain_build.slang", shaders),
-            await Load("gpu_terrain_material.slang", shaders), await Load("terrain_voxel_delta.slang", ProjectPaths.EngineShaders));
+            await SampleMaterialShaders.LoadAsync(contentDirectory, SampleMaterialShaders.GpuTerrain),
+            await Load("terrain_voxel_delta.slang", ProjectPaths.EngineShaders));
     }
 #endif
 

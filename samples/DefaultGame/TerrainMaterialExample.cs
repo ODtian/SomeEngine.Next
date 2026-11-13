@@ -47,7 +47,7 @@ public sealed class TerrainMaterialExample : IDisposable
         var adapter = new TerrainClusterAdapter<GroundAttributes>(new AttributeGenerator(data.Lift.Id, data.Regions.Id),
             new VertexEncoder(), ClusterBuildStrategy.Realtime);
         return new(new TerrainScene(adapter, new(4, 1f)), data.Lift, data.Regions,
-            await LoadShaderAsync(shaders, "terrain_displacement_material.slang"),
+            await SampleMaterialShaders.LoadAsync(contentDirectory, SampleMaterialShaders.TerrainDisplacement),
             await LoadShaderAsync(ProjectPaths.EngineShaders, "terrain_height_delta.slang"));
     }
 
@@ -67,16 +67,16 @@ public sealed class TerrainMaterialExample : IDisposable
             attributes, new(await LoadShaderAsync(shaders, "terrain_material_build.slang"), "BuildGroundCluster",
                 VertexEncoding, 64 * 24));
         return new(new TerrainScene(adapter, new(4, 1f)), data.Lift, data.Regions,
-            await LoadShaderAsync(shaders, "terrain_displacement_material.slang"),
+            await SampleMaterialShaders.LoadAsync(contentDirectory, SampleMaterialShaders.TerrainDisplacement),
             await LoadShaderAsync(ProjectPaths.EngineShaders, "terrain_height_delta.slang"));
     }
 
     private static async Task<Shader> LoadShaderAsync(string shaders, string source)
     {
         var description = SlangShaderImporter.CreateSessionDescription(Path.Combine(shaders, source),
-            SlangShaderImporter.CreateDefaultTargets(SlangShaderImporter.GlobalSession), [ProjectPaths.EngineShaders, shaders]);
+            SlangShaderImporter.CreateTargets(SlangShaderImporter.GlobalSession, [SlangShaderSharp.SlangCompileTarget.Dxil, SlangShaderSharp.SlangCompileTarget.Spirv]), [ProjectPaths.EngineShaders, shaders]);
         using var block = new ShaderSourceBlock { SourceNames = [source] };
-        return await block.CreateAsync(SlangShaderImporter.GlobalSession, description, source);
+        return await SomeEngine.Resources.ShaderLibrary.CreateAsync(block, SlangShaderImporter.GlobalSession, description, source);
     }
 #endif
 

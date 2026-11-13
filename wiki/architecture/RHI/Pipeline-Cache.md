@@ -6,3 +6,4 @@
 - [[architecture/RHI/Pipeline-Cache/Environment-local-misses|RHI-CACHE-002 — Environment-local misses ]]
 - [[architecture/RHI/Pipeline-Cache/Pipeline-family-coverage|RHI-CACHE-003 — Pipeline-family coverage ]]
 - [[architecture/RHI/Pipeline-Cache/Versioned-deterministic-envelope|RHI-CACHE-001 — Versioned deterministic envelope ]]
+- [[architecture/RHI/Pipeline-Cache/Renderer-pipeline-requests|Renderer pipeline requests]]

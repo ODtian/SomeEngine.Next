@@ -1,4 +1,5 @@
-#include "cluster_bin_common.slang"
+#include "raster_faces.slang"
+__exported import cluster_bin_common;
 // sw_raster.slang — Software Rasterizer Compute Shader
 // Vertex-reuse batches + WaveQueue pixel distribution.
 //
@@ -11,10 +12,11 @@
 #define SW_RASTER_CORE_SLANG
 
 #include "cluster_common.slang"
-#include "cluster_structures.slang"
-#include "cluster_view_access.slang"
-#include "common.slang"
-#include "vertex_evaluate_interfaces.slang"
+__exported import cluster_structures;
+__exported import cluster_view_access;
+__exported import common;
+__exported import vertex_evaluate_interfaces;
+__exported import cluster_raster_inputs;
 
 // ─── Uniforms ───
 struct ClusterSoftwareRasterUniforms
@@ -25,7 +27,7 @@ struct ClusterSoftwareRasterUniforms
     uint DebugDump;  // non-zero = dump debug data this frame
     uint CurrentBin; // Per-bin dispatch: which bin this dispatch covers
     uint EarlyDepthEnabled;
-    uint _pad1;
+    uint MaxVisibleClusters;
     uint _pad2;
 };
 
@@ -41,7 +43,7 @@ StructuredBuffer<VisibleCluster> SoftwareRasterVisibleClusters;
 StructuredBuffer<uint> SoftwareRasterBinnedClusterIndexBuffer; // visible index, triangle range
 StructuredBuffer<RasterBinEntry> SoftwareRasterBinMeta;
 
-#include "cluster_raster_shared.slang"
+__exported import cluster_raster_shared;
 
 // Debug: per-cluster SW raster dump. Layout:
 // [0]: atomic counter (uint)
@@ -137,7 +139,7 @@ VertexEvalContext MakeSWRasterVertexEvalContext(
 
 // ─── Generic SW Rasterizer Kernel ───
 
-void SWRasterKernel<TVE, TVisibility, TOutput>(
+void SWRasterKernel<TVE, TVisibility, TOutput, TInput : IClusterRasterInput = RasterBatchesInput>(
     uniform TVE evaluator,
     uniform TVisibility visibility,
     uniform TOutput rasterOutput,
@@ -153,13 +155,15 @@ void SWRasterKernel<TVE, TVisibility, TOutput>(
     // Per-bin dispatch: CPU dispatches per bin, CurrentBin tells us which bin
     uint binIdx = ClusterSoftwareRasterUniformData.CurrentBin;
     uint binSWCount = SoftwareRasterBinMeta[binIdx].BinSWCount;
-    if (flatClusterIdx >= binSWCount) return;
+    if (flatClusterIdx >= TInput.Count(binSWCount)) return;
 
     uint clusterOffset = SoftwareRasterBinMeta[binIdx].ClusterOffset;
     uint binCount      = binSWCount;
 
     uint binnedIndex = clusterOffset + flatClusterIdx;
-    uint binEntry = SoftwareRasterBinnedClusterIndexBuffer[binnedIndex];
+    uint batch = TInput.Spilled() ? 0u : SoftwareRasterBinnedClusterIndexBuffer[binnedIndex];
+    uint binEntry;
+    if (!TInput.Read(batch, flatClusterIdx, ClusterSoftwareRasterUniformData.MaxVisibleClusters, binEntry)) return;
     uint originalIndex = RasterWorkVisibleIndex(binEntry);
 
     DrawRequest req = VisibleClusterRequest(SoftwareRasterVisibleClusters[originalIndex]);
@@ -199,17 +203,16 @@ void SWRasterKernel<TVE, TVisibility, TOutput>(
 
     int4 scissor = rasterOutput.scissor(
         originalIndex,
-        view.TargetPolicy,
         view.TargetViewIndex,
         view.ScreenWidth,
         view.ScreenHeight);
     uint visibleIndexPlusOne = originalIndex + 1;
 
-    uint rangeStart, rangeEnd;
-    DecodeRasterWorkRange(PageHeap, req, binEntry, rangeStart, rangeEnd);
+    uint2 range = RasterInputTriangleRange<TInput>(PageHeap, req, binEntry);
+    uint rangeStart = range.x, rangeEnd = range.y;
     uint rangeTriangleCount = rangeEnd > rangeStart ? rangeEnd - rangeStart : 0u;
 
-    if (allowMaterialRanges && RasterWorkIsRange(binEntry >> 22u))
+    if (TInput.Spilled() || allowMaterialRanges && RasterWorkIsRange(binEntry >> 22u))
     {
         float4 firstClip = 0.0.xxxx;
         float4 secondClip = 0.0.xxxx;
@@ -226,7 +229,7 @@ void SWRasterKernel<TVE, TVisibility, TOutput>(
                 TVE.Vertex vertex = evaluator.evaluate(ctx);
                 float3 worldPosition = evaluator.getPosition(vertex);
                 float4 clip = mul(float4(ClusterPositionForView(worldPosition, view), 1.0), view.ViewProj);
-                clip.zw = CalculateClusterRasterDepthInput(worldPosition, clip, view);
+                clip.zw = CalculateClusterRasterDepthInput<TOutput>(worldPosition, clip, view);
                 VisibilityVertexInput input;
                 input.Source = req;
                 input.LocalVertexIndex = localVertex;
@@ -241,6 +244,10 @@ void SWRasterKernel<TVE, TVisibility, TOutput>(
         {
             uint triangle = triangleBase + groupThreadIndex;
             bool active = triangle < rangeEnd;
+            if (active && TInput.Spilled())
+                active = TInput.AcceptTriangle(binIdx, GetClusterMaterialSlotOffset(realInstanceID),
+                    GetClusterLocalMaterial(PageHeap, pageOffset, clusterID, triangle), (TOutput.UsesReverseDepth() ? 1u : 0u) != 0u,
+                    binEntry, RasterInputPath.Software);
             float4 clips[3];
             TVisibility.Varying triangleVaryings[3];
             [unroll]
@@ -257,8 +264,9 @@ void SWRasterKernel<TVE, TVisibility, TOutput>(
             }
             RasterizeClusterTriangleWave<TVE.Vertex, TVisibility, TOutput>(
                 visibility, rasterOutput, clips, triangleVaryings, scissor, originalIndex, req,
-                triangle, viewIndex, view.TargetPolicy, view.TargetViewIndex, active,
-                view.ScreenWidth, view.ScreenHeight, ClusterViewClipsDepth(view), ClusterSoftwareRasterUniformData.EarlyDepthEnabled);
+                triangle, viewIndex, view.TargetViewIndex, active,
+                view.ScreenWidth, view.ScreenHeight, ClusterViewClipsDepth(view), ClusterSoftwareRasterUniformData.EarlyDepthEnabled,
+                (TOutput.UsesReverseDepth() ? 1u : 0u) == 0u ? CLUSTER_RASTER_TWO_SIDED == 0 : CLUSTER_TARGET_RASTER_TWO_SIDED == 0);
         }
         return;
     }
@@ -312,7 +320,7 @@ void SWRasterKernel<TVE, TVisibility, TOutput>(
         TVE.Vertex vertex = evaluator.evaluate(ctx);
         float3 worldPosition = evaluator.getPosition(vertex);
         producerClip = mul(float4(ClusterPositionForView(worldPosition, view), 1.0), view.ViewProj);
-        producerClip.zw = CalculateClusterRasterDepthInput(worldPosition, producerClip, view);
+        producerClip.zw = CalculateClusterRasterDepthInput<TOutput>(worldPosition, producerClip, view);
         VisibilityVertexInput visibilityInput;
         visibilityInput.Source = req;
         visibilityInput.LocalVertexIndex = producerLocalVertex;
@@ -344,11 +352,11 @@ void SWRasterKernel<TVE, TVisibility, TOutput>(
         req,
         localTriIdx,
         viewIndex,
-        view.TargetPolicy,
         view.TargetViewIndex,
         bTriValid,
         view.ScreenWidth,
-        view.ScreenHeight, ClusterViewClipsDepth(view), ClusterSoftwareRasterUniformData.EarlyDepthEnabled);
+        view.ScreenHeight, ClusterViewClipsDepth(view), ClusterSoftwareRasterUniformData.EarlyDepthEnabled,
+                (TOutput.UsesReverseDepth() ? 1u : 0u) == 0u ? CLUSTER_RASTER_TWO_SIDED == 0 : CLUSTER_TARGET_RASTER_TWO_SIDED == 0);
 }
 
 #endif // SW_RASTER_CORE_SLANG

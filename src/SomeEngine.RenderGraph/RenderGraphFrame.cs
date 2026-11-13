@@ -19,7 +19,7 @@ public ref partial struct RenderGraphFrame
         {
             RenderGraphFrameState state = _state
                 ?? throw new InvalidOperationException("The render graph frame is no longer active.");
-            state.EnsureLease(_identity);
+            state.EnsureFrameActive(_identity);
             return state;
         }
     }
@@ -29,7 +29,7 @@ public ref partial struct RenderGraphFrame
     /// <summary>Identifies this CPU frame authoring lease.</summary>
     public ulong FrameIdentity => State.Identity;
 
-    internal RenderGraph Owner => State.Graph;
+    internal RenderGraph Graph => State.Graph;
 
     /// <summary>
     /// Retires an object after every frame submitted before this frame began has completed.
@@ -56,6 +56,10 @@ public ref partial struct RenderGraphFrame
         ArgumentNullException.ThrowIfNull(observer);
         State.ObserveExecution(observer);
     }
+
+    /// <summary>Returns the object this feature uses to stage data in the current frame.</summary>
+    public T GetFrameData<T>(object feature, Func<T> create) where T : class =>
+        State.GetFrameData(feature, create);
 
     public PassDefinition GetPass(GraphPassId pass) => State.GetPass(pass);
 
@@ -97,25 +101,8 @@ public ref partial struct RenderGraphFrame
     public void SetTextureRange(GraphTextureAccessId access, in TextureSubresourceRange range) =>
         State.SetTextureRange(access, range);
 
-    public void BindExternalBuffer(
-        GraphBufferId slot,
-        Buffer buffer,
-        scoped ReadOnlySpan<BufferBoundaryState> boundaryStates) =>
-        State.BindExternalBuffer(slot, buffer, boundaryStates);
-
-    public void BindExternalTexture(
-        GraphTextureId slot,
-        Texture texture,
-        scoped ReadOnlySpan<TextureBoundaryState> boundaryStates) =>
-        State.BindExternalTexture(slot, texture, boundaryStates);
-    public void BindExternalTexture(
-        GraphTextureId slot,
-        in SwapchainImage image,
-        Queue presentQueue) =>
-        State.BindExternalTexture(slot, image, presentQueue);
-
     public GraphBufferId CreateBuffer(in BufferDesc description, MemoryType memoryType = MemoryType.DeviceLocal) =>
-        State.AddBuffer(description, memoryType, RenderGraphResourceOwnership.GraphOwned,
+        State.AddBuffer(description, memoryType, RenderGraphResourceSource.GraphCreated,
             RenderGraphResourceLifetime.PerFrame);
 
     public GraphBufferSlice Upload(
@@ -171,14 +158,8 @@ public ref partial struct RenderGraphFrame
     }
 
     public GraphTextureId CreateTexture(in TextureDesc description) =>
-        State.AddTexture(description, RenderGraphResourceOwnership.GraphOwned,
+        State.AddTexture(description, RenderGraphResourceSource.GraphCreated,
             RenderGraphResourceLifetime.PerFrame);
-
-    public GraphBufferId Import(Buffer buffer, scoped ReadOnlySpan<BufferBoundaryState> boundaryStates) =>
-        State.Import(buffer, boundaryStates);
-
-    public GraphTextureId Import(Texture texture, scoped ReadOnlySpan<TextureBoundaryState> boundaryStates) =>
-        State.Import(texture, boundaryStates);
 
     public GraphTextureId Import(in SwapchainImage image, Queue presentQueue) =>
         State.Import(image, presentQueue);
@@ -281,8 +262,8 @@ public ref partial struct RenderGraphFrame
         in PassOptions options,
         PassDeclaration<TState> declaration,
         RasterFrameCallback<TState> callback,
-        GraphRegionId region = default) =>
-        State.AddRasterPass(label, queue, state, options, declaration, callback, region);
+        GraphRegionId region = default, FrameSectionPosition position = FrameSectionPosition.End) =>
+        State.AddRasterPass(label, queue, state, options, declaration, callback, region, position);
 
     public GraphPassId AddRasterPass<TState>(
         string label,
@@ -294,9 +275,9 @@ public ref partial struct RenderGraphFrame
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
         RasterFrameCallback<TState> callback,
-        GraphRegionId region = default) =>
+        GraphRegionId region = default, FrameSectionPosition position = FrameSectionPosition.End) =>
         State.AddRasterPass(label, queue, state, options, pipeline,
-            parameterLayout, parameterBindings, declaration, callback, region);
+            parameterLayout, parameterBindings, declaration, callback, region, position);
 
     public GraphPassId AddComputePass<TState>(
         string label,
@@ -305,8 +286,8 @@ public ref partial struct RenderGraphFrame
         in PassOptions options,
         PassDeclaration<TState> declaration,
         ComputeFrameCallback<TState> callback,
-        GraphRegionId region = default) =>
-        State.AddComputePass(label, queue, state, options, declaration, callback, region);
+        GraphRegionId region = default, FrameSectionPosition position = FrameSectionPosition.End) =>
+        State.AddComputePass(label, queue, state, options, declaration, callback, region, position);
 
     public GraphPassId AddComputePass<TState>(
         string label,
@@ -318,9 +299,9 @@ public ref partial struct RenderGraphFrame
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
         ComputeFrameCallback<TState> callback,
-        GraphRegionId region = default) =>
+        GraphRegionId region = default, FrameSectionPosition position = FrameSectionPosition.End) =>
         State.AddComputePass(label, queue, state, options, pipeline,
-            parameterLayout, parameterBindings, declaration, callback, region);
+            parameterLayout, parameterBindings, declaration, callback, region, position);
 
     public GraphPassId AddCopyPass<TState>(
         string label,
@@ -329,8 +310,8 @@ public ref partial struct RenderGraphFrame
         in PassOptions options,
         PassDeclaration<TState> declaration,
         CopyFrameCallback<TState> callback,
-        GraphRegionId region = default) =>
-        State.AddCopyPass(label, queue, state, options, declaration, callback, region);
+        GraphRegionId region = default, FrameSectionPosition position = FrameSectionPosition.End) =>
+        State.AddCopyPass(label, queue, state, options, declaration, callback, region, position);
 
     public GraphPassId AddGeneralPass<TState>(
         string label,
@@ -339,8 +320,8 @@ public ref partial struct RenderGraphFrame
         in PassOptions options,
         PassDeclaration<TState> declaration,
         GeneralFrameCallback<TState> callback,
-        GraphRegionId region = default) =>
-        State.AddGeneralPass(label, queue, state, options, declaration, callback, region);
+        GraphRegionId region = default, FrameSectionPosition position = FrameSectionPosition.End) =>
+        State.AddGeneralPass(label, queue, state, options, declaration, callback, region, position);
 
     public void OrderAfter(GraphPassId pass, GraphPassId predecessor) => State.OrderAfter(pass, predecessor);
 
@@ -351,6 +332,13 @@ public ref partial struct RenderGraphFrame
     /// <summary>Orders the given pass after every pass bound to the input.</summary>
     public void OrderAfter(GraphPassId pass, GraphParameterInput input) =>
         State.OrderAfter(input, pass, consumersAfter: false);
+
+    public void Execute()
+    {
+        RenderGraphFrameState state = State;
+        state.Execute(_identity, state.Resources.GetCompletionBuffer(state.Graph.MaximumQueueCompletionCount));
+        _state = null;
+    }
 
     public int Execute(Span<QueueCompletion> destination)
     {
@@ -377,6 +365,4 @@ public ref partial struct RenderGraphFrame
     /// <summary>Updates a retained shader connection. Its registered resources and binding remain in use until changed.</summary>
     public void SetPersistentParameterInput(GraphParameterInput input, ResourceBinding value) => State.SetPersistentParameterInput(input, value);
 
-    /// <summary>Returns the registered texture's submitted state holder for reuse within and across graphs.</summary>
-    public GraphTextureState? GetTextureState(Texture texture) => State.GetTextureState(texture);
 }

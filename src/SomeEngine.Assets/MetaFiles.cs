@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using System.Buffers;
@@ -86,6 +86,7 @@ public sealed class SourceBuildRecord
     public string InputHash { get; set; } = "";
     public IReadOnlyList<FileDependency> Inputs { get; set; } = [];
     public IReadOnlyList<FileDependency> ReportedInputs { get; set; } = [];
+    public IReadOnlyList<Guid> AssetInputs { get; set; } = [];
     public List<SourceOutput> Outputs { get; set; } = [];
 
     internal static SourceBuildRecord Read(ReadOnlySpan<byte> bytes)
@@ -93,7 +94,7 @@ public sealed class SourceBuildRecord
         SourceBuildRecord? value;
         try { value = JsonSerializer.Deserialize(bytes, SourceMetaJsonContext.Default.SourceBuildRecord); }
         catch (JsonException) { return new(); }
-        if (value?.InputHash is null || value.Inputs is null || value.ReportedInputs is null || value.Outputs is null
+        if (value?.InputHash is null || value.Inputs is null || value.ReportedInputs is null || value.Outputs is null || value.AssetInputs is null
             || value.Inputs.Concat(value.ReportedInputs).Any(static input => input is null
                 || input.RelativePath is null || input.ContentHash is null || input.RelativePath.Contains('\0'))
             || value.Outputs.Any(static output => output is null || output.SubAssetKey is null
@@ -162,6 +163,9 @@ public sealed partial class SourceMeta
         files.AddWrite(GetMetaPath(sourcePath), JsonSerializer.SerializeToUtf8Bytes(data, SourceMetaJsonContext.Default.SourceMetaDocument));
         files.AddWrite(GetBuildPath(sourcePath), JsonSerializer.SerializeToUtf8Bytes(build, SourceMetaJsonContext.Default.SourceBuildRecord));
     }
+
+    public static SourceBuildRecord LoadBuild(string sourcePath) =>
+        SourceBuildRecord.Read(File.ReadAllBytes(GetBuildPath(sourcePath)));
 
     public static string GetMetaPath(string sourcePath) => Path.GetFullPath(sourcePath) + ".meta";
     public static string GetBuildPath(string sourcePath) => Path.GetFullPath(sourcePath) + ".import.json";

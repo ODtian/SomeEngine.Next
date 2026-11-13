@@ -102,6 +102,6 @@ internal sealed unsafe partial class NativeCommandData
             groups[index].NumBarriers = reader.Read<uint>();
             groups[index].Anonymous.PGlobalBarriers = (GlobalBarrier*)reader.ReadArray();
         }
-        CommandTransferTrace.Barrier(target, groupCount, groups);
+        CommandTransferTrace.Barrier(null, target, groupCount, groups);
     }
 }

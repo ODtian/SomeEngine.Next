@@ -9,6 +9,25 @@ namespace SomeEngine.Serialization.Containers;
 /// <summary>Header inspection that does not require a root field type.</summary>
 public partial class BinaryDocument
 {
+    public static Guid ReadVersion(Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        if (!stream.CanRead || !stream.CanSeek)
+            throw new ArgumentException("Version inspection needs a readable, seekable stream.", nameof(stream));
+        long position = stream.Position;
+        Span<byte> bytes = stackalloc byte[BinaryDocumentFormat.HeaderSize];
+        try
+        {
+            stream.Position = 0;
+            stream.ReadExactly(bytes);
+            BinaryDocumentHeader header = BinaryDocumentFormat.ReadHeader(bytes);
+            if (header.TotalLength != stream.Length)
+                throw new InvalidDataException("The binary document length does not match its stream.");
+            return header.Generation;
+        }
+        finally { stream.Position = position; }
+    }
+
     public static async ValueTask<Guid> ReadVersionAsync(Stream stream,
         CancellationToken cancellationToken = default)
     {

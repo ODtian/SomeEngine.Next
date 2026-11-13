@@ -1,10 +1,10 @@
 #include "generated/render_instance_layout.slang"
 #include "cluster_shade_pipeline.slang"
-#include "triangle_surface.slang"
-#include "unlit_material.slang"
+__exported import triangle_surface;
+__exported import unlit_material;
 
 typedef WaveVertexEval VertexEvaluate;
-#include "phong_tessellation.slang"
+__exported import phong_tessellation;
 typedef PhongTessellation DomainEvaluate;
 typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;
 typedef UnlitMaterial SurfaceEvaluate;

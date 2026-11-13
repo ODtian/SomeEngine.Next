@@ -20,13 +20,13 @@ public static partial class BehaviorScenes
     {
         CopyContent(source, destination);
         var project = new AssetProject(destination, []);
-        await using var loader = new AssetLoader(project.CreateStorage());
+        await using var loader = SomeEngine.Assets.Importers.EngineShaderContent.OpenFiles(project.RootPath, project.Manifest);
         using var standard = await StandardMaterialAsset.OpenAsync(loader,
-            new(project.Manifest.Assets.Values.Single(entry => entry.Name == "Standard" && entry.AssetType == MaterialAsset.FileType).AssetGuid));
+            new(FindContentAsset(project, "Standard", MaterialAsset.FileType).AssetGuid));
         using var green = await UnlitMaterialAsset.OpenAsync(loader,
-            new(project.Manifest.Assets.Values.Single(entry => entry.Name == "green sphere" && entry.AssetType == MaterialAsset.FileType).AssetGuid));
+            new(FindContentAsset(project, "green sphere", MaterialAsset.FileType).AssetGuid));
         using var sphere = await MeshAsset.OpenAsync(loader,
-            new(project.Manifest.Assets.Values.Single(entry => entry.Name == "red sphere" && entry.AssetType == MeshAsset.FileType).AssetGuid));
+            new(FindContentAsset(project, "red sphere", MeshAsset.FileType).AssetGuid));
 
         byte[][] checkerColors = [[255, 48, 24, 255], [255, 208, 96, 255]];
         byte[] checkerPixels = new byte[8 * 8 * 4];

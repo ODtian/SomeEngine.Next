@@ -1,4 +1,4 @@
-﻿using SomeEngine.Graphics;
+using SomeEngine.Graphics;
 
 namespace SomeEngine.RenderGraph.Tests;
 
@@ -61,16 +61,11 @@ public sealed class RetainedGraphIncrementalTests
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
             GraphBufferId target = edit.RegisterExternalBuffer(
-                buffer,
-                [new BufferBoundaryState(
-                    new BufferRange(0, 64),
-                    buffer.InitialSync,
-                    buffer.InitialAccess,
-                    ResourceContentState.Undefined)]);
+                buffer);
             var state = new DeclarationState(target);
             _ = edit.AddCopyPass<DeclarationState, byte>(
                 "range completion writer",
-                PassQueueSelection.Exact(support.GraphicsQueue),
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
                 state,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition pass, ref DeclarationState data) =>
@@ -203,7 +198,7 @@ public sealed class RetainedGraphIncrementalTests
         var write = new DeclarationState(buffer);
         GraphPassId writePass = edit.AddCopyPass<DeclarationState, byte>(
             $"{label} write",
-            PassQueueSelection.Exact(queue),
+            PassQueueSelection.OnQueue(queue),
             write,
             default,
             static (ref PassDefinition pass, ref DeclarationState state) =>
@@ -217,7 +212,7 @@ public sealed class RetainedGraphIncrementalTests
         var read = new DeclarationState(buffer);
         GraphPassId readPass = edit.AddCopyPass<DeclarationState, byte>(
             $"{label} read",
-            PassQueueSelection.Exact(queue),
+            PassQueueSelection.OnQueue(queue),
             read,
             new PassOptions(Culling: PassCullingMode.NeverCull),
             static (ref PassDefinition pass, ref DeclarationState state) =>
@@ -245,7 +240,7 @@ public sealed class RetainedGraphIncrementalTests
         var state = new BackingCaptureState(buffer, capture);
         _ = edit.AddCopyPass<BackingCaptureState, byte>(
             label,
-            PassQueueSelection.Exact(queue),
+            PassQueueSelection.OnQueue(queue),
             state,
             new PassOptions(Culling: PassCullingMode.NeverCull),
             static (ref PassDefinition pass, ref BackingCaptureState value) =>

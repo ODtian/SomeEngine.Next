@@ -39,7 +39,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
             device, new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
         using CommandContext context = backend.CreateCommandContext(
             device, new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(0, 0, 16));
+        backend.Begin(context, new CommandRecordingDesc(0, 0));
         backend.SetPipeline(context, pipeline);
         backend.SetTransientParameterBindings(context,
             new ParameterBlockBindings(blocks[0], [], BitConverter.GetBytes(1u)));
@@ -117,7 +117,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
         backend.PublishDescriptors(device);
         using CommandContext context = backend.CreateCommandContext(
             device, new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(16, 0, 16));
+        backend.Begin(context, new CommandRecordingDesc(16, 0));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.None,
             PipelineSync.ComputeShading, ResourceAccess.NoAccess,
             ResourceAccess.UnorderedAccess));
@@ -181,7 +181,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
         Assert.Equal((nuint)16, GetDataLayout(validLayout).GetSize(SlangParameterCategory.Uniform));
         Assert.Equal((nuint)32, GetDataLayout(invalidLayout).GetSize(SlangParameterCategory.Uniform));
 
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline validPipeline = backend.CreateComputePipeline(device,
             new ComputePipelineDesc(validShader.SlangCode, validShader.Reflection, validShader.GetEntryPoint(0), validShader.GetEntryCode(0)));
@@ -189,7 +189,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
             new ComputePipelineDesc(invalidShader.SlangCode, invalidShader.Reflection, invalidShader.GetEntryPoint(0), invalidShader.GetEntryCode(0)));
         using CommandContext context = backend.CreateCommandContext(device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(0, 0, 32));
+        backend.Begin(context, new CommandRecordingDesc(0, 0));
         backend.SetPipeline(context, validPipeline);
         backend.SetTransientParameterBindings(context,
             new ParameterBlockBindings(validLayout, [], new byte[16]));
@@ -241,7 +241,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
             new BufferDesc(8, BufferUsages.CopyDestination), MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(4, 0, 16));
+        backend.Begin(context, new CommandRecordingDesc(4, 0));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.None,
             PipelineSync.ComputeShading, ResourceAccess.NoAccess,
             ResourceAccess.UnorderedAccess));
@@ -342,7 +342,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
         backend.PublishDescriptors(device);
         using CommandContext context = backend.CreateCommandContext(device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(8, 0, 8));
+        backend.Begin(context, new CommandRecordingDesc(8, 0));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.None,
             PipelineSync.ComputeShading, ResourceAccess.NoAccess,
             ResourceAccess.UnorderedAccess));
@@ -505,7 +505,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
             }
             using CommandContext context = backend.CreateCommandContext(device,
                 new CommandContextDesc(QueueType.Compute, 0, 1));
-            backend.Begin(context, new CommandRecordingDesc(8, 2, 8));
+            backend.Begin(context, new CommandRecordingDesc(8, 2));
             backend.Barrier(context, new BufferBarrier(output, PipelineSync.None,
                 PipelineSync.ComputeShading, ResourceAccess.NoAccess,
                 ResourceAccess.UnorderedAccess));
@@ -635,7 +635,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
 
         using CommandContext context = backend.CreateCommandContext(device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(8, 2, 8));
+        backend.Begin(context, new CommandRecordingDesc(8, 2));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.None,
             PipelineSync.ComputeShading, ResourceAccess.NoAccess,
             ResourceAccess.UnorderedAccess));
@@ -771,7 +771,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
         BitConverter.GetBytes(samplerIndex).CopyTo(ordinary, 4);
         using CommandContext context = backend.CreateCommandContext(device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(1, 0, 8));
+        backend.Begin(context, new CommandRecordingDesc(1, 0));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.None,
             PipelineSync.ComputeShading, ResourceAccess.NoAccess,
             ResourceAccess.UnorderedAccess));
@@ -864,7 +864,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
             constants.GetBindingSpace(SlangParameterCategory.ConstantBuffer));
 
         Assert.Equal((nuint)4, GetDataLayout(constants).GetSize(SlangParameterCategory.Uniform));
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
@@ -888,7 +888,7 @@ public sealed class SlangReflectionFactTests(D3D12TestCompiler shaderCompiler)
             new BufferDesc(4, BufferUsages.CopyDestination), MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(4, 0, 16));
+        backend.Begin(context, new CommandRecordingDesc(4, 0));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.None,
             PipelineSync.ComputeShading, ResourceAccess.NoAccess,
             ResourceAccess.UnorderedAccess));

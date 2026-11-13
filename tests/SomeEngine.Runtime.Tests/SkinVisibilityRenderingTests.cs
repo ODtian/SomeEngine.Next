@@ -186,6 +186,8 @@ public sealed partial class SkinningRenderingTests
                 Clusters = attributes.Clusters.Select((item, cluster) => item with
                     { Data = EncodeFloatInfluences(item, skin.Clusters[cluster], previous: false).ToImmutableArray() }).ToArray(),
             });
+            using (var packed = SomeEngine.Assets.Importers.ClusterBuilder.BuildMeshBlock(
+                await mesh.GetBlockAsync<ClusterGeometryBlock>(), mesh.GetBlock<ClusterVertexAttributesBlock>())) mesh.SetBlock(packed);
             await WriteSharedPanelAsync(mesh, [new(-4, 0, 6), new(0, 0, 4)]);
         }
 
@@ -200,6 +202,8 @@ public sealed partial class SkinningRenderingTests
                 Clusters = attributes.Clusters.Select((item, cluster) => item with
                     { Data = EncodeFloatInfluences(item, skin.Clusters[cluster], previous: false).ToImmutableArray() }).ToArray(),
             });
+            using (var packed = SomeEngine.Assets.Importers.ClusterBuilder.BuildMeshBlock(
+                await mesh.GetBlockAsync<ClusterGeometryBlock>(), mesh.GetBlock<ClusterVertexAttributesBlock>())) mesh.SetBlock(packed);
             using MeshAsset receiver = mesh.CreateCopy();
             Project.RegisterAsset(await receiver.SaveAsync(Path.Combine(Project.RootPath, "assets/Models/shadow-receiver.mesh.asset")));
             AssetEntry standardEntry = Project.Manifest.List(MaterialAsset.FileType).Single(item => item.Name == "Standard");

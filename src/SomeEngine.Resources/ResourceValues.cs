@@ -147,6 +147,6 @@ public enum ClusterShaderOperationRole : byte
     SceneBounds = 35,
     PageRequests = 36,
     LeafFlagFixups = 37,
-    MaterialDecalCells = 38,
+    MaterialDecalBinning = 38,
 }
 

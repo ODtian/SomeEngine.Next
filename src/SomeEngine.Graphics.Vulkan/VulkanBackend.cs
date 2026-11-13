@@ -3,18 +3,12 @@ using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
 
 namespace SomeEngine.Graphics.Vulkan;
-
 /// <summary>Controls Vulkan instance creation and diagnostics.</summary>
-public readonly record struct VulkanBackendOptions(
-    bool EnableValidation = false,
-    bool EnableDebugMessages = true,
-    uint ApiVersion = 0);
-
+public readonly record struct VulkanBackendOptions(bool EnableValidation = false, bool EnableDebugMessages = true, uint ApiVersion = 0);
 /// <summary>Creates the Vulkan implementation of the backend-neutral graphics contract.</summary>
 public static class VulkanGraphicsBackend
 {
-    public static IGraphicsBackend Create(in VulkanBackendOptions options = default) =>
-        new VulkanBackend(options);
+    public static IGraphicsBackend Create(in VulkanBackendOptions options = default) => new VulkanBackend(options);
 }
 
 internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeValidationControl
@@ -23,7 +17,6 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     private const string Win32SurfaceExtension = "VK_KHR_win32_surface";
     private const string DebugUtilsExtension = "VK_EXT_debug_utils";
     private const string ValidationLayer = "VK_LAYER_KHRONOS_validation";
-
     private readonly object _gate = new();
     private readonly GraphicsObjectRegistry _devices;
     private readonly GraphicsObjectRegistry _surfaces;
@@ -38,7 +31,6 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     private PfnDebugUtilsMessengerCallbackEXT _debugCallback;
     private DisposeGate _disposeGate;
     private Exception? _releaseFailure;
-
     internal VulkanBackend(in VulkanBackendOptions options = default)
     {
         _options = options;
@@ -48,8 +40,7 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         _instance = CreateInstance();
         try
         {
-            if (!_vk.TryGetInstanceExtension(_instance, out _surfaceApi) ||
-                !_vk.TryGetInstanceExtension(_instance, out _win32SurfaceApi))
+            if (!_vk.TryGetInstanceExtension(_instance, out _surfaceApi) || !_vk.TryGetInstanceExtension(_instance, out _win32SurfaceApi))
                 throw new PlatformNotSupportedException("The Vulkan Win32 surface extensions could not be loaded.");
             CreateDebugMessenger();
             _adapters = EnumerateAdapters();
@@ -72,12 +63,8 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     internal ReadOnlySpan<AdapterRecord> Adapters => _adapters;
     internal Exception? ReleaseFailure => Volatile.Read(ref _releaseFailure);
 
-    internal bool TryEnumerateAdapters(
-        in AdapterEnumerationOptions options,
-        Span<AdapterInfo> destination,
-        out int requiredCount)
+    internal bool TryEnumerateAdapters(in AdapterEnumerationOptions options, Span<AdapterInfo> destination, out int requiredCount)
     {
-        ThrowIfDisposed();
         AdapterRecord[] selected = SelectAdapters(options);
         requiredCount = selected.Length;
         int copyCount = Math.Min(destination.Length, selected.Length);
@@ -88,7 +75,6 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
 
     internal AdapterRecord ResolveAdapter(in AdapterId id)
     {
-        ThrowIfDisposed();
         if (id.IsDefault)
         {
             foreach (AdapterRecord adapter in _adapters)
@@ -103,14 +89,14 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
                 if (adapter.Info.Id == id)
                     return adapter;
         }
-        throw new ArgumentException("The requested Vulkan adapter is unavailable.", nameof(id));
+
+        throw new GraphicsException(GraphicsError.NativeFailure, "The selected Vulkan adapter is unavailable.");
     }
 
     public void Dispose()
     {
         if (!_disposeGate.TryEnter())
             return;
-
         try
         {
             ReleaseBackend();
@@ -125,21 +111,14 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         }
     }
 
-    internal void ThrowIfDisposed() =>
-        ObjectDisposedException.ThrowIf(_disposeGate.IsDisposed, this);
+    bool INativeValidationControl.CanEnableNativeValidation => _options.EnableValidation;
 
     void INativeValidationControl.EnableNativeValidation()
     {
-        if (!_options.EnableValidation)
-        {
-            throw new InvalidOperationException(
-                "Vulkan native validation must be requested in VulkanBackendOptions before instance creation.");
-        }
     }
 
     private void RegisterDevice(VulkanDevice device)
     {
-        ThrowIfDisposed();
         _devices.Add(device);
     }
 
@@ -150,7 +129,6 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
 
     private void RegisterSurface(VulkanSurface surface)
     {
-        ThrowIfDisposed();
         _surfaces.Add(surface);
     }
 
@@ -163,11 +141,9 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     {
         DrainRegistry(_devices);
         DrainRegistry(_surfaces);
-
         if (_devices.HasRetainedFailures || _surfaces.HasRetainedFailures)
         {
-            RecordReleaseFailure(new InvalidOperationException(
-                "A Vulkan root object did not detach during backend teardown."));
+            RecordReleaseFailure(new InvalidOperationException("A Vulkan root object did not detach during backend teardown."));
             return;
         }
 
@@ -181,6 +157,7 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
             _vk.DestroyInstance(_instance, null);
             _instance = default;
         }
+
         _vk.Dispose();
     }
 
@@ -196,22 +173,16 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         }
     }
 
-    private void RecordReleaseFailure(Exception exception) =>
-        Interlocked.CompareExchange(ref _releaseFailure, exception, null);
-
+    private void RecordReleaseFailure(Exception exception) => Interlocked.CompareExchange(ref _releaseFailure, exception, null);
     private VkInstance CreateInstance()
     {
-        uint apiVersion = _options.ApiVersion == 0
-            ? Vk.Version13
-            : _options.ApiVersion;
+        uint apiVersion = _options.ApiVersion == 0 ? Vk.Version13 : _options.ApiVersion;
         string[] availableExtensions = EnumerateInstanceExtensions();
         RequireName(availableExtensions, SurfaceExtension, "instance extension");
         RequireName(availableExtensions, Win32SurfaceExtension, "instance extension");
-
         List<string> extensions = [SurfaceExtension, Win32SurfaceExtension];
         if (_options.EnableDebugMessages && availableExtensions.Contains(DebugUtilsExtension))
             extensions.Add(DebugUtilsExtension);
-
         string[] layers = [];
         if (_options.EnableValidation)
         {
@@ -245,9 +216,7 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
                 PpEnabledLayerNames = (byte**)layerNames,
             };
             VkInstance instance = default;
-            ThrowIfFailed(
-                _vk.CreateInstance(&createInfo, null, &instance),
-                "vkCreateInstance");
+            ThrowIfFailed(_vk.CreateInstance(&createInfo, null, &instance), "vkCreateInstance");
             return instance;
         }
         finally
@@ -263,32 +232,21 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     {
         if (!_options.EnableDebugMessages)
             return;
-        if (!_vk.TryGetInstanceExtension(
-                _instance,
-                out ExtDebugUtils? debugUtils) ||
-            debugUtils is null)
+        if (!_vk.TryGetInstanceExtension(_instance, out ExtDebugUtils? debugUtils) || debugUtils is null)
             return;
         _debugUtilsApi = debugUtils;
         _debugCallback = new PfnDebugUtilsMessengerCallbackEXT(DebugMessage);
         DebugUtilsMessengerCreateInfoEXT createInfo = new()
         {
             SType = StructureType.DebugUtilsMessengerCreateInfoExt,
-            MessageSeverity =
-                DebugUtilsMessageSeverityFlagsEXT.WarningBitExt |
-                DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt,
-            MessageType =
-                DebugUtilsMessageTypeFlagsEXT.GeneralBitExt |
-                DebugUtilsMessageTypeFlagsEXT.ValidationBitExt |
-                DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt,
+            MessageSeverity = DebugUtilsMessageSeverityFlagsEXT.WarningBitExt | DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt,
+            MessageType = DebugUtilsMessageTypeFlagsEXT.GeneralBitExt | DebugUtilsMessageTypeFlagsEXT.ValidationBitExt | DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt,
             PfnUserCallback = _debugCallback,
         };
         ThrowIfFailed(
-            debugUtils.CreateDebugUtilsMessenger(
-                _instance,
-                &createInfo,
-                null,
-                out _debugMessenger),
-            "vkCreateDebugUtilsMessengerEXT");
+            debugUtils.CreateDebugUtilsMessenger(_instance, &createInfo, null, out _debugMessenger),
+            "vkCreateDebugUtilsMessengerEXT"
+        );
     }
 
     private void DestroyDebugMessenger()
@@ -305,13 +263,11 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         DebugUtilsMessageSeverityFlagsEXT severity,
         DebugUtilsMessageTypeFlagsEXT type,
         DebugUtilsMessengerCallbackDataEXT* data,
-        void* userData)
+        void* userData
+    )
     {
         _ = userData;
-        string message = data is null || data->PMessage is null
-            ? "Vulkan emitted an empty debug message."
-            : Marshal.PtrToStringUTF8((nint)data->PMessage) ??
-                "Vulkan emitted an invalid UTF-8 debug message.";
+        string message = data is null || data->PMessage is null ? "Vulkan emitted an empty debug message." : Marshal.PtrToStringUTF8((nint)data->PMessage) ?? "Vulkan emitted an invalid UTF-8 debug message.";
         System.Diagnostics.Trace.WriteLine($"Vulkan [{severity}/{type}] {message}");
         return Vk.False;
     }
@@ -319,65 +275,60 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     private string[] EnumerateInstanceExtensions()
     {
         uint count = 0;
-        ThrowIfFailed(
-            _vk.EnumerateInstanceExtensionProperties((byte*)null, &count, null),
-            "vkEnumerateInstanceExtensionProperties(count)");
+        ThrowIfFailed(_vk.EnumerateInstanceExtensionProperties((byte*)null, &count, null), "vkEnumerateInstanceExtensionProperties(count)");
         if (count == 0)
-            return [];
+            return[];
         ExtensionProperties[] properties = new ExtensionProperties[count];
         fixed (ExtensionProperties* pointer = properties)
         {
             ThrowIfFailed(
                 _vk.EnumerateInstanceExtensionProperties((byte*)null, &count, pointer),
-                "vkEnumerateInstanceExtensionProperties(data)");
+                "vkEnumerateInstanceExtensionProperties(data)"
+            );
         }
+
         string[] names = new string[count];
         for (int index = 0; index < names.Length; index++)
         {
             fixed (byte* name = properties[index].ExtensionName)
                 names[index] = ReadUtf8(name, Vk.MaxExtensionNameSize);
         }
+
         return names;
     }
 
     private string[] EnumerateInstanceLayers()
     {
         uint count = 0;
-        ThrowIfFailed(
-            _vk.EnumerateInstanceLayerProperties(&count, null),
-            "vkEnumerateInstanceLayerProperties(count)");
+        ThrowIfFailed(_vk.EnumerateInstanceLayerProperties(&count, null), "vkEnumerateInstanceLayerProperties(count)");
         if (count == 0)
-            return [];
+            return[];
         LayerProperties[] properties = new LayerProperties[count];
         fixed (LayerProperties* pointer = properties)
         {
-            ThrowIfFailed(
-                _vk.EnumerateInstanceLayerProperties(&count, pointer),
-                "vkEnumerateInstanceLayerProperties(data)");
+            ThrowIfFailed(_vk.EnumerateInstanceLayerProperties(&count, pointer), "vkEnumerateInstanceLayerProperties(data)");
         }
+
         string[] names = new string[count];
         for (int index = 0; index < names.Length; index++)
         {
             fixed (byte* name = properties[index].LayerName)
                 names[index] = ReadUtf8(name, Vk.MaxExtensionNameSize);
         }
+
         return names;
     }
 
     private AdapterRecord[] EnumerateAdapters()
     {
         uint count = 0;
-        ThrowIfFailed(
-            _vk.EnumeratePhysicalDevices(_instance, &count, null),
-            "vkEnumeratePhysicalDevices(count)");
+        ThrowIfFailed(_vk.EnumeratePhysicalDevices(_instance, &count, null), "vkEnumeratePhysicalDevices(count)");
         if (count == 0)
-            return [];
+            return[];
         VkPhysicalDevice[] physicalDevices = new VkPhysicalDevice[count];
         fixed (VkPhysicalDevice* pointer = physicalDevices)
         {
-            ThrowIfFailed(
-                _vk.EnumeratePhysicalDevices(_instance, &count, pointer),
-                "vkEnumeratePhysicalDevices(data)");
+            ThrowIfFailed(_vk.EnumeratePhysicalDevices(_instance, &count, pointer), "vkEnumeratePhysicalDevices(data)");
         }
 
         AdapterRecord[] result = new AdapterRecord[count];
@@ -386,7 +337,7 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         return result;
     }
 
-    private AdapterRecord CreateAdapterRecord(VkPhysicalDevice physicalDevice)
+    private AdapterRecord CreateAdapterRecord(VkPhysicalDevice adapterDevice)
     {
         PhysicalDeviceDriverProperties driver = new()
         {
@@ -402,10 +353,9 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
             SType = StructureType.PhysicalDeviceProperties2,
             PNext = &identity,
         };
-        _vk.GetPhysicalDeviceProperties2(physicalDevice, &properties);
-
+        _vk.GetPhysicalDeviceProperties2(adapterDevice, &properties);
         PhysicalDeviceMemoryProperties memory;
-        _vk.GetPhysicalDeviceMemoryProperties(physicalDevice, &memory);
+        _vk.GetPhysicalDeviceMemoryProperties(adapterDevice, &memory);
         ulong dedicatedVideoMemory = 0;
         ulong sharedSystemMemory = 0;
         for (uint heapIndex = 0; heapIndex < memory.MemoryHeapCount; heapIndex++)
@@ -421,12 +371,14 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         byte* uuid = identity.DeviceUuid;
         id = new AdapterId(
             BinaryPrimitives.ReadUInt64LittleEndian(new ReadOnlySpan<byte>(uuid, 8)),
-            BinaryPrimitives.ReadUInt64LittleEndian(new ReadOnlySpan<byte>(uuid + 8, 8)));
+            BinaryPrimitives.ReadUInt64LittleEndian(new ReadOnlySpan<byte>(uuid + 8, 8))
+        );
         if (id.IsDefault)
         {
             id = new AdapterId(
                 ((ulong)properties.Properties.VendorID << 32) | properties.Properties.DeviceID,
-                unchecked((ulong)(nuint)physicalDevice.Handle));
+                unchecked((ulong)(nuint)adapterDevice.Handle)
+            );
         }
 
         string name;
@@ -435,7 +387,6 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         driverVersion = ReadUtf8(driver.DriverInfo, Vk.MaxDriverInfoSize);
         if (string.IsNullOrWhiteSpace(driverVersion))
             driverVersion = $"0x{properties.Properties.DriverVersion:X8}";
-
         AdapterInfo info = new(
             id,
             ToAdapterType(properties.Properties.DeviceType),
@@ -446,23 +397,18 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
             0,
             sharedSystemMemory,
             driverVersion,
-            properties.Properties.DeviceType != PhysicalDeviceType.Cpu);
-        return new AdapterRecord(physicalDevice, info, properties.Properties.ApiVersion);
+            properties.Properties.DeviceType != PhysicalDeviceType.Cpu
+        );
+        return new AdapterRecord(adapterDevice, info, properties.Properties.ApiVersion);
     }
 
     private AdapterRecord[] SelectAdapters(in AdapterEnumerationOptions options)
     {
-        IEnumerable<AdapterRecord> selected = options.IncludeSoftware
-            ? _adapters
-            : _adapters.Where(static adapter => adapter.Info.HardwareAccelerated);
+        IEnumerable<AdapterRecord> selected = options.IncludeSoftware ? _adapters : _adapters.Where(static adapter => adapter.Info.HardwareAccelerated);
         selected = options.Preference switch
         {
-            AdapterPreference.HighPerformance => selected
-                .OrderByDescending(static adapter => adapter.Info.Type == AdapterType.Discrete)
-                .ThenByDescending(static adapter => adapter.Info.DedicatedVideoMemory),
-            AdapterPreference.MinimumPower => selected
-                .OrderByDescending(static adapter => adapter.Info.Type == AdapterType.Integrated)
-                .ThenBy(static adapter => adapter.Info.DedicatedVideoMemory),
+            AdapterPreference.HighPerformance => selected.OrderByDescending(static adapter => adapter.Info.Type == AdapterType.Discrete).ThenByDescending(static adapter => adapter.Info.DedicatedVideoMemory),
+            AdapterPreference.MinimumPower => selected.OrderByDescending(static adapter => adapter.Info.Type == AdapterType.Integrated).ThenBy(static adapter => adapter.Info.DedicatedVideoMemory),
             _ => selected,
         };
         return selected.ToArray();
@@ -476,7 +422,6 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         PhysicalDeviceType.Cpu => AdapterType.Cpu,
         _ => AdapterType.Other,
     };
-
     private static void RequireName(string[] available, string required, string kind)
     {
         if (!available.Contains(required, StringComparer.Ordinal))
@@ -534,14 +479,8 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
             Result.ErrorDeviceLost => GraphicsError.DeviceLost,
             _ => GraphicsError.NativeFailure,
         };
-        throw new GraphicsException(
-            error,
-            $"{operation} failed with Vulkan result {result}.",
-            (long)result);
+        throw new GraphicsException(error, $"{operation} failed with Vulkan result {result}.", (long)result);
     }
 
-    internal readonly record struct AdapterRecord(
-        VkPhysicalDevice PhysicalDevice,
-        AdapterInfo Info,
-        uint ApiVersion);
+    internal readonly record struct AdapterRecord(VkPhysicalDevice AdapterDevice, AdapterInfo Info, uint ApiVersion);
 }

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
 using SomeEngine.Resources.Geometry;
@@ -19,9 +19,9 @@ internal readonly record struct RegisteredMeshPages(
     MeshPayloadSource Source,
     bool OwnsSource);
 
-internal sealed class PreparedMeshPages
+internal sealed class MeshPageRanges
 {
-    internal PreparedMeshPages(
+    internal MeshPageRanges(
         Mesh mesh,
         uint firstPageId,
         int registrationIndex,
@@ -54,7 +54,7 @@ internal sealed class PreparedMeshPages
     internal ulong LowestDetailBytes { get; }
 }
 
-internal readonly record struct PreparedMeshPagesDisposal(
+internal readonly record struct MeshPageDisposal(
     ResidencyReservation[] GpuReservations,
     MeshPayloadSource?[] OwnedSources);
 
@@ -105,8 +105,8 @@ internal sealed class MeshPages
     private readonly List<uint> _referencedPageBits = [];
     private readonly FlatDictionary<uint, ResidencyReservation> _gpuReservations = new();
     private readonly HashSet<uint> _residentPages = new();
-    private readonly HashSet<uint> _pendingLoads = new();
-    private readonly HashSet<uint> _pendingEvictions = new();
+    private readonly HashSet<uint> _uploadPages = new();
+    private readonly HashSet<uint> _evictionPages = new();
     private ulong _lowestDetailBytes;
     private readonly List<uint> _offsets = [];
     private int _oldestResidentPage = -1;
@@ -114,22 +114,23 @@ internal sealed class MeshPages
 
     private uint _registeredPages;
 
+    public int RegistrationCount => _registrations.Count;
     public uint RegisteredCount => _registeredPages;
     public uint Count => (uint)_offsets.Count;
     public uint ResidentCount => (uint)_residentPages.Count;
     public uint MissingCount => RegisteredCount - ResidentCount;
-    public int PendingLoadCount => _pendingLoads.Count;
-    public int PendingEvictionCount => _pendingEvictions.Count;
+    public int UploadPageCount => _uploadPages.Count;
+    public int EvictionPageCount => _evictionPages.Count;
 
-    public PreparedMeshPages PrepareStreamedRegistration(
+    public MeshPageRanges PrepareStreamedRegistration(
         Mesh mesh,
         MeshPayloadSource streamedSource,
-        bool ownsSource = true)
+        uint firstPageId,
+        int registrationIndex)
     {
         ArgumentNullException.ThrowIfNull(streamedSource);
         IReadOnlyList<MeshPayloadPage> payloadPages = streamedSource.Pages;
         EnsureCanRegister(mesh, payloadPages.Count);
-        uint firstPageId = Count;
         var streamingPageBytes = new uint[payloadPages.Count];
         var lowestDetailPageIds = new uint[streamedSource.LowestDetailPageIndices.Length];
         long pageRegionLength = checked(streamedSource.Length - streamedSource.BvhLength);
@@ -169,21 +170,21 @@ internal sealed class MeshPages
             streamingPageBytes[pageIndex] = 0;
         }
 
-        return new PreparedMeshPages(
+        return new MeshPageRanges(
             mesh,
             firstPageId,
-            _registrations.Count,
+            registrationIndex,
             streamedSource,
-            ownsSource,
+            true,
             streamingPageBytes,
             payloadPages.Count,
             lowestDetailPageIds,
             lowestDetailBytes);
     }
 
-    public void ReserveRegistration(PreparedMeshPages registration)
+    public void ReserveRegistration(MeshPageRanges registration)
     {
-        ValidatePreparedRegistration(registration);
+        ValidateRegistration(registration);
         int pageCount = registration.PageCount;
         int requiredPageCount = checked(_offsets.Count + pageCount);
         _registrationByMesh.EnsureCapacity(checked(_registrationByMesh.Count + 1));
@@ -194,7 +195,7 @@ internal sealed class MeshPages
         _residentPages.EnsureCapacity(requiredPageCount);
     }
 
-    public void CommitRegistration(PreparedMeshPages registration)
+    public void CommitRegistration(MeshPageRanges registration)
     {
         _registrationByMesh.Add(registration.Mesh, registration.RegistrationIndex);
         _registrations.Add(new RegisteredMeshPages(
@@ -242,7 +243,7 @@ internal sealed class MeshPages
         _ = checked(_offsets.Count + pageCount);
     }
 
-    private void ValidatePreparedRegistration(PreparedMeshPages registration)
+    private void ValidateRegistration(MeshPageRanges registration)
     {
         ArgumentNullException.ThrowIfNull(registration);
         if (registration.FirstPageId != Count ||
@@ -259,14 +260,14 @@ internal sealed class MeshPages
     public bool IsResident(uint pageId)
         => _residentPages.Contains(pageId);
 
-    public bool IsLoadPending(uint pageId)
-        => _pendingLoads.Contains(pageId);
+    public bool HasUpload(uint pageId)
+        => _uploadPages.Contains(pageId);
 
     public bool IsRetiring(uint pageId)
-        => _pendingEvictions.Contains(pageId);
+        => _evictionPages.Contains(pageId);
 
-    public bool IsEvictionPending(uint pageId)
-        => _pendingEvictions.Contains(pageId);
+    public bool IsEvictionQueued(uint pageId)
+        => _evictionPages.Contains(pageId);
 
     public bool TryOffset(uint pageId, out uint offset)
     {
@@ -340,9 +341,9 @@ internal sealed class MeshPages
 
     internal ResidencyReservation? RemovePage(uint pageId, out bool uploadReady)
     {
-        uploadReady = _pendingLoads.Remove(pageId);
+        uploadReady = _uploadPages.Remove(pageId);
         _residentPages.Remove(pageId);
-        _pendingEvictions.Remove(pageId);
+        _evictionPages.Remove(pageId);
         Remove(pageId);
         CollectionsMarshal.AsSpan(_pages)[(int)pageId] = new(-1, 0);
         _offsets[(int)pageId] = 0;
@@ -360,14 +361,14 @@ internal sealed class MeshPages
         ArgumentNullException.ThrowIfNull(gpuReservation);
         if (gpuReservation.ResidencyClass != ResidencyClass.Gpu)
             throw new ArgumentException("A resident mesh page requires a GPU reservation.", nameof(gpuReservation));
-        if (_residentPages.Contains(pageId) || IsLoadPending(pageId))
-            throw new InvalidOperationException($"Mesh page {pageId} is already resident or awaiting publication.");
+        if (_residentPages.Contains(pageId) || HasUpload(pageId))
+            throw new InvalidOperationException($"Mesh page {pageId} is already resident or awaiting geometryChanges.");
         if (_gpuReservations.ContainsKey(pageId))
             throw new InvalidOperationException($"Mesh page {pageId} already owns a GPU reservation.");
 
-        _pendingLoads.EnsureCapacity(checked(_pendingLoads.Count + 1));
+        _uploadPages.EnsureCapacity(checked(_uploadPages.Count + 1));
         _gpuReservations.EnsureCapacity(checked(_gpuReservations.Count + 1));
-        if (!_pendingLoads.Add(pageId))
+        if (!_uploadPages.Add(pageId))
             throw new InvalidOperationException($"Mesh page {pageId} could not enter the pending-load state.");
         try
         {
@@ -376,7 +377,7 @@ internal sealed class MeshPages
         }
         catch
         {
-            _pendingLoads.Remove(pageId);
+            _uploadPages.Remove(pageId);
             _gpuReservations.Remove(pageId);
             throw;
         }
@@ -385,14 +386,14 @@ internal sealed class MeshPages
     public ResidencyReservation CancelStagedResident(uint pageId, ResidencyReservation expectedReservation)
     {
         ArgumentNullException.ThrowIfNull(expectedReservation);
-        if (!_pendingLoads.Contains(pageId) ||
+        if (!_uploadPages.Contains(pageId) ||
             !_gpuReservations.TryGetValue(pageId, out ResidencyReservation? reservation) ||
             !ReferenceEquals(reservation, expectedReservation))
         {
             throw new InvalidOperationException($"Mesh page {pageId} does not own the expected staged GPU reservation.");
         }
 
-        _pendingLoads.Remove(pageId);
+        _uploadPages.Remove(pageId);
         _gpuReservations.Remove(pageId);
         _offsets[(int)pageId] = 0;
         return reservation;
@@ -400,7 +401,7 @@ internal sealed class MeshPages
 
     internal bool CanEvictPage(uint pageId)
         => GetStreamingPageBytes(pageId) != 0 &&
-            _residentPages.Contains(pageId) && !_pendingEvictions.Contains(pageId);
+            _residentPages.Contains(pageId) && !_evictionPages.Contains(pageId);
 
     public bool StageEviction(uint pageId, out PageRetirement retirement)
     {
@@ -412,36 +413,36 @@ internal sealed class MeshPages
 
         uint offset = _offsets[(int)pageId];
 
-        _pendingEvictions.EnsureCapacity(checked(_pendingEvictions.Count + 1));
+        _evictionPages.EnsureCapacity(checked(_evictionPages.Count + 1));
         if (!TrySource(pageId, out uint size, out _))
             throw new InvalidOperationException($"Mesh page {pageId} has no canonical source descriptor.");
         retirement = new PageRetirement(pageId, offset, size);
-        _pendingEvictions.Add(pageId);
+        _evictionPages.Add(pageId);
         Remove(pageId);
         return true;
     }
 
-    public bool TryCancelPendingEviction(uint pageId, out uint offset)
+    public bool TryCancelEviction(uint pageId, out uint offset)
     {
-        if (!_pendingEvictions.Contains(pageId))
+        if (!_evictionPages.Contains(pageId))
         {
             offset = 0;
             return false;
         }
 
         offset = _offsets[(int)pageId];
-        _pendingEvictions.Remove(pageId);
+        _evictionPages.Remove(pageId);
         Touch(pageId);
         return true;
     }
 
     public uint[] PrepareLoads()
     {
-        if (_pendingLoads.Count == 0)
+        if (_uploadPages.Count == 0)
             return [];
 
-        var pages = new uint[_pendingLoads.Count];
-        _pendingLoads.CopyTo(pages);
+        var pages = new uint[_uploadPages.Count];
+        _uploadPages.CopyTo(pages);
         Array.Sort(pages);
         _residentPages.EnsureCapacity(checked(_residentPages.Count + pages.Length));
         return pages;
@@ -449,12 +450,12 @@ internal sealed class MeshPages
 
     public PageRetirement[] PrepareEvictions()
     {
-        if (_pendingEvictions.Count == 0)
+        if (_evictionPages.Count == 0)
             return [];
 
-        var retirements = new PageRetirement[_pendingEvictions.Count];
+        var retirements = new PageRetirement[_evictionPages.Count];
         int index = 0;
-        foreach (uint pageId in _pendingEvictions)
+        foreach (uint pageId in _evictionPages)
         {
             if (!TrySource(pageId, out uint size, out _))
                 throw new InvalidOperationException($"Mesh page {pageId} has no canonical source descriptor.");
@@ -471,28 +472,28 @@ internal sealed class MeshPages
 
     public void PublishLoad(uint pageId)
     {
-        if (!_pendingLoads.Contains(pageId) ||
+        if (!_uploadPages.Contains(pageId) ||
             _residentPages.Contains(pageId) ||
             !_gpuReservations.ContainsKey(pageId))
         {
-            throw new InvalidOperationException($"Mesh page {pageId} is not ready for residency publication.");
+            throw new InvalidOperationException($"Mesh page {pageId} is not ready for residency geometryChanges.");
         }
 
-        _pendingLoads.Remove(pageId);
+        _uploadPages.Remove(pageId);
         _residentPages.Add(pageId);
         Touch(pageId);
     }
 
     public ResidencyReservation PublishEviction(uint pageId)
     {
-        if (!_pendingEvictions.Contains(pageId) ||
+        if (!_evictionPages.Contains(pageId) ||
             !_residentPages.Contains(pageId) ||
             !_gpuReservations.TryGetValue(pageId, out ResidencyReservation? gpuReservation))
         {
             throw new InvalidOperationException($"Mesh page {pageId} has no GPU reservation to release.");
         }
 
-        _pendingEvictions.Remove(pageId);
+        _evictionPages.Remove(pageId);
         _residentPages.Remove(pageId);
         _gpuReservations.Remove(pageId);
 
@@ -501,24 +502,24 @@ internal sealed class MeshPages
         return gpuReservation;
     }
 
-    public void ValidatePublication(
+    public void ValidateChanges(
         ReadOnlySpan<uint> residentPages,
         ReadOnlySpan<PageRetirement> retirements)
     {
         foreach (uint pageId in residentPages)
         {
-            if (!_pendingLoads.Contains(pageId) ||
+            if (!_uploadPages.Contains(pageId) ||
                 _residentPages.Contains(pageId) ||
                 !_gpuReservations.ContainsKey(pageId))
             {
                 throw new InvalidOperationException(
-                    $"Mesh page {pageId} is not ready to complete residency publication.");
+                    $"Mesh page {pageId} is not ready to complete residency geometryChanges.");
             }
         }
 
         foreach (PageRetirement retirement in retirements)
         {
-            if (!_pendingEvictions.Contains(retirement.PageID) ||
+            if (!_evictionPages.Contains(retirement.PageID) ||
                 !_residentPages.Contains(retirement.PageID) ||
                 !_gpuReservations.ContainsKey(retirement.PageID) ||
                 _offsets[checked((int)retirement.PageID)] != retirement.Offset ||
@@ -526,7 +527,7 @@ internal sealed class MeshPages
                 size != retirement.Size)
             {
                 throw new InvalidOperationException(
-                    $"Mesh page {retirement.PageID} is not ready to complete eviction publication.");
+                    $"Mesh page {retirement.PageID} is not ready to complete eviction geometryChanges.");
             }
         }
     }
@@ -562,7 +563,7 @@ internal sealed class MeshPages
     public void Touch(uint pageId)
     {
         if (!_residentPages.Contains(pageId) ||
-            _pendingEvictions.Contains(pageId))
+            _evictionPages.Contains(pageId))
             return;
 
         if (TryTouchActiveResident(pageId))
@@ -593,7 +594,7 @@ internal sealed class MeshPages
         return false;
     }
 
-    public PreparedMeshPagesDisposal PrepareDisposal()
+    public MeshPageDisposal PrepareDisposal()
     {
         var gpuReservations = new ResidencyReservation[_gpuReservations.Count];
         int gpuIndex = 0;
@@ -607,19 +608,19 @@ internal sealed class MeshPages
                 ownedSources[index] = _registrations[index].Source;
         }
 
-        return new PreparedMeshPagesDisposal(
+        return new MeshPageDisposal(
             gpuReservations,
             ownedSources);
     }
 
-    public void CommitDisposal(in PreparedMeshPagesDisposal prepared)
+    public void CommitDisposal(in MeshPageDisposal disposal)
     {
-        if (prepared.GpuReservations is null ||
-            prepared.OwnedSources is null ||
-            prepared.GpuReservations.Length != _gpuReservations.Count ||
-            prepared.OwnedSources.Length != _registrations.Count)
+        if (disposal.GpuReservations is null ||
+            disposal.OwnedSources is null ||
+            disposal.GpuReservations.Length != _gpuReservations.Count ||
+            disposal.OwnedSources.Length != _registrations.Count)
         {
-            throw new InvalidOperationException("The prepared mesh-page disposal is stale.");
+            throw new InvalidOperationException("The disposal mesh-page disposal is stale.");
         }
 
         _gpuReservations.Clear();
@@ -630,8 +631,8 @@ internal sealed class MeshPages
         _residentPages.Clear();
         _lowestDetailBytes = 0;
         _registeredPages = 0;
-        _pendingLoads.Clear();
-        _pendingEvictions.Clear();
+        _uploadPages.Clear();
+        _evictionPages.Clear();
         _oldestResidentPage = _newestResidentPage = -1;
         _offsets.Clear();
     }

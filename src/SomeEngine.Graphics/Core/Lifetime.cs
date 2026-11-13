@@ -10,7 +10,7 @@ internal struct DisposeGate
     private const int Released = 2;
 
     private int _state;
-    private int _ownerThreadId;
+    private int _disposingThreadId;
 
     internal bool IsDisposed => Volatile.Read(ref _state) != Alive;
 
@@ -18,11 +18,11 @@ internal struct DisposeGate
     {
         if (Interlocked.CompareExchange(ref _state, Releasing, Alive) == Alive)
         {
-            Volatile.Write(ref _ownerThreadId, Environment.CurrentManagedThreadId);
+            Volatile.Write(ref _disposingThreadId, Environment.CurrentManagedThreadId);
             return true;
         }
 
-        if (Volatile.Read(ref _ownerThreadId) == Environment.CurrentManagedThreadId)
+        if (Volatile.Read(ref _disposingThreadId) == Environment.CurrentManagedThreadId)
             return false;
 
         Join();
@@ -32,7 +32,7 @@ internal struct DisposeGate
     internal void Exit()
     {
         Volatile.Write(ref _state, Released);
-        Volatile.Write(ref _ownerThreadId, 0);
+        Volatile.Write(ref _disposingThreadId, 0);
     }
 
     private void Join()
@@ -57,6 +57,7 @@ public abstract class GraphicsObject : IDisposable
     private DisposeGate _disposeGate;
 
     internal event Action<GraphicsObject>? Disposed;
+    internal event Action<GraphicsObject>? Disposing;
 
     internal GraphicsObject? DeviceLossWorkNext;
     internal GraphicsObject? RegistryDrainNext;
@@ -88,11 +89,14 @@ public abstract class GraphicsObject : IDisposable
 
     private void DisposeCore(bool fromParent)
     {
+        if (!fromParent && !IsDisposed) Disposing?.Invoke(this);
         if (!_disposeGate.TryEnter())
             return;
         try
         {
-            Release(fromParent);
+            if (!fromParent && this is DeviceResource resource && resource.Device.Status == DeviceStatus.Active)
+                resource.Device.DeferredReleases.Add(this);
+            else Release(fromParent);
         }
         catch (Exception exception)
         {
@@ -121,6 +125,7 @@ public abstract class GraphicsObject : IDisposable
             finally
             {
                 Disposed = null;
+                Disposing = null;
                 _disposeGate.Exit();
             }
         }

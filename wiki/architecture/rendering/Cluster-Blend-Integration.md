@@ -1,5 +1,7 @@
 # Cluster 多覆盖混合
 
+本页记录已被 [Layer Composition](Layer-Composition.md) 取代的 Cluster 候选索引实现及其历史验收。现行 DefaultGame 效果通过 `Material.Layer`、明确注册的层 pass 和同一份材质入口渲染；当前阶段计量见 Layer Composition 页。
+
 规格 [#221](https://github.com/ODtian/SomeEngine.Next/issues/221) 将普通网格的透明材质、完整材质 X-ray、材质贴花和有序颜色/stencil 纳入 Cluster 管线。研究与性能基线见 [tile visibility 研究](Transparency-Tile-Visibility.md)。本页记录正式功能的数据通路、使用入口和验收对应。
 
 ## 数据与执行
@@ -43,13 +45,13 @@ DefaultGame 使用 `--cluster-effect=<效果>` 选择专项内容，`--blend-ind
 
 ## 自定义硬件 stencil 阶段
 
-`ClusterPipelineSystem.GetStencil()` 按消费者请求创建共享整数图。应用的 `IApplicationColorFeature` 通过 `ApplicationRendering.Stencil` 取得同一能力；`SceneScript.CreateColorFeature` 提供脚本应用的相同入口。整数图与硬件阶段的区段长期保留，材质变化更新其生产依赖。
+`TransparencyFeature.Stencil` 按消费者请求创建共享整数图。应用的 `IApplicationColorFeature` 通过 `ApplicationRendering.Stencil` 取得同一能力；`SceneScript.CreateColorFeature` 提供脚本应用的相同入口。整数图与硬件阶段的区段长期保留，材质变化更新其生产依赖。
 
 调用 `stencil.Export(ref edit)` 创建 D32FloatS8UInt 附件，声明整数图打包与 stencil-plane copy。硬件 pass 使用返回的 `Texture`，并排在 `CompletePass` 之后；该 pass 持有自己的深度输入、颜色附件与 RHI stencil 状态。随后调用 `attachment.Import(ref edit, hardwareComplete)`，通过反向 copy 与解包将 stencil 返回同一整数图。后续阶段继续读取 `stencil.Values`，也可以再次导出为硬件附件。
 
 ```csharp
-ClusterStencil stencil = rendering.Stencil!;
-ClusterStencilAttachment attachment = stencil.Export(ref edit);
+RenderStencil stencil = rendering.Stencil!;
+RenderStencilAttachment attachment = stencil.Export(ref edit);
 // 在 stencil.Region 添加硬件 pass，附件取 attachment.Texture。
 edit.OrderAfter(hardwarePass, attachment.CompletePass);
 GraphPassId completed = attachment.Import(ref edit, hardwarePass);

@@ -15,7 +15,7 @@ public enum MapType : byte
     ReadWrite,
 }
 
-internal abstract class MappingLease
+internal abstract class MappingHandle
 {
     private const int StateBitCount = 2;
     private const long StateMask = (1 << StateBitCount) - 1;
@@ -27,21 +27,19 @@ internal abstract class MappingLease
     private long _authority;
     private BufferRange _range;
 
-    protected MappingLease(Buffer buffer) =>
+    protected MappingHandle(Buffer buffer) =>
         Buffer = buffer ?? throw new ArgumentNullException(nameof(buffer));
 
     internal Buffer Buffer { get; }
+    internal bool IsActive => GetState(Volatile.Read(ref _authority)) != Inactive;
 
     internal ulong PrepareNextSequence()
     {
         long authority = Volatile.Read(ref _authority);
-        if (GetState(authority) != Inactive)
-            throw new InvalidOperationException("The Buffer already has an active mapping.");
-
         ulong current = GetSequence(authority);
         if (current == MaximumSequence)
         {
-            throw new InvalidOperationException(
+            throw new GraphicsException(GraphicsError.NativeFailure,
                 "The Buffer mapping sequence domain is exhausted.");
         }
         return current + 1;
@@ -157,24 +155,24 @@ internal abstract class MappingLease
 /// </remarks>
 public unsafe struct MappedBuffer : IDisposable
 {
-    private readonly MappingLease? _lease;
+    private readonly MappingHandle? _handle;
     private readonly Memory<byte> _memory;
     private readonly nint _pointer;
     private readonly int _length;
     private readonly ulong _sequence;
 
-    internal MappedBuffer(MappingLease lease, Memory<byte> bytes, ulong sequence)
+    internal MappedBuffer(MappingHandle handle, Memory<byte> bytes, ulong sequence)
     {
-        _lease = lease;
+        _handle = handle;
         _memory = bytes;
         _pointer = 0;
         _length = bytes.Length;
         _sequence = sequence;
     }
 
-    internal MappedBuffer(MappingLease lease, nint pointer, int length, ulong sequence)
+    internal MappedBuffer(MappingHandle handle, nint pointer, int length, ulong sequence)
     {
-        _lease = lease;
+        _handle = handle;
         _memory = default;
         _pointer = pointer;
         _length = length;
@@ -185,8 +183,8 @@ public unsafe struct MappedBuffer : IDisposable
     {
         get
         {
-            MappingLease lease = RequireLease();
-            return lease.GetRange(_sequence);
+            MappingHandle handle = RequireHandle();
+            return handle.GetRange(_sequence);
         }
     }
 
@@ -194,8 +192,8 @@ public unsafe struct MappedBuffer : IDisposable
     {
         get
         {
-            MappingLease lease = RequireLease();
-            lease.EnsureActive(_sequence);
+            MappingHandle handle = RequireHandle();
+            handle.EnsureActive(_sequence);
             return _pointer == 0 ? _memory.Span : new Span<byte>((void*)_pointer, _length);
         }
     }
@@ -208,7 +206,7 @@ public unsafe struct MappedBuffer : IDisposable
     public void Read(Span<byte> destination, int offset = 0)
     {
         ReadOnlySpan<byte> source = Bytes.Slice(offset, destination.Length);
-        if (_pointer == 0 || _lease!.Buffer.Info.MemoryType != MemoryType.Upload ||
+        if (_pointer == 0 || _handle!.Buffer.Info.MemoryType != MemoryType.Upload ||
             !Sse41.IsSupported || source.Length < 16 || source.Overlaps(destination))
         {
             source.CopyTo(destination);
@@ -247,10 +245,10 @@ public unsafe struct MappedBuffer : IDisposable
         }
     }
 
-    public void Flush(in BufferRange range) => RequireLease().Flush(_sequence, range);
-    public void Invalidate(in BufferRange range) => RequireLease().Invalidate(_sequence, range);
-    public void Dispose() => _lease?.Dispose(_sequence);
+    public void Flush(in BufferRange range) => RequireHandle().Flush(_sequence, range);
+    public void Invalidate(in BufferRange range) => RequireHandle().Invalidate(_sequence, range);
+    public void Dispose() => _handle?.Dispose(_sequence);
 
-    private readonly MappingLease RequireLease() => _lease
+    private readonly MappingHandle RequireHandle() => _handle
         ?? throw new InvalidOperationException("The default MappedBuffer is invalid.");
 }

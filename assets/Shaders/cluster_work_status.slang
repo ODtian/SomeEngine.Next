@@ -1,6 +1,6 @@
 #ifndef CLUSTER_WORK_STATUS_SLANG
 #define CLUSTER_WORK_STATUS_SLANG
-#include "resource_effects.slang"
+__exported import resource_effects;
 
 // Match ClusterWorkOverflow. The status lives for the whole frame, across both
 // primary and target main/post phases. Clamping protects memory, never quality.

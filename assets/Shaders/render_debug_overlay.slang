@@ -1,4 +1,10 @@
-#include "fullscreen_triangle.slang"
+__exported import fullscreen_triangle;
+
+[shader("vertex")]
+FullscreenVSOut VSMain(uint vertexId : SV_VertexID)
+{
+    return MakeFullscreenVertex(vertexId);
+}
 
 struct DebugOverlayUniforms
 {

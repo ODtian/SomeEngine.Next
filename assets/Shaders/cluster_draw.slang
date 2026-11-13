@@ -1,184 +1,75 @@
-#include "vertex_evaluate.slang"
+#include "raster_faces.slang"
+__exported import vertex_evaluate_interfaces;
 
 ByteAddressBuffer PageHeap;
 
 #include "cluster_draw_core.slang"
 #include "cluster_policy_raster_output.slang"
 
-typedef OpaqueVisibilityEvaluate<StaticVertexEval.Vertex> DefaultVisibilityEvaluate;
 
-struct PSInput
-{
-    float4 Pos : SV_POSITION;
-    float3 Normal : NORMAL;
-    float2 UV : TEXCOORD0;
-    float3 Color : COLOR0;
-    nointerpolation uint ClusterID : CLUSTER_ID;
-    uint RenderTargetIndex : SV_RenderTargetArrayIndex;
-};
-
-void WriteInvalidPSInput(out PSInput output)
-{
-    output.Pos = asfloat(uint4(0x7FC00000, 0x7FC00000, 0x7FC00000, 0x7FC00000));
-    output.Normal = float3(0.0);
-    output.UV = float2(0.0);
-    output.Color = float3(0.0);
-    output.ClusterID = 0u;
-    output.RenderTargetIndex = 0u;
-}
-
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
-[ConservativeBounds("finite")]
-[shader("vertex")]
-PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
-{
-    PSInput output;
-
-    uint visibleClusterIndex;
-    uint clusterID;
-    uint realInstanceID;
-    uint viewIndex;
-    uint lodLevel;
-    uint triangleID;
-    uint localVertIdx;
-    uint vertexBlobAddress;
-    uint vertexBlobSize;
-    uint vertexCount;
-
-    if (!DecodeDrawVertex(
-            vertexID,
-            instanceID,
-            visibleClusterIndex,
-            clusterID,
-            realInstanceID,
-            viewIndex,
-            lodLevel,
-            triangleID,
-            localVertIdx,
-            vertexBlobAddress,
-            vertexBlobSize,
-            vertexCount))
-    {
-        WriteInvalidPSInput(output);
-        return output;
-    }
-
-    StaticVertexEval eval;
-    VertexEvalContext ctx = MakeDrawVertexEvalContext(
-        vertexBlobAddress,
-        vertexBlobSize,
-        localVertIdx,
-        realInstanceID,
-        GetCurrentInstanceTransform(realInstanceID), visibleClusterIndex);
-    StaticVertexEval.Vertex vertex = EvaluateDrawVertex(eval, ctx);
-
-    ClusterViewUniforms view = LoadClusterView(
-        HardwareRasterViews,
-        HardwareRasterPolicyViews,
-        viewIndex);
-    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, realInstanceID, view);
-    output.Pos = mul(
-        float4(ClusterPositionForView(eval.getPosition(vertex), view), 1.0),
-        view.ViewProj);
-    output.ClusterID = clusterID;
-    output.Normal = vertex.worldNormal;
-    output.UV = vertex.uv0;
-    output.RenderTargetIndex = view.TargetPolicy == 0u
-        ? view.TargetViewIndex
-        : 0u;
-
-    output.Color = vertex.worldNormal * 0.5 + 0.5;
-
-    return output;
-}
-
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
-[ConservativeBounds("finite")]
 [shader("mesh")]
 [outputtopology("triangle")]
 [numthreads(32, 1, 1)]
-void MSVisBuffer(
+void MSVisBuffer<TVE : IVertexEvaluate, TVisibility : IVisibilityEvaluate<TVE.Vertex>>(
+    uniform TVE vertexEvaluate, uniform TVisibility visibilityEvaluate,
     uint3 groupId : SV_GroupID, uint lane : SV_GroupIndex,
-    out vertices ClusterRasterVertexData<DefaultVisibilityEvaluate.Varying> vertices[32],
+    out vertices ClusterRasterVertexData<TVisibility.Varying> vertices[32],
     out indices uint3 indices[32],
     out primitives ClusterMeshPrimitive primitives[32])
 {
-    StaticVertexEval vertex;
-    DefaultVisibilityEvaluate visibility;
-    BuildVisBufferMesh<StaticVertexEval, DefaultVisibilityEvaluate>(
+    TVE vertex = vertexEvaluate;
+    TVisibility visibility = visibilityEvaluate;
+    BuildVisBufferMesh<TVE, TVisibility>(
         vertex, visibility, groupId, lane, vertices, indices, primitives);
 }
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
-[ConservativeBounds("finite")]
 [shader("mesh")]
 [outputtopology("triangle")]
 [numthreads(32, 1, 1)]
-void MSVisBufferMeshlet(
+void MSVisBufferMeshlet<TVE : IVertexEvaluate, TVisibility : IVisibilityEvaluate<TVE.Vertex>>(
+    uniform TVE vertexEvaluate, uniform TVisibility visibilityEvaluate,
     uint3 groupId : SV_GroupID, uint lane : SV_GroupIndex,
-    out vertices ClusterRasterVertexData<DefaultVisibilityEvaluate.Varying> vertices[64],
+    out vertices ClusterRasterVertexData<TVisibility.Varying> vertices[64],
     out indices uint3 indices[128],
     out primitives ClusterMeshPrimitive primitives[128])
 {
-    StaticVertexEval vertex;
-    DefaultVisibilityEvaluate visibility;
-    BuildVisBufferMeshlet<StaticVertexEval, DefaultVisibilityEvaluate>(
+    TVE vertex = vertexEvaluate;
+    TVisibility visibility = visibilityEvaluate;
+    BuildVisBufferMeshlet<TVE, TVisibility>(
         vertex, visibility, groupId, lane, vertices, indices, primitives);
 }
 
-[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
-[shader("pixel")]
-float4 PSMain(PSInput input) : SV_TARGET
-{
-    return float4(input.Color, 1.0);
-}
-
-[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
-[shader("pixel")]
-float4 PSOverdraw(PSInput input) : SV_TARGET
-{
-    return float4(0.05, 0.05, 0.05, 1.0);
-}
-
-
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
-[ConservativeBounds("finite")]
 [shader("vertex")]
-ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> VSVisBuffer(
+ClusterRasterPixelInput<TVisibility.Varying> VSVisBuffer<TVE : IVertexEvaluate, TVisibility : IVisibilityEvaluate<TVE.Vertex>>(
+    uniform TVE vertexEvaluate, uniform TVisibility visibilityEvaluate,
     uint vertexID: SV_VertexID,
     uint instanceID: SV_InstanceID)
 {
-    StaticVertexEval eval;
-    DefaultVisibilityEvaluate visibility;
-    return BuildVisBufferVertex<StaticVertexEval, DefaultVisibilityEvaluate>(
+    TVE eval = vertexEvaluate;
+    TVisibility visibility = visibilityEvaluate;
+    return BuildVisBufferVertex<TVE, TVisibility>(
         eval, visibility, vertexID, instanceID);
 }
 
 [ForceInline]
-void EvaluatePSVisBufferImageAtomic64(
-    ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)
+void EvaluatePSVisBufferImageAtomic64<TVertex, TVisibility : IVisibilityEvaluate<TVertex>>(
+    uniform TVisibility visibility,
+    ClusterRasterPixelInput<TVisibility.Varying> input)
 {
-    DefaultVisibilityEvaluate visibility;
     ClusterViewUniforms view = LoadClusterView(HardwareRasterViews, HardwareRasterPolicyViews, input.ViewIndex);
     ClusterRasterOutputPixel outputPixel;
-    bool accepted = ResolveClusterHardwareRasterPixel(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
-    uint encodedDepth = accepted ? (view.TargetPolicy != 0u
-        ? ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy) : uint(VisibilityWinnerImage[uint3(outputPixel.Position, view.TargetViewIndex)] >> 32u)) : 0u;
+    bool accepted = ResolveClusterHardwareRasterPixel<ClusterRasterOutputImageAtomic64>(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
+    uint encodedDepth = accepted ? (uint(VisibilityWinnerImage[uint3(outputPixel.Position, view.TargetViewIndex)] >> 32u)) : 0u;
     float rasterDepth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
     accepted = accepted && ClusterRasterDepthAccepts(rasterDepth, encodedDepth,
-        HardwareRasterDispatchUniformData.EarlyDepthEnabled, view.TargetPolicy);
+        HardwareRasterDispatchUniformData.EarlyDepthEnabled, 0u);
     if (!ClusterRasterQuadAcceptsPixel(accepted))
         discard;
     VisibilityPixelResult pixelResult =
-        EvaluateHardwareRasterPixel<StaticVertexEval.Vertex, DefaultVisibilityEvaluate>(
+        EvaluateHardwareRasterPixel<TVertex, TVisibility>(
             visibility, input, view, encodedDepth);
     if (!accepted || pixelResult.Visible == 0u)
         discard;
-    if (view.TargetPolicy != 0u)
-    {
-        WriteRasterTargetPixelDepth(uint2(outputPixel.Position), pixelResult.Depth, outputPixel.DepthCacheClass);
-        discard;
-    }
     WriteVisibilityWinnerImage(
         int2(input.Pos.xy),
         view.TargetViewIndex,
@@ -187,30 +78,24 @@ void EvaluatePSVisBufferImageAtomic64(
 }
 
 [ForceInline]
-void EvaluatePSVisBufferBufferAtomic64(
-    ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)
+void EvaluatePSVisBufferBufferAtomic64<TVertex, TVisibility : IVisibilityEvaluate<TVertex>>(
+    uniform TVisibility visibility,
+    ClusterRasterPixelInput<TVisibility.Varying> input)
 {
-    DefaultVisibilityEvaluate visibility;
     ClusterViewUniforms view = LoadClusterView(HardwareRasterViews, HardwareRasterPolicyViews, input.ViewIndex);
     ClusterRasterOutputPixel outputPixel;
-    bool accepted = ResolveClusterHardwareRasterPixel(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
-    uint encodedDepth = accepted ? (view.TargetPolicy != 0u
-        ? ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy) : VisibilityWinnerBuffer.Load(((view.TargetViewIndex * HardwareRasterUniformData.ScreenHeight + uint(outputPixel.Position.y)) * HardwareRasterUniformData.ScreenWidth + uint(outputPixel.Position.x)) * 8u + 4u)) : 0u;
+    bool accepted = ResolveClusterHardwareRasterPixel<ClusterRasterOutputImageAtomic64>(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
+    uint encodedDepth = accepted ? (VisibilityWinnerBuffer.Load(((view.TargetViewIndex * HardwareRasterUniformData.ScreenHeight + uint(outputPixel.Position.y)) * HardwareRasterUniformData.ScreenWidth + uint(outputPixel.Position.x)) * 8u + 4u)) : 0u;
     float rasterDepth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
     accepted = accepted && ClusterRasterDepthAccepts(rasterDepth, encodedDepth,
-        HardwareRasterDispatchUniformData.EarlyDepthEnabled, view.TargetPolicy);
+        HardwareRasterDispatchUniformData.EarlyDepthEnabled, 0u);
     if (!ClusterRasterQuadAcceptsPixel(accepted))
         discard;
     VisibilityPixelResult pixelResult =
-        EvaluateHardwareRasterPixel<StaticVertexEval.Vertex, DefaultVisibilityEvaluate>(
+        EvaluateHardwareRasterPixel<TVertex, TVisibility>(
             visibility, input, view, encodedDepth);
     if (!accepted || pixelResult.Visible == 0u)
         discard;
-    if (view.TargetPolicy != 0u)
-    {
-        WriteRasterTargetPixelDepth(uint2(outputPixel.Position), pixelResult.Depth, outputPixel.DepthCacheClass);
-        discard;
-    }
     WriteVisibilityWinnerBuffer(
         int2(input.Pos.xy),
         view.TargetViewIndex,
@@ -221,25 +106,48 @@ void EvaluatePSVisBufferBufferAtomic64(
 }
 
 [ForceInline]
-PSVisBufferOutput EvaluatePSVisBufferHardwareOnly(
-    ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)
+void EvaluatePSVisBufferNonAtomic<TVertex, TVisibility : IVisibilityEvaluate<TVertex>>(
+    uniform TVisibility visibility,
+    ClusterRasterPixelInput<TVisibility.Varying> input)
 {
-    DefaultVisibilityEvaluate visibility;
     ClusterViewUniforms view = LoadClusterView(HardwareRasterViews, HardwareRasterPolicyViews, input.ViewIndex);
     ClusterRasterOutputPixel outputPixel;
-    bool accepted = ResolveClusterHardwareRasterPixel(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
+    bool accepted = ResolveClusterHardwareRasterPixel<ClusterRasterOutputImageAtomic64>(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
+    uint encodedDepth = accepted ? (ReadVisibilityNonAtomicDepth(outputPixel.Position, view.TargetViewIndex, HardwareRasterUniformData.ScreenWidth, HardwareRasterUniformData.ScreenHeight)) : 0u;
+    float rasterDepth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
+    accepted = accepted && ClusterRasterDepthAccepts(rasterDepth, encodedDepth,
+        HardwareRasterDispatchUniformData.EarlyDepthEnabled, 0u);
     if (!ClusterRasterQuadAcceptsPixel(accepted))
         discard;
     VisibilityPixelResult pixelResult =
-        EvaluateHardwareRasterPixel<StaticVertexEval.Vertex, DefaultVisibilityEvaluate>(
-            visibility, input, view, ReadClusterRasterTargetDepth(outputPixel, view.TargetPolicy, accepted));
+        EvaluateHardwareRasterPixel<TVertex, TVisibility>(
+            visibility, input, view, encodedDepth);
     if (!accepted || pixelResult.Visible == 0u)
         discard;
-    if (view.TargetPolicy != 0u)
-    {
-        WriteRasterTargetPixelDepth(uint2(outputPixel.Position), pixelResult.Depth, outputPixel.DepthCacheClass);
+    WriteVisibilityNonAtomic(
+        int2(input.Pos.xy),
+        view.TargetViewIndex,
+        HardwareRasterUniformData.ScreenWidth,
+        HardwareRasterUniformData.ScreenHeight,
+        saturate(pixelResult.Depth),
+        EncodeVisBuffer(input.VisibleClusterIndex, input.TriangleID));
+}
+
+[ForceInline]
+PSVisBufferOutput EvaluatePSVisBufferHardwareOnly<TVertex, TVisibility : IVisibilityEvaluate<TVertex>>(
+    uniform TVisibility visibility,
+    ClusterRasterPixelInput<TVisibility.Varying> input)
+{
+    ClusterViewUniforms view = LoadClusterView(HardwareRasterViews, HardwareRasterPolicyViews, input.ViewIndex);
+    ClusterRasterOutputPixel outputPixel;
+    bool accepted = ResolveClusterHardwareRasterPixel<ClusterRasterOutputImageAtomic64>(int2(input.Pos.xy), input.VisibleClusterIndex, view, outputPixel);
+    if (!ClusterRasterQuadAcceptsPixel(accepted))
         discard;
-    }
+    VisibilityPixelResult pixelResult =
+        EvaluateHardwareRasterPixel<TVertex, TVisibility>(
+            visibility, input, view, 0u);
+    if (!accepted || pixelResult.Visible == 0u)
+        discard;
     PSVisBufferOutput output;
     output.Visibility = EncodeVisBuffer(input.VisibleClusterIndex, input.TriangleID);
     output.Depth = saturate(pixelResult.Depth);
@@ -248,55 +156,81 @@ PSVisBufferOutput EvaluatePSVisBufferHardwareOnly(
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
-void PSMeshVisBufferImageAtomic64(
-    ClusterRasterVertexData<DefaultVisibilityEvaluate.Varying> vertex,
+void PSMeshVisBufferImageAtomic64<TVertex, TVisibility : IVisibilityEvaluate<TVertex>>(
+    uniform TVisibility visibility,
+    ClusterRasterVertexData<TVisibility.Varying> vertex,
     [[vk::perprimitive]] ClusterMeshPrimitive primitive)
 {
-    EvaluatePSVisBufferImageAtomic64(
-        MakeMeshPixelInput<DefaultVisibilityEvaluate.Varying>(vertex, primitive));
+    EvaluatePSVisBufferImageAtomic64<TVertex, TVisibility>(visibility,
+        MakeMeshPixelInput<TVisibility.Varying>(vertex, primitive));
 }
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
-void PSMeshVisBufferBufferAtomic64(
-    ClusterRasterVertexData<DefaultVisibilityEvaluate.Varying> vertex,
+void PSMeshVisBufferBufferAtomic64<TVertex, TVisibility : IVisibilityEvaluate<TVertex>>(
+    uniform TVisibility visibility,
+    ClusterRasterVertexData<TVisibility.Varying> vertex,
     [[vk::perprimitive]] ClusterMeshPrimitive primitive)
 {
-    EvaluatePSVisBufferBufferAtomic64(
-        MakeMeshPixelInput<DefaultVisibilityEvaluate.Varying>(vertex, primitive));
+    EvaluatePSVisBufferBufferAtomic64<TVertex, TVisibility>(visibility,
+        MakeMeshPixelInput<TVisibility.Varying>(vertex, primitive));
 }
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
-PSVisBufferOutput PSMeshVisBufferHardwareOnly(
-    ClusterRasterVertexData<DefaultVisibilityEvaluate.Varying> vertex,
+void PSMeshVisBufferNonAtomic<TVertex, TVisibility : IVisibilityEvaluate<TVertex>>(
+    uniform TVisibility visibility,
+    ClusterRasterVertexData<TVisibility.Varying> vertex,
     [[vk::perprimitive]] ClusterMeshPrimitive primitive)
 {
-    return EvaluatePSVisBufferHardwareOnly(
-        MakeMeshPixelInput<DefaultVisibilityEvaluate.Varying>(vertex, primitive));
+    EvaluatePSVisBufferNonAtomic<TVertex, TVisibility>(visibility,
+        MakeMeshPixelInput<TVisibility.Varying>(vertex, primitive));
+}
+
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
+[shader("pixel")]
+PSVisBufferOutput PSMeshVisBufferHardwareOnly<TVertex, TVisibility : IVisibilityEvaluate<TVertex>>(
+    uniform TVisibility visibility,
+    ClusterRasterVertexData<TVisibility.Varying> vertex,
+    [[vk::perprimitive]] ClusterMeshPrimitive primitive)
+{
+    return EvaluatePSVisBufferHardwareOnly<TVertex, TVisibility>(visibility,
+        MakeMeshPixelInput<TVisibility.Varying>(vertex, primitive));
 }
 
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
-void PSVisBufferImageAtomic64(
-    ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)
+void PSVisBufferImageAtomic64<TVertex, TVisibility : IVisibilityEvaluate<TVertex>>(
+    uniform TVisibility visibility,
+    ClusterRasterPixelInput<TVisibility.Varying> input)
 {
-    EvaluatePSVisBufferImageAtomic64(input);
+    EvaluatePSVisBufferImageAtomic64<TVertex, TVisibility>(visibility, input);
 }
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
-void PSVisBufferBufferAtomic64(
-    ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)
+void PSVisBufferBufferAtomic64<TVertex, TVisibility : IVisibilityEvaluate<TVertex>>(
+    uniform TVisibility visibility,
+    ClusterRasterPixelInput<TVisibility.Varying> input)
 {
-    EvaluatePSVisBufferBufferAtomic64(input);
+    EvaluatePSVisBufferBufferAtomic64<TVertex, TVisibility>(visibility, input);
 }
 
 [RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
 [shader("pixel")]
-PSVisBufferOutput PSVisBufferHardwareOnly(
-    ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> input)
+void PSVisBufferNonAtomic<TVertex, TVisibility : IVisibilityEvaluate<TVertex>>(
+    uniform TVisibility visibility,
+    ClusterRasterPixelInput<TVisibility.Varying> input)
 {
-    return EvaluatePSVisBufferHardwareOnly(input);
+    EvaluatePSVisBufferNonAtomic<TVertex, TVisibility>(visibility, input);
+}
+
+[RasterFaces(CLUSTER_RASTER_FACES, CLUSTER_TARGET_RASTER_FACES)]
+[shader("pixel")]
+PSVisBufferOutput PSVisBufferHardwareOnly<TVertex, TVisibility : IVisibilityEvaluate<TVertex>>(
+    uniform TVisibility visibility,
+    ClusterRasterPixelInput<TVisibility.Varying> input)
+{
+    return EvaluatePSVisBufferHardwareOnly<TVertex, TVisibility>(visibility, input);
 }

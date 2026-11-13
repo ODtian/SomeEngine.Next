@@ -47,8 +47,7 @@ public sealed class InputResourceTests
                     pass.Read(sampled, PipelineSync.PixelShading, TextureLayout.DepthStencilRead);
                     pass.ColorAttachment(0, colorView, LoadType.Load, StoreType.Store, WriteCoverage.Partial, Vector4.Zero);
                 }, static (ref RasterPassCommandScope _, in GraphDepthStencilViewId _) => { });
-            GraphBufferId output = edit.RegisterExternalBuffer(result,
-                [new BufferBoundaryState(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId output = edit.RegisterExternalBuffer(result);
             GraphPassId copy = edit.AddCopyFramePass("read depth", PassQueueSelection.AnyOfType(QueueType.Graphics), output,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 (ref PassDefinition pass, ref GraphBufferId destination) =>
@@ -101,8 +100,7 @@ public sealed class InputResourceTests
                     pass.ColorAttachment(0, target, LoadType.Clear, StoreType.Store, WriteCoverage.Complete,
                         new Vector4(1, .5f, 0, 1)),
                 static (ref RasterPassCommandScope _, in GraphColorAttachmentViewId _) => { });
-            GraphBufferId output = edit.RegisterExternalBuffer(result,
-                [new BufferBoundaryState(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId output = edit.RegisterExternalBuffer(result);
             GraphPassId copy = edit.AddCopyFramePass("read selected color", PassQueueSelection.AnyOfType(QueueType.Graphics),
                 output, new PassOptions(Culling: PassCullingMode.NeverCull),
                 (ref PassDefinition pass, ref GraphBufferId destination) =>
@@ -146,8 +144,7 @@ public sealed class InputResourceTests
         {
             input = edit.CreateBufferInput(BufferUsages.ShaderRead | BufferUsages.CopySource);
             GraphBufferSrvId view = edit.CreateBufferSrv(input);
-            GraphBufferId destination = edit.RegisterExternalBuffer(result,
-                [new BufferBoundaryState(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId destination = edit.RegisterExternalBuffer(result);
             edit.AddGeneralFramePass("copy input slice", PassQueueSelection.AnyOfType(QueueType.Graphics),
                 (input, view, destination), new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition pass, ref (GraphBufferInput Input, GraphBufferSrvId View, GraphBufferId Destination) data) =>
@@ -194,14 +191,15 @@ public sealed class InputResourceTests
         using Texture second = support.Backend.CreateTexture(support.Device, description);
         using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue]);
         GraphTextureInput input;
-        GraphTextureId resource;
+        GraphTextureId firstResource, secondResource;
         Texture expected = first;
         var used = new HashSet<Texture>();
         TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Color);
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
             input = edit.CreateTextureInput();
-            resource = edit.DeclareExternalTexture(description);
+            firstResource = edit.RegisterExternalTexture(first);
+            secondResource = edit.RegisterExternalTexture(second);
             GraphTextureSrvId view = edit.CreateTextureSrv(input, Format.R8G8B8A8UNorm, TextureViewDimension.Texture2D);
             edit.AddGeneralFramePass("read input texture view", PassQueueSelection.AnyOfType(QueueType.Graphics), view,
                 new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread),
@@ -220,12 +218,8 @@ public sealed class InputResourceTests
             expected = index % 4 < 2 ? first : second;
             bool firstUse = used.Add(expected);
             using RenderGraphFrame frame = graph.BeginFrame();
-            frame.BindExternalTexture(resource, expected,
-                [new TextureBoundaryState(range,
-                    firstUse ? expected.InitialSync : PipelineSync.ComputeShading,
-                    firstUse ? expected.InitialAccess : ResourceAccess.ShaderResource,
-                    firstUse ? expected.InitialLayout : TextureLayout.ShaderResource, ResourceContentState.Defined)]);
-            frame.SetTextureInput(input, resource);
+
+            frame.SetTextureInput(input, ReferenceEquals(expected, first) ? firstResource : secondResource);
             frame.Execute(completions);
             support.Wait(completions);
         }

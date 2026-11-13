@@ -1,3 +1,4 @@
+﻿using SomeEngine.Render;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Render.Components;
@@ -8,7 +9,7 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = SizeInBytes)]
 internal struct ClusterViewUniforms
 {
-    internal const int SizeInBytes = ClusterRenderContext.ViewSizeInBytes;
+    internal const int SizeInBytes = RenderRasterContext.ViewSizeInBytes;
 
     internal Matrix4x4 ViewProj;
     internal Vector3 CameraPos;
@@ -43,7 +44,7 @@ internal struct ClusterViewUniforms
 
     internal Matrix4x4 ClipToWorld;
 
-    internal uint TargetPolicy;
+    internal uint ViewPadding;
     internal uint TargetViewIndex;
     internal uint CullingProjectionIndex;
     internal float NearPlane;
@@ -139,7 +140,6 @@ internal struct ClusterViewUniforms
             TessellationEdgePixels = 0.0f,
             StreamingPriorityCategory = source.StreamingPriorityCategory,
             ClipToWorld = clipToWorld * Matrix4x4.CreateTranslation(-worldTranslation),
-            TargetPolicy = 0u,
             TargetViewIndex = 0u,
             NearPlane = source.Projection.M43 / source.Projection.M33,
             GeometryViewProj = view * (source.GeometryProjection ?? source.Projection),

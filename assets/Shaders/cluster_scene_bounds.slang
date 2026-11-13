@@ -1,7 +1,7 @@
-#include "cluster_structures.slang"
+__exported import cluster_structures;
 #include "cluster_instance_properties.slang"
 #include "cluster_bvh_cull_common.slang"
-#include "resource_effects.slang"
+__exported import resource_effects;
 
 struct ClusterSceneUniforms
 {
@@ -58,8 +58,6 @@ void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex
         uint instance = Scene.UseInstanceGroups != 0u ? SceneInstances[index] : index;
         uint root = LoadClusterBvhRoot(InstanceData,
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BVH_ROOT_METADATA_WORD), instance);
-        float3 previousMin = worldMin;
-        float3 previousMax = worldMax;
         if (root != 0xFFFFFFFFu)
         {
             finite = HasFiniteClusterInstanceBounds(MaterialBounds, InstanceData, InstanceProperties, instance) ? 1u : 0u;
@@ -68,22 +66,9 @@ void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex
             float expansion = max(0.0, LoadClusterBoundsExpansion(InstanceData,
                 LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD), instance));
             ClusterDeformRootWorldBounds(root, instance, current, expansion, false, worldMin, worldMax);
-            if (Scene.HasPreviousBounds == 0u)
-            {
-                RenderInstanceTransform previous = LoadRenderTransform(InstanceData,
-                    LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instance);
-                ClusterDeformRootWorldBounds(root, instance, previous, expansion, true, previousMin, previousMax);
-            }
         }
-        if (Scene.HasPreviousBounds != 0u)
-        {
-            previousMin = InstanceWorldBounds[instance * 4u].xyz;
-            previousMax = InstanceWorldBounds[instance * 4u + 1u].xyz;
-        }
-        InstanceWorldBounds[instance * 4u] = float4(worldMin, 0.0);
-        InstanceWorldBounds[instance * 4u + 1u] = float4(worldMax, 0.0);
-        InstanceWorldBounds[instance * 4u + 2u] = float4(previousMin + Scene.PreviousWorldTranslation, 0.0);
-        InstanceWorldBounds[instance * 4u + 3u] = float4(previousMax + Scene.PreviousWorldTranslation, 0.0);
+        InstanceWorldBounds[instance * 4u] = float4(worldMin, float(1u - finite));
+        InstanceWorldBounds[instance * 4u + 1u] = float4(worldMax, float(1u - finite));
     }
     if (Scene.UseInstanceGroups == 0u)
         return;
@@ -105,4 +90,14 @@ void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex
         SceneChunks[group.x * 2u] = float4(ChunkMin[0], float(ChunkFinite[0]));
         SceneChunks[group.x * 2u + 1u] = float4(ChunkMax[0], 0.0);
     }
+}
+
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void CommitClusterSceneBounds(uint3 thread : SV_DispatchThreadID)
+{
+    uint row = thread.x;
+    if (row >= Scene.InstanceCount) return;
+    InstanceWorldBounds[row * 4u + 2u] = InstanceWorldBounds[row * 4u];
+    InstanceWorldBounds[row * 4u + 3u] = InstanceWorldBounds[row * 4u + 1u];
 }

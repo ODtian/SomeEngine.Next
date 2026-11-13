@@ -18,7 +18,7 @@ public sealed class RetainedUpdateTests
         {
             GraphBufferId left = edit.CreateBuffer(new BufferDesc(4, BufferUsages.CopyDestination | BufferUsages.CopySource));
             GraphBufferId right = edit.CreateBuffer(new BufferDesc(4, BufferUsages.CopyDestination | BufferUsages.CopySource));
-            edit.AddCopyFramePass("shared producer", PassQueueSelection.Exact(support.GraphicsQueue), recorded,
+            edit.AddCopyFramePass("shared producer", PassQueueSelection.OnQueue(support.GraphicsQueue), recorded,
                 new PassOptions(Recording: PassRecordingMode.CallingThread),
                 (ref PassDefinition pass, ref int[] _) =>
                 {
@@ -26,7 +26,7 @@ public sealed class RetainedUpdateTests
                     pass.Write(right, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
                 },
                 static (ref CopyPassCommandScope _, in int[] counts) => counts[0]++);
-            edit.AddCopyFramePass("shared consumer", PassQueueSelection.Exact(support.GraphicsQueue), recorded,
+            edit.AddCopyFramePass("shared consumer", PassQueueSelection.OnQueue(support.GraphicsQueue), recorded,
                 new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread),
                 (ref PassDefinition pass, ref int[] _) =>
                 {
@@ -80,7 +80,7 @@ public sealed class RetainedUpdateTests
                     passes.RemoveAt(passes.Count - 1);
                 }
                 while (passes.Count < requested)
-                    passes.Add(edit.AddCopyFramePass("grow and remove", PassQueueSelection.Exact(support.GraphicsQueue), recorded,
+                    passes.Add(edit.AddCopyFramePass("grow and remove", PassQueueSelection.OnQueue(support.GraphicsQueue), recorded,
                         new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread),
                         static (ref PassDefinition _, ref int[] _) => { },
                         static (ref CopyPassCommandScope _, in int[] counts) => counts[0]++));
@@ -105,11 +105,11 @@ public sealed class RetainedUpdateTests
         GraphPassId reader, disabled;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            reader = edit.AddCopyPass<List<int>, int>("retained callback data", PassQueueSelection.Exact(support.GraphicsQueue),
+            reader = edit.AddCopyPass<List<int>, int>("retained callback data", PassQueueSelection.OnQueue(support.GraphicsQueue),
                 observed, new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition _, ref List<int> _) => { },
                 static (ref CopyPassCommandScope _, in List<int> values, in int data) => values.Add(data));
-            disabled = edit.AddCopyPass<byte, byte>("retained disabled state", PassQueueSelection.Exact(support.GraphicsQueue),
+            disabled = edit.AddCopyPass<byte, byte>("retained disabled state", PassQueueSelection.OnQueue(support.GraphicsQueue),
                 0, new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition _, ref byte _) => { },
                 static (ref CopyPassCommandScope _, in byte _, in byte _) => throw new InvalidOperationException("Disabled pass recorded."));
@@ -144,13 +144,12 @@ public sealed class RetainedUpdateTests
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
             GraphBufferId buffer = edit.CreatePersistentBuffer(new BufferDesc(4, BufferUsages.CopySource | BufferUsages.CopyDestination));
-            GraphBufferId result = edit.RegisterExternalBuffer(output,
-                [new BufferBoundaryState(new(0, 4), output.InitialSync, output.InitialAccess, ResourceContentState.Undefined)]);
-            initialize = edit.AddCopyFramePass("initialize before consumers", PassQueueSelection.Exact(support.GraphicsQueue), buffer, default,
+            GraphBufferId result = edit.RegisterExternalBuffer(output);
+            initialize = edit.AddCopyFramePass("initialize before consumers", PassQueueSelection.OnQueue(support.GraphicsQueue), buffer, default,
                 static (ref PassDefinition pass, ref GraphBufferId resource) => pass.Write(resource, BufferRange.Whole,
                     PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete),
                 static (ref CopyPassCommandScope commands, in GraphBufferId resource) => commands.ClearBuffer(commands.GetBuffer(resource), BufferRange.Whole, 0x12345678));
-            consume = edit.AddCopyFramePass("consume initialized contents", PassQueueSelection.Exact(support.GraphicsQueue),
+            consume = edit.AddCopyFramePass("consume initialized contents", PassQueueSelection.OnQueue(support.GraphicsQueue),
                 (Buffer: buffer, Result: result), default,
                 static (ref PassDefinition pass, ref (GraphBufferId Buffer, GraphBufferId Result) resources) =>
                 {
@@ -166,13 +165,13 @@ public sealed class RetainedUpdateTests
         {
             using (RenderGraphFrame frame = graph.BeginFrame())
             {
-                GraphPassId prerequisite = frame.AddCopyPass("late prerequisite", PassQueueSelection.Exact(support.GraphicsQueue),
+                GraphPassId prerequisite = frame.AddCopyPass("late prerequisite", PassQueueSelection.OnQueue(support.GraphicsQueue),
                     (byte)0, new PassOptions(Culling: culledCycle ? PassCullingMode.Cullable : PassCullingMode.NeverCull),
                     static (ref PassDefinition _, ref byte _) => { },
                     static (ref CopyPassCommandScope _, in byte _) => { });
                 if (culledCycle)
                 {
-                    GraphPassId second = frame.AddCopyPass("culled prerequisite", PassQueueSelection.Exact(support.GraphicsQueue),
+                    GraphPassId second = frame.AddCopyPass("culled prerequisite", PassQueueSelection.OnQueue(support.GraphicsQueue),
                         (byte)0, default,
                         static (ref PassDefinition _, ref byte _) => { },
                         static (ref CopyPassCommandScope _, in byte _) => { });
@@ -195,7 +194,7 @@ public sealed class RetainedUpdateTests
 
 
     private static GraphPassId AddPass(RenderGraphEdit edit, Queue queue, string label) =>
-        edit.AddCopyPass<byte, byte>(label, PassQueueSelection.Exact(queue), 0,
+        edit.AddCopyPass<byte, byte>(label, PassQueueSelection.OnQueue(queue), 0,
             new PassOptions(Culling: PassCullingMode.NeverCull),
             static (ref PassDefinition _, ref byte _) => { },
             static (ref CopyPassCommandScope _, in byte _, in byte _) => { });

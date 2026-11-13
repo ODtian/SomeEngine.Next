@@ -16,33 +16,39 @@ public sealed class SlangShaderData
         Global = global;
         Session = session;
         Code = code;
-        RetainSession(session, code);
+        RetainSession(global, session, code);
     }
 
     public IGlobalSession Global { get; }
     public ISession Session { get; }
     public IComponentType Code { get; }
 
-    /// <summary>Keeps a component's native session alive through its COM wrapper's finalizer.</summary>
-    public static void RetainSession(ISession session, IComponentType component)
+    /// <summary>Keeps a component's native session and global session alive through its COM wrapper's finalizer.</summary>
+    public static void RetainSession(IGlobalSession global, ISession session, IComponentType component)
     {
-        SessionReference reference = s_sessions.GetValue(session, static value => new SessionReference(value));
+        SessionReference reference = s_sessions.GetValue(session, value => new SessionReference(global, value));
         s_components.GetValue(component, _ => reference);
     }
 
-    // Components borrow their session's Linkage. Associate the native reference
+    // Components borrow their session's Linkage. Associate the native references
     // with every COM wrapper so it follows that wrapper across GC generations.
-    // SafeHandle releases it after the last wrapper's ordinary finalizer.
+    // SafeHandle releases the session, then its global, after the last wrapper's ordinary finalizer.
     private sealed unsafe class SessionReference : SafeHandle
     {
-        internal SessionReference(ISession session) : base(IntPtr.Zero, ownsHandle: true) =>
+        private readonly nint _globalSession;
+
+        internal SessionReference(IGlobalSession global, ISession session) : base(IntPtr.Zero, ownsHandle: true)
+        {
+            _globalSession = (nint)ComInterfaceMarshaller<IGlobalSession>.ConvertToUnmanaged(global);
             SetHandle((nint)ComInterfaceMarshaller<ISession>.ConvertToUnmanaged(session));
+        }
 
         public override bool IsInvalid => handle == IntPtr.Zero;
 
         protected override bool ReleaseHandle()
         {
             Marshal.Release(handle);
+            Marshal.Release(_globalSession);
             return true;
         }
     }

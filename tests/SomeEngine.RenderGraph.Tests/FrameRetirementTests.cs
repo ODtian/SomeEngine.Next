@@ -59,12 +59,17 @@ public sealed class FrameRetirementTests
         frame.ObserveExecution(new FailingCallback());
         foreach (DisposalCount value in objects) frame.RetireAfterFrame(value);
         bool failed = false;
-        try { frame.Dispose(); }
+        try { frame.Execute(); }
         catch (AggregateException) { failed = true; }
         Assert.True(failed);
         graph.CollectCompleted();
         Assert.All(objects, value => Assert.Equal(1, value.Count));
-        using RenderGraphFrame nextFrame = graph.BeginFrame();
+        Assert.True(graph.IsLost);
+        graph.Dispose();
+        Assert.True(graph.IsDisposed);
+        var retired = new DisposalCount();
+        graph.RetireAfterSubmittedFrames(retired);
+        Assert.Equal(1, retired.Count);
     }
 
     private sealed class DisposalCount : IDisposable
@@ -75,7 +80,7 @@ public sealed class FrameRetirementTests
 
     private sealed class FailingCallback : IRenderGraphFrameExecutionObserver
     {
-        public void OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+        public void OnFrameSubmitted(in RenderGraphSubmission submission)
             => throw new InvalidOperationException("Test callback failed.");
     }
 }

@@ -4,15 +4,8 @@ internal sealed unsafe partial class D3D12Backend
 {
     private sealed partial class D3D12CommandContext
     {
-        internal void PrepareCaptures(
-            int resources,
-            int descriptors = 0,
-            int sparseGenerations = 0) =>
-            Recording.PrepareCaptures(resources, descriptors, sparseGenerations);
 
         internal void PrepareSwapchainUses(int count) => Recording.PrepareSwapchainUses(count);
-
-        internal void PrepareBundles(int count) => Recording.PrepareBundles(count);
 
         internal bool TryCapturePersistentParameterData(
             D3D12PersistentParameterData data) =>
@@ -59,10 +52,10 @@ internal sealed unsafe partial class D3D12Backend
             uint rootParameter,
             uint constantCount)
         {
-            int slot = EnsureRootStateCapacity(rootParameter);
+            int entry = EnsureRootStateCapacity(rootParameter);
             int byteCount = checked((int)(constantCount * sizeof(uint)));
-            if (_rootConstants[slot] is not byte[] values || values.Length != byteCount)
-                _rootConstants[slot] = new byte[byteCount];
+            if (_rootConstants[entry] is not byte[] values || values.Length != byteCount)
+                _rootConstants[entry] = new byte[byteCount];
         }
 
         internal void PrepareResolvedResources(int count)
@@ -104,7 +97,7 @@ internal sealed unsafe partial class D3D12Backend
         internal void ClearResolvedResources(int count) =>
             Array.Clear(_resolvedEncodeResources, 0, count);
 
-        internal void CaptureResolvedResources(int count)
+        internal void RecordResolvedSwapchainImages(int count)
         {
             try
             {
@@ -112,11 +105,8 @@ internal sealed unsafe partial class D3D12Backend
                 {
                     switch (_resolvedEncodeResources[index])
                     {
-                        case D3D12Buffer buffer:
-                            Capture(buffer);
-                            break;
                         case D3D12TextureResource texture:
-                            Capture(texture);
+                            Recording.RecordSwapchainUse(texture);
                             break;
                     }
                 }
@@ -129,16 +119,8 @@ internal sealed unsafe partial class D3D12Backend
 
     }
 
-    private sealed partial class D3D12CommandSlot
+    private sealed partial class D3D12CommandBuffer
     {
-        internal void PrepareCaptures(
-            int resourceCount,
-            int descriptorCount,
-            int sparseGenerationCount) =>
-            _captures.PrepareCapacity(
-                resourceCount,
-                descriptorCount,
-                sparseGenerationCount);
 
         internal void PrepareSwapchainUses(int count)
         {
@@ -149,15 +131,6 @@ internal sealed unsafe partial class D3D12Backend
                 _swapchainUseCapacity = _swapchainUses.EnsureCapacity(required);
             if (_swapchainSequences.Length < count)
                 Array.Resize(ref _swapchainSequences, count);
-        }
-
-        internal void PrepareBundles(int count)
-        {
-            if (count == 0)
-                return;
-            int required = checked(_capturedBundles.Count + count);
-            if (required > _capturedBundleCapacity)
-                _capturedBundleCapacity = _capturedBundles.EnsureCapacity(required);
         }
 
         internal bool TryCapturePersistentParameterData(
@@ -172,7 +145,7 @@ internal sealed unsafe partial class D3D12Backend
                     _capturedParameterData.Remove(data);
                     return false;
                 }
-                CaptureSwapchainUses(data.SwapchainImages);
+                RecordSwapchainUses(data.SwapchainImages);
                 return true;
             }
             catch
@@ -210,12 +183,5 @@ internal sealed unsafe partial class D3D12Backend
             uint depthStencilCount) =>
             PrepareTemporaryAttachmentCapacity(renderTargetCount, depthStencilCount);
 
-        internal void PrepareInitialCaptureCapacity(uint capacity)
-        {
-            if (capacity == 0)
-                return;
-            int resolved = checked((int)capacity);
-            _captures.PrepareCapacity(resolved, resolved, resolved);
-        }
     }
 }

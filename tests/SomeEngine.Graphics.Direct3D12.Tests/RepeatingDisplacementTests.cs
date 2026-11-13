@@ -83,7 +83,7 @@ public sealed class RepeatingDisplacementTests(D3D12TestCompiler shaderCompiler)
             using BufferUav outputView = backend.CreateBufferUav(device, new(output, BufferRange.Whole, StructureStride: 16));
             using Buffer readback = backend.CreateBuffer(device, new(bytes, BufferUsages.CopyDestination), MemoryType.Readback);
             using CommandContext context = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1));
-            backend.Begin(context, new CommandRecordingDesc(16, 4, 16));
+            backend.Begin(context, new CommandRecordingDesc(16, 4));
             backend.Barrier(context, new TextureBarrier(texture, range, PipelineSync.None, PipelineSync.Copy,
                 ResourceAccess.NoAccess, ResourceAccess.CopyDestination, TextureLayout.Undefined, TextureLayout.CopyDestination));
             backend.CopyBufferToTexture(context, new(upload, 0, pitch, (uint)height, texture, 0, 0,

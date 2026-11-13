@@ -33,12 +33,12 @@ public ref struct RasterPassCommandScope
         _frame.Executor.ValidateBindings(_passIndex, bindings.Resources);
         _frame.Backend.SetTransientParameterBindings(_context, bindings);
     }
-    public void SetVertexBuffers(uint firstSlot, scoped ReadOnlySpan<VertexBufferBinding> bindings)
+    public void SetVertexBuffers(uint firstBindingIndex, scoped ReadOnlySpan<VertexBufferBinding> bindings)
     {
         foreach (ref readonly VertexBufferBinding binding in bindings)
             _frame.Executor.ValidateBuffer(_passIndex, binding.Buffer,
                 new BufferRange(binding.Offset, binding.Size), write: false);
-        _frame.Backend.SetVertexBuffers(_context, firstSlot, bindings);
+        _frame.Backend.SetVertexBuffers(_context, firstBindingIndex, bindings);
     }
     public void SetIndexBuffer(in IndexBufferBinding binding)
     {
@@ -46,7 +46,7 @@ public ref struct RasterPassCommandScope
             new BufferRange(binding.Offset, binding.Size), write: false);
         _frame.Backend.SetIndexBuffer(_context, binding);
     }
-    public void SetStreamOutputBuffers(uint firstSlot, ReadOnlySpan<StreamOutputBufferBinding> bindings)
+    public void SetStreamOutputBuffers(uint firstBindingIndex, ReadOnlySpan<StreamOutputBufferBinding> bindings)
     {
         foreach (ref readonly StreamOutputBufferBinding binding in bindings)
         {
@@ -56,7 +56,7 @@ public ref struct RasterPassCommandScope
                 _frame.Executor.ValidateBuffer(_passIndex, binding.FilledSizeBuffer,
                     new BufferRange(binding.FilledSizeOffset, sizeof(uint)), write: true);
         }
-        _frame.Backend.SetStreamOutputBuffers(_context, firstSlot, bindings);
+        _frame.Backend.SetStreamOutputBuffers(_context, firstBindingIndex, bindings);
     }
     public void SetViewports(scoped ReadOnlySpan<Viewport> viewports) =>
         _frame.Backend.SetViewports(_context, viewports);
@@ -483,12 +483,12 @@ public ref struct GeneralPassCommandScope
         _frame.Executor.ValidateBindings(_passIndex, bindings.Resources);
         _frame.Backend.SetTransientParameterBindings(_context, bindings);
     }
-    public void SetVertexBuffers(uint firstSlot, scoped ReadOnlySpan<VertexBufferBinding> bindings)
+    public void SetVertexBuffers(uint firstBindingIndex, scoped ReadOnlySpan<VertexBufferBinding> bindings)
     {
         foreach (ref readonly VertexBufferBinding binding in bindings)
             _frame.Executor.ValidateBuffer(_passIndex, binding.Buffer,
                 new BufferRange(binding.Offset, binding.Size), write: false);
-        _frame.Backend.SetVertexBuffers(_context, firstSlot, bindings);
+        _frame.Backend.SetVertexBuffers(_context, firstBindingIndex, bindings);
     }
     public void SetIndexBuffer(in IndexBufferBinding binding)
     {
@@ -496,7 +496,7 @@ public ref struct GeneralPassCommandScope
             new BufferRange(binding.Offset, binding.Size), write: false);
         _frame.Backend.SetIndexBuffer(_context, binding);
     }
-    public void SetStreamOutputBuffers(uint firstSlot, ReadOnlySpan<StreamOutputBufferBinding> bindings)
+    public void SetStreamOutputBuffers(uint firstBindingIndex, ReadOnlySpan<StreamOutputBufferBinding> bindings)
     {
         foreach (ref readonly StreamOutputBufferBinding binding in bindings)
         {
@@ -506,7 +506,7 @@ public ref struct GeneralPassCommandScope
                 _frame.Executor.ValidateBuffer(_passIndex, binding.FilledSizeBuffer,
                     new BufferRange(binding.FilledSizeOffset, sizeof(uint)), write: true);
         }
-        _frame.Backend.SetStreamOutputBuffers(_context, firstSlot, bindings);
+        _frame.Backend.SetStreamOutputBuffers(_context, firstBindingIndex, bindings);
     }
     public void SetViewports(scoped ReadOnlySpan<Viewport> viewports) => _frame.Backend.SetViewports(_context, viewports);
     public void SetScissors(scoped ReadOnlySpan<ScissorRect> scissors) => _frame.Backend.SetScissors(_context, scissors);

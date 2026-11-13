@@ -1,36 +1,12 @@
-#include "shade_bin_common.slang"
-#include "resource_effects.slang"
-
-ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
-ByteAddressBuffer InstanceData;
+#include "shade_bin_inputs.slang"
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> BinCounts;
-ConstantBuffer<ShadeBinUniforms> Uniforms;
-Texture2DArray<uint> VisBuffer;
-StructuredBuffer<VisibleCluster> VisibleClusters;
-StructuredBuffer<uint> ShadeSlots;
-ByteAddressBuffer PageHeap;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<ShadePixelWork> PixelCoordinates;
 
-
-void CountShadeBinsCore(uint3 threadId, uint lane)
+void CountShadeBinsCore<TInput : IShadeBinInput>(TInput input, uint3 group, uint lane)
 {
-    uint bin = 0xFFFFFFFFu;
-    if (threadId.x < Uniforms.ScreenWidth && threadId.y < Uniforms.ScreenHeight)
-    {
-        uint visibility = VisBuffer[threadId];
-        if (!IsVisBufferEmpty(visibility))
-        {
-            DrawRequest cluster = VisibleClusterRequest(VisibleClusters[DecodeVisBufferVisibleClusterIndex(visibility)]);
-            if (DrawRequestViewIndex(cluster) == threadId.z)
-            {
-                uint slotOffset = MaterialSlotOffset(InstanceData, InstanceProperties, cluster.InstanceID);
-                bin = FindShadeBin(ShadeSlots, PageHeap, Uniforms, slotOffset, cluster,
-                    DecodeVisBufferTriangleID(visibility));
-            }
-        }
-    }
+    uint bin = input.ReadBin(group, lane);
     uint mask;
     bool fullTile;
     if (!ClassifyShadeTile(bin, lane, mask, fullTile)) return;
@@ -51,8 +27,7 @@ void CountShadeBinsCore(uint3 threadId, uint lane)
     // Each tile replaces sixteen quads, so the two ranges cannot overlap.
     uint offset = bin * Uniforms.BinItemCapacity +
         (fullTile ? item : Uniforms.BinItemCapacity - 1u - item);
-    uint2 topLeft = fullTile ? threadId.xy & ~7u.xx : threadId.xy & ~1u.xx;
-    uint coordinate = (threadId.z * Uniforms.ScreenHeight + topLeft.y) * Uniforms.ScreenWidth + topLeft.x;
+    uint coordinate = input.WorkIndex(group, lane, fullTile);
     ShadePixelWork work;
     work.PixelIndex = coordinate;
     work.Mask = mask;
@@ -61,7 +36,28 @@ void CountShadeBinsCore(uint3 threadId, uint lane)
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
-void CountShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_GroupIndex)
+void CountShadeBins(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
 {
-    CountShadeBinsCore(threadId, lane);
+    CountShadeBinsCore(VisibilityShadeBinInput(), group, lane);
+}
+
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void CountLayerShadeBins(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
+{
+    uint tile = group.y * 65535u + group.x;
+    if (tile >= LayerFragmentStore.TileCount) return;
+    for (uint block = LayerTileHeads[tile]; block != LAYER_BLOCK_EMPTY;)
+    {
+        LayerBlockHeader header = LoadLayerBlock(block);
+        for (uint record = 0u; record < header.Count; record += 64u)
+        {
+            LayerShadeBinInput input;
+            input.BaseIndex = block * LayerFragmentStore.BlockSize + record;
+            input.Count = min(header.Count - record, 64u);
+            CountShadeBinsCore(input, group, lane);
+            GroupMemoryBarrierWithGroupSync();
+        }
+        block = header.Next;
+    }
 }

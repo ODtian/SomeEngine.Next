@@ -1,6 +1,5 @@
 using SomeEngine.Graphics;
 using SomeEngine.Graphics.Direct3D12;
-using SomeEngine.Render.Frame;
 using SomeEngine.Render.Systems;
 
 namespace SomeEngine.Render.Tests;
@@ -10,7 +9,8 @@ public sealed class RenderTestDevice : IDisposable
     public IGraphicsBackend Backend { get; } = D3D12GraphicsBackend.Create();
     public Device Device { get; }
     public RenderDevice RenderDevice { get; }
-    public RenderFrameCoordinator Coordinator { get; }
+    public global::SomeEngine.RenderGraph.RenderGraph Graph { get; }
+    public RenderPipelines Pipelines { get; }
 
     public RenderTestDevice() : this(DeviceFeatures.None) { }
 
@@ -23,28 +23,22 @@ public sealed class RenderTestDevice : IDisposable
         AdapterInfo warp = adapters.First(adapter => !adapter.HardwareAccelerated);
         Device = Backend.CreateDevice(new DeviceDesc(warp.Id, queues ?? [new DeviceQueueDesc(QueueType.Graphics)],
             requiredFeatures: features, label: "Render public behavior tests"));
-        RenderDevice = new RenderDevice(Backend, Device);
-        Coordinator = new RenderFrameCoordinator(RenderDevice);
+        Graph = new(Backend, Device, [Backend.GetQueue(Device, QueueType.Graphics)]);
+        Pipelines = new(Backend, Device);
+        RenderDevice = new RenderDevice(Graph, Pipelines);
     }
 
     public bool Apply(RenderExtractionSystems extraction, RenderWorld world)
     {
-        var prepare = new RenderPrepareSystems(world, extraction);
-        Assert.True(Coordinator.TryBeginPrepare(out var scope));
-        using (scope)
-        {
-            bool changed;
-            try { changed = prepare.ApplyExtraction(scope); }
-            finally { prepare.Shutdown(scope); prepare.Dispose(); }
-            scope.Commit();
-            return changed;
-        }
+        using var prepare = new RenderPrepareSystems(world, extraction);
+        return prepare.ApplyExtraction();
     }
 
     public void Dispose()
     {
-        Coordinator.Dispose();
         RenderDevice.Dispose();
+        Graph.Dispose();
+        Pipelines.Dispose();
         Device.Dispose();
         Backend.Dispose();
     }

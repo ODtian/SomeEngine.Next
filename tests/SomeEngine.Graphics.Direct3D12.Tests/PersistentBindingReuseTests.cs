@@ -48,14 +48,14 @@ public sealed class PersistentBindingReuseTests(D3D12TestCompiler shaderCompiler
             new ParameterBlockBindings(pairLayout,
                 [ResourceBinding.WritableBuffer(firstView), ResourceBinding.WritableBuffer(secondView)], []));
         using CommandContext context = backend.CreateCommandContext(device,
-            new CommandContextDesc(QueueType.Compute, 0, InitialSlotCount: 1));
+            new CommandContextDesc(QueueType.Compute, 0, InitialBufferCount: 1));
 
         // Reuse the same context across recordings with different parameter layouts.
-        backend.Begin(context, new CommandRecordingDesc(4, 0, 8));
+        backend.Begin(context, new CommandRecordingDesc(4, 0));
         backend.SetPipeline(context, pair);
         backend.SetPersistentParameterBindings(context, bindings);
         backend.Discard(context);
-        backend.Begin(context, new CommandRecordingDesc(4, 0, 8));
+        backend.Begin(context, new CommandRecordingDesc(4, 0));
         backend.SetPipeline(context, single);
         backend.SetTransientParameterBindings(context,
             new ParameterBlockBindings(singleLayout, [ResourceBinding.WritableBuffer(firstView)], []));
@@ -63,7 +63,7 @@ public sealed class PersistentBindingReuseTests(D3D12TestCompiler shaderCompiler
             new ParameterBlockBindings(singleLayout, [ResourceBinding.WritableBuffer(alternateView)], []));
         backend.Discard(context);
 
-        backend.Begin(context, new CommandRecordingDesc(4, 0, 8));
+        backend.Begin(context, new CommandRecordingDesc(4, 0));
         foreach (Buffer buffer in new[] { first, second, alternate })
         {
             backend.Barrier(context, new BufferBarrier(buffer, PipelineSync.None, PipelineSync.Copy,

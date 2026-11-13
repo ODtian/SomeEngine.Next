@@ -80,7 +80,7 @@ bool ClaimReadyClusters(uint nodesRemaining, out uint batch, out uint count)
     return true;
 }
 
-void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleViews = true)
+void CullPersistentWork(uint thread, bool targetFilters, bool multipleViews, bool layerTiles)
 {
     if (thread == 0u)
     {
@@ -118,7 +118,7 @@ void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleVie
             uint child = thread & (CLUSTER_BVH_FANOUT - 1u);
             uint viewLane = (thread / CLUSTER_BVH_FANOUT) % viewLanes;
             ProcessTraversalNode(WorkNodes[parent], parentIndex < count, child,
-                viewLane, viewLanes, parentIndex * CLUSTER_BVH_FANOUT + child, targetFilters, multipleViews);
+                viewLane, viewLanes, parentIndex * CLUSTER_BVH_FANOUT + child, targetFilters, multipleViews, layerTiles);
             DeviceMemoryBarrierWithGroupSync();
             if (thread == 0u)
             {
@@ -132,7 +132,7 @@ void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleVie
         {
             DeviceMemoryBarrier();
             if (thread == 0u) ClusterBatchReady[WorkClusterBatch] = 0u;
-            if (thread < count) CullClusterCandidate(WorkClusterBatch * CLUSTER_BATCH_SIZE + thread, targetFilters);
+            if (thread < count) CullClusterCandidate(WorkClusterBatch * CLUSTER_BATCH_SIZE + thread, targetFilters, layerTiles);
         }
         else if (WorkFinished)
             break;
@@ -142,7 +142,7 @@ void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleVie
 // View capabilities select an offline specialization of this shared traversal.
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void CullClusterWork<let targetFilters : bool, let multipleViews : bool>(uint groupThreadIndex : SV_GroupThreadID)
+void CullClusterWork<let targetFilters : bool, let multipleViews : bool, let layerTiles : bool>(uint groupThreadIndex : SV_GroupThreadID)
 {
-    CullPersistentWork(groupThreadIndex, targetFilters, multipleViews);
+    CullPersistentWork(groupThreadIndex, targetFilters, multipleViews, layerTiles);
 }

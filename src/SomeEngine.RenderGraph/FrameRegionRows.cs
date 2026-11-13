@@ -1,21 +1,19 @@
 namespace SomeEngine.RenderGraph;
 
-internal sealed partial class FrameExecutor
+internal sealed partial class FrameRecording
 {
-    private readonly record struct RegionPassPosition(GraphIdentity Region, int Ordinal);
     private readonly record struct PassAccessPosition(int Pass, int Ordinal);
 
-    private readonly Dictionary<RegionPassPosition, int> _regionPassRows = [];
+    private readonly Dictionary<FramePassPosition, int> _regionPassRows = [];
     private readonly Dictionary<PassAccessPosition, int> _frameAccessRows = [];
-    private readonly HashSet<RegionPassPosition> _currentRegionPasses = [];
+    private readonly HashSet<FramePassPosition> _currentRegionPasses = [];
     private readonly HashSet<PassAccessPosition> _currentFrameAccesses = [];
-    private readonly Stack<int> _freePassRows = new();
     private readonly Stack<int> _freeAccessRows = new();
-    private readonly List<RegionPassPosition> _removedRegionPasses = [];
+    private readonly List<FramePassPosition> _removedRegionPasses = [];
     private readonly List<PassAccessPosition> _removedFrameAccesses = [];
     private int[] _dynamicPassRows = [], _dynamicAccessRows = [];
-    private RegionPassPosition[] _dynamicPassPositions = [];
-    private readonly Dictionary<GraphIdentity, int> _regionPassCounts = [];
+    private FramePassPosition[] _dynamicPassPositions = [];
+    private readonly Dictionary<(GraphIdentity, FrameSectionPosition), int> _regionPassCounts = [];
     private PassAccessPosition[] _dynamicAccessPositions = [];
     private readonly Dictionary<int, int> _dynamicAccessCounts = [];
 
@@ -34,23 +32,24 @@ internal sealed partial class FrameExecutor
         for (int index = 0; index < _frame.DynamicPasses.Count; index++)
         {
             FramePass pass = _frame.DynamicPasses[index];
-            int ordinal = _regionPassCounts.GetValueOrDefault(pass.Region);
-            _regionPassCounts[pass.Region] = ordinal + 1;
-            var position = new RegionPassPosition(pass.Region, ordinal);
+            var section = (pass.Region, pass.SectionPosition);
+            int ordinal = _regionPassCounts.GetValueOrDefault(section);
+            _regionPassCounts[section] = ordinal + 1;
+            var position = new FramePassPosition(pass.Region, pass.SectionPosition, ordinal);
             _dynamicPassPositions[index] = position;
             _currentRegionPasses.Add(position);
         }
         _removedRegionPasses.Clear();
         foreach (var pair in _regionPassRows)
             if (!_currentRegionPasses.Contains(pair.Key)) _removedRegionPasses.Add(pair.Key);
-        foreach (RegionPassPosition position in _removedRegionPasses)
+        foreach (FramePassPosition position in _removedRegionPasses)
         {
             int row = _regionPassRows[position];
             _regionPassRows.Remove(position);
             RemovePassRow(row);
         }
 
-        if (!_rowsReady)
+        if (!HasRows)
             foreach (GraphIdentity identity in _frame.StructureIndex.PassIds) AddPersistentPassRow(identity);
         else
             foreach (GraphIdentity identity in _rowChanges.Passes)
@@ -59,32 +58,32 @@ internal sealed partial class FrameExecutor
         EnsureCapacity(ref _dynamicPassRows, _frame.DynamicPasses.Count);
         for (int index = 0; index < _frame.DynamicPasses.Count; index++)
         {
-            RegionPassPosition position = _dynamicPassPositions[index];
+            FramePassPosition position = _dynamicPassPositions[index];
             if (!_regionPassRows.TryGetValue(position, out int row))
             {
-                row = AddPassRow();
+                row = MaterializePassRow(_frame.Graph.Schedule.GetFramePassRow(position));
                 _regionPassRows.Add(position, row);
             }
             _dynamicPassRows[index] = row;
         }
+        MaterializePassRow(_frame.Graph.Schedule.PassRowCount - 1);
     }
 
     private void AddPersistentPassRow(GraphIdentity identity)
     {
-        if (!_passIndices.ContainsKey(identity)) _passIndices.Add(identity, AddPassRow());
+        if (!_passIndices.ContainsKey(identity))
+            _passIndices.Add(identity, MaterializePassRow(_frame.Graph.Schedule.GetPassRow(identity)));
     }
 
-    private int AddPassRow()
+    private int MaterializePassRow(int row)
     {
-        if (_freePassRows.TryPop(out int row)) return row;
-        _passes.Add(default);
-        return _passes.Count - 1;
+        while (_passes.Count <= row) _passes.Add(default);
+        return row;
     }
 
     private void RemovePassRow(int row)
     {
         SetPassRow(row, default);
-        _freePassRows.Push(row);
     }
 
     private void PrepareAccessRows()
@@ -116,7 +115,7 @@ internal sealed partial class FrameExecutor
             RemoveAccessRow(row);
         }
 
-        if (!_rowsReady)
+        if (!HasRows)
             foreach (GraphIdentity identity in _frame.StructureIndex.AccessIds) AddPersistentAccessRow(identity);
         else
             foreach (GraphIdentity identity in _rowChanges.Accesses)
@@ -157,7 +156,7 @@ internal sealed partial class FrameExecutor
     private List<int> CollectChangedRows<T>(GraphRows<T> source, HashSet<GraphIdentity> changes)
     {
         _rowIndexScratch.Clear();
-        if (!_rowsReady)
+        if (!HasRows)
             for (int index = 0; index < source.Count; index++) _rowIndexScratch.Add(index);
         else
             foreach (GraphIdentity identity in changes)

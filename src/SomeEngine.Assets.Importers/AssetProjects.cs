@@ -8,8 +8,9 @@ public static class AssetProjects
     public static AssetProject Create(string projectRoot,
         IReadOnlyList<string>? shaderIncludeDirectories = null,
         IServiceCollection? importers = null,
-        string? capabilitiesVersion = null)
+        string? capabilitiesVersion = null,
+        IReadOnlyList<SlangShaderSharp.SlangCompileTarget>? shaderTargets = null)
         => new(projectRoot,
             [StandardGltfSceneImporter.CreateSourceImporter(importers, capabilitiesVersion)],
-            shaderIncludeDirectories: shaderIncludeDirectories);
+            shaderIncludeDirectories: shaderIncludeDirectories, shaderTargets: shaderTargets);
 }

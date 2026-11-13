@@ -25,8 +25,9 @@ public sealed class RenderDeviceTextureTests
         if (!OperatingSystem.IsWindows()) return;
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "Padded texture rows");
-        using var renderDevice = new RenderDevice(backend, device);
         using var graph = CreateGraph(backend, device);
+        using var renderDevicePipelines = new RenderPipelines(backend, device);
+        using var renderDevice = new RenderDevice(graph, renderDevicePipelines);
         var description = new TextureDesc(GraphicsTextureDimension.Texture2D,
             3, 2, 1, 1, 1, 1, Format.R8UNorm,
             TextureUsages.Sampled | TextureUsages.CopyDestination | TextureUsages.CopySource);
@@ -40,14 +41,20 @@ public sealed class RenderDeviceTextureTests
             GraphicsTextureViewDimension.Texture2D);
         using SomeEngine.Graphics.Buffer result = backend.CreateBuffer(device,
             new BufferDesc(512, BufferUsages.CopyDestination), MemoryType.Readback);
+        GraphBufferId resultGraphId;
+        using (RenderGraphEdit registration = graph.BeginEdit())
+        {
+            resultGraphId = registration.RegisterExternalBuffer(result);
+            registration.Commit();
+        }
+
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         for (int frameIndex = 0; frameIndex < 3; frameIndex++)
         {
             RenderGraphFrame frame = graph.BeginFrame();
             try
             {
-                GraphBufferId destination = frame.Import(result,
-                    [new(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+                GraphBufferId destination = resultGraphId;
                 var sources = new GraphTextureId[1];
                 GraphPassId readback = frame.AddCopyPass("read padded texture rows",
                     PassQueueSelection.AnyOfType(QueueType.Graphics), (Textures: sources, Buffer: destination),
@@ -66,10 +73,10 @@ public sealed class RenderDeviceTextureTests
                     PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
                 if (frameIndex == 0) continue;
                 int count = frame.Execute(completions);
-                renderDevice.TrackSubmission(completions.AsSpan(0, count));
+
             }
             finally { frame.Dispose(); }
-            renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+            renderDevice.Graph.WaitForFrame(renderDevice.Graph.LastSubmittedFrame, TimeSpan.FromSeconds(10));
             using MappedBuffer mapping = backend.Map(result, MapType.Read, BufferRange.Whole);
             mapping.Invalidate(mapping.Range);
             Assert.Equal(new byte[] { 10, 11, 12 }, mapping.Bytes[..3].ToArray());
@@ -83,8 +90,9 @@ public sealed class RenderDeviceTextureTests
         if (!OperatingSystem.IsWindows()) return;
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "Multiple texture transfers");
-        using var renderDevice = new RenderDevice(backend, device);
         using var graph = CreateGraph(backend, device);
+        using var renderDevicePipelines = new RenderPipelines(backend, device);
+        using var renderDevice = new RenderDevice(graph, renderDevicePipelines);
         var description = new TextureDesc(GraphicsTextureDimension.Texture2D,
             2, 1, 1, 1, 1, 1, Format.R8UNorm,
             TextureUsages.Sampled | TextureUsages.CopyDestination | TextureUsages.CopySource);
@@ -95,6 +103,13 @@ public sealed class RenderDeviceTextureTests
                 GraphicsTextureViewDimension.Texture2D);
         using SomeEngine.Graphics.Buffer result = backend.CreateBuffer(device,
             new BufferDesc((ulong)textures.Length * 512, BufferUsages.CopyDestination), MemoryType.Readback);
+        GraphBufferId resultGraphId;
+        using (RenderGraphEdit registration = graph.BeginEdit())
+        {
+            resultGraphId = registration.RegisterExternalBuffer(result);
+            registration.Commit();
+        }
+
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         try
         {
@@ -103,8 +118,7 @@ public sealed class RenderDeviceTextureTests
                 RenderGraphFrame frame = graph.BeginFrame();
                 try
                 {
-                    GraphBufferId destination = frame.Import(result,
-                        [new(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+                    GraphBufferId destination = resultGraphId;
                     var sources = new GraphTextureId[textures.Length];
                     GraphPassId readback = frame.AddCopyPass("read multiple textures",
                         PassQueueSelection.AnyOfType(QueueType.Graphics), (Textures: sources, Buffer: destination),
@@ -131,7 +145,7 @@ public sealed class RenderDeviceTextureTests
                     if (frameIndex != 0)
                     {
                         int count = frame.Execute(completions);
-                        renderDevice.TrackSubmission(completions.AsSpan(0, count));
+
                     }
                 }
                 finally
@@ -144,7 +158,7 @@ public sealed class RenderDeviceTextureTests
                         Assert.Throws<InvalidOperationException>(() => renderDevice.GetTextureSrv(texture));
                     continue;
                 }
-                renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+                renderDevice.Graph.WaitForFrame(renderDevice.Graph.LastSubmittedFrame, TimeSpan.FromSeconds(10));
                 using MappedBuffer mapping = backend.Map(result, MapType.Read, BufferRange.Whole);
                 mapping.Invalidate(mapping.Range);
                 for (int index = 0; index < textures.Length; index++)
@@ -175,8 +189,9 @@ public sealed class RenderDeviceTextureTests
         EngineTexture asset = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "RenderDevice cancel test");
-        using var renderDevice = new RenderDevice(backend, device);
         using var graph = CreateGraph(backend, device);
+        using var renderDevicePipelines = new RenderPipelines(backend, device);
+        using var renderDevice = new RenderDevice(graph, renderDevicePipelines);
 
         RhiTexture canceledBacking = CancelTextureFrame(graph, renderDevice, asset);
 
@@ -228,8 +243,9 @@ public sealed class RenderDeviceTextureTests
         await file.DisposeAsync();
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "RenderDevice BC test");
-        using var renderDevice = new RenderDevice(backend, device);
         using var graph = CreateGraph(backend, device);
+        using var renderDevicePipelines = new RenderPipelines(backend, device);
+        using var renderDevice = new RenderDevice(graph, renderDevicePipelines);
 
         _ = ExecuteTextureFrame(graph, renderDevice, asset);
 
@@ -251,8 +267,9 @@ public sealed class RenderDeviceTextureTests
 
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "RenderDevice first-use test");
-        using var renderDevice = new RenderDevice(backend, device);
         using var graph = CreateGraph(backend, device);
+        using var renderDevicePipelines = new RenderPipelines(backend, device);
+        using var renderDevice = new RenderDevice(graph, renderDevicePipelines);
 
         RhiTexture resource = ExecuteTextureFrame(graph, renderDevice, asset);
 
@@ -349,8 +366,12 @@ public sealed class RenderDeviceTextureTests
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device firstDevice = CreateWarpDevice(backend, "RenderDevice A");
         using Device secondDevice = CreateWarpDevice(backend, "RenderDevice B");
-        using var first = new RenderDevice(backend, firstDevice);
-        using var second = new RenderDevice(backend, secondDevice);
+        using var firstGraph = CreateGraph(backend, firstDevice);
+        using var firstPipelines = new RenderPipelines(backend, firstDevice);
+        using var first = new RenderDevice(firstGraph, firstPipelines);
+        using var secondGraph = CreateGraph(backend, secondDevice);
+        using var secondPipelines = new RenderPipelines(backend, secondDevice);
+        using var second = new RenderDevice(secondGraph, secondPipelines);
 
         RhiTexture firstTexture = first.GetTexture(asset);
         RhiTexture secondTexture = second.GetTexture(asset);
@@ -386,8 +407,9 @@ public sealed class RenderDeviceTextureTests
 
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "RenderDevice reload test");
-        using var renderDevice = new RenderDevice(backend, device);
         using var graph = CreateGraph(backend, device);
+        using var renderDevicePipelines = new RenderPipelines(backend, device);
+        using var renderDevice = new RenderDevice(graph, renderDevicePipelines);
 
         RhiTexture oldBacking = ExecuteTextureFrame(graph, renderDevice, asset);
         TextureSrv oldSrv = renderDevice.GetTextureSrv(asset);
@@ -417,7 +439,7 @@ public sealed class RenderDeviceTextureTests
         Assert.NotSame(oldUav, newUav);
         Assert.Same(newBacking, newSrv.Description.Texture);
         Assert.Same(newBacking, newUav.Description.Texture);
-        renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+        renderDevice.Graph.WaitForFrame(renderDevice.Graph.LastSubmittedFrame, TimeSpan.FromSeconds(10));
         graph.Dispose();
         renderDevice.CollectCompleted();
         Assert.Throws<ObjectDisposedException>(() => backend.CreateTextureSrv(device, new TextureSrvDesc(oldBacking,
@@ -435,8 +457,9 @@ public sealed class RenderDeviceTextureTests
         EngineTexture texture = await file.GetBlock<TextureBlock>().CreateAsync(file.Name);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "texture failed update");
-        using var renderDevice = new RenderDevice(backend, device);
         using var graph = CreateGraph(backend, device);
+        using var renderDevicePipelines = new RenderPipelines(backend, device);
+        using var renderDevice = new RenderDevice(graph, renderDevicePipelines);
         RhiTexture old = ExecuteTextureFrame(graph, renderDevice, texture);
         using var fields = SingleMipTexture("invalid upload", 4, 1, [3]);
         fields.GetBlock<TextureBlock>().MipTiles[0] = fields.GetBlock<TextureBlock>().MipTiles[0] with { RowPitch = 0, SlicePitch = 0 };
@@ -455,8 +478,9 @@ public sealed class RenderDeviceTextureTests
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "texture release");
-        using var renderDevice = new RenderDevice(backend, device);
         using var graph = CreateGraph(backend, device);
+        using var renderDevicePipelines = new RenderPipelines(backend, device);
+        using var renderDevice = new RenderDevice(graph, renderDevicePipelines);
         var description = new TextureDesc(GraphicsTextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,
             Format.R8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination, label: "generated");
         EngineTexture first = EngineTexture.Create(description,
@@ -483,8 +507,8 @@ public sealed class RenderDeviceTextureTests
             count = frame.Execute(completions);
         }
         finally { frame.Dispose(); }
-        renderDevice.TrackSubmission(completions.AsSpan(0, count));
-        renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+
+        renderDevice.Graph.WaitForFrame(renderDevice.Graph.LastSubmittedFrame, TimeSpan.FromSeconds(10));
         graph.Dispose();
         renderDevice.CollectCompleted();
         Assert.Throws<ObjectDisposedException>(() => backend.CreateTextureSrv(device, new TextureSrvDesc(resource,
@@ -512,13 +536,14 @@ public sealed class RenderDeviceTextureTests
             2, 2, depth, 1, layers, 1, Format.R8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination), tiles, view);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "texture shape");
-        using var renderDevice = new RenderDevice(backend, device);
         using var graph = CreateGraph(backend, device);
+        using var renderDevicePipelines = new RenderPipelines(backend, device);
+        using var renderDevice = new RenderDevice(graph, renderDevicePipelines);
         RhiTexture resource = ExecuteTextureFrame(graph, renderDevice, texture);
         Assert.Equal(layers, resource.Info.ArrayLayerCount);
         Assert.Equal(depth, resource.Info.Depth);
         Assert.Equal(view, renderDevice.GetTextureSrv(texture).Description.Dimension);
-        renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+        renderDevice.Graph.WaitForFrame(renderDevice.Graph.LastSubmittedFrame, TimeSpan.FromSeconds(10));
     }
 
     [Fact]
@@ -531,10 +556,12 @@ public sealed class RenderDeviceTextureTests
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device firstDevice = CreateWarpDevice(backend, "procedural update first");
         using Device secondDevice = CreateWarpDevice(backend, "procedural update second");
-        using var firstRenderer = new RenderDevice(backend, firstDevice);
-        using var secondRenderer = new RenderDevice(backend, secondDevice);
         using var firstGraph = CreateGraph(backend, firstDevice);
+        using var firstRendererPipelines = new RenderPipelines(backend, firstDevice);
+        using var firstRenderer = new RenderDevice(firstGraph, firstRendererPipelines);
         using var secondGraph = CreateGraph(backend, secondDevice);
+        using var secondRendererPipelines = new RenderPipelines(backend, secondDevice);
+        using var secondRenderer = new RenderDevice(secondGraph, secondRendererPipelines);
         RhiTexture oldFirst = ExecuteTextureFrame(firstGraph, firstRenderer, texture);
         RhiTexture oldSecond = ExecuteTextureFrame(secondGraph, secondRenderer, texture);
 
@@ -564,7 +591,24 @@ public sealed class RenderDeviceTextureTests
         await nextUpdate.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(1u, texture.Width);
         Assert.Equal(3ul, texture.Revision);
-        secondRenderer.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+        secondRenderer.Graph.WaitForFrame(secondRenderer.Graph.LastSubmittedFrame, TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public void RepeatedSubmittedFramesKeepTheTextureAllocationVersion()
+    {
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateWarpDevice(backend, "texture allocation version");
+        using var graph = CreateGraph(backend, device);
+        using var pipelines = new RenderPipelines(backend, device);
+        using var renderer = new RenderDevice(graph, pipelines);
+        EngineTexture texture = PixelTexture(7);
+        renderer.PrepareTexture(texture);
+        RhiTexture allocation = ExecuteTextureFrame(graph, renderer, texture);
+        TextureVersions versions = texture.Versions;
+
+        Assert.Same(allocation, ExecuteTextureFrame(graph, renderer, texture));
+        Assert.Equal(versions, texture.Versions);
     }
 
     [Fact]
@@ -572,8 +616,9 @@ public sealed class RenderDeviceTextureTests
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "ordinary texture references");
-        using var renderDevice = new RenderDevice(backend, device);
         using var graph = CreateGraph(backend, device);
+        using var renderDevicePipelines = new RenderPipelines(backend, device);
+        using var renderDevice = new RenderDevice(graph, renderDevicePipelines);
         EngineTexture texture = PixelTexture(7);
         var references = new List<EngineTexture> { texture, texture };
         RhiTexture allocation = ExecuteTextureFrame(graph, renderDevice, texture);
@@ -590,7 +635,9 @@ public sealed class RenderDeviceTextureTests
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "collected texture");
-        using var renderDevice = new RenderDevice(backend, device);
+        using var renderDeviceGraph = CreateGraph(backend, device);
+        using var renderDevicePipelines = new RenderPipelines(backend, device);
+        using var renderDevice = new RenderDevice(renderDeviceGraph, renderDevicePipelines);
         (WeakReference<EngineTexture> reference, RhiTexture allocation) = CreateTextureForCollection(renderDevice);
         GC.Collect();
         GC.WaitForPendingFinalizers();
@@ -608,8 +655,9 @@ public sealed class RenderDeviceTextureTests
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "frame texture reference");
-        using var renderDevice = new RenderDevice(backend, device);
         using var graph = CreateGraph(backend, device);
+        using var renderDevicePipelines = new RenderPipelines(backend, device);
+        using var renderDevice = new RenderDevice(graph, renderDevicePipelines);
         RenderGraphFrame frame = graph.BeginFrame();
         WeakReference<EngineTexture> reference;
         RhiTexture allocation;
@@ -621,7 +669,7 @@ public sealed class RenderDeviceTextureTests
             Assert.True(IsTextureAlive(reference));
             var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
             int count = frame.Execute(completions);
-            renderDevice.TrackSubmission(completions.AsSpan(0, count));
+
         }
         finally { frame.Dispose(); }
         graph.Dispose();
@@ -638,7 +686,9 @@ public sealed class RenderDeviceTextureTests
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "update texture reference");
-        using var renderDevice = new RenderDevice(backend, device);
+        using var renderDeviceGraph = CreateGraph(backend, device);
+        using var renderDevicePipelines = new RenderPipelines(backend, device);
+        using var renderDevice = new RenderDevice(renderDeviceGraph, renderDevicePipelines);
         (WeakReference<EngineTexture> reference, Task update) = QueueUpdateForCollection(renderDevice);
         GC.Collect();
         GC.WaitForPendingFinalizers();
@@ -655,9 +705,12 @@ public sealed class RenderDeviceTextureTests
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device firstDevice = CreateWarpDevice(backend, "accepted update");
         using Device secondDevice = CreateWarpDevice(backend, "closing update");
-        using var first = new RenderDevice(backend, firstDevice);
-        using var second = new RenderDevice(backend, secondDevice);
+        using var secondGraph = CreateGraph(backend, secondDevice);
+        using var secondPipelines = new RenderPipelines(backend, secondDevice);
+        using var second = new RenderDevice(secondGraph, secondPipelines);
         using var graph = CreateGraph(backend, firstDevice);
+        using var firstPipelines = new RenderPipelines(backend, firstDevice);
+        using var first = new RenderDevice(graph, firstPipelines);
         EngineTexture texture = PixelTexture(7);
         _ = ExecuteTextureFrame(graph, first, texture);
         _ = second.GetTexture(texture);
@@ -721,10 +774,12 @@ public sealed class RenderDeviceTextureTests
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device firstDevice = CreateWarpDevice(backend, "existing texture device");
         using Device secondDevice = CreateWarpDevice(backend, "new texture device");
-        using var firstRenderer = new RenderDevice(backend, firstDevice);
-        using var secondRenderer = new RenderDevice(backend, secondDevice);
         using var firstGraph = CreateGraph(backend, firstDevice);
+        using var firstRendererPipelines = new RenderPipelines(backend, firstDevice);
+        using var firstRenderer = new RenderDevice(firstGraph, firstRendererPipelines);
         using var secondGraph = CreateGraph(backend, secondDevice);
+        using var secondRendererPipelines = new RenderPipelines(backend, secondDevice);
+        using var secondRenderer = new RenderDevice(secondGraph, secondRendererPipelines);
         RhiTexture old = ExecuteTextureFrame(firstGraph, firstRenderer, texture);
         Task update = texture.UpdateAsync(description,
             [Tile(0, 0, 1, 1, [9])], GraphicsTextureViewDimension.Texture2D).AsTask();
@@ -744,7 +799,7 @@ public sealed class RenderDeviceTextureTests
             {
                 var completions = new QueueCompletion[secondGraph.MaximumQueueCompletionCount];
                 int count = frame.Execute(completions);
-                secondRenderer.TrackSubmission(completions.AsSpan(0, count));
+
             }
         }
         finally { frame.Dispose(); }
@@ -762,8 +817,8 @@ public sealed class RenderDeviceTextureTests
             Assert.Equal(2ul, texture.Revision);
             Assert.NotSame(old, firstRenderer.GetTexture(texture));
         }
-        firstRenderer.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
-        secondRenderer.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+        firstRenderer.Graph.WaitForFrame(firstRenderer.Graph.LastSubmittedFrame, TimeSpan.FromSeconds(10));
+        secondRenderer.Graph.WaitForFrame(secondRenderer.Graph.LastSubmittedFrame, TimeSpan.FromSeconds(10));
     }
 
     private static async Task WaitForUpdateAsync(EngineTexture texture, Task update)
@@ -820,7 +875,7 @@ public sealed class RenderDeviceTextureTests
         {
             frame.Dispose();
         }
-        renderDevice.TrackSubmission(completions.AsSpan(0, count));
+
         return resource;
     }
 

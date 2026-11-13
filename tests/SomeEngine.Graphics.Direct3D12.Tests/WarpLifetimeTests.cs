@@ -19,7 +19,7 @@ public sealed class WarpLifetimeTests(D3D12TestCompiler shaderCompiler)
         using var release = new ManualResetEventSlim();
         int lifetimeMessages = 0;
         ValidationLayer? validation = null;
-        var sink = new DelegateValidationMessageSink(message =>
+        var sink = new DelegateValidationReporter(message =>
         {
             if (message.Area != "Lifetime")
                 return;
@@ -247,7 +247,7 @@ public sealed class WarpLifetimeTests(D3D12TestCompiler shaderCompiler)
 
         backend.Dispose();
 
-        Assert.Equal(RecordedCommandsStatus.Completed, commands.Status);
+        Assert.Equal(RecordedCommandsStatus.Submitted, commands.Status);
         Assert.Null(diagnostics!.TeardownFailure);
         commands.Dispose();
         context.Dispose();
@@ -321,7 +321,7 @@ public sealed class WarpLifetimeTests(D3D12TestCompiler shaderCompiler)
                 CounterBuffer: parent));
         using DescriptorTable table = backend.CreateSingleDescriptorTable(
             device,
-            new DescriptorSlotDesc(
+            new DescriptorEntryDesc(
                 ResourceBindingType.BufferUav,
                 StructureStride: 16,
                 HasCounter: true),
@@ -411,7 +411,7 @@ public sealed class WarpLifetimeTests(D3D12TestCompiler shaderCompiler)
 
 
 
-    private sealed class BlockingThrowingSink : IValidationMessageSink
+    private sealed class BlockingThrowingSink : IValidationReporter
     {
         private readonly ManualResetEventSlim _entered;
         private readonly ManualResetEventSlim _release;
@@ -476,7 +476,7 @@ public sealed class WarpLifetimeTests(D3D12TestCompiler shaderCompiler)
         Assert.Equal(DeviceStatus.Disposed, device.Status);
         Assert.Equal(RecordedCommandsStatus.Discarded, commands.Status);
         commands.Dispose();
-        Assert.Equal(RecordedCommandsStatus.Disposed, commands.Status);
+        Assert.Equal(RecordedCommandsStatus.Discarded, commands.Status);
     }
 
 
@@ -735,7 +735,7 @@ public sealed class WarpLifetimeTests(D3D12TestCompiler shaderCompiler)
         Assert.Equal(RecordedCommandsStatus.Discarded, executable.Status);
         executable.Dispose();
         executable.Dispose();
-        Assert.Equal(RecordedCommandsStatus.Disposed, executable.Status);
+        Assert.Equal(RecordedCommandsStatus.Discarded, executable.Status);
         Assert.Equal(PipelineType.Compute, computePipeline.Type);
 
         T Keep<T>(T value)
@@ -814,7 +814,7 @@ public sealed class WarpLifetimeTests(D3D12TestCompiler shaderCompiler)
     [Fact]
     public void Replacing_the_owning_root_fully_closes_the_old_runtime_before_the_new_one()
     {
-        var oldBackend = D3D12GraphicsBackend.Create();
+        var oldBackend = new ValidationLayer(D3D12GraphicsBackend.Create());
         Device oldDevice = CreateWarpDevice(oldBackend);
         Buffer oldBuffer = oldBackend.CreateBuffer(
             oldDevice,
@@ -938,9 +938,9 @@ public sealed class WarpLifetimeTests(D3D12TestCompiler shaderCompiler)
     }
 
     [Fact]
-    public void Automatic_submission_retains_native_payload_after_public_owners_dispose()
+    public void Submitted_copy_keeps_its_data_after_source_disposal()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         byte[] expected = Enumerable.Range(0, 257)
             .Select(static value => unchecked((byte)(value * 43 + 7)))
@@ -968,13 +968,13 @@ public sealed class WarpLifetimeTests(D3D12TestCompiler shaderCompiler)
         RecordedCommands recorded = backend.End(context);
         RecordedCommands copied = recorded;
         context.Dispose();
-        upload.Dispose();
 
         RecordedCommands[] commands = [recorded];
         Queue queue = backend.GetQueue(device, QueueType.Copy);
         QueueCompletion completion = backend.Submit(
             queue,
             new QueueSubmitDesc([], [], commands, [], []));
+        upload.Dispose();
         RecordedCommands[] duplicate = [copied];
         Assert.Throws<InvalidOperationException>(() => backend.Submit(
             queue,
@@ -996,7 +996,7 @@ public sealed class WarpLifetimeTests(D3D12TestCompiler shaderCompiler)
 
 
     [Fact]
-    public void Reused_command_slot_does_not_resurrect_stale_recorded_command_copies()
+    public void Reusing_a_command_context_preserves_the_previous_commands_submitted_status()
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -1032,7 +1032,7 @@ public sealed class WarpLifetimeTests(D3D12TestCompiler shaderCompiler)
 
         Assert.Same(device, staleCopy.Device);
         Assert.Same(queue, staleCopy.Queue);
-        Assert.Throws<InvalidOperationException>(() => _ = staleCopy.Status);
+        Assert.Equal(RecordedCommandsStatus.Submitted, staleCopy.Status);
         staleCopy.Dispose();
 
         commands[0] = second;

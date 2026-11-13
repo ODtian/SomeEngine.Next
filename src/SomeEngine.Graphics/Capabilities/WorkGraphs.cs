@@ -228,6 +228,11 @@ public readonly record struct WorkGraphMemoryRequirements(
         if (suppliedSize < MinimumSize)
             throw new ArgumentOutOfRangeException(nameof(suppliedSize));
 
+        return GetBackingSize(suppliedSize);
+    }
+
+    internal ulong GetBackingSize(ulong suppliedSize)
+    {
         ulong cappedSize = Math.Min(suppliedSize, MaximumSize);
         if (cappedSize == MinimumSize || Granularity == 0)
             return MinimumSize;

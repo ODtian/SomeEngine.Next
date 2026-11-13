@@ -68,6 +68,7 @@ public abstract class Buffer : Resource
     }
 
     public BufferInfo Info { get; }
+    internal virtual MappingHandle? Mapping => null;
 }
 
 /// <remarks>

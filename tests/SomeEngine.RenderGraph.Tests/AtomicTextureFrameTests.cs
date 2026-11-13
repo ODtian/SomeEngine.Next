@@ -24,8 +24,7 @@ public sealed class AtomicTextureFrameTests
             GraphTextureId texture = edit.CreatePersistentTexture(new TextureDesc(
                 TextureDimension.Texture2D, 1, 1, 1, 1, 2, 1, Format.R8G8B8A8UNorm,
                 TextureUsages.ColorAttachment | TextureUsages.Storage | TextureUsages.CopySource));
-            GraphBufferId destination = edit.RegisterExternalBuffer(output,
-                [new(BufferRange.Whole, output.InitialSync, output.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId destination = edit.RegisterExternalBuffer(output);
             clear = edit.AddCopyFramePass("initialize texture contents", PassQueueSelection.AnyOfType(QueueType.Graphics),
                 texture, new PassOptions(Culling: PassCullingMode.NeverCull),
                 (ref PassDefinition pass, ref GraphTextureId data) => pass.Write(data, whole,

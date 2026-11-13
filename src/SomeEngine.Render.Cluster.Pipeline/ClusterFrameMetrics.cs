@@ -1,3 +1,4 @@
+﻿using SomeEngine.Render;
 namespace SomeEngine.Render.Cluster.Pipeline;
 
 /// <summary>Scalar measurements from one completed Cluster frame.</summary>
@@ -30,7 +31,7 @@ public readonly record struct ClusterFrameMetrics(
 /// Target tests include main and post-HiZ attempts. Empty partitions enter no raster bin.
 /// Raster batches and surface patches include both primary and target work.</summary>
 public readonly record struct ClusterWorkMetrics(
-    ClusterWorkOverflow Overflow,
+    RenderGeometryWorkFlags Overflow,
     ulong TargetCandidateTests,
     ulong PotentialHardwareWindows,
     ulong EmptyHardwareWindows,
@@ -43,5 +44,6 @@ public readonly record struct ClusterWorkMetrics(
     ulong RequiredSurfaceRoots,
     ulong RequiredFinalSurfacePatches)
 {
-    public bool Complete => Overflow == ClusterWorkOverflow.None;
+    /// <summary>Required geometry completed, including batches replayed through the spill input.</summary>
+    public bool Complete => (Overflow & ~RenderGeometryWorkFlags.RasterBatches) == RenderGeometryWorkFlags.None;
 }

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using SomeEngine.Animation;
 using SomeEngine.Animation.Pose;
 using SomeEngine.Core.ECS.Components;
@@ -42,7 +42,7 @@ public sealed partial class SkinningRenderingTests
         Entity target = default, actor = default, leftStep = default, rightStep = default;
         Matrix4x4 actorBase = default;
         CollisionMaintenance<MovingStep, StepReader, SpatialAll, GroupMatch>? maintenance = null;
-        var reads = new List<GpuPoseReadback>();
+        var reads = new List<GpuPoseReadbackResult>();
         var actors = new List<Matrix4x4>();
         var metrics = new List<ClusterFrameMetrics>();
         SceneImage? image = null;
@@ -158,7 +158,7 @@ public sealed partial class SkinningRenderingTests
         Entity target = default, step = default;
         Matrix4x4 actor = default;
         CollisionMaintenance<MovingStep, StepReader, SpatialAll, GroupMatch>? maintenance = null;
-        var reads = new List<GpuPoseReadback>();
+        var reads = new List<GpuPoseReadbackResult>();
         var supports = new List<Matrix4x4>();
         var mesh = new CollisionMesh(new Vector3[] { new(-1, 0, -1), new(1, 0, -1), new(1, 0, 1), new(-1, 0, 1) },
             new uint[] { 0, 2, 1, 0, 3, 2 });

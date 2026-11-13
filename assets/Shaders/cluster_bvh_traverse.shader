@@ -10,7 +10,7 @@
   "Blocks": [
     {
       "TypeId": "def46de0-7af8-87e0-75b9-660aaa202b94",
-      "Schema": "163D4CAD0FD3CEDB",
+      "Schema": "C582D6184D075EEC",
       "Fields": {
         "SourceNames": [
           "cluster_bvh_traverse.slang"
@@ -20,6 +20,7 @@
             "EntryPoint": "CullClusterWork",
             "Arguments": [
               "false",
+              "false",
               "false"
             ]
           },
@@ -27,12 +28,6 @@
             "EntryPoint": "CullClusterWork",
             "Arguments": [
               "false",
-              "true"
-            ]
-          },
-          {
-            "EntryPoint": "CullClusterWork",
-            "Arguments": [
               "true",
               "false"
             ]
@@ -41,8 +36,25 @@
             "EntryPoint": "CullClusterWork",
             "Arguments": [
               "true",
-              "true"
+              "false",
+              "false"
             ]
+          },
+          {
+            "EntryPoint": "CullClusterWork",
+            "Arguments": [
+              "true",
+              "true",
+              "false"
+            ]
+          },
+          {
+            "EntryPoint": "CullClusterWork",
+            "Arguments": ["false", "false", "true"]
+          },
+          {
+            "EntryPoint": "CullClusterWork",
+            "Arguments": ["false", "true", "true"]
           }
         ]
       },

@@ -16,18 +16,16 @@ internal sealed unsafe partial class D3D12Backend
     {
         using var trace = RhiTrace.BeginResourceCreation();
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
-        SamplerFeedback capability =
-            nativeDevice.RequireCapability<SamplerFeedback>(nameof(CreateSamplerFeedbackTexture));
+
         D3D12TextureResource sampled = RequireTexture(desc.SampledTexture);
-        RequireSameDevice(nativeDevice, sampled.Owner, nameof(desc));
 
         TextureInfo sampledInfo = sampled.Info;
-        ValidateSamplerFeedbackDescription(capability, sampledInfo, desc);
+
         DxgiFormat opaqueFormat = desc.Type switch
         {
             SamplerFeedbackType.MinimumMip => DxgiFormat.FormatSamplerFeedbackMinMipOpaque,
             SamplerFeedbackType.MipRegionUsed => DxgiFormat.FormatSamplerFeedbackMipRegionUsedOpaque,
-            _ => throw new ArgumentOutOfRangeException(nameof(desc)),
+            _ => default,
         };
         ResourceDesc1 nativeDescription = new(
             NativeResourceDimension.Texture2D,
@@ -104,37 +102,6 @@ nativeDevice.Native, sampledInfo.VisibleNodeMask,
         }
     }
 
-    private static void ValidateSamplerFeedbackDescription(
-        SamplerFeedback capability,
-        in TextureInfo sampled,
-        in SamplerFeedbackTextureDesc description)
-    {
-        if (sampled.Dimension != TextureDimension.Texture2D ||
-            sampled.SampleCount != 1 ||
-            (sampled.Usages & TextureUsages.Sampled) == 0)
-        {
-            throw new ArgumentException(
-                "Sampler feedback requires a single-sampled Texture2D with Sampled usage.",
-                nameof(description));
-        }
-        if (!capability.SupportedFormats.Contains(sampled.Format))
-        {
-            throw new NotSupportedException(
-                $"Format {sampled.Format} does not support sampler feedback.");
-        }
-        if (description.MipRegionWidth < capability.MinimumMipRegionWidth ||
-            description.MipRegionHeight < capability.MinimumMipRegionHeight ||
-            description.MipRegionWidth > sampled.Width / 2 ||
-            description.MipRegionHeight > sampled.Height / 2 ||
-            !BitOperations.IsPow2(description.MipRegionWidth) ||
-            !BitOperations.IsPow2(description.MipRegionHeight))
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(description),
-                "Sampler-feedback mip-region dimensions must be supported powers of two.");
-        }
-    }
-
     private static NativeResource* CreateSamplerFeedbackResource(
         D3D12Device device,
         in HeapProperties properties,
@@ -184,30 +151,17 @@ device.Native, nativeProperties,
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
-        _ = nativeDevice.RequireCapability<SamplerFeedback>(nameof(CreateSamplerFeedbackUav));
+        
         D3D12SamplerFeedbackTexture feedback = RequireSamplerFeedbackTexture(texture);
-        RequireSameDevice(nativeDevice, feedback, nameof(texture));
         TextureInfo info = feedback.Info;
         TextureSubresourceRange range = desc.Range;
         TextureViewDimension expectedDimension = info.ArrayLayerCount == 1
             ? TextureViewDimension.Texture2D
             : TextureViewDimension.Texture2DArray;
-        if (!ReferenceEquals(texture, desc.Texture) ||
-            desc.Format != Format.R8UInt ||
-            desc.Dimension != expectedDimension ||
-            range.FirstMipLevel != 0 ||
-            range.MipLevelCount != info.MipLevelCount ||
-            range.FirstArrayLayer != 0 ||
-            range.ArrayLayerCount != info.ArrayLayerCount ||
-            range.Aspects is not (TextureAspects.Color or TextureAspects.Plane0))
-        {
-            throw new ArgumentException(
-                "A sampler-feedback UAV must describe the complete supplied feedback Texture.",
-                nameof(desc));
-        }
+        
         D3D12TextureResource feedbackResource = feedback.NativeResource;
         D3D12TextureResource sampled = RequireTexture(feedback.SampledTexture);
-        DescriptorLease descriptor = nativeDevice
+        DescriptorAllocation descriptor = nativeDevice
             .GetResourceDescriptors(
                 nativeDevice.ResolveResourceHomeNodeIndex(
                     feedbackResource.Info.CreationNodeMask))
@@ -243,21 +197,19 @@ device.Native, nativeProperties,
         SamplerFeedbackUav feedback)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
-        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
-        _ = command.NativeDevice.RequireCapability<SamplerFeedback>(nameof(ClearSamplerFeedback));
+        D3D12CommandContext command = ((D3D12CommandContext)context);
+        command.BeginPublicCall();
+        
         D3D12SamplerFeedbackUav native = RequireSamplerFeedbackUav(feedback);
 
-        command.PrepareCaptures(2, 1, 2);
         command.PrepareSwapchainUses(2);
         command.PrepareDescriptors(1, 0);
         command.PrepareTransientObjects((1 != 0 ? 1 : 0));
         (CpuDescriptorHandle cpu, GpuDescriptorHandle gpu) =
             command.StageSamplerFeedbackDescriptor(native.NativeDescriptor);
-        command.Capture((TextureUav)native);
-        command.Capture(native.SampledResource);
         uint* values = stackalloc uint[4] { 0, 0, 0, 0 };
         CommandExecutionTrace.ClearUnorderedAccessViewUint(
-                command.List, gpu,
+                command, command.List, gpu,
                     cpu,
                     native.FeedbackResource.Native,
                     values,
@@ -272,38 +224,19 @@ device.Native, nativeProperties,
         in BufferRange destinationRange)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
-        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
-        _ = command.NativeDevice.RequireCapability<SamplerFeedback>(nameof(ResolveSamplerFeedback));
+        D3D12CommandContext command = ((D3D12CommandContext)context);
+        command.BeginPublicCall();
+        
         D3D12SamplerFeedbackTexture nativeFeedback =
             RequireSamplerFeedbackTexture(feedback);
         D3D12Buffer nativeDestination = RequireBuffer(destination);
 
-        if (nativeFeedback.Description.Type != SamplerFeedbackType.MinimumMip ||
-            nativeFeedback.Info.ArrayLayerCount != 1)
-        {
-            throw new ArgumentException(
-                "A Buffer decode is available only for a non-array MinimumMip feedback texture.",
-                nameof(feedback));
-        }
-        if ((nativeDestination.Info.Usages & BufferUsages.CopyDestination) == 0)
-            throw new ArgumentException("The destination Buffer requires CopyDestination usage.", nameof(destination));
-
-        BufferRange range = destinationRange.Resolve(nativeDestination.Info.Size);
+        BufferRange range = destinationRange.Expand(nativeDestination.Info.Size);
         ulong required = nativeFeedback.DecodedByteCount;
-        if (range.Size < required || range.Offset > uint.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(destinationRange),
-                "The destination range cannot contain the decoded feedback map.");
-        }
 
-        command.PrepareCaptures(3, 0, 3);
         command.PrepareSwapchainUses(2);
-        command.Capture(nativeFeedback.NativeResource);
-        command.Capture(nativeFeedback.SampledResource);
-        command.Capture(nativeDestination);
         CommandTransferTrace.ResolveSubresourceRegion(
-                command.List, nativeDestination.Native,
+                command, command.List, nativeDestination.Native,
                     0,
                     checked((uint)range.Offset),
                     0,
@@ -321,18 +254,15 @@ device.Native, nativeProperties,
         in TextureSubresourceRange destinationRange)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
-        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
-        _ = command.NativeDevice.RequireCapability<SamplerFeedback>(nameof(ResolveSamplerFeedback));
+        D3D12CommandContext command = ((D3D12CommandContext)context);
+        command.BeginPublicCall();
+        
         D3D12SamplerFeedbackTexture nativeFeedback =
             RequireSamplerFeedbackTexture(feedback);
         D3D12TextureResource nativeDestination = RequireTexture(destination);
-        ValidateFeedbackTextureDestination(nativeFeedback, nativeDestination, destinationRange);
 
-        command.PrepareCaptures(3, 0, 3);
         command.PrepareSwapchainUses(3);
-        command.Capture(nativeFeedback.NativeResource);
-        command.Capture(nativeFeedback.SampledResource);
-        command.Capture(nativeDestination);
+        command.RecordSwapchainImage(nativeDestination);
         for (uint layer = destinationRange.FirstArrayLayer;
              layer < destinationRange.FirstArrayLayer + destinationRange.ArrayLayerCount;
              layer++)
@@ -350,7 +280,7 @@ device.Native, nativeProperties,
                     layer,
                     TextureAspects.Color);
                 CommandTransferTrace.ResolveSubresourceRegion(
-                            command.List, nativeDestination.Native,
+                            command, command.List, nativeDestination.Native,
                                 destinationSubresource,
                                 0,
                                 0,
@@ -360,47 +290,6 @@ device.Native, nativeProperties,
                                 DxgiFormat.FormatR8Uint,
                                 ResolveMode.DecodeSamplerFeedback);
             }
-    }
-
-    private static void ValidateFeedbackTextureDestination(
-        D3D12SamplerFeedbackTexture feedback,
-        D3D12TextureResource destination,
-        in TextureSubresourceRange range)
-    {
-        TextureInfo info = destination.Info;
-        uint mipEnd = checked(range.FirstMipLevel + range.MipLevelCount);
-        uint layerEnd = checked(range.FirstArrayLayer + range.ArrayLayerCount);
-        if (range.MipLevelCount == 0 || range.ArrayLayerCount == 0 ||
-            mipEnd > info.MipLevelCount ||
-            layerEnd > info.ArrayLayerCount ||
-            layerEnd > feedback.Info.ArrayLayerCount ||
-            range.Aspects is not (TextureAspects.Color or TextureAspects.Plane0) ||
-            info.Dimension != TextureDimension.Texture2D ||
-            info.Format != Format.R8UInt ||
-            info.SampleCount != 1 ||
-            (info.Usages & TextureUsages.CopyDestination) == 0 ||
-            info.Width < feedback.DecodedWidth ||
-            info.Height < feedback.DecodedHeight)
-        {
-            throw new ArgumentException(
-                "The destination must be a sufficiently large R8UInt Texture2D decode target with matching subresources.",
-                nameof(range));
-        }
-
-        if (feedback.Description.Type == SamplerFeedbackType.MinimumMip &&
-            (range.FirstMipLevel != 0 || range.MipLevelCount != 1))
-        {
-            throw new ArgumentException(
-                "MinimumMip feedback decodes to exactly one mip level.",
-                nameof(range));
-        }
-        if (feedback.Description.Type == SamplerFeedbackType.MipRegionUsed &&
-            mipEnd > feedback.Info.MipLevelCount)
-        {
-            throw new ArgumentException(
-                "MipRegionUsed feedback has no matching source mip for the destination range.",
-                nameof(range));
-        }
     }
 
     private sealed class D3D12SamplerFeedbackTexture : SamplerFeedbackTexture
@@ -420,7 +309,7 @@ device.Native, nativeProperties,
                 device,
                 null,
                 native,
-                dependency: SampledResource.NativeLifetime);
+                dependency: SampledResource.NativeData);
             DecodedWidth = DivideRoundUp(info.Width, description.MipRegionWidth);
             DecodedHeight = DivideRoundUp(info.Height, description.MipRegionHeight);
             DecodedByteCount = checked((ulong)DecodedWidth * DecodedHeight);
@@ -447,8 +336,8 @@ device.Native, nativeProperties,
             D3D12TextureResource feedback,
             D3D12TextureResource sampled,
             in TextureUavDesc description,
-            DescriptorLease descriptor)
-            : base(device, description, sampled.Owner)
+            DescriptorAllocation descriptor)
+            : base(device, description, sampled.Texture)
         {
             FeedbackResource = feedback;
             SampledResource = sampled;
@@ -456,27 +345,27 @@ device.Native, nativeProperties,
             _references = new ViewReferences(
                 device,
                 descriptor,
-                feedback.NativeLifetime,
-                sampled.NativeLifetime);
+                feedback.NativeData,
+                sampled.NativeData);
         }
 
         internal D3D12TextureResource FeedbackResource { get; }
         internal D3D12TextureResource SampledResource { get; }
-        public DescriptorLease NativeDescriptor { get; }
+        public DescriptorAllocation NativeDescriptor { get; }
         internal override void Release(bool fromParent) => _references.Release(this);
     }
 
     private sealed partial class D3D12CommandContext
     {
         internal (CpuDescriptorHandle Cpu, GpuDescriptorHandle Gpu)
-            StageSamplerFeedbackDescriptor(DescriptorLease descriptor) =>
+            StageSamplerFeedbackDescriptor(DescriptorAllocation descriptor) =>
             Recording.StageSamplerFeedbackDescriptor(descriptor);
     }
 
-    private sealed partial class D3D12CommandSlot
+    private sealed partial class D3D12CommandBuffer
     {
         internal (CpuDescriptorHandle Cpu, GpuDescriptorHandle Gpu)
-            StageSamplerFeedbackDescriptor(DescriptorLease descriptor)
+            StageSamplerFeedbackDescriptor(DescriptorAllocation descriptor)
         {
             uint index = AllocateDescriptorPair(1, 0).ResourceBase;
             CpuDescriptorHandle cpu = GetCpuHandle(ParameterHeap.Resource, index);
@@ -488,7 +377,7 @@ device.Native, nativeProperties,
                             DescriptorHeapType.CbvSrvUav);
             if (_resourceContents.Length < _resourceCapacity)
                 Array.Resize(ref _resourceContents, checked((int)_resourceCapacity));
-            _resourceContents[index] = new DescriptorContent(descriptor, new DescriptorSlotDesc(ResourceBindingType.TextureUav));
+            _resourceContents[index] = new DescriptorContent(descriptor, new DescriptorEntryDesc(ResourceBindingType.TextureUav));
             return (cpu, GetGpuHandle(ParameterHeap.Resource, index));
         }
 
@@ -509,17 +398,9 @@ device.Native, nativeProperties,
     private static partial class RequireD3D12
     {
         internal static D3D12SamplerFeedbackTexture SamplerFeedbackTexture(
-            SamplerFeedbackTexture value) =>
-            value as D3D12SamplerFeedbackTexture ??
-            throw new ArgumentException(
-                "The SamplerFeedbackTexture was not created by the Direct3D 12 backend.",
-                nameof(value));
+            SamplerFeedbackTexture value) =>(D3D12SamplerFeedbackTexture)value;
 
         internal static D3D12SamplerFeedbackUav SamplerFeedbackUav(
-            SamplerFeedbackUav value) =>
-            value as D3D12SamplerFeedbackUav ??
-            throw new ArgumentException(
-                "The SamplerFeedbackUav was not created by the Direct3D 12 backend.",
-                nameof(value));
+            SamplerFeedbackUav value) =>(D3D12SamplerFeedbackUav)value;
     }
 }

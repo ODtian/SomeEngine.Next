@@ -79,7 +79,7 @@ public sealed class HierarchicalDepthTests(D3D12TestCompiler shaderCompiler)
                     views.Add(backend.CreateTextureUav(device, new(hierarchy, new(mip, 1, 0, layers, TextureAspects.Color),
                         Format.R32Float, TextureViewDimension.Texture2DArray)));
                 using CommandContext context = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1));
-                backend.Begin(context, new CommandRecordingDesc(96, 8, 96));
+                backend.Begin(context, new CommandRecordingDesc(96, 8));
                 TextureSubresourceRange depthRange = new(0, 1, 0, layers, TextureAspects.Color);
                 TextureSubresourceRange hierarchyRange = new(0, mipCount, 0, layers, TextureAspects.Color);
                 backend.Barrier(context, new TextureBarrier(depth, depthRange, PipelineSync.None, PipelineSync.Copy,

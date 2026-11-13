@@ -2,7 +2,7 @@
 
 `MaterialDecal` 与实体的 `WorldTransform` 描述一个投影层。变换把局部 `[-1, 1]` 盒映射到世界中的影响体积，`Material` 持有用户参数与资源，`Order` 决定由小到大的组合次序。相同次序使用实体索引排序。
 
-`MaterialDecalRenderExtractor` 将该引用、次序与变换交付到 Rendering world 的 `RenderMaterialDecal` 和 `RenderTransform`。Cluster 从该集合构建 GPU 体积与属性数据，网格实例继续沿既有实例提取。`SceneEdit.AddMaterialDecal`、`SetMaterialDecal`、`SetEntityTransform` 与 `DeleteEntity` 提供相同的游戏世界编辑入口。
+`MaterialDecalRenderExtractor` 将该引用、次序与变换交付到 Rendering world 的 `RenderMaterialDecal` 和 `RenderTransform`。`MaterialDecalFeature` 从该集合构建 GPU 体积与属性数据，网格实例继续沿既有实例提取。`SceneEdit.AddMaterialDecal`、`SetMaterialDecal`、`SetEntityTransform` 与 `DeleteEntity` 提供相同的游戏世界编辑入口。
 
 ## 用户属性与受光
 
@@ -14,9 +14,13 @@ DefaultProject 的 `coating_material.slang` 声明 `CoatingScalars`、纹理/sam
 
 ## Forward+ 候选
 
-贴花与光照共用 `ClusteredViewGrid`。Count 投影体积的八个角点，按相交 XY tile 与视空间 Z 切片计数；Reserve 保留连续引用区间；Scatter 写入体积索引；Sort 恢复调用方指定的次序。Clear、Count、Reserve、Scatter 和 Sort 在持久图中保留固定阶段。视图或体积输入改变时刷新，相同输入复用 cell 内容。
+`SomeEngine.Render.Features.Decals.MaterialDecalBinning` 提供独立的体积分箱入口。调用方将 Rendering world 提取所得的贴花变换按 `Order`、实体索引排序后传入；条目索引就是最终应用次序。该入口持有自己的 tile 尺寸、深度切片和投影参数，通过 [Screen-Binning](Screen-Binning.md) 的五步生成 cell 列表。每个展开位置执行贴花变换盒与 cell 视空间包围盒的分离轴测试，列表内按条目索引升序。
 
-每个命中根据最终位置查询自己的 cell，再以体积的逆变换检查局部范围。引用容量决定驻留区间；其余 cell 按相同次序遍历实际体积来源。`--blend-index=full|xyz` 提供完整来源与 cell 查询的对照。
+`MaterialDecalFeature` 实际持有这个分箱器。每条 144 字节的 `MaterialDecalVolume` 保存世界与投影空间的双向变换和用户参数地址，Feature 与分箱读取同一份 volume 缓冲。独立的 240 字节视图参数同时供覆盖测试和材质查询使用。standalone 的矩阵入口将变换写入同一结构，typed upload 保持结构对齐。`material_decal_binning.shader` 在同一 ready shader 中烘焙共享 `screen_binning` 与贴花条目入口。
+
+`Cells` 保存每个 cell 的 `(偏移, 数量)`，`Indices` 保存作者次序下的体积下标。`BeginMaterialDecals` 用当前像素和表面位置查询这个独立网格，`NextMaterialDecal` 继续执行投影范围检查并返回用户数据。材质仍自行解释 coating 等模型。视图、体积、设置或列表容量变化时刷新索引，相同输入复用已有结果；复用状态只在帧提交后采用。
+
+`LastFrameOverflowCells`、`FeedbackFrameIdentity` 和列表容量需求来自公共读回。分箱器在构造时接收已有 `RenderPrepareSystems` 并登记自己的 prepare system；读回送达的 N+F 帧在 `BeginFrame` 前提交列表扩容。CPU 已知的体积数量增长和网格设置变化通过无状态 `ScreenBinningPasses.Rebuild` 重建内部工作与扫描，保留公开 cell、引用和诊断缓冲的图编号。固定外层 region 保持与下游的排序关系，测量使用方按 Feature region 重新取得 pass 集合。`--blend-index=full|xyz` 继续提供完整来源与独立网格查询的对照。
 
 ## DefaultGame 场景
 

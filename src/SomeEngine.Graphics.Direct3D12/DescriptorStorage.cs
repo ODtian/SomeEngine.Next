@@ -2,12 +2,11 @@ using Silk.NET.Core.Native;
 using Silk.NET.Direct3D12;
 
 namespace SomeEngine.Graphics.Direct3D12;
-
 internal sealed unsafe partial class D3D12Backend
 {
     private interface INativeDescriptor
     {
-        DescriptorLease NativeDescriptor { get; }
+        DescriptorAllocation NativeDescriptor { get; }
     }
 
     private sealed class DescriptorAllocator : IDisposable
@@ -21,14 +20,14 @@ internal sealed unsafe partial class D3D12Backend
         private readonly object _gate = new();
         private readonly List<DescriptorPage> _pages = [];
         private bool _disposed;
-
         internal DescriptorAllocator(
             D3D12Device device,
             DescriptorHeapType type,
             uint capacity,
             bool shaderVisible,
             int maximumHeapCount,
-            uint nodeMask)
+            uint nodeMask
+        )
         {
             _device = device;
             _type = type;
@@ -38,22 +37,28 @@ internal sealed unsafe partial class D3D12Backend
             _nodeMask = nodeMask;
         }
 
-        internal DescriptorLease Allocate()
+        internal DescriptorAllocation Copy(DescriptorAllocation source)
+        {
+            DescriptorAllocation result = Allocate();
+            DeviceQueryTrace.CopyDescriptorsSimple(_device.Native, 1, result.Cpu, source.Cpu, _type);
+            return result;
+        }
+
+        internal DescriptorAllocation Allocate()
         {
             lock (_gate)
             {
-                ObjectDisposedException.ThrowIf(_disposed, this);
                 foreach (DescriptorPage page in _pages)
                 {
-                    if (page.TryAllocate(out uint slot))
+                    if (page.TryAllocate(out uint entry))
                     {
                         try
                         {
-                            return new DescriptorLease(this, page, slot);
+                            return new DescriptorAllocation(this, page, entry);
                         }
                         catch
                         {
-                            page.Return(slot);
+                            page.Return(entry);
                             throw;
                         }
                     }
@@ -61,27 +66,19 @@ internal sealed unsafe partial class D3D12Backend
 
                 if (_pages.Count >= _maximumHeapCount)
                 {
-                    throw new GraphicsException(
-                        GraphicsError.OutOfMemory,
-                        $"The D3D12 {_type} descriptor capacity is exhausted.");
+                    throw new GraphicsException(GraphicsError.OutOfMemory, $"The D3D12 {_type} descriptor capacity is exhausted.");
                 }
 
-                DescriptorPage newPage = new(
-                    _device,
-                    _type,
-                    _capacity,
-                    _shaderVisible,
-                    _nodeMask);
+                DescriptorPage newPage = new(_device, _type, _capacity, _shaderVisible, _nodeMask);
                 bool added = false;
                 try
                 {
                     _pages.Add(newPage);
                     added = true;
-                    if (!newPage.TryAllocate(out uint newSlot))
-                        throw new InvalidOperationException("A new descriptor heap has no free slot.");
+                    newPage.TryAllocate(out uint newSlot);
                     try
                     {
-                        return new DescriptorLease(this, newPage, newSlot);
+                        return new DescriptorAllocation(this, newPage, newSlot);
                     }
                     catch
                     {
@@ -99,13 +96,13 @@ internal sealed unsafe partial class D3D12Backend
             }
         }
 
-        internal void Return(DescriptorPage page, uint slot)
+        internal void Return(DescriptorPage page, uint entry)
         {
             lock (_gate)
             {
                 if (_disposed)
                     return;
-                page.Return(slot);
+                page.Return(entry);
             }
         }
 
@@ -125,95 +122,75 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed class DescriptorPage : IDisposable
     {
-        private const uint AllocatedSlot = uint.MaxValue;
+        private const uint AllocatedEntry = uint.MaxValue;
         private const uint EndOfFreeList = uint.MaxValue - 1;
-
         private readonly uint[] _free;
         private readonly uint _capacity;
         private readonly uint _increment;
         private uint _freeHead = EndOfFreeList;
         private int _freeCount;
-        private uint _cursor;
+        private uint _nextIndex;
         private ID3D12DescriptorHeap* _heap;
-
-        internal DescriptorPage(
-            D3D12Device device,
-            DescriptorHeapType type,
-            uint capacity,
-            bool shaderVisible,
-            uint nodeMask)
+        internal DescriptorPage(D3D12Device device, DescriptorHeapType type, uint capacity, bool shaderVisible, uint nodeMask)
         {
             _free = new uint[checked((int)capacity)];
             _capacity = capacity;
             _increment = device.DescriptorIncrement(type);
-            DescriptorHeapDesc description = new(
-                type,
-                capacity,
-                shaderVisible ? DescriptorHeapFlags.ShaderVisible : DescriptorHeapFlags.None,
-                nodeMask);
+            DescriptorHeapDesc description = new(type, capacity, shaderVisible ? DescriptorHeapFlags.ShaderVisible : DescriptorHeapFlags.None, nodeMask);
             Guid iid = ID3D12DescriptorHeap.Guid;
             ID3D12DescriptorHeap* heap = null;
             ThrowIfFailed(
                 device,
-                    DeviceResourceTrace.CreateDescriptorHeap(
-                device.Native, &description,
-                    &iid,
-                    (void**)&heap),
+                DeviceResourceTrace.CreateDescriptorHeap(device.Native, &description, &iid, (void**)&heap),
                 NativeOperationType.Ordinary,
-                "ID3D12Device::CreateDescriptorHeap");
+                "ID3D12Device::CreateDescriptorHeap"
+            );
             _heap = heap;
-            SetNativeName(
-                heap,
-                $"{type} Descriptor Heap (capacity={capacity}, nodeMask=0x{nodeMask:X})");
+            SetNativeName(heap, $"{type} Descriptor Heap (capacity={capacity}, nodeMask=0x{nodeMask:X})");
             CpuStart = ResourceTrace.GetCPUDescriptorHandleForHeapStart(_heap);
-            GpuStart = shaderVisible
-                ? ResourceTrace.GetGPUDescriptorHandleForHeapStart(_heap)
-                : default;
+            GpuStart = shaderVisible ? ResourceTrace.GetGPUDescriptorHandleForHeapStart(_heap) : default;
         }
 
         internal ID3D12DescriptorHeap* Heap => _heap;
         internal CpuDescriptorHandle CpuStart { get; }
         internal GpuDescriptorHandle GpuStart { get; }
 
-        internal bool TryAllocate(out uint slot)
+        internal bool TryAllocate(out uint entry)
         {
             if (_freeCount != 0)
             {
-                slot = _freeHead;
-                _freeHead = _free[(int)slot];
-                _free[(int)slot] = AllocatedSlot;
+                entry = _freeHead;
+                _freeHead = _free[(int)entry];
+                _free[(int)entry] = AllocatedEntry;
                 _freeCount--;
                 return true;
             }
-            if (_cursor >= _capacity)
+
+            if (_nextIndex >= _capacity)
             {
-                slot = 0;
+                entry = 0;
                 return false;
             }
 
-            slot = _cursor++;
-            _free[(int)slot] = AllocatedSlot;
+            entry = _nextIndex++;
+            _free[(int)entry] = AllocatedEntry;
             return true;
         }
 
-        internal void Return(uint slot)
+        internal void Return(uint entry)
         {
-            if (slot >= _cursor)
+            if (entry >= _nextIndex)
                 return;
-            int index = (int)slot;
-            if (_free[index] != AllocatedSlot || _freeCount >= _free.Length)
+            int index = (int)entry;
+            if (_free[index] != AllocatedEntry || _freeCount >= _free.Length)
                 return;
             _free[index] = _freeHead;
-            _freeHead = slot;
+            _freeHead = entry;
             _freeCount++;
         }
 
-        internal CpuDescriptorHandle GetCpu(uint slot) =>
-            new(CpuStart.Ptr + checked((nuint)(slot * _increment)));
-
-        internal GpuDescriptorHandle GetGpu(uint slot) =>
-            new(GpuStart.Ptr + checked((ulong)slot * _increment));
-
+        internal CpuDescriptorHandle GetCpu(uint entry) => new(CpuStart.Ptr + checked((nuint)(entry * _increment)));
+        internal GpuDescriptorHandle GetGpu(uint entry) => new(GpuStart.Ptr + checked((ulong)entry * _increment));
         public void Dispose()
         {
             ID3D12DescriptorHeap* heap = _heap;
@@ -223,66 +200,43 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    private sealed class DescriptorLease
+    private sealed class DescriptorAllocation
     {
-        private DescriptorAllocator? _owner;
+        private DescriptorAllocator? _allocator;
         private readonly DescriptorPage _page;
-        private readonly uint _slot;
-        private int _references = 1;
-
-        internal DescriptorLease(
-            DescriptorAllocator owner,
-            DescriptorPage page,
-            uint slot)
+        private readonly uint _descriptorIndex;
+        internal DescriptorAllocation(DescriptorAllocator allocator, DescriptorPage page, uint entry)
         {
-            _owner = owner;
+            _allocator = allocator;
             _page = page;
-            _slot = slot;
+            _descriptorIndex = entry;
         }
 
-        internal CpuDescriptorHandle Cpu => _page.GetCpu(_slot);
-        internal GpuDescriptorHandle Gpu => _page.GetGpu(_slot);
+        internal CpuDescriptorHandle Cpu => _page.GetCpu(_descriptorIndex);
+        internal GpuDescriptorHandle Gpu => _page.GetGpu(_descriptorIndex);
         internal ID3D12DescriptorHeap* Heap => _page.Heap;
-        internal uint Index => _slot;
+        internal uint Index => _descriptorIndex;
 
-        internal void Retain()
-        {
-            int current = Volatile.Read(ref _references);
-            while (current > 0)
-            {
-                int exchanged = Interlocked.CompareExchange(
-                    ref _references,
-                    checked(current + 1),
-                    current);
-                if (exchanged == current)
-                    return;
-                current = exchanged;
-            }
-            throw new ObjectDisposedException(nameof(DescriptorLease));
-        }
-
+        internal DescriptorAllocation Copy() => _allocator!.Copy(this);
         internal void Release()
         {
-            int remaining = Interlocked.Decrement(ref _references);
-            if (remaining != 0)
-                return;
-            DescriptorAllocator? owner = Interlocked.Exchange(ref _owner, null);
-            owner?.Return(_page, _slot);
+            DescriptorAllocator? allocator = Interlocked.Exchange(ref _allocator, null);
+            allocator?.Return(_page, _descriptorIndex);
         }
     }
 
     private sealed class ViewReferences
     {
         private readonly D3D12Device _device;
-        private readonly DescriptorLease _descriptor;
-        private NativeLease? _resource;
-        private NativeLease? _secondaryResource;
-
+        private readonly DescriptorAllocation _descriptor;
+        private NativeResourceData? _resource;
+        private NativeResourceData? _secondaryResource;
         internal ViewReferences(
             D3D12Device device,
-            DescriptorLease descriptor,
-            NativeLease? resource = null,
-            NativeLease? secondaryResource = null)
+            DescriptorAllocation descriptor,
+            NativeResourceData? resource = null,
+            NativeResourceData? secondaryResource = null
+        )
         {
             _device = device;
             _descriptor = descriptor;
@@ -296,16 +250,19 @@ internal sealed unsafe partial class D3D12Backend
                 resource?.Release();
                 throw;
             }
+
             _resource = resource;
             _secondaryResource = secondaryResource;
         }
 
-        internal void Release(GraphicsObject owner)
+        internal void Release(GraphicsObject allocator)
         {
             _descriptor.Release();
-            Interlocked.Exchange(ref _secondaryResource, null)?.Release();
-            Interlocked.Exchange(ref _resource, null)?.Release();
-            _device.UnregisterChild(owner);
+            _secondaryResource?.Release();
+            _secondaryResource = null;
+            _resource?.Release();
+            _resource = null;
+            _device.UnregisterChild(allocator);
         }
     }
 }

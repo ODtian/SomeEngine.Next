@@ -1,5 +1,5 @@
-#include "cluster_bin_common.slang"
-#include "resource_effects.slang"
+__exported import cluster_bin_common;
+__exported import resource_effects;
 
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<RasterBinEntry> RasterBinMeta;

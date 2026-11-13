@@ -1,6 +1,6 @@
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-/// <summary>Test helpers for fixed-slot public descriptor tables.</summary>
+/// <summary>Test helpers for fixed-entry public descriptor tables.</summary>
 internal static class DescriptorTableTestSupport
 {
     internal static DescriptorTable CreateDescriptorTable(
@@ -10,31 +10,31 @@ internal static class DescriptorTableTestSupport
         string? label = null)
     {
         if (slotTypes.IsEmpty)
-            throw new ArgumentException("A descriptor table requires at least one slot.", nameof(slotTypes));
+            throw new ArgumentException("A descriptor table requires at least one entry.", nameof(slotTypes));
         bool sampler = slotTypes[0] == ResourceBindingType.Sampler;
-        DescriptorSlotDesc[] slots = new DescriptorSlotDesc[slotTypes.Length];
+        DescriptorEntryDesc[] entries = new DescriptorEntryDesc[slotTypes.Length];
         for (int index = 0; index < slotTypes.Length; index++)
         {
             if ((slotTypes[index] == ResourceBindingType.Sampler) != sampler)
             {
                 throw new ArgumentException(
-                    "A descriptor table cannot mix sampler and resource slots.",
+                    "A descriptor table cannot mix sampler and resource entries.",
                     nameof(slotTypes));
             }
-            slots[index] = ToSlot(slotTypes[index]);
+            entries[index] = ToSlot(slotTypes[index]);
         }
-        return backend.CreateDescriptorTable(device, slots, label);
+        return backend.CreateDescriptorTable(device, entries, label);
     }
 
     internal static DescriptorTable CreateSingleDescriptorTable(
         this IGraphicsBackend backend,
         Device device,
-        in DescriptorSlotDesc slot,
+        in DescriptorEntryDesc entry,
         in ResourceBinding binding,
         out DescriptorIndex index,
         string? label = null)
     {
-        DescriptorTable table = backend.CreateDescriptorTable(device, [slot], label);
+        DescriptorTable table = backend.CreateDescriptorTable(device, [entry], label);
         try
         {
             backend.WriteDescriptor(table, 0, binding);
@@ -48,16 +48,16 @@ internal static class DescriptorTableTestSupport
         }
     }
 
-    private static DescriptorSlotDesc ToSlot(ResourceBindingType type) => type switch
+    private static DescriptorEntryDesc ToSlot(ResourceBindingType type) => type switch
     {
-        ResourceBindingType.TextureSrv => new DescriptorSlotDesc(
+        ResourceBindingType.TextureSrv => new DescriptorEntryDesc(
             type,
             Format.R8G8B8A8UNorm,
             TextureDimension: TextureViewDimension.Texture2D),
-        ResourceBindingType.TextureUav => new DescriptorSlotDesc(
+        ResourceBindingType.TextureUav => new DescriptorEntryDesc(
             type,
             Format.R8G8B8A8UNorm,
             TextureDimension: TextureViewDimension.Texture2D),
-        _ => new DescriptorSlotDesc(type),
+        _ => new DescriptorEntryDesc(type),
     };
 }

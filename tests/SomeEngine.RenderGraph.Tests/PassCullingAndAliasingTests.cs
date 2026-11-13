@@ -25,10 +25,8 @@ public sealed class PassCullingAndAliasingTests
 
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            GraphBufferId sourceId = edit.RegisterExternalBuffer(source,
-                [Endpoint(source, support.CopyQueue, ResourceContentState.Defined)]);
-            GraphBufferId destinationId = edit.RegisterExternalBuffer(destination,
-                [Endpoint(destination, support.GraphicsQueue, ResourceContentState.Undefined)]);
+            GraphBufferId sourceId = edit.RegisterExternalBuffer(source);
+            GraphBufferId destinationId = edit.RegisterExternalBuffer(destination);
             GraphBufferId scratch = edit.CreateTransientBuffer(new BufferDesc(
                 ByteCount,
                 BufferUsages.CopySource | BufferUsages.CopyDestination));
@@ -42,7 +40,7 @@ public sealed class PassCullingAndAliasingTests
             edit.Commit();
         }
 
-        RenderGraphSnapshot? snapshot = null;
+        RenderGraphDiagnosticsData? data = null;
         QueueCompletion[] completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         using (RenderGraphFrame frame = graph.BeginFrame(
                    new RenderGraphFrameOptions(Diagnostics: Capture)))
@@ -50,22 +48,22 @@ public sealed class PassCullingAndAliasingTests
             _ = frame.Execute(completions);
         }
         support.Wait(completions);
-        Assert.NotNull(snapshot);
-        Assert.Contains(snapshot!.Passes, pass => pass.Label == "Dead write" && !pass.Live);
-        Assert.Contains(snapshot.Passes, pass => pass.Label == "Live overwrite" && pass.Live);
-        Assert.True(snapshot.Statistics.TransientOccupiedBytes <= snapshot.Statistics.TransientResourceBytes);
-        Assert.True(snapshot.Statistics.TransientHeapBytes >= snapshot.Statistics.TransientOccupiedBytes);
-        Assert.True(snapshot.Statistics.GraphHeapBytes >= snapshot.Statistics.TransientHeapBytes);
+        Assert.NotNull(data);
+        Assert.Contains(data!.Passes, pass => pass.Label == "Dead write" && !pass.Live);
+        Assert.Contains(data.Passes, pass => pass.Label == "Live overwrite" && pass.Live);
+        Assert.True(data.Statistics.TransientOccupiedBytes <= data.Statistics.TransientResourceBytes);
+        Assert.True(data.Statistics.TransientHeapBytes >= data.Statistics.TransientOccupiedBytes);
+        Assert.True(data.Statistics.GraphHeapBytes >= data.Statistics.TransientHeapBytes);
 
         void Capture(in RenderGraphDiagnosticsView view) =>
-            snapshot = CaptureSnapshot(view);
+            data = CaptureDiagnostics(view);
     }
 
     [Fact]
     public void TransientRegionsDoNotAliasAcrossQueueBoundaries()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        RenderGraphSnapshot crossQueue = Execute(
+        RenderGraphDiagnosticsData crossQueue = Execute(
             support.CopyQueue,
             support.GraphicsQueue,
             "cross-queue first",
@@ -74,7 +72,7 @@ public sealed class PassCullingAndAliasingTests
             crossQueue.Barriers,
             static barrier => barrier.Kind == RenderGraphBarrierKind.Aliasing);
 
-        RenderGraphSnapshot Execute(
+        RenderGraphDiagnosticsData Execute(
             Queue firstQueue,
             Queue secondQueue,
             string firstLabel,
@@ -100,7 +98,7 @@ public sealed class PassCullingAndAliasingTests
                 edit.Commit();
             }
 
-            RenderGraphSnapshot? snapshot = null;
+            RenderGraphDiagnosticsData? data = null;
             var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
             int submitted;
             using (RenderGraphFrame frame = graph.BeginFrame(
@@ -109,12 +107,12 @@ public sealed class PassCullingAndAliasingTests
                 submitted = frame.Execute(completions);
             }
             support.Wait(completions.AsSpan(0, submitted));
-            Assert.NotNull(snapshot);
-            Assert.Equal(2, snapshot!.Buffers.Length);
-            return snapshot;
+            Assert.NotNull(data);
+            Assert.Equal(2, data!.Buffers.Length);
+            return data;
 
             void Capture(in RenderGraphDiagnosticsView view) =>
-                snapshot = CaptureSnapshot(view);
+                data = CaptureDiagnostics(view);
         }
     }
 
@@ -135,36 +133,34 @@ public sealed class PassCullingAndAliasingTests
             support.Device,
             [support.GraphicsQueue, support.CopyQueue]);
 
-        GraphExtensionPointId point;
+        GraphRegionId point;
         GraphBufferId sourceId;
         GraphBufferId destinationId;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            sourceId = edit.RegisterExternalBuffer(source,
-                [Endpoint(source, support.CopyQueue, ResourceContentState.Defined)]);
-            destinationId = edit.RegisterExternalBuffer(destination,
-                [Endpoint(destination, support.GraphicsQueue, ResourceContentState.Undefined)]);
-            point = edit.AddExtensionPoint("Dynamic work");
+            sourceId = edit.RegisterExternalBuffer(source);
+            destinationId = edit.RegisterExternalBuffer(destination);
+            point = edit.AddRegion("Dynamic work");
             edit.Commit();
         }
 
         QueueCompletion[] completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         using (RenderGraphFrame frame = graph.BeginFrame())
         {
-            using RenderGraphFrameExtension extension = frame.BeginExtension(point);
+            RenderGraphFrame extension = frame;
             GraphBufferId transient = extension.CreateBuffer(new BufferDesc(
                 ByteCount,
                 BufferUsages.CopySource | BufferUsages.CopyDestination));
             _ = extension.AddCopyPass(
                 "Extension upload",
-                PassQueueSelection.Exact(support.CopyQueue),
+                PassQueueSelection.OnQueue(support.CopyQueue),
                 new CopyState(sourceId, transient, ByteCount),
                 default,
                 DeclareCopy,
                 RecordCopy);
             _ = extension.AddCopyPass(
                 "Extension readback",
-                PassQueueSelection.Exact(support.GraphicsQueue),
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
                 new CopyState(transient, destinationId, ByteCount),
                 default,
                 DeclareCopy,

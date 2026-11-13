@@ -68,7 +68,7 @@ public sealed class RenderInstancePropertyLayoutBuilder
     {
         if (_properties.TryGetValue(declaration.Key, out RenderInstancePropertyRegistration? existing))
         {
-            if (!existing.Declaration.HasSameContract(declaration))
+            if (!existing.Declaration.Matches(declaration))
             {
                 throw new InvalidOperationException(
                     $"Render-instance property '{declaration.Key}' from '{contributor}' uses encoding " +

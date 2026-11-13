@@ -16,7 +16,7 @@ public partial interface IGraphicsBackend
     /// </summary>
     bool TryRepeatCommands(CommandContext context, out RecordedCommands commands)
     {
-        commands = default;
+        commands = null!;
         return false;
     }
     RecordedBundle EndBundle(CommandContext context);
@@ -72,12 +72,12 @@ public partial interface IGraphicsBackend
         in ParameterBlockBindings bindings);
     void SetVertexBuffers(
         CommandContext context,
-        uint firstSlot,
+        uint firstBinding,
         ReadOnlySpan<VertexBufferBinding> bindings);
     void SetIndexBuffer(CommandContext context, in IndexBufferBinding binding);
     void SetStreamOutputBuffers(
         CommandContext context,
-        uint firstSlot,
+        uint firstBinding,
         ReadOnlySpan<StreamOutputBufferBinding> bindings);
     void SetViewports(CommandContext context, ReadOnlySpan<Viewport> viewports);
     void SetScissors(CommandContext context, ReadOnlySpan<ScissorRect> scissors);

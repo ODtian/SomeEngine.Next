@@ -69,7 +69,16 @@ public readonly record struct SparseResourceInfo(
     SparseTileShape TileShape,
     ulong TotalTileCount,
     SparsePackedMipInfo PackedMips,
-    ulong Alignment);
+    ulong Alignment)
+{
+    public ReadOnlyMemory<SparseSubresourceLayout> Subresources { get; init; }
+}
+
+public readonly record struct SparseSubresourceLayout(ulong Width, uint Height, uint Depth,
+    bool Packed, uint NextSubresource)
+{
+    public ulong TileCount => Width * Height * Depth;
+}
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>

@@ -1,14 +1,16 @@
-#include "cluster_bin_common.slang"
+#include "raster_faces.slang"
+__exported import cluster_bin_common;
 #ifndef CLUSTER_TESSELLATION_CORE_SLANG
 #define CLUSTER_TESSELLATION_CORE_SLANG
 
 #include "cluster_common.slang"
-#include "cluster_structures.slang"
-#include "cluster_tessellation_types.slang"
-#include "cluster_view_access.slang"
-#include "resource_effects.slang"
-#include "vertex_consumer_cache.slang"
-#include "cluster_work_status.slang"
+__exported import cluster_structures;
+__exported import cluster_tessellation_types;
+__exported import cluster_view_access;
+__exported import resource_effects;
+__exported import vertex_consumer_cache;
+__exported import cluster_work_status;
+__exported import cluster_raster_inputs;
 
 ConstantBuffer<TessellationUniforms> TessellationUniformData;
 StructuredBuffer<ClusterViewUniforms> TessellationViews;
@@ -18,6 +20,9 @@ StructuredBuffer<VisibleCluster> TessellationVisibleClusters;
 RWStructuredBuffer<uint> TessellationBinnedClusterIndexBuffer;
 StructuredBuffer<RasterBinEntry> TessellationRasterBinMeta;
 StructuredBuffer<uint> TessellationRasterSlots;
+StructuredBuffer<uint4> LayerClusterTileWindows;
+struct LayerTessellationWindowParameters { uint TileSize; uint HardwareWindowTiles; uint2 Padding; };
+ConstantBuffer<LayerTessellationWindowParameters> LayerCullParameters;
 Texture2DArray<float> TessellationHiZTexture;
 
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
@@ -37,8 +42,8 @@ StructuredBuffer<uint> GroupedPatchIndices;
 StructuredBuffer<uint> TessellationBinCounts;
 StructuredBuffer<uint> TessellationBinOffsets;
 
-#include "cluster_hiz_shared.slang"
-#include "cluster_raster_shared.slang"
+__exported import cluster_hiz_shared;
+__exported import cluster_raster_shared;
 #include "cluster_raster_target_filter.slang"
 
 static const uint TESS_PORTABLE_DISPATCH_DIMENSION = 65535u;
@@ -123,13 +128,16 @@ TDomain.TriangleData LoadTessellationTriangle<TVE, TDomain>(
     return domain.makeTriangle(vertices[0], vertices[1], vertices[2], materialIndex);
 }
 
-DomainEvaluate.TriangleData LoadTessellationTriangleWithVisibility(
-    uniform VertexEvaluate evaluator,
-    uniform DomainEvaluate domain,
-    uniform VisibilityEvaluate visibility,
+TDomain.TriangleData LoadTessellationTriangleWithVisibility<TVE, TDomain, TVisibility>(
+    uniform TVE evaluator,
+    uniform TDomain domain,
+    uniform TVisibility visibility,
     uint visibleClusterIndex,
     uint originalTriangle,
-    out VisibilityEvaluate.Varying varyings[3])
+    out TVisibility.Varying varyings[3])
+    where TVE : IVertexEvaluate
+    where TDomain : IDomainEvaluate<TVE.Vertex>
+    where TVisibility : IVisibilityEvaluate<TVE.Vertex>
 {
     DrawRequest request = VisibleClusterRequest(TessellationVisibleClusters[visibleClusterIndex]);
     uint vertexBlobAddress;
@@ -147,7 +155,7 @@ DomainEvaluate.TriangleData LoadTessellationTriangleWithVisibility(
 
     uint indexOffset = PageHeap.Load(request.PageOffset + 24u);
     uint viewIndex = DrawRequestViewIndex(request);
-    VertexEvaluate.Vertex vertices[3];
+    TVE.Vertex vertices[3];
     [unroll]
     for (uint corner = 0u; corner < 3u; corner++)
     {
@@ -180,12 +188,12 @@ DomainEvaluate.TriangleData LoadTessellationTriangleWithVisibility(
     return domain.makeTriangle(vertices[0], vertices[1], vertices[2], materialIndex);
 }
 
-#include "cluster_tessellation_geometry.slang"
+__exported import cluster_tessellation_geometry;
 
 bool IsTessellationBoundsVisible(
     float3 minimum,
     float3 maximum,
-    uint viewIndex, uint instanceId)
+    uint viewIndex, uint instanceId, bool shadowPages = false, bool layerTiles = false)
 {
     ClusterViewUniforms view = LoadClusterView(
         TessellationViews,
@@ -195,7 +203,7 @@ bool IsTessellationBoundsVisible(
     bool usePrevious = TessellationUniformData.UsePreviousHiZ != 0u;
     if (WorldAabbOutsideFrustum(minimum, maximum, usePrevious, view))
         return false;
-    if (view.TargetPolicy != 0u)
+    if (shadowPages)
     {
         // Policy view IDs are not primary-camera texture layers. Target history
         // is qualified per requested page by the same resolver as traversal.
@@ -205,7 +213,7 @@ bool IsTessellationBoundsVisible(
     }
     float2 minUv;
     float2 maxUv;
-    if (IsWorldAabbOccludedByHiZ(
+    if (!layerTiles && IsWorldAabbOccludedByHiZ(
             TessellationHiZTexture,
             minimum,
             maximum,
@@ -221,7 +229,7 @@ bool IsTessellationBoundsVisible(
 bool IsTessellationDomainVisible<TVertex, TDomain>(
     uniform TDomain domain,
     TDomain.TriangleData triangle,
-    uint viewIndex, uint instanceId)
+    uint viewIndex, uint instanceId, bool shadowPages = false, bool layerTiles = false)
     where TDomain : IDomainEvaluate<TVertex>
 {
     float3 minimum;
@@ -230,53 +238,13 @@ bool IsTessellationDomainVisible<TVertex, TDomain>(
     return IsTessellationBoundsVisible(minimum, maximum, viewIndex, instanceId);
 }
 
-void SeedTessellationRasterBin<TVE : IVertexEvaluate>(
-    uniform TVE evaluator,
-    uint3 groupId,
-    uint groupThreadIndex)
+void AppendTessellationRoot(uint visibleClusterIndex, uint originalTriangle)
 {
-    uint localBatch = TessellationGroupIndex(groupId);
-    RasterBinEntry bin = TessellationRasterBinMeta[TessellationUniformData.CurrentBin];
-    uint batchCount = bin.BinSWCount + bin.BinHWCount;
-    if (localBatch >= batchCount)
-        return;
-
-    uint binnedIndex = localBatch < bin.BinSWCount
-        ? bin.ClusterOffset + localBatch : bin.HardwareOffset + localBatch - bin.BinSWCount;
-    uint batch = TessellationBinnedClusterIndexBuffer[binnedIndex];
-    uint visibleClusterIndex = RasterWorkVisibleIndex(batch);
-    DrawRequest request = VisibleClusterRequest(TessellationVisibleClusters[visibleClusterIndex]);
-    uint viewIndex = DrawRequestViewIndex(request);
-
-    uint rangeStart, rangeEnd;
-    DecodeRasterWorkRange(PageHeap, request, batch, rangeStart, rangeEnd);
-    uint triangleCount = rangeEnd > rangeStart ? rangeEnd - rangeStart : 0u;
-    bool laneValid = groupThreadIndex < triangleCount;
-    uint originalTriangle = rangeStart + groupThreadIndex;
-    bool triangleValid = laneValid &&
-        HasTessellationTriangle(visibleClusterIndex, originalTriangle);
-
-    // Entry presence is the explicit runtime-domain opt-in. A factor of one must still
-    // execute domain.position(); using factor>1 as the route decision silently skipped
-    // constant/low-curvature displacement.
-    bool domainBatch = WaveActiveAnyTrue(triangleValid);
-    if (!domainBatch)
-        return;
-
-    if (groupThreadIndex == 0u)
-        TessellationBinnedClusterIndexBuffer[binnedIndex] = batch | 0xFFC00000u;
-
-    if (!triangleValid)
-        return;
-
     TessellationPatch patch;
     patch.VisibleClusterIndex = visibleClusterIndex;
     patch.TriangleAndRasterBin = originalTriangle | (TessellationUniformData.CurrentBin << 8u);
-    SetTessellationPatchBarycentrics(
-        patch,
-        float3(1.0, 0.0, 0.0),
-        float3(0.0, 1.0, 0.0),
-        float3(0.0, 0.0, 1.0));
+    SetTessellationPatchBarycentrics(patch,
+        float3(1.0, 0.0, 0.0), float3(0.0, 1.0, 0.0), float3(0.0, 0.0, 1.0));
     SetTessellationPatchState(patch, 0u, 1u.xxx);
 
     AddClusterWorkMetric(80u, 1u);
@@ -290,15 +258,11 @@ void SeedTessellationRasterBin<TVE : IVertexEvaluate>(
         baseIndex = ReserveClusterWork(TessellationLevelCounts, waveCount,
             TessellationUniformData.MaxPatchItems, 32u);
         uint ignored;
-        TessellationCounters.InterlockedAdd(
-            TESS_COUNTER_ROOT_COUNT,
-            waveCount,
-            ignored);
+        TessellationCounters.InterlockedAdd(TESS_COUNTER_ROOT_COUNT, waveCount, ignored);
     }
     baseIndex = WaveReadLaneAt(baseIndex, leader);
     uint outputIndex = baseIndex + WaveMaskPrefix(active, lane);
-    bool admitted = outputIndex < TessellationUniformData.MaxPatchItems;
-    if (admitted)
+    if (outputIndex < TessellationUniformData.MaxPatchItems)
         TessellationWorkPatches0[outputIndex] = EncodeTessellationWorkPatch(patch);
     uint admittedEnd = min(baseIndex + waveCount, TessellationUniformData.MaxPatchItems);
     if (lane == leader)
@@ -306,18 +270,54 @@ void SeedTessellationRasterBin<TVE : IVertexEvaluate>(
         if (baseIndex + waveCount > TessellationUniformData.MaxPatchItems)
         {
             uint ignored;
-            TessellationCounters.InterlockedAdd(
-                TESS_COUNTER_OVERFLOW,
-                waveCount - (admittedEnd > baseIndex ? admittedEnd - baseIndex : 0u),
-                ignored);
+            TessellationCounters.InterlockedAdd(TESS_COUNTER_OVERFLOW,
+                waveCount - (admittedEnd > baseIndex ? admittedEnd - baseIndex : 0u), ignored);
         }
         uint ignored;
-        TessellationNextLevelArgs.InterlockedMax(
-            0u,
-            (admittedEnd + TESS_SPLIT_THREADS - 1u) / TESS_SPLIT_THREADS,
-            ignored);
+        TessellationNextLevelArgs.InterlockedMax(0u,
+            (admittedEnd + TESS_SPLIT_THREADS - 1u) / TESS_SPLIT_THREADS, ignored);
         TessellationNextLevelArgs.Store(4u, 1u);
         TessellationNextLevelArgs.Store(8u, 1u);
+    }
+}
+
+void SeedTessellationRasterBin<TVE : IVertexEvaluate, TInput : IClusterRasterInput = RasterBatchesInput>(
+    uniform TVE evaluator,
+    uint3 groupId,
+    uint groupThreadIndex, bool layerTiles = false)
+{
+    uint localBatch = TessellationGroupIndex(groupId);
+    RasterBinEntry bin = TessellationRasterBinMeta[TessellationUniformData.CurrentBin];
+    uint batchCount = bin.BinSWCount + bin.BinHWCount;
+    if (localBatch >= TInput.Count(batchCount))
+        return;
+
+    uint binnedIndex = localBatch < bin.BinSWCount
+        ? bin.ClusterOffset + localBatch : bin.HardwareOffset + localBatch - bin.BinSWCount;
+    uint binned = TInput.Spilled() ? 0u : TessellationBinnedClusterIndexBuffer[binnedIndex];
+    uint batch;
+    if (!TInput.Read(binned, localBatch, TessellationUniformData.MaxPatchItems, batch)) return;
+    uint visibleClusterIndex = RasterWorkVisibleIndex(batch);
+    if (layerTiles)
+    {
+        uint4 tiles = LayerClusterTileWindows[visibleClusterIndex];
+        if ((tiles.z - tiles.x) * (tiles.w - tiles.y) <= LayerCullParameters.HardwareWindowTiles) return;
+    }
+    DrawRequest request = VisibleClusterRequest(TessellationVisibleClusters[visibleClusterIndex]);
+    uint viewIndex = DrawRequestViewIndex(request);
+
+    uint2 range = RasterInputTriangleRange<TInput>(PageHeap, request, batch);
+    if (!TInput.Spilled() && groupThreadIndex == 0u)
+        TessellationBinnedClusterIndexBuffer[binnedIndex] = batch | 0xFFC00000u;
+    for (uint first = range.x; first < range.y; first += 32u)
+    {
+        uint triangle = first + groupThreadIndex;
+        if (triangle < range.y && TInput.AcceptTriangle(TessellationUniformData.CurrentBin,
+            GetClusterMaterialSlotOffset(request.InstanceID),
+            GetClusterLocalMaterial(PageHeap, request.PageOffset, DrawRequestClusterID(request), triangle),
+            true,
+            batch, RasterInputPath.All))
+            AppendTessellationRoot(visibleClusterIndex, triangle);
     }
 }
 
@@ -325,7 +325,7 @@ bool IsTessellationPatchVisible<TVertex, TDomain>(
     uniform TDomain domain,
     TDomain.TriangleData triangle,
     TessellationPatch patch,
-    bool rootPatch)
+    bool rootPatch, bool shadowPages = false, bool layerTiles = false)
     where TDomain : IDomainEvaluate<TVertex>
 {
     uint viewIndex = DrawRequestViewIndex(
@@ -339,7 +339,7 @@ bool IsTessellationPatchVisible<TVertex, TDomain>(
         domain.bounds(triangle, minimum, maximum);
     else
         domain.patchBounds(triangle, bary0, bary1, bary2, minimum, maximum);
-    return IsTessellationBoundsVisible(minimum, maximum, viewIndex, VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]).InstanceID);
+    return IsTessellationBoundsVisible(minimum, maximum, viewIndex, VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]).InstanceID, shadowPages, layerTiles);
 }
 
 void AddTessellationCounter(uint byteOffset, uint value)
@@ -501,7 +501,7 @@ void ProcessTessellationPatch<TVE, TDomain>(
     uniform TVE evaluator,
     uniform TDomain domain,
     TessellationPatch patch,
-    bool rootPatch)
+    bool rootPatch, bool shadowPages = false, bool layerTiles = false)
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
 {
@@ -518,7 +518,7 @@ void ProcessTessellationPatch<TVE, TDomain>(
         triangleIndex);
 
     if (!IsTessellationPatchVisible<TVE.Vertex, TDomain>(
-            domain, triangle, patch, rootPatch))
+            domain, triangle, patch, rootPatch, shadowPages, layerTiles))
     {
         AddTessellationCounter(TESS_COUNTER_CULLED, 1u);
         RecordTessellationProcessed();
@@ -544,7 +544,7 @@ void ProcessTessellationPatch<TVE, TDomain>(
         TessellationUniformData.TargetEdgePixels,
         edgeFactors,
         splitMask,
-        splitInterior);
+        splitInterior, shadowPages);
 
     bool needsSplit = splitMask != 0u || splitInterior;
     uint depth = TessellationPatchDepth(patch);
@@ -575,7 +575,7 @@ void SplitTessellationPatches<TVE, TDomain>(
     uniform TVE evaluator,
     uniform TDomain domain,
     uint3 groupId,
-    uint groupThreadIndex)
+    uint groupThreadIndex, bool shadowPages = false, bool layerTiles = false)
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
 {
@@ -593,23 +593,23 @@ void SplitTessellationPatches<TVE, TDomain>(
         evaluator,
         domain,
         patch,
-        level == 0u);
+        level == 0u, shadowPages, layerTiles);
 }
 
-VisibilityEvaluate.Varying ReadTessellationDiceVarying(
-    uniform VisibilityEvaluate visibility,
+TVisibility.Varying ReadTessellationDiceVarying<TVertex, TVisibility : IVisibilityEvaluate<TVertex>>(
+    uniform TVisibility visibility,
     uint index,
     uint lanesPerPatch,
     uint firstLane,
     uint registersPerLane,
-    VisibilityEvaluate.Varying varying0,
-    VisibilityEvaluate.Varying varying1,
-    VisibilityEvaluate.Varying varying2)
+    TVisibility.Varying varying0,
+    TVisibility.Varying varying1,
+    TVisibility.Varying varying2)
 {
     uint lane = firstLane + index % lanesPerPatch;
-    VisibilityEvaluate.Varying result0 = visibility.readLane(varying0, lane);
-    VisibilityEvaluate.Varying result1 = {};
-    VisibilityEvaluate.Varying result2 = {};
+    TVisibility.Varying result0 = visibility.readLane(varying0, lane);
+    TVisibility.Varying result1 = {};
+    TVisibility.Varying result2 = {};
     if (registersPerLane > 1u)
         result1 = visibility.readLane(varying1, lane);
     if (registersPerLane > 2u)
@@ -618,14 +618,17 @@ VisibilityEvaluate.Varying ReadTessellationDiceVarying(
     return bank == 0u ? result0 : bank == 1u ? result1 : result2;
 }
 
-void DiceTessellationPatches<
-    TOutput : IClusterRasterOutput>(
-    uniform VertexEvaluate evaluator,
-    uniform DomainEvaluate domain,
-    uniform VisibilityEvaluate visibility,
+void DiceTessellationPatches<TVE, TDomain, TVisibility, TOutput>(
+    uniform TVE evaluator,
+    uniform TDomain domain,
+    uniform TVisibility visibility,
     uniform TOutput rasterOutput,
     uint3 groupId,
     uint groupThreadIndex)
+    where TVE : IVertexEvaluate
+    where TDomain : IDomainEvaluate<TVE.Vertex>
+    where TVisibility : IVisibilityEvaluate<TVE.Vertex>
+    where TOutput : IClusterRasterOutput
 {
     uint localGroup = TessellationGroupIndex(groupId);
     uint firstBin = TessellationUniformData.CurrentBin * TESS_PATTERN_MAX_FACTOR;
@@ -651,8 +654,8 @@ void DiceTessellationPatches<
     uint patchIndex = TessellationBinOffsets[firstBin + factor - 1u] + localPatch;
     bool valid = localPatch < count && patchIndex < TessellationUniformData.MaxPatchItems;
     TessellationPatch patch = {};
-    DomainEvaluate.TriangleData triangle;
-    VisibilityEvaluate.Varying sourceVaryings[3];
+    TDomain.TriangleData triangle;
+    TVisibility.Varying sourceVaryings[3];
     ClusterViewUniforms view = {};
     uint viewIndex = 0u;
     if (valid)
@@ -687,9 +690,9 @@ void DiceTessellationPatches<
     float4 vertex0 = float4(0.0, 0.0, 0.0, 1.0);
     float4 vertex1 = vertex0;
     float4 vertex2 = vertex0;
-    VisibilityEvaluate.Varying varying0 = {};
-    VisibilityEvaluate.Varying varying1 = {};
-    VisibilityEvaluate.Varying varying2 = {};
+    TVisibility.Varying varying0 = {};
+    TVisibility.Varying varying1 = {};
+    TVisibility.Varying varying2 = {};
     if (valid)
     {
         [unroll]
@@ -702,8 +705,8 @@ void DiceTessellationPatches<
             float3 sourceBary = TransformPatchBarycentric(patchBary0, patchBary1, patchBary2, localBary);
             float3 worldPosition = domain.position(triangle, sourceBary);
             float4 position = mul(float4(ClusterPositionForView(worldPosition, view), 1.0), view.ViewProj);
-            position.zw = CalculateClusterRasterDepthInput(worldPosition, position, view);
-            VisibilityEvaluate.Varying generatedVarying = visibility.interpolateVertex(
+            position.zw = CalculateClusterRasterDepthInput<TOutput>(worldPosition, position, view);
+            TVisibility.Varying generatedVarying = visibility.interpolateVertex(
                 sourceVaryings[0],
                 sourceVaryings[1],
                 sourceVaryings[2],
@@ -728,7 +731,6 @@ void DiceTessellationPatches<
 
     int4 scissor = rasterOutput.scissor(
         patch.VisibleClusterIndex,
-        view.TargetPolicy,
         view.TargetViewIndex,
         view.ScreenWidth,
         view.ScreenHeight);
@@ -743,20 +745,20 @@ void DiceTessellationPatches<
             ReadTessellationDiceVertex(vertices.y, lanesPerPatch, firstLane, registersPerLane, vertex0, vertex1, vertex2),
             ReadTessellationDiceVertex(vertices.z, lanesPerPatch, firstLane, registersPerLane, vertex0, vertex1, vertex2)
         };
-        VisibilityEvaluate.Varying varyings[3] = {
-            ReadTessellationDiceVarying(
+        TVisibility.Varying varyings[3] = {
+            ReadTessellationDiceVarying<TVE.Vertex, TVisibility>(
                 visibility, vertices.x, lanesPerPatch, firstLane, registersPerLane,
                 varying0, varying1, varying2),
-            ReadTessellationDiceVarying(
+            ReadTessellationDiceVarying<TVE.Vertex, TVisibility>(
                 visibility, vertices.y, lanesPerPatch, firstLane, registersPerLane,
                 varying0, varying1, varying2),
-            ReadTessellationDiceVarying(
+            ReadTessellationDiceVarying<TVE.Vertex, TVisibility>(
                 visibility, vertices.z, lanesPerPatch, firstLane, registersPerLane,
                 varying0, varying1, varying2)
         };
         RasterizeClusterTriangleWave<
-            VertexEvaluate.Vertex,
-            VisibilityEvaluate,
+            TVE.Vertex,
+            TVisibility,
             TOutput>(
             visibility,
             rasterOutput,
@@ -767,11 +769,11 @@ void DiceTessellationPatches<
             VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]),
             TessellationPatchTriangle(patch),
             viewIndex,
-            view.TargetPolicy,
-            view.TargetViewIndex,
+                view.TargetViewIndex,
             active,
             view.ScreenWidth,
-            view.ScreenHeight, ClusterViewClipsDepth(view));
+            view.ScreenHeight, ClusterViewClipsDepth(view), 0u,
+            (TOutput.UsesReverseDepth() ? 1u : 0u) == 0u ? CLUSTER_RASTER_TWO_SIDED == 0 : CLUSTER_TARGET_RASTER_TWO_SIDED == 0);
     }
 }
 

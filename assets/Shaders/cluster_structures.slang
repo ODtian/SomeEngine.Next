@@ -163,7 +163,7 @@ uint DecodeTriangleCount(PackedCluster c)
     return (c.PackedCounts >> 8) & 0xFF;
 }
 
-#include "cluster_hierarchy.slang"
+__exported import cluster_hierarchy;
 
 // Each stage owns an independent dense material-slot mapping. The Cluster instance ABI stores
 // only the assignment-sequence offset; stage compatibility never enters the instance record.

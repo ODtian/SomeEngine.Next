@@ -1,5 +1,4 @@
 namespace SomeEngine.Graphics.Vulkan;
-
 internal sealed unsafe partial class VulkanBackend
 {
     private AccelerationStructure CreateAccelerationStructureCore(
@@ -7,15 +6,12 @@ internal sealed unsafe partial class VulkanBackend
         RhiBuffer storage,
         in BufferRange storageRange,
         AccelerationStructureType type,
-        string? label)
+        string? label
+    )
     {
         VulkanDevice nativeDevice = RequireRayTracingDevice(device);
         VulkanBuffer nativeStorage = RequireBuffer(nativeDevice, storage, nameof(storage));
-        if ((nativeStorage.Info.Usages & BufferUsages.AccelerationStructure) == 0)
-            throw new ArgumentException("Acceleration-structure storage requires AccelerationStructure usage.", nameof(storage));
-        BufferRange range = storageRange.Resolve(nativeStorage.Info.Size);
-        if ((range.Offset & 255) != 0)
-            throw new ArgumentOutOfRangeException(nameof(storageRange));
+        BufferRange range = storageRange.Expand(nativeStorage.Info.Size);
         AccelerationStructureCreateInfoKHR createInfo = new()
         {
             SType = StructureType.AccelerationStructureCreateInfoKhr,
@@ -26,42 +22,26 @@ internal sealed unsafe partial class VulkanBackend
         };
         VkAccelerationStructure native = default;
         nativeDevice.ThrowIfDeviceCallFailed(
-            nativeDevice.AccelerationStructureApi.CreateAccelerationStructure(
-                nativeDevice.Native,
-                &createInfo,
-                null,
-                &native),
-            "vkCreateAccelerationStructureKHR");
+            nativeDevice.AccelerationStructureApi.CreateAccelerationStructure(nativeDevice.Native, &createInfo, null, &native),
+            "vkCreateAccelerationStructureKHR"
+        );
         try
         {
-            var result = new VulkanAccelerationStructure(
-                nativeDevice,
-                native,
-                nativeStorage,
-                new AccelerationStructureInfo(type, range.Size, storage, range),
-                label);
+            var result = new VulkanAccelerationStructure(nativeDevice, native, nativeStorage, new AccelerationStructureInfo(type, range.Size, storage, range), label);
             nativeDevice.RegisterChild(result);
             return result;
         }
         catch
         {
-            nativeDevice.AccelerationStructureApi.DestroyAccelerationStructure(
-                nativeDevice.Native,
-                native,
-                null);
+            nativeDevice.AccelerationStructureApi.DestroyAccelerationStructure(nativeDevice.Native, native, null);
             throw;
         }
     }
 
-    private AccelerationStructureSrv CreateAccelerationStructureSrvCore(
-        RhiDevice device,
-        in AccelerationStructureSrvDesc desc)
+    private AccelerationStructureSrv CreateAccelerationStructureSrvCore(RhiDevice device, in AccelerationStructureSrvDesc desc)
     {
         VulkanDevice nativeDevice = RequireRayTracingDevice(device);
-        VulkanAccelerationStructure structure = RequireAccelerationStructure(
-            nativeDevice,
-            desc.AccelerationStructure,
-            nameof(desc));
+        VulkanAccelerationStructure structure = RequireAccelerationStructure(nativeDevice, desc.AccelerationStructure, nameof(desc));
         var result = new VulkanAccelerationStructureSrv(nativeDevice, structure, desc);
         nativeDevice.RegisterChild(result);
         return result;
@@ -71,7 +51,8 @@ internal sealed unsafe partial class VulkanBackend
         RhiDevice device,
         AccelerationStructureType type,
         AccelerationStructureBuildOptions options,
-        ReadOnlySpan<AccelerationStructureGeometry> geometries)
+        ReadOnlySpan<AccelerationStructureGeometry> geometries
+    )
     {
         VulkanDevice nativeDevice = RequireRayTracingDevice(device);
         VulkanGeometryPack pack = CreateGeometryPack(nativeDevice, type, geometries, capture: null);
@@ -91,12 +72,7 @@ internal sealed unsafe partial class VulkanBackend
             {
                 SType = StructureType.AccelerationStructureBuildSizesInfoKhr,
             };
-            nativeDevice.AccelerationStructureApi.GetAccelerationStructureBuildSizes(
-                nativeDevice.Native,
-                AccelerationStructureBuildTypeKHR.DeviceKhr,
-                &build,
-                primitivePointer,
-                &sizes);
+            nativeDevice.AccelerationStructureApi.GetAccelerationStructureBuildSizes(nativeDevice.Native, AccelerationStructureBuildTypeKHR.DeviceKhr, &build, primitivePointer, &sizes);
             RayTracing capability = GetRayTracingCapability(nativeDevice);
             return new AccelerationStructureBuildInfo(
                 sizes.AccelerationStructureSize,
@@ -104,36 +80,21 @@ internal sealed unsafe partial class VulkanBackend
                 sizes.BuildScratchSize,
                 capability.ScratchAlignment,
                 sizes.UpdateScratchSize,
-                capability.ScratchAlignment);
+                capability.ScratchAlignment
+            );
         }
     }
 
-    private void BuildAccelerationStructureCore(
-        CommandContext context,
-        in AccelerationStructureBuildDesc desc)
+    private void BuildAccelerationStructureCore(CommandContext context, in AccelerationStructureBuildDesc desc)
     {
-        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
+        VulkanCommandContext command = ((VulkanCommandContext)context);
         VulkanDevice device = RequireRayTracingDevice(command.Device);
-        VulkanAccelerationStructure destination = RequireAccelerationStructure(
-            device,
-            desc.Destination,
-            nameof(desc));
-        if (destination.Info.Type != desc.Type)
-            throw new ArgumentException("The build type does not match the destination structure.", nameof(desc));
-        VulkanAccelerationStructure? source = desc.Source is null
-            ? null
-            : RequireAccelerationStructure(device, desc.Source, nameof(desc));
+        VulkanAccelerationStructure destination = RequireAccelerationStructure(device, desc.Destination, nameof(desc));
+        VulkanAccelerationStructure? source = desc.Source is null ? null : RequireAccelerationStructure(device, desc.Source, nameof(desc));
         bool update = (desc.Options & AccelerationStructureBuildOptions.PerformUpdate) != 0;
-        if (update && source is null)
-            throw new ArgumentException("An update build requires a source acceleration structure.", nameof(desc));
         VulkanBuffer scratch = RequireBuffer(device, desc.Scratch, nameof(desc));
-        BufferRange scratchRange = desc.ScratchRange.Resolve(scratch.Info.Size);
+        BufferRange scratchRange = desc.ScratchRange.Expand(scratch.Info.Size);
         RayTracing capability = GetRayTracingCapability(device);
-        if (scratchRange.Offset % capability.ScratchAlignment != 0)
-            throw new ArgumentOutOfRangeException(nameof(desc.ScratchRange));
-        command.Capture(destination);
-        if (source is not null) command.Capture(source);
-        command.Capture(scratch);
         VulkanGeometryPack pack = CreateGeometryPack(device, desc.Type, desc.Geometries, command);
         fixed (AccelerationStructureGeometryKHR* geometryPointer = pack.Geometries)
         fixed (AccelerationStructureBuildRangeInfoKHR* rangePointer = pack.Ranges)
@@ -143,9 +104,7 @@ internal sealed unsafe partial class VulkanBackend
                 SType = StructureType.AccelerationStructureBuildGeometryInfoKhr,
                 Type = ToNative(desc.Type),
                 Flags = ToNative(desc.Options),
-                Mode = update
-                    ? BuildAccelerationStructureModeKHR.UpdateKhr
-                    : BuildAccelerationStructureModeKHR.BuildKhr,
+                Mode = update ? BuildAccelerationStructureModeKHR.UpdateKhr : BuildAccelerationStructureModeKHR.BuildKhr,
                 SrcAccelerationStructure = source?.Native ?? default,
                 DstAccelerationStructure = destination.Native,
                 GeometryCount = checked((uint)pack.Geometries.Length),
@@ -156,11 +115,7 @@ internal sealed unsafe partial class VulkanBackend
                 },
             };
             AccelerationStructureBuildRangeInfoKHR* ranges = rangePointer;
-            device.AccelerationStructureApi.CmdBuildAccelerationStructures(
-                command.NativeRecording,
-                1,
-                &build,
-                &ranges);
+            device.AccelerationStructureApi.CmdBuildAccelerationStructures(command.NativeRecording, 1, &build, &ranges);
         }
     }
 
@@ -168,45 +123,30 @@ internal sealed unsafe partial class VulkanBackend
         CommandContext context,
         AccelerationStructure destination,
         AccelerationStructure source,
-        AccelerationStructureCopyType type)
+        AccelerationStructureCopyType type
+    )
     {
-        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
+        VulkanCommandContext command = ((VulkanCommandContext)context);
         VulkanDevice device = RequireRayTracingDevice(command.Device);
         VulkanAccelerationStructure nativeDestination = RequireAccelerationStructure(device, destination, nameof(destination));
         VulkanAccelerationStructure nativeSource = RequireAccelerationStructure(device, source, nameof(source));
-        command.Capture(nativeDestination);
-        command.Capture(nativeSource);
         CopyAccelerationStructureInfoKHR copy = new()
         {
             SType = StructureType.CopyAccelerationStructureInfoKhr,
             Src = nativeSource.Native,
             Dst = nativeDestination.Native,
-            Mode = type == AccelerationStructureCopyType.Compact
-                ? CopyAccelerationStructureModeKHR.CompactKhr
-                : CopyAccelerationStructureModeKHR.CloneKhr,
+            Mode = type == AccelerationStructureCopyType.Compact ? CopyAccelerationStructureModeKHR.CompactKhr : CopyAccelerationStructureModeKHR.CloneKhr,
         };
         device.AccelerationStructureApi.CmdCopyAccelerationStructure(command.NativeRecording, &copy);
     }
 
-    private void SerializeAccelerationStructureCore(
-        CommandContext context,
-        in BufferRegion destination,
-        AccelerationStructure source)
+    private void SerializeAccelerationStructureCore(CommandContext context, in BufferRegion destination, AccelerationStructure source)
     {
-        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
+        VulkanCommandContext command = ((VulkanCommandContext)context);
         VulkanDevice device = RequireRayTracingDevice(command.Device);
         VulkanBuffer buffer = RequireBuffer(device, destination.Buffer, nameof(destination));
-        BufferRange range = destination.Range.Resolve(buffer.Info.Size);
-        if ((buffer.Info.Usages & BufferUsages.CopyDestination) == 0 ||
-            ((buffer.DeviceAddress + range.Offset) & 255) != 0)
-        {
-            throw new ArgumentException(
-                "Serialized acceleration-structure storage requires CopyDestination usage and 256-byte address alignment.",
-                nameof(destination));
-        }
+        BufferRange range = destination.Range.Expand(buffer.Info.Size);
         VulkanAccelerationStructure structure = RequireAccelerationStructure(device, source, nameof(source));
-        command.Capture(buffer);
-        command.Capture(structure);
         CopyAccelerationStructureToMemoryInfoKHR copy = new()
         {
             SType = StructureType.CopyAccelerationStructureToMemoryInfoKhr,
@@ -217,30 +157,16 @@ internal sealed unsafe partial class VulkanBackend
             },
             Mode = CopyAccelerationStructureModeKHR.SerializeKhr,
         };
-        device.AccelerationStructureApi.CmdCopyAccelerationStructureToMemory(
-            command.NativeRecording,
-            &copy);
+        device.AccelerationStructureApi.CmdCopyAccelerationStructureToMemory(command.NativeRecording, &copy);
     }
 
-    private void DeserializeAccelerationStructureCore(
-        CommandContext context,
-        AccelerationStructure destination,
-        in BufferRegion source)
+    private void DeserializeAccelerationStructureCore(CommandContext context, AccelerationStructure destination, in BufferRegion source)
     {
-        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
+        VulkanCommandContext command = ((VulkanCommandContext)context);
         VulkanDevice device = RequireRayTracingDevice(command.Device);
         VulkanBuffer buffer = RequireBuffer(device, source.Buffer, nameof(source));
-        BufferRange range = source.Range.Resolve(buffer.Info.Size);
-        if ((buffer.Info.Usages & BufferUsages.CopySource) == 0 ||
-            ((buffer.DeviceAddress + range.Offset) & 255) != 0)
-        {
-            throw new ArgumentException(
-                "Serialized acceleration-structure input requires CopySource usage and 256-byte address alignment.",
-                nameof(source));
-        }
+        BufferRange range = source.Range.Expand(buffer.Info.Size);
         VulkanAccelerationStructure structure = RequireAccelerationStructure(device, destination, nameof(destination));
-        command.Capture(buffer);
-        command.Capture(structure);
         CopyMemoryToAccelerationStructureInfoKHR copy = new()
         {
             SType = StructureType.CopyMemoryToAccelerationStructureInfoKhr,
@@ -251,9 +177,7 @@ internal sealed unsafe partial class VulkanBackend
             Dst = structure.Native,
             Mode = CopyAccelerationStructureModeKHR.DeserializeKhr,
         };
-        device.AccelerationStructureApi.CmdCopyMemoryToAccelerationStructure(
-            command.NativeRecording,
-            &copy);
+        device.AccelerationStructureApi.CmdCopyMemoryToAccelerationStructure(command.NativeRecording, &copy);
     }
 
     private void EmitAccelerationStructurePostBuildInfoCore(
@@ -261,31 +185,19 @@ internal sealed unsafe partial class VulkanBackend
         AccelerationStructure source,
         AccelerationStructurePostBuildInfoType type,
         RhiBuffer destination,
-        ulong destinationOffset)
+        ulong destinationOffset
+    )
     {
-        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
+        VulkanCommandContext command = ((VulkanCommandContext)context);
         VulkanDevice device = RequireRayTracingDevice(command.Device);
         VulkanAccelerationStructure structure = RequireAccelerationStructure(device, source, nameof(source));
         VulkanBuffer buffer = RequireBuffer(device, destination, nameof(destination));
-        if ((buffer.Info.Usages & BufferUsages.QueryResolve) == 0 ||
-            destinationOffset > buffer.Info.Size - Math.Min(buffer.Info.Size, 8) ||
-            (destinationOffset & 7) != 0)
-            throw new ArgumentOutOfRangeException(nameof(destinationOffset));
         var query = new VulkanAccelerationStructurePropertyQuery(device, ToNative(type));
         try
         {
-            command.Capture(query);
-            command.Capture(structure);
-            command.Capture(buffer);
             Api.CmdResetQueryPool(command.NativeRecording, query.Native, 0, 1);
             VkAccelerationStructure native = structure.Native;
-            device.AccelerationStructureApi.CmdWriteAccelerationStructuresProperties(
-                command.NativeRecording,
-                1,
-                &native,
-                query.Type,
-                query.Native,
-                0);
+            device.AccelerationStructureApi.CmdWriteAccelerationStructuresProperties(command.NativeRecording, 1, &native, query.Type, query.Native, 0);
             Api.CmdCopyQueryPoolResults(
                 command.NativeRecording,
                 query.Native,
@@ -294,7 +206,8 @@ internal sealed unsafe partial class VulkanBackend
                 buffer.Native,
                 destinationOffset,
                 8,
-                QueryResultFlags.Result64Bit | QueryResultFlags.ResultWaitBit);
+                QueryResultFlags.Result64Bit | QueryResultFlags.ResultWaitBit
+            );
         }
         finally
         {
@@ -306,26 +219,17 @@ internal sealed unsafe partial class VulkanBackend
         VulkanDevice device,
         AccelerationStructureType type,
         ReadOnlySpan<AccelerationStructureGeometry> geometries,
-        VulkanCommandContext? capture)
+        VulkanCommandContext? capture
+    )
     {
-        if (geometries.IsEmpty)
-            throw new ArgumentException("At least one acceleration-structure geometry is required.", nameof(geometries));
-        if (type == AccelerationStructureType.TopLevel &&
-            (geometries.Length != 1 || geometries[0].Type != AccelerationStructureGeometryType.Instances))
-            throw new ArgumentException("A top-level build requires exactly one Instances geometry.", nameof(geometries));
         var native = new AccelerationStructureGeometryKHR[geometries.Length];
         var ranges = new AccelerationStructureBuildRangeInfoKHR[geometries.Length];
         var primitiveCounts = new uint[geometries.Length];
         for (int index = 0; index < geometries.Length; index++)
         {
-            CreateGeometry(
-                device,
-                geometries[index],
-                capture,
-                out native[index],
-                out ranges[index],
-                out primitiveCounts[index]);
+            CreateGeometry(device, geometries[index], capture, out native[index], out ranges[index], out primitiveCounts[index]);
         }
+
         return new VulkanGeometryPack(native, ranges, primitiveCounts);
     }
 
@@ -335,11 +239,12 @@ internal sealed unsafe partial class VulkanBackend
         VulkanCommandContext? capture,
         out AccelerationStructureGeometryKHR native,
         out AccelerationStructureBuildRangeInfoKHR range,
-        out uint primitiveCount)
+        out uint primitiveCount
+    )
     {
+        primitiveCount = 0;
         VulkanBuffer primary = RequireBuffer(device, geometry.Primary.Buffer, nameof(geometry));
-        BufferRange primaryRange = geometry.Primary.Range.Resolve(primary.Info.Size);
-        capture?.Capture(primary);
+        BufferRange primaryRange = geometry.Primary.Range.Expand(primary.Info.Size);
         native = new AccelerationStructureGeometryKHR
         {
             SType = StructureType.AccelerationStructureGeometryKhr,
@@ -353,8 +258,7 @@ internal sealed unsafe partial class VulkanBackend
                 CreateTriangleGeometry(device, geometry, primary, primaryRange, capture, ref native, out primitiveCount);
                 break;
             case AccelerationStructureGeometryType.AxisAlignedBoundingBoxes:
-                if (geometry.PrimaryStride == 0 || geometry.Count == 0)
-                    throw new ArgumentOutOfRangeException(nameof(geometry));
+
                 native.Geometry.Aabbs = new AccelerationStructureGeometryAabbsDataKHR
                 {
                     SType = StructureType.AccelerationStructureGeometryAabbsDataKhr,
@@ -367,8 +271,7 @@ internal sealed unsafe partial class VulkanBackend
                 primitiveCount = geometry.Count;
                 break;
             case AccelerationStructureGeometryType.Instances:
-                if (geometry.Count == 0)
-                    throw new ArgumentOutOfRangeException(nameof(geometry));
+
                 native.Geometry.Instances = new AccelerationStructureGeometryInstancesDataKHR
                 {
                     SType = StructureType.AccelerationStructureGeometryInstancesDataKhr,
@@ -381,8 +284,9 @@ internal sealed unsafe partial class VulkanBackend
                 primitiveCount = geometry.Count;
                 break;
             default:
-                throw new ArgumentOutOfRangeException(nameof(geometry));
+                return;
         }
+
         range.PrimitiveCount = primitiveCount;
     }
 
@@ -393,27 +297,26 @@ internal sealed unsafe partial class VulkanBackend
         in BufferRange vertexRange,
         VulkanCommandContext? capture,
         ref AccelerationStructureGeometryKHR native,
-        out uint primitiveCount)
+        out uint primitiveCount
+    )
     {
-        if (geometry.PrimaryStride == 0 || geometry.Count < 3)
-            throw new ArgumentOutOfRangeException(nameof(geometry));
         bool indexed = geometry.Secondary.Buffer is not null;
         VulkanBuffer? indices = null;
         BufferRange indexRange = default;
         if (indexed)
         {
             indices = RequireBuffer(device, geometry.Secondary.Buffer!, nameof(geometry));
-            indexRange = geometry.Secondary.Range.Resolve(indices.Info.Size);
-            capture?.Capture(indices);
+            indexRange = geometry.Secondary.Range.Expand(indices.Info.Size);
         }
+
         ulong transformAddress = 0;
         if (geometry.Transform.Buffer is not null)
         {
             VulkanBuffer transform = RequireBuffer(device, geometry.Transform.Buffer, nameof(geometry));
-            BufferRange transformRange = geometry.Transform.Range.Resolve(transform.Info.Size);
-            capture?.Capture(transform);
+            BufferRange transformRange = geometry.Transform.Range.Expand(transform.Info.Size);
             transformAddress = checked(transform.DeviceAddress + transformRange.Offset);
         }
+
         native.Geometry.Triangles = new AccelerationStructureGeometryTrianglesDataKHR
         {
             SType = StructureType.AccelerationStructureGeometryTrianglesDataKhr,
@@ -424,16 +327,10 @@ internal sealed unsafe partial class VulkanBackend
             },
             VertexStride = geometry.PrimaryStride,
             MaxVertex = geometry.Count - 1,
-            IndexType = indexed
-                ? geometry.IndexType == IndexType.UInt16
-                    ? Silk.NET.Vulkan.IndexType.Uint16
-                    : Silk.NET.Vulkan.IndexType.Uint32
-                : Silk.NET.Vulkan.IndexType.NoneKhr,
+            IndexType = indexed ? geometry.IndexType == IndexType.UInt16 ? Silk.NET.Vulkan.IndexType.Uint16 : Silk.NET.Vulkan.IndexType.Uint32 : Silk.NET.Vulkan.IndexType.NoneKhr,
             IndexData = new DeviceOrHostAddressConstKHR
             {
-                DeviceAddress = indexed
-                    ? checked(indices!.DeviceAddress + indexRange.Offset)
-                    : 0,
+                DeviceAddress = indexed ? checked(indices!.DeviceAddress + indexRange.Offset) : 0,
             },
             TransformData = new DeviceOrHostAddressConstKHR
             {
@@ -441,9 +338,7 @@ internal sealed unsafe partial class VulkanBackend
             },
         };
         uint indexSize = geometry.IndexType == IndexType.UInt16 ? 2u : 4u;
-        primitiveCount = indexed
-            ? checked((uint)(indexRange.Size / indexSize / 3))
-            : geometry.Count / 3;
+        primitiveCount = indexed ? checked((uint)(indexRange.Size / indexSize / 3)) : geometry.Count / 3;
     }
 
     private VulkanDevice RequireRayTracingDevice(RhiDevice device)
@@ -453,54 +348,43 @@ internal sealed unsafe partial class VulkanBackend
         return native;
     }
 
-    private static RayTracing GetRayTracingCapability(VulkanDevice device) =>
-        device.TryGetCapability(out RayTracing? capability) && capability is not null
-            ? capability
-            : throw new NotSupportedException("The Device was not created with RayTracing support.");
-
-    private static VulkanAccelerationStructure RequireAccelerationStructure(
-        VulkanDevice device,
-        AccelerationStructure value,
-        string parameterName)
-    {
-        ArgumentNullException.ThrowIfNull(value, parameterName);
-        if (value is not VulkanAccelerationStructure native || !ReferenceEquals(native.Device, device))
-            throw new ArgumentException("The acceleration structure belongs to a different Vulkan Device.", parameterName);
-        native.ThrowIfDisposed();
-        return native;
-    }
-
+    private static RayTracing GetRayTracingCapability(VulkanDevice device) => device.TryGetCapability(out RayTracing? capability) && capability is not null ? capability : default!;
+    private static VulkanAccelerationStructure RequireAccelerationStructure(VulkanDevice device, AccelerationStructure value, string parameterName) => (VulkanAccelerationStructure)value;
     private static AccelerationStructureTypeKHR ToNative(AccelerationStructureType type) => type switch
     {
         AccelerationStructureType.BottomLevel => AccelerationStructureTypeKHR.BottomLevelKhr,
         AccelerationStructureType.TopLevel => AccelerationStructureTypeKHR.TopLevelKhr,
-        _ => throw new ArgumentOutOfRangeException(nameof(type)),
+        _ => default!,
     };
-
     private static GeometryTypeKHR ToNative(AccelerationStructureGeometryType type) => type switch
     {
         AccelerationStructureGeometryType.Triangles => GeometryTypeKHR.TrianglesKhr,
         AccelerationStructureGeometryType.AxisAlignedBoundingBoxes => GeometryTypeKHR.AabbsKhr,
         AccelerationStructureGeometryType.Instances => GeometryTypeKHR.InstancesKhr,
-        _ => throw new ArgumentOutOfRangeException(nameof(type)),
+        _ => default!,
     };
-
     private static BuildAccelerationStructureFlagsKHR ToNative(AccelerationStructureBuildOptions options)
     {
         BuildAccelerationStructureFlagsKHR result = 0;
-        if ((options & AccelerationStructureBuildOptions.AllowUpdate) != 0) result |= BuildAccelerationStructureFlagsKHR.AllowUpdateBitKhr;
-        if ((options & AccelerationStructureBuildOptions.AllowCompaction) != 0) result |= BuildAccelerationStructureFlagsKHR.AllowCompactionBitKhr;
-        if ((options & AccelerationStructureBuildOptions.PreferFastTrace) != 0) result |= BuildAccelerationStructureFlagsKHR.PreferFastTraceBitKhr;
-        if ((options & AccelerationStructureBuildOptions.PreferFastBuild) != 0) result |= BuildAccelerationStructureFlagsKHR.PreferFastBuildBitKhr;
-        if ((options & AccelerationStructureBuildOptions.MinimizeMemory) != 0) result |= BuildAccelerationStructureFlagsKHR.LowMemoryBitKhr;
+        if ((options & AccelerationStructureBuildOptions.AllowUpdate) != 0)
+            result |= BuildAccelerationStructureFlagsKHR.AllowUpdateBitKhr;
+        if ((options & AccelerationStructureBuildOptions.AllowCompaction) != 0)
+            result |= BuildAccelerationStructureFlagsKHR.AllowCompactionBitKhr;
+        if ((options & AccelerationStructureBuildOptions.PreferFastTrace) != 0)
+            result |= BuildAccelerationStructureFlagsKHR.PreferFastTraceBitKhr;
+        if ((options & AccelerationStructureBuildOptions.PreferFastBuild) != 0)
+            result |= BuildAccelerationStructureFlagsKHR.PreferFastBuildBitKhr;
+        if ((options & AccelerationStructureBuildOptions.MinimizeMemory) != 0)
+            result |= BuildAccelerationStructureFlagsKHR.LowMemoryBitKhr;
         return result;
     }
 
     private static GeometryFlagsKHR ToNative(AccelerationStructureGeometryOptions options)
     {
         GeometryFlagsKHR result = 0;
-        if ((options & AccelerationStructureGeometryOptions.Opaque) != 0) result |= GeometryFlagsKHR.OpaqueBitKhr;
-        if ((options & AccelerationStructureGeometryOptions.NoDuplicateAnyHitInvocation) != 0)
+        if ((options & AccelerationStructureGeometryOptions.Opaque) != 0)
+            result |= GeometryFlagsKHR.OpaqueBitKhr;
+        if ((options & AccelerationStructureGeometryOptions.NoRepeatedAnyHit) != 0)
             result |= GeometryFlagsKHR.NoDuplicateAnyHitInvocationBitKhr;
         return result;
     }
@@ -510,23 +394,21 @@ internal sealed unsafe partial class VulkanBackend
         AccelerationStructurePostBuildInfoType.CompactedSize => Silk.NET.Vulkan.QueryType.AccelerationStructureCompactedSizeKhr,
         AccelerationStructurePostBuildInfoType.SerializationSize => Silk.NET.Vulkan.QueryType.AccelerationStructureSerializationSizeKhr,
         AccelerationStructurePostBuildInfoType.CurrentSize => Silk.NET.Vulkan.QueryType.AccelerationStructureSizeKhr,
-        _ => throw new ArgumentOutOfRangeException(nameof(type)),
+        _ => default!,
     };
-
     private sealed class VulkanAccelerationStructure : AccelerationStructure, IVulkanRetained
     {
         private readonly VulkanDevice _device;
         private readonly VulkanBuffer _storage;
         private readonly VulkanLifetime _lifetime;
         private VkAccelerationStructure _native;
-
         internal VulkanAccelerationStructure(
             VulkanDevice device,
             VkAccelerationStructure native,
             VulkanBuffer storage,
             in AccelerationStructureInfo info,
-            string? label)
-            : base(device, info, label)
+            string? label
+        ) : base(device, info, label)
         {
             _device = device;
             _native = native;
@@ -536,6 +418,7 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         internal VkAccelerationStructure Native => _native;
+
         internal ulong DeviceAddress
         {
             get
@@ -545,14 +428,18 @@ internal sealed unsafe partial class VulkanBackend
                     SType = StructureType.AccelerationStructureDeviceAddressInfoKhr,
                     AccelerationStructure = _native,
                 };
-                return _device.AccelerationStructureApi.GetAccelerationStructureDeviceAddress(
-                    _device.Native,
-                    &info);
+                return _device.AccelerationStructureApi.GetAccelerationStructureDeviceAddress(_device.Native, &info);
             }
         }
+
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-        internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
+        internal override void Release(bool fromParent)
+        {
+            _device.UnregisterChild(this);
+            _lifetime.Release();
+        }
+
         private void DestroyNative()
         {
             if (_native.Handle != 0)
@@ -567,12 +454,7 @@ internal sealed unsafe partial class VulkanBackend
         private readonly VulkanDevice _device;
         private readonly VulkanAccelerationStructure _structure;
         private readonly VulkanLifetime _lifetime;
-
-        internal VulkanAccelerationStructureSrv(
-            VulkanDevice device,
-            VulkanAccelerationStructure structure,
-            in AccelerationStructureSrvDesc desc)
-            : base(device, desc)
+        internal VulkanAccelerationStructureSrv(VulkanDevice device, VulkanAccelerationStructure structure, in AccelerationStructureSrvDesc desc) : base(device, desc)
         {
             _device = device;
             _structure = structure;
@@ -581,9 +463,14 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         internal VkAccelerationStructure Native => _structure.Native;
+
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-        internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
+        internal override void Release(bool fromParent)
+        {
+            _device.UnregisterChild(this);
+            _lifetime.Release();
+        }
     }
 
     private sealed class VulkanAccelerationStructurePropertyQuery : IVulkanRetained
@@ -591,10 +478,7 @@ internal sealed unsafe partial class VulkanBackend
         private readonly VulkanDevice _device;
         private readonly VulkanLifetime _lifetime;
         private VkQueryPool _native;
-
-        internal VulkanAccelerationStructurePropertyQuery(
-            VulkanDevice device,
-            Silk.NET.Vulkan.QueryType type)
+        internal VulkanAccelerationStructurePropertyQuery(VulkanDevice device, Silk.NET.Vulkan.QueryType type)
         {
             _device = device;
             Type = type;
@@ -607,13 +491,15 @@ internal sealed unsafe partial class VulkanBackend
             VkQueryPool native = default;
             device.ThrowIfDeviceCallFailed(
                 device.Backend.Api.CreateQueryPool(device.Native, &createInfo, null, &native),
-                "vkCreateQueryPool(acceleration structure property)");
+                "vkCreateQueryPool(acceleration structure property)"
+            );
             _native = native;
             _lifetime = new VulkanLifetime(DestroyNative);
         }
 
         internal VkQueryPool Native => _native;
         internal Silk.NET.Vulkan.QueryType Type { get; }
+
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
         private void DestroyNative()
@@ -627,5 +513,6 @@ internal sealed unsafe partial class VulkanBackend
     private sealed record VulkanGeometryPack(
         AccelerationStructureGeometryKHR[] Geometries,
         AccelerationStructureBuildRangeInfoKHR[] Ranges,
-        uint[] PrimitiveCounts);
+        uint[] PrimitiveCounts
+    );
 }

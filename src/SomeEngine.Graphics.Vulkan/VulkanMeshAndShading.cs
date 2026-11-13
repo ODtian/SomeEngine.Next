@@ -4,10 +4,9 @@ internal sealed unsafe partial class VulkanBackend
 {
     private void DispatchMeshCore(CommandContext context, in DispatchArguments arguments)
     {
-        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
+        VulkanCommandContext command = ((VulkanCommandContext)context);
         VulkanDevice device = (VulkanDevice)command.Device;
-        if (!device.TryGetCapability(out MeshShaders? mesh) || mesh is null)
-            throw new NotSupportedException("The Device was not created with MeshShaders support.");
+        
         device.MeshShaderApi.CmdDrawMeshTask(
             command.NativeRecording,
             arguments.X,
@@ -17,15 +16,12 @@ internal sealed unsafe partial class VulkanBackend
 
     private void DispatchMeshIndirectCore(CommandContext context, in BufferRegion arguments)
     {
-        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
+        VulkanCommandContext command = ((VulkanCommandContext)context);
         VulkanDevice device = (VulkanDevice)command.Device;
-        if (!device.TryGetCapability(out MeshShaders? mesh) || mesh is null)
-            throw new NotSupportedException("The Device was not created with MeshShaders support.");
+        
         VulkanBuffer buffer = RequireBuffer(device, arguments.Buffer, nameof(arguments));
-        BufferRange range = arguments.Range.Resolve(buffer.Info.Size);
-        if (range.Size < 12 || (range.Offset & 3) != 0)
-            throw new ArgumentOutOfRangeException(nameof(arguments));
-        command.Capture(buffer);
+        BufferRange range = arguments.Range.Expand(buffer.Info.Size);
+        
         device.MeshShaderApi.CmdDrawMeshTasksIndirect(
             command.NativeRecording,
             buffer.Native,
@@ -40,13 +36,10 @@ internal sealed unsafe partial class VulkanBackend
         ShadingRateCombiner primitiveCombiner,
         ShadingRateCombiner imageCombiner)
     {
-        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
+        VulkanCommandContext command = ((VulkanCommandContext)context);
         VulkanDevice device = (VulkanDevice)command.Device;
-        if (!device.TryGetCapability(out VariableRateShading? shading) || shading is null)
-            throw new NotSupportedException("The Device was not created with VariableRateShading support.");
-        if (!shading.Rates.Contains(rate) || !shading.Combiners.Contains(primitiveCombiner) ||
-            !shading.Combiners.Contains(imageCombiner))
-            throw new NotSupportedException("The requested Vulkan fragment shading-rate combination is unsupported.");
+        device.TryGetCapability(out VariableRateShading? shading);
+
         Extent2D fragmentSize = ToNative(rate);
         FragmentShadingRateCombinerOpKHR* combiners = stackalloc FragmentShadingRateCombinerOpKHR[2]
         {
@@ -61,30 +54,17 @@ internal sealed unsafe partial class VulkanBackend
 
     private void SetShadingRateImageCore(CommandContext context, RhiTexture? texture)
     {
-        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
-        if (command.IsRendering)
-            throw new InvalidOperationException("A shading-rate image must be selected before rendering begins.");
+        VulkanCommandContext command = ((VulkanCommandContext)context);
+        
         VulkanDevice device = (VulkanDevice)command.Device;
-        if (!device.TryGetCapability(out VariableRateShading? shading) || shading is null ||
-            !shading.ShadingRateImage)
-            throw new NotSupportedException("The Device does not support fragment shading-rate attachments.");
+        device.TryGetCapability(out VariableRateShading? shading);
         if (texture is null)
         {
             command.SetShadingRateAttachment(default, default);
             return;
         }
         VulkanTexture nativeTexture = RequireTexture(device, texture, nameof(texture));
-        if ((nativeTexture.Info.Usages & TextureUsages.ShadingRate) == 0)
-            throw new ArgumentException("The Texture requires ShadingRate usage.", nameof(texture));
-        if (nativeTexture.Info.Format != RhiFormat.R8UInt ||
-            nativeTexture.Info.Dimension != TextureDimension.Texture2D ||
-            nativeTexture.Info.SampleCount != 1 ||
-            nativeTexture.Info.ArrayLayerCount != 1)
-        {
-            throw new ArgumentException(
-                "A Vulkan shading-rate image must be one-layer, single-sample R8UInt Texture2D.",
-                nameof(texture));
-        }
+
         ImageViewCreateInfo createInfo = new()
         {
             SType = StructureType.ImageViewCreateInfo,
@@ -105,10 +85,9 @@ internal sealed unsafe partial class VulkanBackend
         var view = new VulkanShadingRateImageView(device, nativeTexture, nativeView);
         try
         {
-            command.Capture(view);
             command.SetShadingRateAttachment(
                 nativeView,
-                new Extent2D(shading.ImageTileWidth, shading.ImageTileHeight));
+                new Extent2D(shading!.ImageTileWidth, shading.ImageTileHeight));
         }
         finally
         {
@@ -125,7 +104,7 @@ internal sealed unsafe partial class VulkanBackend
         ShadingRate.Rate2x4 => new Extent2D(2, 4),
         ShadingRate.Rate4x2 => new Extent2D(4, 2),
         ShadingRate.Rate4x4 => new Extent2D(4, 4),
-        _ => throw new ArgumentOutOfRangeException(nameof(rate)),
+        _ => default,
     };
 
     private static FragmentShadingRateCombinerOpKHR ToNative(ShadingRateCombiner combiner) =>
@@ -135,7 +114,7 @@ internal sealed unsafe partial class VulkanBackend
             ShadingRateCombiner.Override => FragmentShadingRateCombinerOpKHR.ReplaceKhr,
             ShadingRateCombiner.Minimum => FragmentShadingRateCombinerOpKHR.MinKhr,
             ShadingRateCombiner.Maximum => FragmentShadingRateCombinerOpKHR.MaxKhr,
-            _ => throw new NotSupportedException("Vulkan has no additive fragment shading-rate combiner."),
+            _ => default,
         };
 
     private sealed class VulkanShadingRateImageView : IVulkanRetained

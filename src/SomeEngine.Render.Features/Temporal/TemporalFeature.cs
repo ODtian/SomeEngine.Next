@@ -1,4 +1,4 @@
-using SomeEngine.ECS.Entities;
+﻿using SomeEngine.ECS.Entities;
 using SlangShaderSharp;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
@@ -27,8 +27,11 @@ public readonly record struct TemporalFeatureOutput(
 /// Owns temporal history, resolve and initialization passes. The feature consumes
 /// only explicit color, depth, and motion outputs and has no Cluster shader operation role.
 /// </summary>
-public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObserver
+public sealed class TemporalFeature : IDisposable
 {
+
+    private readonly RenderPipelines _renderPipelines;
+    private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private static readonly TextureSubresourceRange ColorRange =
         new(0, 1, 0, 1, TextureAspects.Color);
     private static readonly TextureSubresourceRange HistoryRange =
@@ -39,7 +42,6 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
     private readonly GraphTextureId _history;
     private uint _historyLayer;
     private Vector2 _previousJitterPixels;
-    private Vector2 _frameJitterPixels;
     private readonly GraphPassId _initializePass;
     private readonly GraphPassId _resolvePass;
     private readonly GraphBufferInput _uniforms;
@@ -48,21 +50,23 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
     private readonly GraphTextureInput _sceneMotion;
     private bool _historyValid;
     private Entity _historyView;
-    private Entity _frameView;
-    private bool _frameActive;
     private bool _disposed;
 
     public TemporalFeature(
         IGraphicsBackend backend,
         Device device,
+        RenderPipelines pipelines,
         global::SomeEngine.RenderGraph.RenderGraph graph,
         int width,
         int height,
         Shader shader,
         string vertexEntryPoint,
         string pixelEntryPoint,
-        GraphRegionId region = default)
+        GraphRegionId region = default, Format depthFormat = Format.D32Float)
     {
+
+        _renderPipelines = pipelines;
+        _graph = graph;
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(graph);
@@ -76,8 +80,7 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
         try
         {
             pipeline = LinkedRasterPipeline.Create(
-                backend,
-                device,
+                _renderPipelines,
                 shader,
                 vertexEntryPoint,
                 pixelEntryPoint,
@@ -144,7 +147,10 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
                         _ = resolve.Bind(edit.CreateTextureSrv(_sceneMotion, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color), Format.R16G16Float, SomeEngine.Graphics.TextureViewDimension.Texture2DArray, "Temporal motion"), PipelineSync.PixelShading);
                         break;
                     case TemporalResource.SceneDepth:
-                        _ = resolve.Bind(edit.CreateTextureSrv(_sceneDepth, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth), Format.D32Float, SomeEngine.Graphics.TextureViewDimension.Texture2DArray, "Temporal scene depth"), PipelineSync.PixelShading);
+                        TextureAspects depthAspect = depthFormat is Format.D16UNorm or Format.D32Float
+                            or Format.D24UNormS8UInt or Format.D32FloatS8UInt ? TextureAspects.Depth : TextureAspects.Color;
+                        _ = resolve.Bind(edit.CreateTextureSrv(_sceneDepth, new TextureSubresourceRange(0, 1, 0, 1, depthAspect),
+                            depthFormat, SomeEngine.Graphics.TextureViewDimension.Texture2DArray, "Temporal scene depth"), PipelineSync.PixelShading);
                         break;
                     case TemporalResource.History:
                         _ = resolve.Bind(edit.CreateTextureUav(_history, HistoryRange,
@@ -201,8 +207,6 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
         Vector2 jitterPixels = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_frameActive)
-            throw new InvalidOperationException("The previous temporal graph frame is still active.");
         if (sceneColor == default || sceneDepth == default || !motion.IsValid)
             throw new ArgumentException("Temporal resolve requires valid color, depth, and motion inputs.");
 
@@ -230,43 +234,41 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
         graph.SetTextureInput(_sceneMotion, motion.MotionVectors);
         graph.SetPassEnabled(_initializePass, !_historyValid || cameraCut || !sameView);
         graph.SetPassEnabled(_resolvePass, true);
-        graph.ObserveExecution(this);
-        _frameView = view;
-        _frameJitterPixels = jitterPixels;
-        _frameActive = true;
+        graph.ObserveExecution(new HistorySubmission(this, view, jitterPixels, _historyLayer ^ 1u));
     }
 
-    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+    private sealed class HistorySubmission(TemporalFeature feature, Entity view, Vector2 jitter, uint layer)
+        : IRenderGraphFrameExecutionObserver
     {
-        if (_disposed || !_frameActive)
-            return;
-        // Advance only after the resolve that writes all history components was submitted.
-        if (result.TryGetPassCompletion(_resolvePass, out _))
+        public void OnFrameSubmitted(in RenderGraphSubmission submission)
         {
-            _historyLayer ^= 1u;
-            _historyView = _frameView;
-            _historyValid = _frameView != Entity.Null;
-            _previousJitterPixels = _frameJitterPixels;
+            feature._historyLayer = layer;
+            feature._historyView = view;
+            feature._historyValid = view != Entity.Null;
+            feature._previousJitterPixels = jitter;
         }
-        else if (result.TryGetPassCompletion(_initializePass, out _))
-            _historyValid = false;
-        _frameActive = false;
     }
 
     public void InvalidateHistory()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_frameActive)
-            throw new InvalidOperationException("Temporal history cannot be invalidated during an open frame.");
         _historyValid = false;
+    }
+
+    public void ReplaceShader(Shader previous, Shader next)
+    {
+        if (!_pipeline.ReplaceShader(_renderPipelines, previous, next)) return;
+        using RenderGraphEdit edit = _graph.BeginEdit();
+        PassDefinition pass = edit.GetPass(_resolvePass);
+        pass.SetPipeline(_pipeline.Pipeline);
+        pass.SetParameterBlock(_pipeline.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
+        edit.Commit();
     }
 
     public void Dispose()
     {
         if (_disposed)
             return;
-        if (_frameActive)
-            throw new InvalidOperationException("Temporal resources cannot be disposed during an open graph frame.");
         _pipeline.Dispose();
         _historyValid = false;
         _disposed = true;

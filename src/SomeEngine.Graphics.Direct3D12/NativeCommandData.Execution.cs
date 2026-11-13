@@ -79,60 +79,60 @@ internal sealed unsafe partial class NativeCommandData
                             region.NumSubresources = reader.Read<uint>();
                             region.PRects = (Maths.Box2D<int>*)reader.ReadArray();
                         }
-                        CommandExecutionTrace.DiscardResource(target, resource, hasRegion ? &region : null);
+                        CommandExecutionTrace.DiscardResource(null, target, resource, hasRegion ? &region : null);
                         break;
                     }
                     case NativeCommandType.SetPipelineState:
                     {
                         D3D.ID3D12PipelineState* @pPipelineState = (D3D.ID3D12PipelineState*)reader.Read<nint>();
-                        CommandBindingTrace.SetPipelineState(target, @pPipelineState);
+                        CommandBindingTrace.SetPipelineState(null, target, @pPipelineState);
                         break;
                     }
                     case NativeCommandType.SetDescriptorHeaps:
                     {
                         uint @NumDescriptorHeaps = reader.Read<uint>();
                         D3D.ID3D12DescriptorHeap** @ppDescriptorHeaps = (D3D.ID3D12DescriptorHeap**)reader.ReadArray();
-                        CommandBindingTrace.SetDescriptorHeaps(target, @NumDescriptorHeaps, @ppDescriptorHeaps);
+                        CommandBindingTrace.SetDescriptorHeaps(null, target, @NumDescriptorHeaps, @ppDescriptorHeaps);
                         break;
                     }
                     case NativeCommandType.SetComputeRootSignature:
                     {
                         D3D.ID3D12RootSignature* @pRootSignature = (D3D.ID3D12RootSignature*)reader.Read<nint>();
-                        CommandBindingTrace.SetComputeRootSignature(target, @pRootSignature);
+                        CommandBindingTrace.SetComputeRootSignature(null, target, @pRootSignature);
                         break;
                     }
                     case NativeCommandType.SetGraphicsRootSignature:
                     {
                         D3D.ID3D12RootSignature* @pRootSignature = (D3D.ID3D12RootSignature*)reader.Read<nint>();
-                        CommandBindingTrace.SetGraphicsRootSignature(target, @pRootSignature);
+                        CommandBindingTrace.SetGraphicsRootSignature(null, target, @pRootSignature);
                         break;
                     }
                     case NativeCommandType.SetComputeRootDescriptorTable:
                     {
                         uint @RootParameterIndex = reader.Read<uint>();
                         D3D.GpuDescriptorHandle @BaseDescriptor = reader.Read<D3D.GpuDescriptorHandle>();
-                        CommandBindingTrace.SetComputeRootDescriptorTable(target, @RootParameterIndex, @BaseDescriptor);
+                        CommandBindingTrace.SetComputeRootDescriptorTable(null, target, @RootParameterIndex, @BaseDescriptor);
                         break;
                     }
                     case NativeCommandType.SetGraphicsRootDescriptorTable:
                     {
                         uint @RootParameterIndex = reader.Read<uint>();
                         D3D.GpuDescriptorHandle @BaseDescriptor = reader.Read<D3D.GpuDescriptorHandle>();
-                        CommandBindingTrace.SetGraphicsRootDescriptorTable(target, @RootParameterIndex, @BaseDescriptor);
+                        CommandBindingTrace.SetGraphicsRootDescriptorTable(null, target, @RootParameterIndex, @BaseDescriptor);
                         break;
                     }
                     case NativeCommandType.SetComputeRootConstantBufferView:
                     {
                         uint @RootParameterIndex = reader.Read<uint>();
                         ulong @BufferLocation = reader.Read<ulong>();
-                        CommandBindingTrace.SetComputeRootConstantBufferView(target, @RootParameterIndex, @BufferLocation);
+                        CommandBindingTrace.SetComputeRootConstantBufferView(null, target, @RootParameterIndex, @BufferLocation);
                         break;
                     }
                     case NativeCommandType.SetGraphicsRootConstantBufferView:
                     {
                         uint @RootParameterIndex = reader.Read<uint>();
                         ulong @BufferLocation = reader.Read<ulong>();
-                        CommandBindingTrace.SetGraphicsRootConstantBufferView(target, @RootParameterIndex, @BufferLocation);
+                        CommandBindingTrace.SetGraphicsRootConstantBufferView(null, target, @RootParameterIndex, @BufferLocation);
                         break;
                     }
                     case NativeCommandType.SetComputeRoot32BitConstants:
@@ -141,7 +141,7 @@ internal sealed unsafe partial class NativeCommandData
                         uint @Num32BitValuesToSet = reader.Read<uint>();
                         void* @pSrcData = (void*)reader.ReadArray();
                         uint @DestOffsetIn32BitValues = reader.Read<uint>();
-                        CommandBindingTrace.SetComputeRoot32BitConstants(target, @RootParameterIndex, @Num32BitValuesToSet, @pSrcData, @DestOffsetIn32BitValues);
+                        CommandBindingTrace.SetComputeRoot32BitConstants(null, target, @RootParameterIndex, @Num32BitValuesToSet, @pSrcData, @DestOffsetIn32BitValues);
                         break;
                     }
                     case NativeCommandType.SetGraphicsRoot32BitConstants:
@@ -150,7 +150,7 @@ internal sealed unsafe partial class NativeCommandData
                         uint @Num32BitValuesToSet = reader.Read<uint>();
                         void* @pSrcData = (void*)reader.ReadArray();
                         uint @DestOffsetIn32BitValues = reader.Read<uint>();
-                        CommandBindingTrace.SetGraphicsRoot32BitConstants(target, @RootParameterIndex, @Num32BitValuesToSet, @pSrcData, @DestOffsetIn32BitValues);
+                        CommandBindingTrace.SetGraphicsRoot32BitConstants(null, target, @RootParameterIndex, @Num32BitValuesToSet, @pSrcData, @DestOffsetIn32BitValues);
                         break;
                     }
                     case NativeCommandType.SetPredication:
@@ -158,7 +158,7 @@ internal sealed unsafe partial class NativeCommandData
                         D3D.ID3D12Resource* @pBuffer = (D3D.ID3D12Resource*)reader.Read<nint>();
                         ulong @AlignedBufferOffset = reader.Read<ulong>();
                         D3D.PredicationOp @Operation = reader.Read<D3D.PredicationOp>();
-                        CommandBindingTrace.SetPredication(target, @pBuffer, @AlignedBufferOffset, @Operation);
+                        CommandBindingTrace.SetPredication(null, target, @pBuffer, @AlignedBufferOffset, @Operation);
                         break;
                     }
                     case NativeCommandType.SetMarker:
@@ -166,27 +166,27 @@ internal sealed unsafe partial class NativeCommandData
                         uint @Metadata = reader.Read<uint>();
                         void* @pData = (void*)reader.ReadArray();
                         uint @Size = reader.Read<uint>();
-                        CommandBindingTrace.SetMarker(target, @Metadata, @pData, @Size);
+                        CommandBindingTrace.SetMarker(null, target, @Metadata, @pData, @Size);
                         break;
                     }
                     case NativeCommandType.IASetPrimitiveTopology:
                     {
                         Native.D3DPrimitiveTopology @PrimitiveTopology = reader.Read<Native.D3DPrimitiveTopology>();
-                        CommandBindingTrace.IASetPrimitiveTopology(target, @PrimitiveTopology);
+                        CommandBindingTrace.IASetPrimitiveTopology(null, target, @PrimitiveTopology);
                         break;
                     }
                     case NativeCommandType.RSSetViewports:
                     {
                         uint @NumViewports = reader.Read<uint>();
                         D3D.Viewport* @pViewports = (D3D.Viewport*)reader.ReadArray();
-                        CommandBindingTrace.RSSetViewports(target, @NumViewports, @pViewports);
+                        CommandBindingTrace.RSSetViewports(null, target, @NumViewports, @pViewports);
                         break;
                     }
                     case NativeCommandType.RSSetScissorRects:
                     {
                         uint @NumRects = reader.Read<uint>();
                         Maths.Box2D<int>* @pRects = (Maths.Box2D<int>*)reader.ReadArray();
-                        CommandBindingTrace.RSSetScissorRects(target, @NumRects, @pRects);
+                        CommandBindingTrace.RSSetScissorRects(null, target, @NumRects, @pRects);
                         break;
                     }
                     case NativeCommandType.OMSetRenderTargets:
@@ -195,48 +195,55 @@ internal sealed unsafe partial class NativeCommandData
                         D3D.CpuDescriptorHandle* @pRenderTargetDescriptors = (D3D.CpuDescriptorHandle*)reader.ReadArray();
                         SilkCore.Bool32 @RTsSingleHandleToDescriptorRange = reader.Read<SilkCore.Bool32>();
                         D3D.CpuDescriptorHandle* @pDepthStencilDescriptor = (D3D.CpuDescriptorHandle*)reader.ReadArray();
-                        CommandBindingTrace.OMSetRenderTargets(target, @NumRenderTargetDescriptors, @pRenderTargetDescriptors, @RTsSingleHandleToDescriptorRange, @pDepthStencilDescriptor);
+                        CommandBindingTrace.OMSetRenderTargets(
+                            null,
+                            target,
+                            @NumRenderTargetDescriptors,
+                            @pRenderTargetDescriptors,
+                            @RTsSingleHandleToDescriptorRange,
+                            @pDepthStencilDescriptor
+                        );
                         break;
                     }
                     case NativeCommandType.IASetVertexBuffers:
                     {
-                        uint @StartSlot = reader.Read<uint>();
+                        uint @FirstBinding = reader.Read<uint>();
                         uint @NumViews = reader.Read<uint>();
                         D3D.VertexBufferView* @pViews = (D3D.VertexBufferView*)reader.ReadArray();
-                        CommandBindingTrace.IASetVertexBuffers(target, @StartSlot, @NumViews, @pViews);
+                        CommandBindingTrace.IASetVertexBuffers(null, target, @FirstBinding, @NumViews, @pViews);
                         break;
                     }
                     case NativeCommandType.IASetIndexBuffer:
                     {
                         D3D.IndexBufferView* @pView = (D3D.IndexBufferView*)reader.ReadArray();
-                        CommandBindingTrace.IASetIndexBuffer(target, @pView);
+                        CommandBindingTrace.IASetIndexBuffer(null, target, @pView);
                         break;
                     }
                     case NativeCommandType.SOSetTargets:
                     {
-                        uint @StartSlot = reader.Read<uint>();
+                        uint @FirstBinding = reader.Read<uint>();
                         uint @NumViews = reader.Read<uint>();
                         D3D.StreamOutputBufferView* @pViews = (D3D.StreamOutputBufferView*)reader.ReadArray();
-                        CommandBindingTrace.SOSetTargets(target, @StartSlot, @NumViews, @pViews);
+                        CommandBindingTrace.SOSetTargets(null, target, @FirstBinding, @NumViews, @pViews);
                         break;
                     }
                     case NativeCommandType.OMSetBlendFactor:
                     {
                         float* @BlendFactor = (float*)reader.ReadArray();
-                        CommandBindingTrace.OMSetBlendFactor(target, @BlendFactor);
+                        CommandBindingTrace.OMSetBlendFactor(null, target, @BlendFactor);
                         break;
                     }
                     case NativeCommandType.OMSetStencilRef:
                     {
                         uint @StencilRef = reader.Read<uint>();
-                        CommandBindingTrace.OMSetStencilRef(target, @StencilRef);
+                        CommandBindingTrace.OMSetStencilRef(null, target, @StencilRef);
                         break;
                     }
                     case NativeCommandType.OMSetDepthBounds:
                     {
                         float @Min = reader.Read<float>();
                         float @Max = reader.Read<float>();
-                        CommandBindingTrace.OMSetDepthBounds(target, @Min, @Max);
+                        CommandBindingTrace.OMSetDepthBounds(null, target, @Min, @Max);
                         break;
                     }
                     case NativeCommandType.RSSetDepthBias:
@@ -244,26 +251,26 @@ internal sealed unsafe partial class NativeCommandData
                         float @DepthBias = reader.Read<float>();
                         float @DepthBiasClamp = reader.Read<float>();
                         float @SlopeScaledDepthBias = reader.Read<float>();
-                        CommandBindingTrace.RSSetDepthBias(target, @DepthBias, @DepthBiasClamp, @SlopeScaledDepthBias);
+                        CommandBindingTrace.RSSetDepthBias(null, target, @DepthBias, @DepthBiasClamp, @SlopeScaledDepthBias);
                         break;
                     }
                     case NativeCommandType.IASetIndexBufferStripCutValue:
                     {
                         D3D.IndexBufferStripCutValue @IBStripCutValue = reader.Read<D3D.IndexBufferStripCutValue>();
-                        CommandBindingTrace.IASetIndexBufferStripCutValue(target, @IBStripCutValue);
+                        CommandBindingTrace.IASetIndexBufferStripCutValue(null, target, @IBStripCutValue);
                         break;
                     }
                     case NativeCommandType.RSSetShadingRate:
                     {
                         D3D.ShadingRate @baseShadingRate = reader.Read<D3D.ShadingRate>();
                         D3D.ShadingRateCombiner* @combiners = (D3D.ShadingRateCombiner*)reader.ReadArray();
-                        CommandBindingTrace.RSSetShadingRate(target, @baseShadingRate, @combiners);
+                        CommandBindingTrace.RSSetShadingRate(null, target, @baseShadingRate, @combiners);
                         break;
                     }
                     case NativeCommandType.RSSetShadingRateImage:
                     {
                         D3D.ID3D12Resource* @shadingRateImage = (D3D.ID3D12Resource*)reader.Read<nint>();
-                        CommandBindingTrace.RSSetShadingRateImage(target, @shadingRateImage);
+                        CommandBindingTrace.RSSetShadingRateImage(null, target, @shadingRateImage);
                         break;
                     }
                     case NativeCommandType.CopyBufferRegion:
@@ -273,7 +280,7 @@ internal sealed unsafe partial class NativeCommandData
                         D3D.ID3D12Resource* @pSrcBuffer = (D3D.ID3D12Resource*)reader.Read<nint>();
                         ulong @SrcOffset = reader.Read<ulong>();
                         ulong @NumBytes = reader.Read<ulong>();
-                        CommandTransferTrace.CopyBufferRegion(target, @pDstBuffer, @DstOffset, @pSrcBuffer, @SrcOffset, @NumBytes);
+                        CommandTransferTrace.CopyBufferRegion(null, target, @pDstBuffer, @DstOffset, @pSrcBuffer, @SrcOffset, @NumBytes);
                         break;
                     }
                     case NativeCommandType.CopyTextureRegion:
@@ -284,7 +291,7 @@ internal sealed unsafe partial class NativeCommandData
                         uint @DstZ = reader.Read<uint>();
                         D3D.TextureCopyLocation* @pSrc = (D3D.TextureCopyLocation*)reader.ReadArray();
                         D3D.Box* @pSrcBox = (D3D.Box*)reader.ReadArray();
-                        CommandTransferTrace.CopyTextureRegion(target, @pDst, @DstX, @DstY, @DstZ, @pSrc, @pSrcBox);
+                        CommandTransferTrace.CopyTextureRegion(null, target, @pDst, @DstX, @DstY, @DstZ, @pSrc, @pSrcBox);
                         break;
                     }
                     case NativeCommandType.ResolveSubresourceRegion:
@@ -298,14 +305,26 @@ internal sealed unsafe partial class NativeCommandData
                         Maths.Box2D<int>* @pSrcRect = (Maths.Box2D<int>*)reader.ReadArray();
                         Dxgi.Format @Format = reader.Read<Dxgi.Format>();
                         D3D.ResolveMode @ResolveMode = reader.Read<D3D.ResolveMode>();
-                        CommandTransferTrace.ResolveSubresourceRegion(target, @pDstResource, @DstSubresource, @DstX, @DstY, @pSrcResource, @SrcSubresource, @pSrcRect, @Format, @ResolveMode);
+                        CommandTransferTrace.ResolveSubresourceRegion(
+                            null,
+                            target,
+                            @pDstResource,
+                            @DstSubresource,
+                            @DstX,
+                            @DstY,
+                            @pSrcResource,
+                            @SrcSubresource,
+                            @pSrcRect,
+                            @Format,
+                            @ResolveMode
+                        );
                         break;
                     }
                     case NativeCommandType.ResourceBarrier:
                     {
                         uint @NumBarriers = reader.Read<uint>();
                         D3D.ResourceBarrier* @pBarriers = (D3D.ResourceBarrier*)reader.ReadArray();
-                        CommandTransferTrace.ResourceBarrier(target, @NumBarriers, @pBarriers);
+                        CommandTransferTrace.ResourceBarrier(null, target, @NumBarriers, @pBarriers);
                         break;
                     }
                     case NativeCommandType.Barrier:
@@ -319,7 +338,7 @@ internal sealed unsafe partial class NativeCommandData
                         uint @NumQueries = reader.Read<uint>();
                         D3D.ID3D12Resource* @pDestinationBuffer = (D3D.ID3D12Resource*)reader.Read<nint>();
                         ulong @AlignedDestinationBufferOffset = reader.Read<ulong>();
-                        CommandTransferTrace.ResolveQueryData(target, @pQueryHeap, @Type, @StartIndex, @NumQueries, @pDestinationBuffer, @AlignedDestinationBufferOffset);
+                        CommandTransferTrace.ResolveQueryData(null, target, @pQueryHeap, @Type, @StartIndex, @NumQueries, @pDestinationBuffer, @AlignedDestinationBufferOffset);
                         break;
                     }
                     case NativeCommandType.ClearRenderTargetView:
@@ -328,7 +347,7 @@ internal sealed unsafe partial class NativeCommandData
                         float* @ColorRGBA = (float*)reader.ReadArray();
                         uint @NumRects = reader.Read<uint>();
                         Maths.Box2D<int>* @pRects = (Maths.Box2D<int>*)reader.ReadArray();
-                        CommandExecutionTrace.ClearRenderTargetView(target, @RenderTargetView, @ColorRGBA, @NumRects, @pRects);
+                        CommandExecutionTrace.ClearRenderTargetView(null, target, @RenderTargetView, @ColorRGBA, @NumRects, @pRects);
                         break;
                     }
                     case NativeCommandType.ClearDepthStencilView:
@@ -339,7 +358,7 @@ internal sealed unsafe partial class NativeCommandData
                         byte @Stencil = reader.Read<byte>();
                         uint @NumRects = reader.Read<uint>();
                         Maths.Box2D<int>* @pRects = (Maths.Box2D<int>*)reader.ReadArray();
-                        CommandExecutionTrace.ClearDepthStencilView(target, @DepthStencilView, @ClearFlags, @Depth, @Stencil, @NumRects, @pRects);
+                        CommandExecutionTrace.ClearDepthStencilView(null, target, @DepthStencilView, @ClearFlags, @Depth, @Stencil, @NumRects, @pRects);
                         break;
                     }
                     case NativeCommandType.DrawInstanced:
@@ -348,7 +367,7 @@ internal sealed unsafe partial class NativeCommandData
                         uint @InstanceCount = reader.Read<uint>();
                         uint @StartVertexLocation = reader.Read<uint>();
                         uint @StartInstanceLocation = reader.Read<uint>();
-                        CommandExecutionTrace.DrawInstanced(target, @VertexCountPerInstance, @InstanceCount, @StartVertexLocation, @StartInstanceLocation);
+                        CommandExecutionTrace.DrawInstanced(null, target, @VertexCountPerInstance, @InstanceCount, @StartVertexLocation, @StartInstanceLocation);
                         break;
                     }
                     case NativeCommandType.DrawIndexedInstanced:
@@ -358,7 +377,15 @@ internal sealed unsafe partial class NativeCommandData
                         uint @StartIndexLocation = reader.Read<uint>();
                         int @BaseVertexLocation = reader.Read<int>();
                         uint @StartInstanceLocation = reader.Read<uint>();
-                        CommandExecutionTrace.DrawIndexedInstanced(target, @IndexCountPerInstance, @InstanceCount, @StartIndexLocation, @BaseVertexLocation, @StartInstanceLocation);
+                        CommandExecutionTrace.DrawIndexedInstanced(
+                            null,
+                            target,
+                            @IndexCountPerInstance,
+                            @InstanceCount,
+                            @StartIndexLocation,
+                            @BaseVertexLocation,
+                            @StartInstanceLocation
+                        );
                         break;
                     }
                     case NativeCommandType.Dispatch:
@@ -366,7 +393,7 @@ internal sealed unsafe partial class NativeCommandData
                         uint @ThreadGroupCountX = reader.Read<uint>();
                         uint @ThreadGroupCountY = reader.Read<uint>();
                         uint @ThreadGroupCountZ = reader.Read<uint>();
-                        CommandExecutionTrace.Dispatch(target, @ThreadGroupCountX, @ThreadGroupCountY, @ThreadGroupCountZ);
+                        CommandExecutionTrace.Dispatch(null, target, @ThreadGroupCountX, @ThreadGroupCountY, @ThreadGroupCountZ);
                         break;
                     }
                     case NativeCommandType.BeginEvent:
@@ -374,13 +401,13 @@ internal sealed unsafe partial class NativeCommandData
                         uint @Metadata = reader.Read<uint>();
                         void* @pData = (void*)reader.ReadArray();
                         uint @Size = reader.Read<uint>();
-                        CommandExecutionTrace.BeginEvent(target, @Metadata, @pData, @Size);
+                        CommandExecutionTrace.BeginEvent(null, target, @Metadata, @pData, @Size);
                         break;
                     }
                     case NativeCommandType.EndEvent:
                     {
 
-                        CommandExecutionTrace.EndEvent(target);
+                        CommandExecutionTrace.EndEvent(null, target);
                         break;
                     }
                     case NativeCommandType.ExecuteIndirect:
@@ -391,7 +418,16 @@ internal sealed unsafe partial class NativeCommandData
                         ulong @ArgumentBufferOffset = reader.Read<ulong>();
                         D3D.ID3D12Resource* @pCountBuffer = (D3D.ID3D12Resource*)reader.Read<nint>();
                         ulong @CountBufferOffset = reader.Read<ulong>();
-                        CommandExecutionTrace.ExecuteIndirect(target, @pCommandSignature, @MaxCommandCount, @pArgumentBuffer, @ArgumentBufferOffset, @pCountBuffer, @CountBufferOffset);
+                        CommandExecutionTrace.ExecuteIndirect(
+                            null,
+                            target,
+                            @pCommandSignature,
+                            @MaxCommandCount,
+                            @pArgumentBuffer,
+                            @ArgumentBufferOffset,
+                            @pCountBuffer,
+                            @CountBufferOffset
+                        );
                         break;
                     }
                     case NativeCommandType.DispatchMesh:
@@ -399,7 +435,7 @@ internal sealed unsafe partial class NativeCommandData
                         uint @ThreadGroupCountX = reader.Read<uint>();
                         uint @ThreadGroupCountY = reader.Read<uint>();
                         uint @ThreadGroupCountZ = reader.Read<uint>();
-                        CommandExecutionTrace.DispatchMesh(target, @ThreadGroupCountX, @ThreadGroupCountY, @ThreadGroupCountZ);
+                        CommandExecutionTrace.DispatchMesh(null, target, @ThreadGroupCountX, @ThreadGroupCountY, @ThreadGroupCountZ);
                         break;
                     }
                     case NativeCommandType.BeginQuery:
@@ -407,7 +443,7 @@ internal sealed unsafe partial class NativeCommandData
                         D3D.ID3D12QueryHeap* @pQueryHeap = (D3D.ID3D12QueryHeap*)reader.Read<nint>();
                         D3D.QueryType @Type = reader.Read<D3D.QueryType>();
                         uint @Index = reader.Read<uint>();
-                        CommandExecutionTrace.BeginQuery(target, @pQueryHeap, @Type, @Index);
+                        CommandExecutionTrace.BeginQuery(null, target, @pQueryHeap, @Type, @Index);
                         break;
                     }
                     case NativeCommandType.EndQuery:
@@ -415,7 +451,7 @@ internal sealed unsafe partial class NativeCommandData
                         D3D.ID3D12QueryHeap* @pQueryHeap = (D3D.ID3D12QueryHeap*)reader.Read<nint>();
                         D3D.QueryType @Type = reader.Read<D3D.QueryType>();
                         uint @Index = reader.Read<uint>();
-                        CommandExecutionTrace.EndQuery(target, @pQueryHeap, @Type, @Index);
+                        CommandExecutionTrace.EndQuery(null, target, @pQueryHeap, @Type, @Index);
                         break;
                     }
                     case NativeCommandType.ClearUnorderedAccessViewUint:
@@ -426,7 +462,7 @@ internal sealed unsafe partial class NativeCommandData
                         uint* @Values = (uint*)reader.ReadArray();
                         uint @NumRects = reader.Read<uint>();
                         Maths.Box2D<int>* @pRects = (Maths.Box2D<int>*)reader.ReadArray();
-                        CommandExecutionTrace.ClearUnorderedAccessViewUint(target, @ViewGPUHandleInCurrentHeap, @ViewCPUHandle, @pResource, @Values, @NumRects, @pRects);
+                        CommandExecutionTrace.ClearUnorderedAccessViewUint(null, target, @ViewGPUHandleInCurrentHeap, @ViewCPUHandle, @pResource, @Values, @NumRects, @pRects);
                         break;
                     }
                 }

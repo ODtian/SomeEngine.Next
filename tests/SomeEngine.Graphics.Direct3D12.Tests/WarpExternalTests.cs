@@ -182,7 +182,7 @@ public sealed class WarpExternalTests
     [Fact]
     public void External_handle_support_is_reported_per_object_family_and_direction()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         Assert.True(backend.TryGetCapability(device, out ExternalResources? resources));
@@ -211,7 +211,7 @@ public sealed class WarpExternalTests
     [Fact]
     public void Imported_timeline_preserves_existing_value_and_orders_queue_work()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using ExternalTimeline source = backend.CreateExternalTimeline(device, initialValue: 9);
         using ExternalHandle handle = backend.ExportTimeline(
@@ -263,7 +263,7 @@ public sealed class WarpExternalTests
     [Fact]
     public void Shared_resource_import_is_description_exact_and_failure_atomic()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         ImportedResourceState bufferState = new(
             PipelineSync.None,
@@ -373,7 +373,7 @@ public sealed class WarpExternalTests
     [Fact]
     public void Shared_heap_import_validates_native_metadata()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         HeapDesc description = new(
             131_072,

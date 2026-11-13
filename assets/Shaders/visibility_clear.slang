@@ -17,6 +17,16 @@ void ClearVisibilityWinner(uint3 threadId : SV_DispatchThreadID)
     if (index < pixelCount)
         Winner.Store2(index * 8u, 0u.xx);
 }
+
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void ClearVisibilityNonAtomic(uint3 threadId : SV_DispatchThreadID)
+{
+    uint pixelCount = Uniforms.Width * Uniforms.Height * Uniforms.ViewCount;
+    uint index = threadId.x + threadId.y * (65535u * 64u);
+    if (index < pixelCount)
+        Winner.Store2(index * 8u, uint2(0u, asuint(1.0)));
+}
 #else
 RWTexture2DArray<uint64_t> Winner;
 [shader("compute")]

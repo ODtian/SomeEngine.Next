@@ -1,7 +1,7 @@
 // This producer uses page definitions, not the material receiver-mask resource.
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
-#include "vsm_depth_cache.slang"
+__exported import vsm_depth_cache;
 
 StructuredBuffer<uint4> ActivePhysicalPages;
 StructuredBuffer<uint> CompletePageCount;
@@ -13,9 +13,9 @@ RWStructuredBuffer<VirtualShadowPageMetadata> CompletedPageMetadata;
 [numthreads(64, 1, 1)]
 void CompleteVirtualShadowPageDepth(uint3 thread : SV_DispatchThreadID)
 {
-    // A submitted raster pass does not prove caster/material/surface acceptance.
-    // Failure leaves both sampling and next-frame HiZ without completion evidence.
-    if (GeometryWorkStatus.Load(0u) != 0u || thread.x >= CompletePageCount[0]) return;
+    // The current frame's spill raster completes work reported by RasterBatches (16).
+    uint failures = GeometryWorkStatus.Load(0u) & ~16u;
+    if (failures != 0u || thread.x >= CompletePageCount[0]) return;
     uint4 page = ActivePhysicalPages[thread.x];
     uint entry = CompletedShadowPageTable[page.y];
     uint flags = CompletedPageMetadata[page.x].Flags;

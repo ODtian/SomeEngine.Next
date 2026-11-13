@@ -132,7 +132,7 @@ public sealed class TextureDisplacementTests(D3D12TestCompiler shaderCompiler)
         using BufferUav outputView = backend.CreateBufferUav(device, new BufferUavDesc(output, BufferRange.Whole, StructureStride: 16));
         using Buffer readback = backend.CreateBuffer(device, new BufferDesc(bytes, BufferUsages.CopyDestination), MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(32, 8, 32));
+        backend.Begin(context, new CommandRecordingDesc(32, 8));
         foreach (Texture texture in new[] { heights, bounds })
             backend.Barrier(context, new TextureBarrier(texture, textureRange, PipelineSync.None, PipelineSync.Copy,
                 ResourceAccess.NoAccess, ResourceAccess.CopyDestination, TextureLayout.Undefined, TextureLayout.CopyDestination));

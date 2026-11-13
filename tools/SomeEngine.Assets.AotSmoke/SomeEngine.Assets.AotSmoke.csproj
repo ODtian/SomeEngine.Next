@@ -15,6 +15,8 @@
     <ProjectReference Include="../../samples/SomeEngine.Curves.Assets/SomeEngine.Curves.Assets.csproj" GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="..\..\src\SomeEngine.Assets\SomeEngine.Assets.csproj"
                       GlobalPropertiesToRemove="PublishAot" />
+    <ProjectReference Include="../../src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj"
+                      GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="..\..\src\SomeEngine.Generators\SomeEngine.Generators.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false"

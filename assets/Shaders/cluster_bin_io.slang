@@ -1,7 +1,9 @@
+__exported import cluster_structures;
+
 #ifndef CLUSTER_BIN_IO_SLANG
 #define CLUSTER_BIN_IO_SLANG
 
-#include "wave_aggregation.slang"
+__exported import wave_aggregation;
 
 DispatchArgs BinDispatch(uint count)
 {
@@ -20,6 +22,8 @@ uint ValidBin(uint key, uint maxBins)
     return key != SLOT_INVALID && key < maxBins ? key : BIN_INVALID;
 }
 
+uint DecodeStageBin(uint value) { return value & 0x07FFFFFFu; }
+
 uint SlotBin(
     StructuredBuffer<uint> slots,
     uint slotOffset,
@@ -28,7 +32,7 @@ uint SlotBin(
     uint maxBins)
 {
     uint key = GetStageSlot(slots, slotOffset, localMaterialIndex, capacity);
-    return ValidBin(key & 0x07FFFFFFu, maxBins);
+    return ValidBin(DecodeStageBin(key), maxBins);
 }
 
 void WriteDispatch(

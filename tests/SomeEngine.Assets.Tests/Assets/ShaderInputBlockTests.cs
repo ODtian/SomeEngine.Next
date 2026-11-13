@@ -16,10 +16,15 @@ public sealed class ShaderInputBlockTests
             Targets = [new TargetDesc { Format = SlangCompileTarget.Spirv, Profile = slang.FindProfile("glsl_460") }],
             FileSystem = new EmptyShaderFileSystem(),
         };
-        using ShaderSourceBlock material = StandardMaterialInputs.Create();
-        using ClusterMaterialEntriesBlock cluster = ClusterMaterialEntriesBlock.Create();
+        using var material = new ShaderSourceBlock { Dependencies = [ShaderTestCompilation.StandardMaterial] };
+        await using AssetLoader engine = ShaderTestCompilation.OpenEngineFiles();
+        using var compiler = new ShaderLibrary(slang, description);
+        await compiler.GetAsync(engine, ShaderTestCompilation.StandardMaterial);
+        using var cluster = new PipelineMaterialEntriesBlock();
+        await ShaderTestCompilation.SetEntryAsync(compiler, cluster, "pipeline_material", ConsumerEntry
+            .Replace("ConsumerShade", "ClusterShade").Replace("Result", "PipelineResult"));
         using var consumer = new ConsumerMaterialEntriesBlock { SourceNames = ["consumer_material.slang"] };
-        consumer.SetSerializedSource(0, await SerializeConsumerEntryAsync(slang, description, material));
+        await ShaderTestCompilation.SetEntryAsync(compiler, consumer, "consumer_material", ConsumerEntry);
         Guid id = Guid.NewGuid();
         string path = files.File("material.shader.asset");
         var project = new AssetProject(files.Path, []);
@@ -28,8 +33,7 @@ public sealed class ShaderInputBlockTests
             asset.SetBlock(material);
             asset.SetBlock(cluster);
             asset.SetBlock(consumer);
-            asset.SelectInputs<ShaderSourceBlock>();
-            asset.SelectInputs<ClusterMaterialEntriesBlock>();
+            asset.SelectInputs<PipelineMaterialEntriesBlock>();
             asset.SelectInputs<ConsumerMaterialEntriesBlock>();
             project.RegisterAsset(await asset.SaveAsync(path));
         }
@@ -38,15 +42,17 @@ public sealed class ShaderInputBlockTests
         {
             Assert.Equal(id, asset.Id);
             ConsumerMaterialEntriesBlock entries = await asset.GetBlockAsync<ConsumerMaterialEntriesBlock>();
-            Assert.Equal("consumer_material.slang", Assert.Single(entries.SourceNames));
+            Assert.Equal(Assert.Single(consumer.SourceNames), Assert.Single(entries.SourceNames));
+            Assert.Equal(ShaderTestCompilation.StandardMaterial, Assert.Single(asset.GetBlock<ShaderSourceBlock>().Dependencies));
         }
 
-        await using var loader = new AssetLoader(project.CreateStorage());
+        await using var loader = ShaderTestCompilation.OpenEngineFiles(project.CreateStorage());
+        using var shaders = new ShaderLibrary(slang, description);
         using var materialAsset = new MaterialAsset { Name = "Standard" };
         materialAsset.GetBlock<MaterialBlock>().Shader = new(id);
         _ = new StandardMaterialParameters(materialAsset.GetBlock<MaterialBlock>()) { Roughness = 0.37f };
         using ShaderAsset shaderAsset = await ShaderAsset.OpenAsync(loader, new(id));
-        Shader shader = await shaderAsset.CreateAsync(slang, description);
+        Shader shader = await shaders.CreateAsync(shaderAsset, loader);
         StandardMaterial instance = await materialAsset.CreateAsync<StandardMaterial>(loader,
             new Dictionary<AssetId<ShaderAsset>, Shader> { [new(id)] = shader },
             new Dictionary<AssetId<TextureAsset>, Texture>());
@@ -97,7 +103,7 @@ public sealed class ShaderInputBlockTests
             await asset.SaveAsync(path);
         }
         using ShaderAsset restored = await ShaderAsset.OpenAsync(path);
-        Shader shader = await restored.CreateAsync(slang, description);
+        Shader shader = await SomeEngine.Resources.ShaderLibrary.CreateAsync(restored, slang, description);
         Assert.True(shader.TryGetSpecialization("WriteValue", ["3"], out Shader first));
         Assert.True(shader.TryGetSpecialization("WriteValue", ["7"], out Shader second));
         Assert.True(first.TryGetSlangEntry(0, "WriteValue", SlangStage.Compute, out EntryPointReflection firstEntry));
@@ -108,33 +114,18 @@ public sealed class ShaderInputBlockTests
             second.GetSlangEntryBytes(0, secondEntry).ToArray());
     }
 
-    private static async Task<byte[]> SerializeConsumerEntryAsync(
-        IGlobalSession slang, SessionDesc description, ShaderSourceBlock material)
-    {
-        Assert.True(slang.CreateSession(description, out ISession session).Succeeded);
-        for (int index = 0; index < material.SourceNames.Count; index++)
+    private const string ConsumerEntry = """
+        import standard_material;
+        StructuredBuffer<StandardScalars> Scalars;
+        RWStructuredBuffer<float> Result;
+        [shader("compute")]
+        [numthreads(1, 1, 1)]
+        void ConsumerShade(uniform StandardMaterial material, uint3 thread : SV_DispatchThreadID)
         {
-            ReadOnlyMemory<byte> bytes = await material.ReadBytesAsync(ShaderInputBlock.SerializedSourceKey(index));
-            Assert.NotNull(session.LoadModuleFromIRBlob(Path.GetFileNameWithoutExtension(material.SourceNames[index]),
-                material.SourceNames[index], Slang.CreateBlob(bytes.Span), out _));
+            Result[thread.x] = material.AlbedoMap.Load(int3(0, 0, 0)).x * Scalars[thread.x].Roughness;
         }
-        ISlangBlob source = Slang.CreateBlob(System.Text.Encoding.UTF8.GetBytes("""
-            import standard_material;
-            StructuredBuffer<StandardScalars> Scalars;
-            RWStructuredBuffer<float> Result;
+        """;
 
-            [shader("compute")]
-            [numthreads(1, 1, 1)]
-            void ConsumerShade(uniform StandardMaterial material, uint3 thread : SV_DispatchThreadID)
-            {
-                Result[thread.x] = material.AlbedoMap.Load(int3(0, 0, 0)).x * Scalars[thread.x].Roughness;
-            }
-            """));
-        IModule? entries = session.LoadModuleFromSource("consumer_material", "consumer_material.slang", source, out ISlangBlob? diagnostics);
-        Assert.True(entries is not null, diagnostics?.AsString);
-        Assert.True(entries!.Serialize(out ISlangBlob serialized).Succeeded);
-        return serialized.Buffer.ToArray();
-    }
 }
 
 [AssetBlock("SomeEngine.Tests.ConsumerMaterialEntries")]
@@ -150,3 +141,6 @@ internal sealed partial class EmptyShaderFileSystem : ISlangFileSystem
         return SlangResult.SLANG_E_NOT_FOUND;
     }
 }
+
+[AssetBlock("SomeEngine.Tests.PipelineMaterialEntries")]
+public sealed partial class PipelineMaterialEntriesBlock : ShaderInputBlock;

@@ -5,12 +5,13 @@ namespace SomeEngine.Assets.Schema;
 
 [AssetBlock("SomeEngine.Assets.Schema.VirtualShadowMapShadersBlock")]
 [BinarySerializable, TextSerializable]
-[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CompletePageDepth), nameof(WorkFeedback), nameof(MergeStatic), nameof(ResidentPages), nameof(Prefilter), nameof(PrefilterRequests), nameof(PrefilterReset), nameof(PrefilterSelect), nameof(BlueNoise))]
+[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(OpaqueRequests), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ), nameof(DynamicResolution), nameof(CompletePageDepth), nameof(WorkFeedback), nameof(MergeStatic), nameof(ResidentPages), nameof(Prefilter), nameof(PrefilterRequests), nameof(PrefilterReset), nameof(PrefilterSelect), nameof(BlueNoise))]
 public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
 {
     public partial AssetId<TextureAsset>? BlueNoise { get; set; }
     public partial ShaderRef? ResetReceiverMasks { get; set; }
     public partial ShaderRef? ResetFrame { get; set; }
+    public partial ShaderRef? OpaqueRequests { get; set; }
     public partial ShaderRef? MarkCoarsePages { get; set; }
     public partial ShaderRef? AllocatePages { get; set; }
     public partial ShaderRef? ResidentPages { get; set; }
@@ -71,6 +72,8 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
                 ResetReceiverMasks = Resolve(copy.ResetReceiverMasks),
                 ResetFrameShader = shaders[copy.ResetFrame!.Asset],
                 ResetFrame = Resolve(copy.ResetFrame),
+                OpaqueRequestsShader = shaders[copy.OpaqueRequests!.Asset],
+                OpaqueRequests = Resolve(copy.OpaqueRequests),
                 MarkCoarsePagesShader = shaders[copy.MarkCoarsePages!.Asset],
                 MarkCoarsePages = Resolve(copy.MarkCoarsePages),
                 AllocatePagesShader = shaders[copy.AllocatePages!.Asset],
@@ -101,7 +104,7 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetBlock
     {
         ShaderRef?[] entries =
         [
-            ResetReceiverMasks, ResetFrame, MarkCoarsePages, AllocatePages, ClearPages,
+            ResetReceiverMasks, ResetFrame, OpaqueRequests, MarkCoarsePages, AllocatePages, ClearPages,
             InitializeState, InvalidateCasters, BuildPagePool, CompactViews, InitializePageHiZ,
             ReducePageHiZ, DynamicResolution, CompletePageDepth, WorkFeedback, MergeStatic,
             ResidentPages, Prefilter, PrefilterRequests, PrefilterReset, PrefilterSelect,

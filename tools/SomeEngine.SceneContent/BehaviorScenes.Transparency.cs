@@ -16,14 +16,14 @@ public static partial class BehaviorScenes
     public static async Task CreateOffsetPanelsAsync(string source, string destination, string engineRoot)
     {
         CopyContent(source, destination);
-        string shader = File.ReadAllText(Path.Combine(destination, "assets/Shaders/unlit.slang"))
-            .Replace("typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;", """
+        string shader = ReadUnlitSource(engineRoot)
+            .Replace("import unlit_material;", "import unlit_material;\n" + """
                 [VisibilityDepth("offset")]
                 [MaterialDepthInputs("")]
-                struct OffsetVisibility : IVisibilityEvaluate<VertexEvaluate.Vertex>
+                struct OffsetVisibility : IVisibilityEvaluate<StaticVertexEval.Vertex>
                 {
                     typealias Varying = EmptyVisibilityVarying;
-                    Varying makeVarying(VertexEvaluate.Vertex vertex, VisibilityVertexInput input) { return {}; }
+                    Varying makeVarying(StaticVertexEval.Vertex vertex, VisibilityVertexInput input) { return {}; }
                     Varying readLane(Varying value, uint lane) { return {}; }
                     Varying interpolateVertex(Varying first, Varying second, Varying third, float3 bary) { return {}; }
                     Varying interpolatePixel(Varying first, Varying second, Varying third, VisibilityInterpolationInput input) { return {}; }
@@ -35,9 +35,8 @@ public static partial class BehaviorScenes
                         return result;
                     }
                 };
-                typedef OffsetVisibility VisibilityEvaluate;
                 """)
-            .Replace("TRANSPARENCY_MATERIAL_TYPE UnlitTransparencyMaterial", "TRANSPARENCY_MATERIAL_TYPE OffsetUnlitTransparencyMaterial");
+            .Replace("typedef OpaqueVisibilityEvaluate<Vertex.Vertex> Visibility;", "typedef OffsetVisibility Visibility;");
         await SetGreenShaderAsync(destination, engineRoot, "offset-unlit", shader);
     }
 
@@ -46,11 +45,11 @@ public static partial class BehaviorScenes
     {
         CopyContent(source, destination);
         var project = new AssetProject(destination, []);
-        await using var loader = new AssetLoader(project.CreateStorage());
+        await using var loader = SomeEngine.Assets.Importers.EngineShaderContent.OpenFiles(project.RootPath, project.Manifest);
         using var red = await UnlitMaterialAsset.OpenAsync(loader,
-            new(project.Manifest.Assets.Values.Single(entry => entry.Name == "red sphere" && entry.AssetType == MaterialAsset.FileType).AssetGuid));
+            new(FindContentAsset(project, "red sphere", MaterialAsset.FileType).AssetGuid));
         using var green = await UnlitMaterialAsset.OpenAsync(loader,
-            new(project.Manifest.Assets.Values.Single(entry => entry.Name == "green sphere" && entry.AssetType == MaterialAsset.FileType).AssetGuid));
+            new(FindContentAsset(project, "green sphere", MaterialAsset.FileType).AssetGuid));
         List<RawAttribute> attributes =
         [
             new("NORMAL", new float[] { 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1 }, 3, GeometryValueType.Int8, 3, true),

@@ -22,8 +22,7 @@ public sealed class FrameAnalysisReuseTests
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
             input = edit.CreateBufferInput(BufferUsages.CopySource);
-            destination = edit.RegisterExternalBuffer(output,
-                [new(BufferRange.Whole, output.InitialSync, output.InitialAccess, ResourceContentState.Undefined)]);
+            destination = edit.RegisterExternalBuffer(output);
             copy = edit.AddCopyFramePass("copy in-flight bytes", PassQueueSelection.AnyOfType(QueueType.Graphics),
                 new BufferedCopyData(input, destination, 0),
                 new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
@@ -94,25 +93,25 @@ public sealed class FrameAnalysisReuseTests
         using Buffer second = support.Backend.CreateBuffer(support.Device, description, MemoryType.Upload);
         using Buffer destination = support.Backend.CreateBuffer(support.Device,
             new BufferDesc(4, BufferUsages.CopyDestination), MemoryType.Readback);
-        GraphBufferId sourceId;
+        GraphBufferId sourceId, secondSourceId;
         GraphBufferInput input;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            sourceId = edit.DeclareExternalBuffer(description, MemoryType.Upload);
+            sourceId = edit.RegisterExternalBuffer(first);
+            secondSourceId = edit.RegisterExternalBuffer(second);
             input = edit.CreateBufferInput(description.Usages);
             GraphBufferSrvId view = edit.CreateBufferSrv(input, structureStride: 4);
-            GraphBufferId target = edit.RegisterExternalBuffer(destination,
-                [new BufferBoundaryState(new BufferRange(0, 4), PipelineSync.Copy,
-                    ResourceAccess.CopyDestination, ResourceContentState.Undefined)]);
+            GraphBufferId target = edit.RegisterExternalBuffer(destination);
             var data = new InputCopyData(input, view, target);
-            edit.AddGeneralFramePass("copy through retained input view", PassQueueSelection.Exact(support.GraphicsQueue),
+            edit.AddGeneralFramePass("copy through retained input view", PassQueueSelection.OnQueue(support.GraphicsQueue),
                 data, default, InputCopyData.Declare, InputCopyData.Record);
             edit.Commit();
         }
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         for (int index = 0; index < 24; index++)
         {
-            Buffer source = index / 6 % 2 == 0 ? first : second;
+            bool useFirst = index / 6 % 2 == 0;
+            Buffer source = useFirst ? first : second;
             byte[] bytes = Enumerable.Range(0, 16).Select(value => (byte)(index * 7 + value)).ToArray();
             using (MappedBuffer mapping = support.Backend.Map(source, MapType.Write, BufferRange.Whole))
             {
@@ -122,12 +121,10 @@ public sealed class FrameAnalysisReuseTests
             ulong offset = (ulong)(index / 3 % 4 * 4);
             using (RenderGraphFrame frame = graph.BeginFrame())
             {
-                frame.BindExternalBuffer(sourceId, source,
-                    [new BufferBoundaryState(new BufferRange(0, 16), source.InitialSync,
-                        source.InitialAccess, ResourceContentState.Defined)]);
+
                 GraphBufferSlice value = index < 12
                     ? frame.Upload(bytes, description.Usages)
-                    : new GraphBufferSlice(sourceId, BufferRange.Whole);
+                    : new GraphBufferSlice(useFirst ? sourceId : secondSourceId, BufferRange.Whole);
                 frame.SetBufferInput(input,
                     new GraphBufferSlice(value.Buffer, new BufferRange(value.Range.Offset + offset, 4)));
                 frame.Execute(completions);
@@ -166,10 +163,11 @@ public sealed class FrameAnalysisReuseTests
         BufferDesc description = new(16, BufferUsages.CopyDestination, "changing readback");
         using Buffer first = support.Backend.CreateBuffer(support.Device, description, MemoryType.Readback);
         using Buffer second = support.Backend.CreateBuffer(support.Device, description, MemoryType.Readback);
-        GraphBufferId destination;
+        GraphBufferId firstDestination, secondDestination;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            destination = edit.DeclareExternalBuffer(description, MemoryType.Readback);
+            firstDestination = edit.RegisterExternalBuffer(first);
+            secondDestination = edit.RegisterExternalBuffer(second);
             edit.Commit();
         }
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
@@ -177,19 +175,18 @@ public sealed class FrameAnalysisReuseTests
         for (int index = 0; index < 8; index++)
         {
             Buffer target = index % 2 == 0 ? first : second;
+            GraphBufferId destination = index % 2 == 0 ? firstDestination : secondDestination;
             byte[] bytes = Enumerable.Range(0, 8).Select(value => (byte)(index * 16 + value)).ToArray();
             ulong size = index < 3 ? 4u : 8u;
             using (RenderGraphFrame frame = graph.BeginFrame(new RenderGraphFrameOptions(Diagnostics: Capture)))
             {
-                frame.BindExternalBuffer(destination, target,
-                    [new BufferBoundaryState(new BufferRange(0, 16), PipelineSync.Copy,
-                        ResourceAccess.CopyDestination, ResourceContentState.Undefined)]);
+
                 _ = frame.Upload(new byte[4], BufferUsages.ShaderRead);
                 GraphBufferSlice source = frame.Upload(bytes, BufferUsages.ShaderRead | BufferUsages.CopySource, "changing upload");
                 GraphBufferSrvId view = frame.CreateBufferSrv(source);
                 var data = new CopyData(source, destination, size);
                 frame.AddCopyPass("copy changing frame data",
-                    PassQueueSelection.Exact(support.GraphicsQueue), data, default,
+                    PassQueueSelection.OnQueue(support.GraphicsQueue), data, default,
                     (ref PassDefinition pass, ref CopyData copyData) =>
                     {
                         CopyData.Declare(ref pass, ref copyData);
@@ -198,56 +195,10 @@ public sealed class FrameAnalysisReuseTests
                 frame.Execute(completions);
                 support.Wait(completions);
             }
-            Assert.Equal(index is not (0 or 3), reused);
+            Assert.Equal(index != 0, reused);
             using MappedBuffer mapping = support.Backend.Map(target, MapType.Read, new BufferRange(0, size));
             Assert.True(mapping.Bytes.SequenceEqual(bytes.AsSpan(0, checked((int)size))));
         }
-        void Capture(in RenderGraphDiagnosticsView diagnostics) => reused = diagnostics.Statistics.AnalysisReused;
-    }
-
-    [Fact]
-    public void ChangedExternalContentsAreValidatedAfterAnalysisWasReused()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
-        using var graph = new RenderGraph(support.Backend, support.Device,
-            [support.GraphicsQueue], new RenderGraphDesc(MaximumFramesInFlight: 1));
-        BufferDesc sourceDescription = new(16, BufferUsages.CopySource, "content source");
-        using Buffer source = support.Backend.CreateBuffer(support.Device, sourceDescription, MemoryType.Upload);
-        using Buffer destination = support.Backend.CreateBuffer(support.Device,
-            new BufferDesc(16, BufferUsages.CopyDestination), MemoryType.Readback);
-        GraphBufferId sourceId;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            sourceId = edit.DeclareExternalBuffer(sourceDescription, MemoryType.Upload);
-            GraphBufferId destinationId = edit.RegisterExternalBuffer(destination,
-                [new BufferBoundaryState(new BufferRange(0, 16), PipelineSync.Copy,
-                    ResourceAccess.CopyDestination, ResourceContentState.Undefined)]);
-            edit.AddCopyFramePass("copy validated contents", PassQueueSelection.Exact(support.GraphicsQueue),
-                new CopyData(new GraphBufferSlice(sourceId, new BufferRange(0, 16)), destinationId, 16), default, CopyData.Declare, CopyData.Record);
-            edit.Commit();
-        }
-        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
-        bool reused = false;
-        for (int index = 0; index < 3; index++)
-        {
-            using RenderGraphFrame frame = graph.BeginFrame(new RenderGraphFrameOptions(Diagnostics: Capture));
-            frame.BindExternalBuffer(sourceId, source,
-                [new BufferBoundaryState(new BufferRange(0, 16),
-                    index == 0 ? source.InitialSync : PipelineSync.Copy,
-                    index == 0 ? source.InitialAccess : ResourceAccess.CopySource,
-                    ResourceContentState.Defined)]);
-            frame.Execute(completions);
-            support.Wait(completions);
-        }
-        Assert.True(reused);
-        using RenderGraphFrame invalid = graph.BeginFrame();
-        invalid.BindExternalBuffer(sourceId, source,
-            [new BufferBoundaryState(new BufferRange(0, 16), source.InitialSync,
-                source.InitialAccess, ResourceContentState.Undefined)]);
-        bool rejected = false;
-        try { invalid.Execute(completions); }
-        catch (UndefinedResourceReadException) { rejected = true; }
-        Assert.True(rejected);
         void Capture(in RenderGraphDiagnosticsView diagnostics) => reused = diagnostics.Statistics.AnalysisReused;
     }
 

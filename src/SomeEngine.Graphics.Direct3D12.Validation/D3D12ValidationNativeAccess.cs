@@ -109,7 +109,7 @@ public static unsafe class D3D12ValidationNativeAccess
         nint address = (nint)resource;
         BufferDesc description = desc;
         ImportedResourceState importedState = state;
-        return layer.ImportNativeBuffer(device, () => backend.ImportBuffer(
+        return layer.ImportNativeBuffer(device, description, importedState, () => backend.ImportBuffer(
             device, (ID3D12Resource*)address, ownership, description, importedState));
     }
 
@@ -126,7 +126,7 @@ public static unsafe class D3D12ValidationNativeAccess
         nint address = (nint)resource;
         TextureDesc description = desc;
         ImportedResourceState importedState = state;
-        return layer.ImportNativeTexture(device, description, value => backend.ImportTexture(
+        return layer.ImportNativeTexture(device, description, importedState, value => backend.ImportTexture(
             device, (ID3D12Resource*)address, ownership, value, importedState));
     }
 
@@ -154,7 +154,17 @@ public static unsafe class D3D12ValidationNativeAccess
         layer.ValidateNativeCommands(context, retainedResources);
         D3D12CommandListBorrow result = backend.BorrowCommandList(context, retainedResources);
         layer.RecordNativeCommands(context, retainedResources);
-        return result;
+        return new D3D12CommandListBorrow(new CommandListBorrow(result.Handle), result.Sequence);
+    }
+
+    private sealed class CommandListBorrow(D3D12CommandListHandle inner) : D3D12CommandListHandle
+    {
+        internal override bool IsValid(ulong sequence) => inner.IsValid(sequence);
+        internal override ID3D12GraphicsCommandList10* GetPointer(ulong sequence)
+        {
+            if (!inner.IsValid(sequence)) throw new InvalidOperationException("The native command list borrow has expired.");
+            return inner.GetPointer(sequence);
+        }
     }
 
     public static D3D12CommandQueueLock LockCommandQueue(
@@ -171,7 +181,7 @@ public static unsafe class D3D12ValidationNativeAccess
         private sealed class NativeQueueLockValidationState
         {
             internal int ThreadId;
-            internal QueueBorrow? Lease;
+            internal QueueBorrow? Handle;
         }
         internal D3D12CommandQueueLock LockNativeCommandQueue(Queue queue)
         {
@@ -185,7 +195,7 @@ public static unsafe class D3D12ValidationNativeAccess
                 if (!_nativeQueueLockStates.TryGetValue(queue, out state!))
                 {
                     state = new NativeQueueLockValidationState();
-                    state.Lease = new QueueBorrow(this, queue, state);
+                    state.Handle = new QueueBorrow(this, queue, state);
                     _nativeQueueLockStates.Add(queue, state);
                 }
                 if (state.ThreadId == threadId)
@@ -196,36 +206,36 @@ public static unsafe class D3D12ValidationNativeAccess
                 }
             }
 
-            state.Lease!.WaitUntilReleased();
+            state.Handle!.WaitUntilReleased();
             D3D12CommandQueueLock inner = backend.LockCommandQueue(queue);
-            D3D12CommandQueueLockLease innerLease = inner.Lease;
+            D3D12CommandQueueLockHandle innerHandle = inner.Handle;
             ulong sequence = inner.Sequence;
-            QueueBorrow lease = state.Lease!;
-            lease.WaitUntilReleased();
-            lease.Publish(innerLease, sequence, threadId);
-            return new D3D12CommandQueueLock(lease, sequence);
+            QueueBorrow handle = state.Handle!;
+            handle.WaitUntilReleased();
+            handle.Publish(innerHandle, sequence, threadId);
+            return new D3D12CommandQueueLock(handle, sequence);
         }
 
-        private sealed unsafe class QueueBorrow : D3D12CommandQueueLockLease
+        private sealed unsafe class QueueBorrow : D3D12CommandQueueLockHandle
         {
-            private readonly QueueValidation _owner;
+            private readonly QueueValidation _validation;
             private readonly Queue _queue;
             private readonly NativeQueueLockValidationState _state;
-            private D3D12CommandQueueLockLease? _inner;
+            private D3D12CommandQueueLockHandle? _inner;
             private ulong _innerSequence;
 
             internal QueueBorrow(
-                QueueValidation owner,
+                QueueValidation validation,
                 Queue queue,
                 NativeQueueLockValidationState state)
             {
-                _owner = owner;
+                _validation = validation;
                 _queue = queue;
                 _state = state;
             }
 
             internal void Publish(
-                D3D12CommandQueueLockLease inner,
+                D3D12CommandQueueLockHandle inner,
                 ulong sequence,
                 int threadId)
             {
@@ -233,7 +243,7 @@ public static unsafe class D3D12ValidationNativeAccess
                 _innerSequence = sequence;
                 try
                 {
-                    lock (_owner._gate)
+                    lock (_validation._gate)
                         _state.ThreadId = threadId;
                     Activate(sequence);
                 }
@@ -247,21 +257,27 @@ public static unsafe class D3D12ValidationNativeAccess
             protected override bool IsHeldCore(ulong sequence) =>
                 _inner?.IsHeld(sequence) == true;
 
+            internal override ID3D12CommandQueue* GetPointer(ulong sequence)
+            {
+                if (!IsHeld(sequence)) throw new InvalidOperationException("The native queue lock has been released.");
+                return base.GetPointer(sequence);
+            }
+
             protected override ID3D12CommandQueue* GetPointerCore() =>
                 _inner!.GetPointer(_innerSequence);
 
             protected override void ReleaseCore()
             {
-                lock (_owner._gate)
+                lock (_validation._gate)
                 {
-                    if (_owner._nativeQueueLockStates.TryGetValue(_queue, out NativeQueueLockValidationState? state) &&
+                    if (_validation._nativeQueueLockStates.TryGetValue(_queue, out NativeQueueLockValidationState? state) &&
                         ReferenceEquals(state, _state) &&
                         state.ThreadId != 0)
                     {
                         state.ThreadId = 0;
                     }
                 }
-                D3D12CommandQueueLockLease? inner = _inner;
+                D3D12CommandQueueLockHandle? inner = _inner;
                 ulong sequence = _innerSequence;
                 _inner = null;
                 _innerSequence = 0;
@@ -270,15 +286,15 @@ public static unsafe class D3D12ValidationNativeAccess
 
             private void Abort()
             {
-                lock (_owner._gate)
+                lock (_validation._gate)
                 {
-                    if (_owner._nativeQueueLockStates.TryGetValue(_queue, out NativeQueueLockValidationState? state) &&
+                    if (_validation._nativeQueueLockStates.TryGetValue(_queue, out NativeQueueLockValidationState? state) &&
                         ReferenceEquals(state, _state))
                     {
                         state.ThreadId = 0;
                     }
                 }
-                D3D12CommandQueueLockLease? inner = _inner;
+                D3D12CommandQueueLockHandle? inner = _inner;
                 ulong sequence = _innerSequence;
                 _inner = null;
                 _innerSequence = 0;

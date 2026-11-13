@@ -34,6 +34,7 @@
 | `VertexStreamsBlock` | 每个图元的材质、三角形索引、全部顶点流、形变目标与诊断，见 [[architecture/Assets/Gltf-Mesh-Import|glTF Mesh Import]] | 中立，仅导入进程内 |
 | `ClusterGeometryBlock` | 顶点身份与来源顶点映射、逐 cluster 量化位置、局部三角形、材质编号、Deform 分区与 LOD DAG | Cluster 管线表示 |
 | `ClusterVertexAttributesBlock` | 法线、切线、全部 UV 与颜色、自定义属性，按几何 Block 的 cluster 与顶点顺序编码，携带编码兼容性标识 | Cluster 管线表示 |
+| `ClusterMeshBlock` | 导入时打包的 GPU 页、BVH 与最低细节页索引；运行时按页读取 | Cluster 管线表示 |
 | `ClusterSkinInfluencesBlock` | 每个顶点的全部关节与权重，按 Cluster 的顶点顺序 | Cluster 管线表示 |
 | `ClusterMorphDeltasBlock` | 逐目标、逐顶点增量与来源切线增量，按 Cluster 的顶点顺序 | Cluster 管线表示 |
 
@@ -45,9 +46,11 @@
 
 公开行为验收见 [DeformationBlockBehaviorTests](../../../tests/SomeEngine.Animation.Pose.Tests/DeformationBlockBehaviorTests.cs)：覆盖 `.gltf`、`.glb` 保存重开、共享 mesh 的不同 skin、来源关节重排、替换骨架生产者、省略值、静态网格与重新导入更新。
 
-Cluster 组合产出 `ClusterGeometryBlock` 与 `ClusterVertexAttributesBlock`。几何 Importer 从顶点流决定顶点身份，属性 Importer 显式取得几何及准备流，使用同一映射。两者的 `VertexIdentity` 对应同一份焊接与重排。中立组合提供准备流，保存交付两份持久表示。
+Cluster 组合在导入阶段交付 `ClusterGeometryBlock`、`ClusterVertexAttributesBlock` 和 `ClusterMeshBlock`。几何与属性保留同一份顶点身份，作为重新烘焙的输入；`ClusterMeshData` 位于 Importers 内部，负责组合不透明字节、GPU 页及 BVH。
 
-渲染加载明确取得两份 Block，通过 `ClusterGeometryBlock.CreateAsync(shape, attributes, name)` 创建渲染 Mesh。位置与拓扑、属性字节分别进入 GPU 页的两段数据；用户 Vertex 接口取得各自的地址与长度。默认材质的深度与阴影入口选取 `StaticPositionEval`，着色入口选取完整顶点。属性的数值与 Shader 编码见 [Vertex Encoding](../cluster/Vertex-Encoding.md)。
+渲染加载通过 `ClusterMeshBlock.CreateAsync(shape, name)` 取得 BVH 与最低细节页，通过 `OpenPayloadSourceAsync` 交给 PageStream 继续按需读页。位置与属性分别占据页内的字节视图；材质 Shader 解释各自的编码，见 [Vertex Encoding](../cluster/Vertex-Encoding.md)。
+
+内容工具编辑几何或属性后，通过 `ClusterBuilder.BuildMeshBlock(geometry, attributes)` 重新烘焙，再把返回的 Block 保存进资产。这个入口复用 Importers 内部的页打包器；运行中的渲染资源继续读取已经取得的页数据。
 
 Cluster 蒙皮影响与形变增量的来源映射、公开数值与编码入口见 [Deformation Import](../cluster/Deformation-Import.md)。
 

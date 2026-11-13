@@ -1,10 +1,10 @@
 #ifndef VSM_PROJECTION_SLANG
 #define VSM_PROJECTION_SLANG
 
-#include "depth_projection.slang"
+__exported import depth_projection;
 
 #include "vsm_sampling.slang"
-#include "vsm_receiver_projection.slang"
+__exported import vsm_receiver_projection;
 
 struct VirtualShadowProjectionResult
 {

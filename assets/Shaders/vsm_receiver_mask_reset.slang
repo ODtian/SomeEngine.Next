@@ -1,6 +1,6 @@
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
-#include "resource_effects.slang"
+__exported import resource_effects;
 
 struct VirtualShadowReceiverResetUniforms { uint ViewCount; uint3 Padding; };
 ConstantBuffer<VirtualShadowReceiverResetUniforms> ReceiverReset;
@@ -34,7 +34,7 @@ void ResetVirtualShadowReceiverMasks(uint3 threadId : SV_DispatchThreadID)
     uint2 address = VirtualShadowReceiverMaskOrigin(view, mip) + page * uint2(1u, 2u);
     PageReceiverMasks[address] = 0u;
     PageReceiverMasks[address + uint2(0, 1)] = 0u;
-    uint pages = VirtualShadowPagesPerRow(view);
+    uint pages = VirtualShadowMipPagesPerRow(view, mip);
     if (pages >= 2u) PageReceiverMaskMip1[address >> 1u] = 0u;
     if (pages >= 4u) PageReceiverMaskMip2[address >> 2u] = 0u;
     if (pages >= 8u) PageReceiverMaskMip3[address >> 3u] = 0u;

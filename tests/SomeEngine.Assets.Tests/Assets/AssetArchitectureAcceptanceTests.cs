@@ -130,11 +130,11 @@ public sealed class AssetArchitectureAcceptanceTests
         using var producedMesh = ClusterBuilder.ProcessRaw([Vector3.Zero, Vector3.UnitX, Vector3.UnitY], [], [0,1,2], ClusterBuilderTestMaterials.Slots(), "range-mesh");
         await producedMesh.SaveAsync(path);
         using MeshAsset file = await MeshAsset.OpenAsync(path);
-        ClusterGeometryBlock geometry = file.GetBlock<ClusterGeometryBlock>();
+        ClusterGeometryBlock geometry = await file.GetBlockAsync<ClusterGeometryBlock>();
         ClusterVertexAttributesBlock attributes = await file.GetBlockAsync<ClusterVertexAttributesBlock>();
         Assert.Equal(geometry.VertexIdentity, attributes.VertexIdentity);
         Assert.Equal(Vector3.Zero, Assert.Single(geometry.Clusters).DecodePosition(0));
-        using var source = await geometry.OpenPayloadSourceAsync(attributes);
+        using var source = await file.GetBlock<ClusterMeshBlock>().OpenPayloadSourceAsync();
         Assert.NotEmpty((await source.ReadPageAsync(0)).ToArray());
         Assert.NotEmpty((await source.ReadBvhAsync()).ToArray());
     }

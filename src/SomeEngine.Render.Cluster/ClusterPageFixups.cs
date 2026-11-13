@@ -283,14 +283,14 @@ internal sealed class ClusterPageFixups
     }
 
     internal bool TryExpandDependencies(
-        ReadOnlySpan<ClusterPageDemand> demands,
+        ReadOnlySpan<ClusterPagePriority> demands,
         int pageCount,
-        List<ClusterPageDemand> expanded)
+        List<ClusterPagePriority> expanded)
     {
         // Only positions are shared scratch. The coordinator keeps the ordered output
         // after releasing the mesh gate, including across another stream's expansion.
         CollectionsMarshal.SetCount(expanded, pageCount);
-        Span<ClusterPageDemand> output = CollectionsMarshal.AsSpan(expanded);
+        Span<ClusterPagePriority> output = CollectionsMarshal.AsSpan(expanded);
         int count = 0;
         if (_demandPositions.Length < pageCount)
             Array.Resize(ref _demandPositions, pageCount);
@@ -299,7 +299,7 @@ internal sealed class ClusterPageFixups
         bool complete = false;
         try
         {
-            foreach (ClusterPageDemand demand in demands)
+            foreach (ClusterPagePriority demand in demands)
             {
                 if (demand.PageId >= (uint)pageCount) return false;
                 int position = _demandPositions[demand.PageId];
@@ -325,7 +325,7 @@ internal sealed class ClusterPageFixups
                         for (uint page = first; page < end; page++)
                         {
                             int position = _demandPositions[page];
-                            var demand = new ClusterPageDemand(page, priority);
+                            var demand = new ClusterPagePriority(page, priority);
                             if (position == 0)
                             {
                                 output[count++] = demand;
@@ -341,7 +341,7 @@ internal sealed class ClusterPageFixups
         }
         finally
         {
-            foreach (ClusterPageDemand demand in output[..count]) _demandPositions[demand.PageId] = 0;
+            foreach (ClusterPagePriority demand in output[..count]) _demandPositions[demand.PageId] = 0;
             if (lastWord >= firstWord)
                 Array.Clear(_demandWords, firstWord, lastWord - firstWord + 1);
             CollectionsMarshal.SetCount(expanded, complete ? count : 0);

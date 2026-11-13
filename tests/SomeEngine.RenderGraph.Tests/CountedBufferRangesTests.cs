@@ -22,10 +22,8 @@ public sealed class CountedBufferRangesTests
             expected.CopyTo(mapped.Bytes);
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            GraphBufferId source = edit.RegisterExternalBuffer(upload,
-                [new(BufferRange.Whole, upload.InitialSync, upload.InitialAccess, ResourceContentState.Defined)]);
-            GraphBufferId result = edit.RegisterExternalBuffer(output,
-                [new(BufferRange.Whole, output.InitialSync, output.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId source = edit.RegisterExternalBuffer(upload);
+            GraphBufferId result = edit.RegisterExternalBuffer(output);
             GraphBufferId ranges = edit.CreateTransientBuffer(new BufferDesc(32,
                 BufferUsages.CopySource | BufferUsages.CopyDestination));
             edit.DeclareCopyPass("write two bounded ranges", PassQueueSelection.AnyOfType(QueueType.Graphics),

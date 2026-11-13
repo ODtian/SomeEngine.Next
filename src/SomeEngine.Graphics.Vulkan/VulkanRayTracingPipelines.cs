@@ -2,25 +2,20 @@ using System.Buffers;
 using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Vulkan;
-
 internal sealed unsafe partial class VulkanBackend
 {
     private Pipeline CreateRayTracingPipelineCore(
         RhiDevice device,
         in RayTracingPipelineDesc desc,
         SomeEngine.Graphics.PipelineCache? cache,
-        SlangShaderData? capturedSlangCode = null)
+        SlangShaderData? capturedSlangCode = null
+    )
     {
         VulkanDevice nativeDevice = RequireRayTracingDevice(device);
-        ValidateRayTracingPipeline(desc, GetRayTracingCapability(nativeDevice));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
         ShaderReflection reflection = desc.Reflection;
         RayPipelineBuild build = BuildRayPipeline(desc, reflection);
-        VulkanPipelineLayoutState layout = VulkanPipelineLayoutCompiler.Compile(
-            nativeDevice,
-            reflection,
-            build.Entries,
-            desc.StaticSamplers);
+        VulkanPipelineLayoutState layout = VulkanPipelineLayoutCompiler.Compile(nativeDevice, reflection, build.Entries, desc.StaticSamplers);
         VkPipeline native = default;
         VulkanPipeline? pipeline = null;
         SlangShaderData? retainedCode = null;
@@ -39,16 +34,10 @@ internal sealed unsafe partial class VulkanBackend
                 properties.ShaderGroupHandleSize,
                 properties.ShaderGroupHandleAlignment,
                 properties.ShaderGroupBaseAlignment,
-                properties.MaxShaderGroupStride);
+                properties.MaxShaderGroupStride
+            );
             retainedCode = capturedSlangCode ?? desc.SlangCode;
-            pipeline = new VulkanPipeline(
-                nativeDevice,
-                native,
-                layout,
-                retainedCode,
-                PipelineType.RayTracing,
-                desc.Label,
-                state);
+            pipeline = new VulkanPipeline(nativeDevice, native, layout, retainedCode, PipelineType.RayTracing, desc.Label, state);
             retainedCode = null;
             return RegisterChildOrDispose(nativeDevice, pipeline);
         }
@@ -62,32 +51,19 @@ internal sealed unsafe partial class VulkanBackend
         }
     }
 
-    private Task<Pipeline> CreateRayTracingPipelineAsyncCore(
-        RhiDevice device,
-        in RayTracingPipelineDesc desc,
-        SomeEngine.Graphics.PipelineCache? cache)
+    private Task<Pipeline> CreateRayTracingPipelineAsyncCore(RhiDevice device, in RayTracingPipelineDesc desc, SomeEngine.Graphics.PipelineCache? cache)
     {
         VulkanDevice nativeDevice = RequireRayTracingDevice(device);
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
         SlangShaderData slangCode = desc.SlangCode;
         var data = new RayPipelineData(desc);
-        return EnqueuePipelineCreation(
-            nativeDevice,
-            nativeCache,
-            slangCode,
-            data,
-            () => data.Create(this, nativeDevice, nativeCache, slangCode));
+        return EnqueuePipelineCreation(nativeDevice, nativeCache, slangCode, data, () => data.Create(this, nativeDevice, nativeCache, slangCode));
     }
 
-    private RayTracingShaderTable CreateRayTracingShaderTableCore(
-        RhiDevice device,
-        in RayTracingShaderTableDesc desc)
+    private RayTracingShaderTable CreateRayTracingShaderTableCore(RhiDevice device, in RayTracingShaderTableDesc desc)
     {
         VulkanDevice nativeDevice = RequireRayTracingDevice(device);
         VulkanPipeline pipeline = RequirePipeline(nativeDevice, desc.Pipeline, nameof(desc));
-        if (pipeline.Type != PipelineType.RayTracing || pipeline.RayTracing is null)
-            throw new ArgumentException("The ShaderTable requires a Vulkan ray-tracing Pipeline.", nameof(desc));
-        ValidateShaderTableDescription(desc, pipeline.RayTracing);
         pipeline.RetainNative();
         VulkanRayTracingShaderTable table;
         try
@@ -99,51 +75,33 @@ internal sealed unsafe partial class VulkanBackend
             pipeline.ReleaseNative();
             throw;
         }
+
         return RegisterChildOrDispose(nativeDevice, table);
     }
 
-    private void UpdateRayTracingShaderTableCore(
-        CommandContext context,
-        RayTracingShaderTable table,
-        in RayTracingShaderTableUpdate update)
+    private void UpdateRayTracingShaderTableCore(CommandContext context, RayTracingShaderTable table, in RayTracingShaderTableUpdate update)
     {
-        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
-        if (table is not VulkanRayTracingShaderTable native ||
-            !ReferenceEquals(native.Device, command.Device))
-            throw new ArgumentException("The ShaderTable belongs to a different Vulkan Device.", nameof(table));
+        VulkanCommandContext command = ((VulkanCommandContext)context);
+        VulkanRayTracingShaderTable native = (VulkanRayTracingShaderTable)table;
         VulkanShaderTableGeneration generation = native.CreateGeneration(update);
         native.Publish(generation);
-        command.Capture(generation);
+        command.RetainDescriptorData(generation);
     }
 
     private void DispatchRaysCore(CommandContext context, in DispatchRaysDesc desc)
     {
-        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
-        if (desc.Width == 0 || desc.Height == 0 || desc.Depth == 0)
-            throw new ArgumentOutOfRangeException(nameof(desc));
-        if (desc.ShaderTable is not VulkanRayTracingShaderTable table ||
-            !ReferenceEquals(table.Device, command.Device))
-            throw new ArgumentException("The ShaderTable belongs to a different Vulkan Device.", nameof(desc));
-        if (!ReferenceEquals(command.CurrentPipeline, table.Pipeline))
-            throw new InvalidOperationException("The bound Pipeline does not match the ShaderTable.");
+        VulkanCommandContext command = ((VulkanCommandContext)context);
+        VulkanRayTracingShaderTable table = (VulkanRayTracingShaderTable)desc.ShaderTable;
         VulkanShaderTableGeneration generation = table.AcquireGeneration();
         try
         {
-            command.Capture(generation);
+            command.RetainDescriptorData(generation);
             VulkanDevice device = (VulkanDevice)command.Device;
             StridedDeviceAddressRegionKHR rayGeneration = generation.RayGeneration;
             StridedDeviceAddressRegionKHR miss = generation.Miss;
             StridedDeviceAddressRegionKHR hit = generation.Hit;
             StridedDeviceAddressRegionKHR callable = generation.Callable;
-            device.RayTracingPipelineApi.CmdTraceRays(
-                command.NativeRecording,
-                &rayGeneration,
-                &miss,
-                &hit,
-                &callable,
-                desc.Width,
-                desc.Height,
-                desc.Depth);
+            device.RayTracingPipelineApi.CmdTraceRays(command.NativeRecording, &rayGeneration, &miss, &hit, &callable, desc.Width, desc.Height, desc.Depth);
         }
         finally
         {
@@ -156,7 +114,8 @@ internal sealed unsafe partial class VulkanBackend
         VulkanPipelineLayoutState layout,
         in RayTracingPipelineDesc desc,
         RayPipelineBuild build,
-        VkPipelineCache cache)
+        VkPipelineCache cache
+    )
     {
         VkShaderModule[] modules = new VkShaderModule[build.Stages.Length];
         nint[] names = new nint[build.Stages.Length];
@@ -172,8 +131,9 @@ internal sealed unsafe partial class VulkanBackend
                     desc.Code,
                     desc.CodeBlob,
                     build.Stages[index].SlangStage,
-                    "ray tracing");
-                modules[index] = CreateShaderModule(device, shader.Code);
+                    "ray tracing"
+                );
+                modules[index] = CreateShaderBinary(device, shader.Code);
                 names[index] = SilkMarshal.StringToPtr(shader.Name);
                 stages[index] = new PipelineShaderStageCreateInfo
                 {
@@ -183,6 +143,7 @@ internal sealed unsafe partial class VulkanBackend
                     PName = (byte*)names[index],
                 };
             }
+
             fixed (PipelineShaderStageCreateInfo* stagePointer = stages)
             fixed (RayTracingShaderGroupCreateInfoKHR* groupPointer = build.Groups)
             {
@@ -198,15 +159,7 @@ internal sealed unsafe partial class VulkanBackend
                     Layout = layout.Native,
                 };
                 VkPipeline native = default;
-                Result result =
-                    device.RayTracingPipelineApi.CreateRayTracingPipelines(
-                    device.Native,
-                    default,
-                    cache,
-                    1,
-                    &createInfo,
-                    null,
-                    &native);
+                Result result = device.RayTracingPipelineApi.CreateRayTracingPipelines(device.Native, default, cache, 1, &createInfo, null, &native);
                 ThrowPipelineFailure(device, result, "vkCreateRayTracingPipelinesKHR");
                 return native;
             }
@@ -215,16 +168,15 @@ internal sealed unsafe partial class VulkanBackend
         {
             for (int index = 0; index < modules.Length; index++)
             {
-                if (names[index] != 0) SilkMarshal.Free(names[index]);
+                if (names[index] != 0)
+                    SilkMarshal.Free(names[index]);
                 if (modules[index].Handle != 0)
                     Api.DestroyShaderModule(device.Native, modules[index], null);
             }
         }
     }
 
-    private static RayPipelineBuild BuildRayPipeline(
-        in RayTracingPipelineDesc desc,
-        ShaderReflection reflection)
+    private static RayPipelineBuild BuildRayPipeline(in RayTracingPipelineDesc desc, ShaderReflection reflection)
     {
         var stages = new List<RayStageBuild>();
         var groups = new List<RayTracingShaderGroupCreateInfoKHR>();
@@ -241,65 +193,24 @@ internal sealed unsafe partial class VulkanBackend
             uint any = AddOptionalStage(hit.AnyHit, SlangStage.AnyHit, ShaderStageFlags.AnyHitBitKhr);
             uint intersection = AddOptionalStage(hit.Intersection, SlangStage.Intersection, ShaderStageFlags.IntersectionBitKhr);
             uint groupIndex = checked((uint)groups.Count);
-            if (!hitGroups.TryAdd(hit.Name, groupIndex))
-                throw new ArgumentException($"Ray-tracing hit group '{hit.Name}' is duplicated.", nameof(desc));
-            groups.Add(new RayTracingShaderGroupCreateInfoKHR
-            {
-                SType = StructureType.RayTracingShaderGroupCreateInfoKhr,
-                Type = intersection == Vk.ShaderUnusedKhr
-                    ? RayTracingShaderGroupTypeKHR.TrianglesHitGroupKhr
-                    : RayTracingShaderGroupTypeKHR.ProceduralHitGroupKhr,
-                GeneralShader = Vk.ShaderUnusedKhr,
-                ClosestHitShader = closest,
-                AnyHitShader = any,
-                IntersectionShader = intersection,
-            });
+            hitGroups.TryAdd(hit.Name, groupIndex);
+            groups.Add(new RayTracingShaderGroupCreateInfoKHR { SType = StructureType.RayTracingShaderGroupCreateInfoKhr, Type = intersection == Vk.ShaderUnusedKhr ? RayTracingShaderGroupTypeKHR.TrianglesHitGroupKhr : RayTracingShaderGroupTypeKHR.ProceduralHitGroupKhr, GeneralShader = Vk.ShaderUnusedKhr, ClosestHitShader = closest, AnyHitShader = any, IntersectionShader = intersection, });
         }
+
         foreach (EntryPointReflection entry in desc.Callable)
             AddGeneral(entry, SlangStage.Callable, ShaderStageFlags.CallableBitKhr);
-        return new RayPipelineBuild(
-            reflection,
-            stages.ToArray(),
-            groups.ToArray(),
-            generalGroups,
-            hitGroups,
-            entries.Distinct().ToArray());
-
-        void AddGeneral(
-            EntryPointReflection entry,
-            SlangStage slangStage,
-            ShaderStageFlags nativeStage)
+        return new RayPipelineBuild(reflection, stages.ToArray(), groups.ToArray(), generalGroups, hitGroups, entries.Distinct().ToArray());
+        void AddGeneral(EntryPointReflection entry, SlangStage slangStage, ShaderStageFlags nativeStage)
         {
             uint stage = AddStage(entry, slangStage, nativeStage);
             uint group = checked((uint)groups.Count);
-            if (!generalGroups.TryAdd(entry, group))
-                throw new ArgumentException("A ray-tracing entry point is declared more than once.", nameof(desc));
-            groups.Add(new RayTracingShaderGroupCreateInfoKHR
-            {
-                SType = StructureType.RayTracingShaderGroupCreateInfoKhr,
-                Type = RayTracingShaderGroupTypeKHR.GeneralKhr,
-                GeneralShader = stage,
-                ClosestHitShader = Vk.ShaderUnusedKhr,
-                AnyHitShader = Vk.ShaderUnusedKhr,
-                IntersectionShader = Vk.ShaderUnusedKhr,
-            });
+            generalGroups.TryAdd(entry, group);
+            groups.Add(new RayTracingShaderGroupCreateInfoKHR { SType = StructureType.RayTracingShaderGroupCreateInfoKhr, Type = RayTracingShaderGroupTypeKHR.GeneralKhr, GeneralShader = stage, ClosestHitShader = Vk.ShaderUnusedKhr, AnyHitShader = Vk.ShaderUnusedKhr, IntersectionShader = Vk.ShaderUnusedKhr, });
         }
 
-        uint AddOptionalStage(
-            EntryPointReflection entry,
-            SlangStage slangStage,
-            ShaderStageFlags nativeStage) =>
-            entry == EntryPointReflection.Null
-                ? Vk.ShaderUnusedKhr
-                : AddStage(entry, slangStage, nativeStage);
-
-        uint AddStage(
-            EntryPointReflection entry,
-            SlangStage slangStage,
-            ShaderStageFlags nativeStage)
+        uint AddOptionalStage(EntryPointReflection entry, SlangStage slangStage, ShaderStageFlags nativeStage) => entry == EntryPointReflection.Null ? Vk.ShaderUnusedKhr : AddStage(entry, slangStage, nativeStage);
+        uint AddStage(EntryPointReflection entry, SlangStage slangStage, ShaderStageFlags nativeStage)
         {
-            if (entry == EntryPointReflection.Null || entry.Stage != slangStage)
-                throw new ArgumentException($"A ray-tracing entry point must have Slang stage {slangStage}.", nameof(desc));
             uint index = checked((uint)stages.Count);
             stages.Add(new RayStageBuild(entry, slangStage, nativeStage));
             entries.Add(entry);
@@ -307,8 +218,7 @@ internal sealed unsafe partial class VulkanBackend
         }
     }
 
-    private static PhysicalDeviceRayTracingPipelinePropertiesKHR GetRayPipelineProperties(
-        VulkanDevice device)
+    private static PhysicalDeviceRayTracingPipelinePropertiesKHR GetRayPipelineProperties(VulkanDevice device)
     {
         PhysicalDeviceRayTracingPipelinePropertiesKHR properties = new()
         {
@@ -319,31 +229,8 @@ internal sealed unsafe partial class VulkanBackend
             SType = StructureType.PhysicalDeviceProperties2,
             PNext = &properties,
         };
-        device.Backend.Api.GetPhysicalDeviceProperties2(device.PhysicalDevice, &root);
+        device.Backend.Api.GetPhysicalDeviceProperties2(device.AdapterDevice, &root);
         return properties;
-    }
-
-    private static void ValidateRayTracingPipeline(
-        in RayTracingPipelineDesc desc,
-        RayTracing capability)
-    {
-        ArgumentNullException.ThrowIfNull(desc.SlangCode);
-        if (desc.Reflection == ShaderReflection.Null)
-            throw new ArgumentException("A ray-tracing pipeline requires Slang reflection.", nameof(desc));
-        if (desc.RayGeneration.IsEmpty || desc.MaximumRecursionDepth == 0 ||
-            desc.MaximumRecursionDepth > capability.MaximumRecursionDepth || desc.NodeMask != 1)
-            throw new ArgumentOutOfRangeException(nameof(desc));
-        if (desc.MaximumAttributeSize > capability.MaximumAttributeSize)
-            throw new ArgumentOutOfRangeException(nameof(desc.MaximumAttributeSize));
-    }
-
-    private static void ValidateShaderTableDescription(
-        in RayTracingShaderTableDesc desc,
-        VulkanRayTracingPipelineState pipeline)
-    {
-        if (desc.RayGenerationRecordCount == 0 || desc.MaximumRecordSize == 0 ||
-            desc.MaximumRecordSize > pipeline.MaximumStride)
-            throw new ArgumentOutOfRangeException(nameof(desc));
     }
 
     private static PipelineCreateFlags ToNative(RayTracingPipelineOptions options)
@@ -362,13 +249,9 @@ internal sealed unsafe partial class VulkanBackend
         RayTracingShaderGroupCreateInfoKHR[] Groups,
         Dictionary<EntryPointReflection, uint> GeneralGroups,
         Dictionary<string, uint> HitGroups,
-        EntryPointReflection[] Entries);
-
-    private readonly record struct RayStageBuild(
-        EntryPointReflection Entry,
-        SlangStage SlangStage,
-        ShaderStageFlags NativeStage);
-
+        EntryPointReflection[] Entries
+    );
+    private readonly record struct RayStageBuild(EntryPointReflection Entry, SlangStage SlangStage, ShaderStageFlags NativeStage);
     private sealed class VulkanRayTracingPipelineState(
         Dictionary<EntryPointReflection, uint> generalGroups,
         Dictionary<string, uint> hitGroups,
@@ -376,7 +259,8 @@ internal sealed unsafe partial class VulkanBackend
         uint handleSize,
         uint handleAlignment,
         uint baseAlignment,
-        uint maximumStride)
+        uint maximumStride
+    )
     {
         internal Dictionary<EntryPointReflection, uint> GeneralGroups { get; } = generalGroups;
         internal Dictionary<string, uint> HitGroups { get; } = hitGroups;
@@ -389,12 +273,8 @@ internal sealed unsafe partial class VulkanBackend
         internal uint Resolve(in RayTracingShaderRecord record)
         {
             if (record.HitGroupName is string hit)
-                return HitGroups.TryGetValue(hit, out uint hitGroup)
-                    ? hitGroup
-                    : throw new ArgumentException($"Unknown Vulkan ray-tracing hit group '{hit}'.", nameof(record));
-            return GeneralGroups.TryGetValue(record.EntryPoint, out uint group)
-                ? group
-                : throw new ArgumentException("The ray-tracing entry point is not part of the Pipeline.", nameof(record));
+                return HitGroups.TryGetValue(hit, out uint hitGroup) ? hitGroup : default!;
+            return GeneralGroups.TryGetValue(record.EntryPoint, out uint group) ? group : default!;
         }
     }
 
@@ -402,12 +282,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         private readonly VulkanDevice _device;
         private VulkanShaderTableGeneration? _generation;
-
-        internal VulkanRayTracingShaderTable(
-            VulkanDevice device,
-            VulkanPipeline pipeline,
-            in RayTracingShaderTableDesc desc)
-            : base(device, desc)
+        internal VulkanRayTracingShaderTable(VulkanDevice device, VulkanPipeline pipeline, in RayTracingShaderTableDesc desc) : base(device, desc)
         {
             _device = device;
             Pipeline = pipeline;
@@ -415,10 +290,7 @@ internal sealed unsafe partial class VulkanBackend
 
         internal VulkanPipeline Pipeline { get; }
 
-        internal VulkanShaderTableGeneration CreateGeneration(
-            in RayTracingShaderTableUpdate update) =>
-            VulkanShaderTableGeneration.Create(_device, Pipeline, Description, update);
-
+        internal VulkanShaderTableGeneration CreateGeneration(in RayTracingShaderTableUpdate update) => VulkanShaderTableGeneration.Create(_device, Pipeline, Description, update);
         internal void Publish(VulkanShaderTableGeneration generation)
         {
             VulkanShaderTableGeneration? previous = Interlocked.Exchange(ref _generation, generation);
@@ -429,10 +301,16 @@ internal sealed unsafe partial class VulkanBackend
         {
             while (true)
             {
-                VulkanShaderTableGeneration generation = Volatile.Read(ref _generation)
-                    ?? throw new InvalidOperationException("The ShaderTable has not been initialized.");
-                try { generation.RetainNative(); }
-                catch (ObjectDisposedException) { continue; }
+                VulkanShaderTableGeneration generation = Volatile.Read(ref _generation)!;
+                try
+                {
+                    generation.RetainNative();
+                }
+                catch (ObjectDisposedException)
+                {
+                    continue;
+                }
+
                 if (ReferenceEquals(generation, Volatile.Read(ref _generation)))
                     return generation;
                 generation.ReleaseNative();
@@ -453,7 +331,6 @@ internal sealed unsafe partial class VulkanBackend
         private readonly VulkanMemoryBlock _memory;
         private readonly VulkanLifetime _lifetime;
         private VkBuffer _buffer;
-
         private VulkanShaderTableGeneration(
             VulkanDevice device,
             VkBuffer buffer,
@@ -461,7 +338,8 @@ internal sealed unsafe partial class VulkanBackend
             StridedDeviceAddressRegionKHR rayGeneration,
             StridedDeviceAddressRegionKHR miss,
             StridedDeviceAddressRegionKHR hit,
-            StridedDeviceAddressRegionKHR callable)
+            StridedDeviceAddressRegionKHR callable
+        )
         {
             _device = device;
             _buffer = buffer;
@@ -477,22 +355,18 @@ internal sealed unsafe partial class VulkanBackend
         internal StridedDeviceAddressRegionKHR Miss { get; }
         internal StridedDeviceAddressRegionKHR Hit { get; }
         internal StridedDeviceAddressRegionKHR Callable { get; }
+
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-
         internal static VulkanShaderTableGeneration Create(
             VulkanDevice device,
             VulkanPipeline pipeline,
             in RayTracingShaderTableDesc desc,
-            in RayTracingShaderTableUpdate update)
+            in RayTracingShaderTableUpdate update
+        )
         {
             VulkanRayTracingPipelineState state = pipeline.RayTracing!;
-            ValidateCounts(desc, update);
-            uint stride = checked((uint)AlignUp(
-                Math.Max(desc.MaximumRecordSize, state.HandleSize),
-                state.HandleAlignment));
-            if (stride > state.MaximumStride)
-                throw new ArgumentOutOfRangeException(nameof(desc.MaximumRecordSize));
+            uint stride = checked((uint)AlignUp(Math.Max(desc.MaximumRecordSize, state.HandleSize), state.HandleAlignment));
             ulong rayOffset = 0;
             ulong missOffset = AlignUp(checked((ulong)stride * desc.RayGenerationRecordCount), state.BaseAlignment);
             ulong hitOffset = AlignUp(missOffset + checked((ulong)stride * desc.MissRecordCount), state.BaseAlignment);
@@ -504,14 +378,8 @@ internal sealed unsafe partial class VulkanBackend
             {
                 Silk.NET.Vulkan.MemoryRequirements requirements;
                 device.Backend.Api.GetBufferMemoryRequirements(device.Native, buffer, &requirements);
-                memory = device.AllocateMemory(
-                    requirements.Size,
-                    requirements.MemoryTypeBits,
-                    MemoryType.Upload,
-                    deviceAddress: true);
-                device.ThrowIfDeviceCallFailed(
-                    device.Backend.Api.BindBufferMemory(device.Native, buffer, memory.Native, 0),
-                    "vkBindBufferMemory(shader table)");
+                memory = device.AllocateMemory(requirements.Size, requirements.MemoryTypeBits, MemoryType.Upload, deviceAddress: true);
+                device.ThrowIfDeviceCallFailed(device.Backend.Api.BindBufferMemory(device.Native, buffer, memory.Native, 0), "vkBindBufferMemory(shader table)");
                 BufferDeviceAddressInfo addressInfo = new()
                 {
                     SType = StructureType.BufferDeviceAddressInfo,
@@ -522,15 +390,11 @@ internal sealed unsafe partial class VulkanBackend
                 fixed (byte* handlePointer = handles)
                 {
                     device.ThrowIfDeviceCallFailed(
-                        device.RayTracingPipelineApi.GetRayTracingShaderGroupHandles(
-                            device.Native,
-                            pipeline.Native,
-                            0,
-                            state.GroupCount,
-                            checked((nuint)handles.Length),
-                            handlePointer),
-                        "vkGetRayTracingShaderGroupHandlesKHR");
+                        device.RayTracingPipelineApi.GetRayTracingShaderGroupHandles(device.Native, pipeline.Native, 0, state.GroupCount, checked((nuint)handles.Length), handlePointer),
+                        "vkGetRayTracingShaderGroupHandlesKHR"
+                    );
                 }
+
                 Span<byte> destination = new((void*)memory.Mapped, checked((int)totalSize));
                 destination.Clear();
                 WriteRecords(destination, rayOffset, stride, update.RayGeneration, update, state, handles);
@@ -545,7 +409,8 @@ internal sealed unsafe partial class VulkanBackend
                     Region(address + rayOffset, stride, desc.RayGenerationRecordCount, rayGeneration: true),
                     Region(address + missOffset, stride, desc.MissRecordCount, rayGeneration: false),
                     Region(address + hitOffset, stride, desc.HitRecordCount, rayGeneration: false),
-                    Region(address + callableOffset, stride, desc.CallableRecordCount, rayGeneration: false));
+                    Region(address + callableOffset, stride, desc.CallableRecordCount, rayGeneration: false)
+                );
             }
             catch
             {
@@ -561,14 +426,11 @@ internal sealed unsafe partial class VulkanBackend
             {
                 SType = StructureType.BufferCreateInfo,
                 Size = size,
-                Usage = BufferUsageFlags.ShaderBindingTableBitKhr |
-                    BufferUsageFlags.ShaderDeviceAddressBit,
+                Usage = BufferUsageFlags.ShaderBindingTableBitKhr | BufferUsageFlags.ShaderDeviceAddressBit,
                 SharingMode = SharingMode.Exclusive,
             };
             VkBuffer buffer = default;
-            device.ThrowIfDeviceCallFailed(
-                device.Backend.Api.CreateBuffer(device.Native, &createInfo, null, &buffer),
-                "vkCreateBuffer(shader table)");
+            device.ThrowIfDeviceCallFailed(device.Backend.Api.CreateBuffer(device.Native, &createInfo, null, &buffer), "vkCreateBuffer(shader table)");
             return buffer;
         }
 
@@ -579,67 +441,28 @@ internal sealed unsafe partial class VulkanBackend
             ReadOnlySpan<RayTracingShaderRecord> records,
             in RayTracingShaderTableUpdate update,
             VulkanRayTracingPipelineState state,
-            byte[] handles)
+            byte[] handles
+        )
         {
             for (int index = 0; index < records.Length; index++)
             {
                 RayTracingShaderRecord record = records[index];
                 uint group = state.Resolve(record);
                 int recordOffset = checked((int)(baseOffset + checked((ulong)index * stride)));
-                handles.AsSpan(
-                    checked((int)(group * state.HandleSize)),
-                    checked((int)state.HandleSize)).CopyTo(destination[recordOffset..]);
+                handles.AsSpan(checked((int)(group * state.HandleSize)), checked((int)state.HandleSize)).CopyTo(destination[recordOffset..]);
                 int payloadOffset = checked(recordOffset + (int)state.HandleSize);
                 for (uint blockIndex = 0; blockIndex < record.ParameterBlockCount; blockIndex++)
                 {
                     uint parameterIndex = checked(record.ParameterBlockOffset + blockIndex);
-                    if (parameterIndex >= update.ParameterBlocks.Length)
-                        throw new ArgumentOutOfRangeException(nameof(update.ParameterBlocks));
                     RayTracingLocalParameterBlock block = update.ParameterBlocks[checked((int)parameterIndex)];
-                    if (block.Layout == VariableLayoutReflection.Null || block.ResourceCount != 0)
-                        throw new NotSupportedException(
-                            "Vulkan shader records expose ordinary bytes only; opaque resources " +
-                            "must be addressed through global bindless descriptor indices.");
-                    if (block.OrdinaryDataOffset > update.OrdinaryData.Length ||
-                        block.OrdinaryDataSize > update.OrdinaryData.Length - block.OrdinaryDataOffset)
-                        throw new ArgumentOutOfRangeException(nameof(update.OrdinaryData));
-                    ReadOnlySpan<byte> data = update.OrdinaryData.Slice(
-                        checked((int)block.OrdinaryDataOffset),
-                        checked((int)block.OrdinaryDataSize));
-                    if (payloadOffset > recordOffset + stride || data.Length > recordOffset + stride - payloadOffset)
-                        throw new ArgumentOutOfRangeException(nameof(update), "Shader-record local data exceeds MaximumRecordSize.");
+                    ReadOnlySpan<byte> data = update.OrdinaryData.Slice(checked((int)block.OrdinaryDataOffset), checked((int)block.OrdinaryDataSize));
                     data.CopyTo(destination[payloadOffset..]);
                     payloadOffset += data.Length;
                 }
             }
         }
 
-        private static void ValidateCounts(
-            in RayTracingShaderTableDesc desc,
-            in RayTracingShaderTableUpdate update)
-        {
-            if (update.RayGeneration.Length != desc.RayGenerationRecordCount ||
-                update.Miss.Length != desc.MissRecordCount ||
-                update.Hit.Length != desc.HitRecordCount ||
-                update.Callable.Length != desc.CallableRecordCount ||
-                !update.Resources.IsEmpty)
-                throw new ArgumentException(
-                    "The Vulkan ShaderTable update does not match its declared record counts " +
-                    "or contains opaque local resources.",
-                    nameof(update));
-        }
-
-        private static StridedDeviceAddressRegionKHR Region(
-            ulong address,
-            uint stride,
-            uint count,
-            bool rayGeneration) => count == 0
-            ? default
-            : new StridedDeviceAddressRegionKHR(
-                address,
-                stride,
-                rayGeneration ? stride : checked((ulong)stride * count));
-
+        private static StridedDeviceAddressRegionKHR Region(ulong address, uint stride, uint count, bool rayGeneration) => count == 0 ? default : new StridedDeviceAddressRegionKHR(address, stride, rayGeneration ? stride : checked((ulong)stride * count));
         private static void Flush(VulkanDevice device, VulkanMemoryBlock memory, ulong size)
         {
             if (memory.Coherent)
@@ -651,9 +474,7 @@ internal sealed unsafe partial class VulkanBackend
                 Offset = 0,
                 Size = Math.Min(AlignUp(size, device.NonCoherentAtomSize), memory.Size),
             };
-            device.ThrowIfDeviceCallFailed(
-                device.Backend.Api.FlushMappedMemoryRanges(device.Native, 1, &range),
-                "vkFlushMappedMemoryRanges(shader table)");
+            device.ThrowIfDeviceCallFailed(device.Backend.Api.FlushMappedMemoryRanges(device.Native, 1, &range), "vkFlushMappedMemoryRanges(shader table)");
         }
 
         private void DestroyNative()
@@ -670,7 +491,7 @@ internal sealed unsafe partial class VulkanBackend
         private readonly SlangShaderData _slangCode;
         private readonly ShaderReflection _reflection;
         private readonly ReadOnlySequence<byte>[] _code;
-        private readonly ISlangBlob?[] _codeBlobs;
+        private readonly ISlangBlob? [] _codeBlobs;
         private readonly EntryPointReflection[] _rayGeneration;
         private readonly EntryPointReflection[] _miss;
         private readonly EntryPointReflection[] _callable;
@@ -682,7 +503,6 @@ internal sealed unsafe partial class VulkanBackend
         private readonly uint _nodeMask;
         private readonly string? _label;
         private readonly StaticSamplerBinding[] _staticSamplers;
-
         internal RayPipelineData(in RayTracingPipelineDesc desc)
         {
             _slangCode = desc.SlangCode;
@@ -706,7 +526,8 @@ internal sealed unsafe partial class VulkanBackend
             VulkanBackend backend,
             VulkanDevice device,
             SomeEngine.Graphics.PipelineCache? cache,
-            SlangShaderData capturedSlangCode)
+            SlangShaderData capturedSlangCode
+        )
         {
             RayTracingPipelineDesc desc = new(
                 _slangCode,
@@ -723,13 +544,9 @@ internal sealed unsafe partial class VulkanBackend
                 _nodeMask,
                 _label,
                 _staticSamplers,
-                _codeBlobs[0]);
-            return backend.CreateRayTracingPipelineCore(
-                device,
-                desc,
-                cache,
-                capturedSlangCode);
+                _codeBlobs[0]
+            );
+            return backend.CreateRayTracingPipelineCore(device, desc, cache, capturedSlangCode);
         }
-
     }
 }

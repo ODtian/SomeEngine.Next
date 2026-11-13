@@ -8,7 +8,7 @@
 
 返回的 `GpuPoseReadbackRequest` 保留 `Identity`、`Range` 和 `Completion`。`GpuPoseIdentity` 包含 Game target 实体、`SkeletonInstance` 引用、`Starts`、`AnimationStarts` 与 `InputNumber`。请求经 `GpuPoseTarget.Readbacks` 的只读集合进入同次正常提取。显式请求时替换集合并保留尚在执行的请求。
 
-Rendering world 从共享骨骼缓冲中复制选定 current、previous 范围，以及对应 GPU 播放行。copy 排在 `SkinningFeature.CompletePass` 之后；提交观察者记录该 copy 实际接受的 queue completion。`CompleteReadbacks()` 查询完成点，就绪后映射、invalidate 并复制为独立的 CPU 数据，然后完成请求 Task。`GpuPoseReadbackRequest.Deliver` 是该提取后 GPU 生产方的交付入口。
+Rendering world 从共享骨骼缓冲中复制选定 current、previous、来源采样范围和播放行。copy 排在 `SkinningFeature.CompletePass` 之后，数据通过 RenderGraph 持有的当帧 buffer 与读回页交付。完整提交后，请求退出待处理集合；GPU 完成时由图把只读字节交给 receiver，生成独立的 CPU 结果。`CompleteReadbacks()` 通过图收集完成帧。
 
 | 结果字段 | 含义 |
 | --- | --- |
@@ -21,7 +21,7 @@ Rendering world 从共享骨骼缓冲中复制选定 current、previous 范围�
 
 结果持有只读内存，使用期独立于读回缓冲、后续播放与图形设备。Rendering world 释放完成的读回缓冲；feature 释放时排空已经提交的复制。播放重新开始后，先前请求继续持有其原执行身份，新请求记录新的启动标记。
 
-copy 所在帧在提交前取消时，选骨请求的 `Completion` 转为取消，并释放对应读回缓冲。消费者在下次 Game 更新为当前输入重新请求。feature 关闭时同样取消尚未提交的请求；已提交的 copy 按其完成点交付。
+copy 所在帧在提交前丢弃时，请求保留在 feature 的待处理集合，下一帧继续提交。feature 关闭时取消尚未提交的请求；已提交的 copy 通过图的帧完成入口排空并交付。
 
 `Presentation` 保留视觉局部姿势的两端计算时钟、来源身份及呈现权重，`SourceSamples` 保留逐骨骼两端实际来源样本时间。`SampledBones` 给出范围内已解析的 GPU 来源采样骨骼。插值规则、LOD 与混合 CPU 当前结果的时间职责见 [GPU Pose Frequency](GPU-Pose-Frequency.md)。
 

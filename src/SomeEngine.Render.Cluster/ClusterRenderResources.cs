@@ -1,926 +1,110 @@
-using System.Buffers;
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
-using SomeEngine.Assets;
-using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
-using SomeEngine.ECS.Queries;
-using SomeEngine.ECS.Systems;
-using SomeEngine.Graphics;
-using SomeEngine.Render.Components;
-using SomeEngine.Render.Frame;
 using SomeEngine.Render.Instances;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
 
 namespace SomeEngine.Render.Cluster;
 
-/// <summary>Physical limits for one complete Cluster render-resource epoch.</summary>
 public sealed record ClusterRenderOptions
 {
     public ClusterResidencyOptions Residency { get; init; } = new();
 }
 
-/// <summary>Result of one Cluster residency-publication system update.</summary>
-public readonly record struct ClusterPrepareResult(
-    bool PublishedResidencyChanges);
+public readonly record struct ClusterPrepareResult(bool PublishedResidencyChanges);
+public sealed record ClusterRenderDiagnostics(ClusterResidencyDiagnostics Residency, ClusterMeshCacheDiagnostics Meshes);
 
-/// <summary>Diagnostics captured from one active Cluster render-resource epoch.</summary>
-public sealed record ClusterRenderDiagnostics(
-    ClusterResidencyDiagnostics Residency,
-    ClusterMeshCacheDiagnostics Meshes);
-
-/// <summary>
-/// Non-cacheable assembly-local binding for one exact Cluster epoch. Constructing the binding is
-/// also the only operation that registers both Cluster timelines on a submitted render frame.
-/// </summary>
-internal readonly ref struct ClusterRenderBinding
+/// <summary>Geometry resources and instance ranges consumed by one cluster pipeline.</summary>
+internal readonly record struct ClusterRenderBinding(
+    ClusterResidencyBinding Residency, RenderInstanceBatchView InstanceData, ClusterEpochId ReadbackEpoch)
 {
-    internal ClusterRenderBinding(
-        ClusterResidencyBinding residency,
-        RenderInstanceBatchView instanceProperties,
-        ClusterEpochId readbackEpoch,
-        RenderFrameUseLease frameUse)
-    {
-        PageHeapDescription = residency.PageHeapDescription;
-        BvhDescription = residency.BvhDescription;
-        PageFaultCapacity = residency.PageFaultCapacity;
-        ResidentPageRanges = residency.ResidentPageRanges;
-        BvhRanges = residency.BvhRanges;
-        Publication = residency.Publication;
-        PropertyData = instanceProperties.PropertyData ??
-            throw new ArgumentException(
-                "Cluster rendering requires materialized instance-property data.",
-                nameof(instanceProperties));
-        InstancePropertyMetadata = instanceProperties.Metadata;
-        InstancePropertyMetadataRange = instanceProperties.MetadataRange;
-        PropertyDataEndpoints = instanceProperties.PropertyDataEndpoints;
-        InstanceData = instanceProperties;
-        InstancePropertyMetadataEndpoints = instanceProperties.MetadataEndpoints;
-        InstanceGeneration = instanceProperties.Generation;
-        DispatchExtent = instanceProperties.InstanceCount;
-        ReadbackEpoch = readbackEpoch.IsValid
-            ? readbackEpoch
-            : throw new ArgumentException(
-                "A Cluster render binding requires a valid readback epoch.",
-                nameof(readbackEpoch));
-        _frameUse = frameUse;
-    }
-
-    private readonly RenderFrameUseLease _frameUse;
-
-    internal BufferDesc PageHeapDescription { get; }
-
-    internal BufferDesc BvhDescription { get; }
-
-    internal int PageFaultCapacity { get; }
-
-    internal BufferRange[] ResidentPageRanges { get; }
-
-    internal BufferRange[] BvhRanges { get; }
-
-    internal ClusterResidencyPublication? Publication { get; }
-
-    internal Buffer PropertyData { get; }
-
-    internal Buffer InstancePropertyMetadata { get; }
-
-    internal BufferRange InstancePropertyMetadataRange { get; }
-
-    internal BufferBoundaryState[] PropertyDataEndpoints { get; }
-
-    internal RenderInstanceBatchView InstanceData { get; }
-
-    internal BufferBoundaryState[] InstancePropertyMetadataEndpoints { get; }
-
-    internal int InstanceGeneration { get; }
-
-    internal int DispatchExtent { get; }
-
-    internal ClusterEpochId ReadbackEpoch { get; }
-
-    public void Dispose()
-        => _frameUse.Dispose();
+    internal ClusterResidentGeometry? Changes => Residency.Changes;
+    internal GraphBufferId PropertyData => InstanceData.PropertyData;
+    internal GraphBufferId InstancePropertyMetadata => InstanceData.Metadata;
+    internal SomeEngine.Graphics.BufferRange InstancePropertyMetadataRange => InstanceData.MetadataRange;
+    internal int DispatchExtent => InstanceData.InstanceCount;
+    internal int PageFaultCapacity => Residency.PageFaultCapacity;
+    internal SomeEngine.Graphics.BufferDesc PageHeapDescription => Residency.PageHeapDescription;
+    internal SomeEngine.Graphics.BufferDesc BvhDescription => Residency.BvhDescription;
+    internal SomeEngine.Graphics.BufferRange[] ResidentPageRanges => Residency.ResidentPageRanges;
+    internal SomeEngine.Graphics.BufferRange[] BvhRanges => Residency.BvhRanges;
 }
 
-/// <summary>
-/// Owns one Cluster algorithm-resource epoch. It borrows the Render-owned shared instance storage
-/// and owns only residency, mesh preparation, and Cluster's instance-field contributor.
-/// </summary>
+/// <summary>Mesh registration, page streaming and geometry data for one rendering world.</summary>
 public sealed partial class ClusterRenderResources : IDisposable
 {
-    private static readonly SomeEngine.Diagnostics.TraceSite UseTrace = new("render", "Cluster.ResourceUse");
-    private static readonly ConditionalWeakTable<RenderWorld, ClusterWorldClaim> s_worldClaims = new();
-
-    private const int LifecycleActive = 0;
-    private const int LifecycleStopping = 1;
-    private const int LifecycleShutdown = 2;
-    private const int LifecycleDisposed = 3;
-
     private readonly ClusterResidency _residency;
-    private readonly RenderInstanceResources _instances;
-    private readonly RenderInstanceBorrowerLease _instanceBorrower;
+    private readonly RenderInstanceData _instances;
     private readonly RenderWorld _renderWorld;
     private readonly ClusterMeshPrepareSystem _meshPrepare;
-    private readonly RenderTimeline _residencyTimeline;
-    private readonly ClusterEpochId _epoch;
-    private readonly ClusterWorldClaim _worldClaim;
-    private readonly object _worldClaimToken = new();
-    private readonly object _lifecycleGate = new();
-    private readonly object _aggregateStateGate = new();
-    private readonly object _feedbackGate = new();
-    private readonly Dictionary<int, int> _activeOperationThreadDepths = [];
-    private readonly TimeSpan _shutdownTimeout;
-    private RenderPrepareScope? _shutdownScope;
-    private int _activeOperations;
-    private bool _aggregateMutationActive;
-    private int _lifecycleState;
-    private int _shutdownExecuting;
-    private bool _meshSystemShutdown;
-    private bool _streamStopped;
-    private bool _residencyDestroyed;
-    private bool _instanceBorrowerReleased;
+    private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private ulong _lastFaultFeedbackFrame;
+    private bool _disposed;
 
-    public ClusterRenderResources(
-        IGraphicsBackend backend,
-        Device device,
-        RenderFrameCoordinator coordinator,
-        RenderWorld renderWorld,
-        RenderInstanceStorageSystem instances,
-        ClusterRenderOptions? options = null)
+    public ClusterRenderResources(global::SomeEngine.RenderGraph.RenderGraph graph, RenderWorld renderWorld,
+        RenderInstanceStorageSystem instances, ClusterRenderOptions? options = null)
     {
-        ArgumentNullException.ThrowIfNull(backend);
-        ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(coordinator);
-        ArgumentNullException.ThrowIfNull(renderWorld);
-        ArgumentNullException.ThrowIfNull(instances);
-        if (!ReferenceEquals(renderWorld, instances.World))
-        {
-            throw new ArgumentException(
-                "Cluster and instance storage must use the same RenderWorld.",
-                nameof(instances));
-        }
-        ClusterRenderOptions selected = options ?? new ClusterRenderOptions();
-        ArgumentNullException.ThrowIfNull(selected.Residency);
-
-        RenderInstanceBorrowerLease instanceBorrower = instances.AcquireBorrower();
-        ClusterWorldClaim worldClaim;
-        try
-        {
-            worldClaim = ClaimRenderWorld(renderWorld, _worldClaimToken);
-        }
-        catch
-        {
-            instanceBorrower.Dispose();
-            throw;
-        }
-
-        ClusterResidency? residency = null;
-        ClusterMeshPrepareSystem? meshPrepare = null;
-        try
-        {
-            RenderTimeline residencyTimeline = coordinator.CreateTimeline(generationCount: 1);
-            if (!ReferenceEquals(residencyTimeline.Device, device) ||
-                !ReferenceEquals(instances.Timeline.Device, device))
-            {
-                throw new ArgumentException(
-                    "Cluster resources and their frame coordinator must use the same device domain.",
-                    nameof(coordinator));
-            }
-            if (!ReferenceEquals(instances.Timeline.Owner, residencyTimeline.Owner))
-            {
-                throw new ArgumentException(
-                    "Cluster residency and shared instance storage must use the same exact frame coordinator.",
-                    nameof(coordinator));
-            }
-            if (ReferenceEquals(residencyTimeline, instances.Timeline))
-                throw new InvalidOperationException("Cluster requires distinct residency and instance timelines.");
-
-            residency = new ClusterResidency(
-                backend,
-                device,
-                residencyTimeline,
-                selected.Residency);
-            meshPrepare = new ClusterMeshPrepareSystem(renderWorld, residency);
-
-            _residency = residency;
-            _instances = instances.Storage;
-            _instanceBorrower = instanceBorrower;
-            _renderWorld = renderWorld;
-            _meshPrepare = meshPrepare;
-            _residencyTimeline = residencyTimeline;
-            _epoch = residency.EpochId;
-            _worldClaim = worldClaim;
-            _shutdownTimeout = selected.Residency.DisposeTimeout;
-        }
-        catch
-        {
-            TryDispose(meshPrepare);
-            TryDispose(residency);
-            instanceBorrower.Dispose();
-            ReleaseRenderWorld(worldClaim, _worldClaimToken);
-            throw;
-        }
+        _graph = graph; _renderWorld = renderWorld; _instances = instances.Storage;
+        _residency = new(graph, (options ?? new ClusterRenderOptions()).Residency);
+        try { _meshPrepare = new(renderWorld, _residency); }
+        catch { _residency.Dispose(); throw; }
     }
 
     internal ClusterResidency Residency => _residency;
-
-    internal ClusterEpochId EpochId => _epoch;
+    internal ClusterEpochId EpochId => _residency.EpochId;
     internal uint GeometryPageCount => _residency.GeometryPageCount;
     internal uint MaximumRasterBatchesPerCluster => _residency.MaximumRasterBatchesPerCluster;
     public ReadOnlyMemory<ClusterLodChange> LodChanges => _residency.LodChanges;
-
     internal RenderWorld World => _renderWorld;
-
-    internal RenderInstanceResources InstanceResources => _instances;
-
-    internal RenderTimeline ResidencyTimeline => _residencyTimeline;
-
-    internal RenderTimeline InstanceTimeline => _instances.Timeline;
-
+    internal RenderInstanceData InstanceResources => _instances;
     internal int PublishedMeshCount => _residency.PublishedMeshCount;
-
     internal int HierarchyLevels => _residency.HierarchyLevels;
-
     internal int PageFaultCapacity => _residency.PageFaultCapacity;
 
-    internal void EnterInstanceComposition() => EnterActiveOperation();
+    public ValueTask<ClusterMeshPrepareResult> PrepareMeshesAsync(CancellationToken cancellationToken = default) =>
+        _meshPrepare.PrepareAsync(cancellationToken);
 
-    internal void ExitInstanceComposition() => ExitActiveOperation();
-
-    public ValueTask<ClusterMeshPrepareResult> PrepareMeshesAsync(
-        CancellationToken cancellationToken = default)
+    internal ClusterPrepareResult Prepare()
     {
-        EnterActiveOperation(trackContext: false);
-        try
-        {
-            ValueTask<ClusterMeshPrepareResult> pending =
-                _meshPrepare.PrepareAsync(cancellationToken);
-            if (!pending.IsCompletedSuccessfully)
-                return CompleteMeshPreparationAsync(pending);
-            ClusterMeshPrepareResult result = pending.Result;
-            ExitActiveOperation(trackContext: false);
-            return ValueTask.FromResult(result);
-        }
-        catch
-        {
-            ExitActiveOperation(trackContext: false);
-            throw;
-        }
+        bool changed = _residency.PrepareChanges();
+        _meshPrepare.ApplyGeometry();
+        return new(changed);
     }
 
-    private async ValueTask<ClusterMeshPrepareResult> CompleteMeshPreparationAsync(
-        ValueTask<ClusterMeshPrepareResult> pending)
-    {
-        try
-        {
-            return await pending.ConfigureAwait(false);
-        }
-        finally
-        {
-            ExitActiveOperation(trackContext: false);
-        }
-    }
-
-    /// <summary>
-    /// Publishes Cluster residency changes. Instance batches are built separately by a pipeline
-    /// composition system while it holds a RenderWorld read snapshot; Cluster never owns a second
-    /// instance store or writes persistent instance rows.
-    /// </summary>
-    internal ClusterPrepareResult Prepare(
-        RenderPrepareScope scope)
-    {
-        ArgumentNullException.ThrowIfNull(scope);
-        EnterActiveOperation();
-        try
-        {
-            lock (_aggregateStateGate)
-            {
-                if (_aggregateMutationActive)
-                {
-                    throw new InvalidOperationException(
-                        "Cluster aggregate mutation cannot be entered recursively.");
-                }
-                _aggregateMutationActive = true;
-                try
-                {
-                    using RenderTimelineLease residencyLease =
-                        scope.AcquireTimeline(_residencyTimeline);
-
-                    bool prepared = _residency.PreparePublication();
-                    _meshPrepare.ApplyGeometry();
-                    return new ClusterPrepareResult(prepared);
-                }
-                finally
-                {
-                    _aggregateMutationActive = false;
-                }
-            }
-        }
-        finally
-        {
-            ExitActiveOperation();
-        }
-    }
-
-    internal void CommitResidencyPublication(
-        ClusterResidencyPublication publication,
-        QueueCompletion[][] retirementCompletions)
-    {
-        EnterActiveOperation();
-        try
-        {
-            lock (_aggregateStateGate)
-            {
-                if (_aggregateMutationActive)
-                    throw new InvalidOperationException("Cluster aggregate mutation is already active.");
-                _aggregateMutationActive = true;
-                try
-                {
-                    _residency.CommitPublication(publication, retirementCompletions);
-                }
-                finally
-                {
-                    _aggregateMutationActive = false;
-                }
-            }
-        }
-        finally
-        {
-            ExitActiveOperation();
-        }
-    }
-
-    internal void RetainResidencyPublication(ClusterResidencyPublication publication)
-    {
-        EnterActiveOperation();
-        try
-        {
-            _residency.RetainPublication(publication);
-        }
-        finally
-        {
-            ExitActiveOperation();
-        }
-    }
+    internal void CommitResidencyChanges(ClusterResidentGeometry changes, ulong frameIdentity) =>
+        _residency.CommitChanges(changes, frameIdentity);
 
     internal ClusterGeometryProducer CreateGeometryProducer() => new();
 
-    /// <summary>
-    /// Exposes a non-cacheable binding for the opaque metadata contract carried by the actual
-    /// compiled shader variant. Cluster does not inspect or reconstruct that variant's fields.
-    /// </summary>
-    internal ClusterRenderBinding Use(
-        RenderFrame frame,
-        RenderInstanceBatch instanceProperties,
-        RenderInstancePropertyLayout shaderContract)
-    {
-        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UseTrace);
-        ArgumentNullException.ThrowIfNull(frame);
-        ArgumentNullException.ThrowIfNull(instanceProperties);
-        ArgumentNullException.ThrowIfNull(shaderContract);
-        EnterActiveOperation();
-        RenderFrameUseLease? frameUse = null;
-        try
-        {
-            // Validate the live batch and the exact shader ABI before registering either timeline
-            // with the frame. A rejected binding must not change frame submission state.
-            ClusterResidencyBinding residency = _residency.GetBinding();
-            RenderInstanceBatchView batch = _instances.GetBatchView(
-                instanceProperties,
-                shaderContract,
-                frameUse);
-            frameUse = frame.AcquireUse([_residencyTimeline, _instances.Timeline]);
-            frameUse.RegisterGeneration(_residencyTimeline, 0);
-            frameUse.RegisterGeneration(_instances.Timeline, batch.Generation);
-            ClusterRenderBinding binding = new(
-                residency,
-                batch,
-                _epoch,
-                frameUse);
-            frameUse = null;
-            return binding;
-        }
-        finally
-        {
-            frameUse?.Dispose();
-            ExitActiveOperation();
-        }
-    }
+    internal ClusterRenderBinding Use(RenderInstanceBatch batch, RenderInstancePropertyLayout shaderLayout) =>
+        new(_residency.GetBinding(), _instances.GetBatchView(batch, shaderLayout), EpochId);
 
-    internal void StoreInstanceReadStates(int generation, ReadOnlySpan<BufferBoundaryState> properties,
-        ReadOnlySpan<BufferBoundaryState> metadata)
-        => _instances.StoreReadStates(generation, properties, metadata);
-
-    /// <summary>Ingests all page-fault producers from one later host visit to a submitted frame.</summary>
-    internal void IngestPageFaultReadbackBatch(
-        ClusterReadbackTicket ticket,
-        ReadOnlySpan<byte[]> payloads)
+    internal void IngestPageFaultReadbackBatch(ClusterReadbackTicket ticket, ReadOnlySpan<byte[]> payloads)
     {
-        if (payloads.IsEmpty)
-            throw new ArgumentException("Cluster page-fault feedback must contain a producer payload.", nameof(payloads));
-        EnterActiveOperation();
-        try
-        {
-            lock (_feedbackGate)
-            {
-                ValidateReadbackTicket(ticket, _lastFaultFeedbackFrame);
-                foreach (byte[] payload in payloads)
-                {
-                    if (payload is null)
-                        throw new ArgumentException("Cluster page-fault feedback contains a null payload.", nameof(payloads));
-                    _residency.IngestFaults(payload);
-                }
-                _lastFaultFeedbackFrame = ticket.FeedbackSequence;
-            }
-        }
-        finally
-        {
-            ExitActiveOperation();
-        }
+        foreach (byte[] bytes in payloads) _residency.IngestFaults(bytes);
+        _lastFaultFeedbackFrame = ticket.FeedbackSequence;
     }
 
     internal void IngestStreamingFeedback(ClusterReadbackTicket ticket, ReadOnlySpan<byte[]> payloads,
-        ReadOnlyMemory<ClusterPageDemand> demands, bool complete, ulong frameIdentity)
+        ReadOnlyMemory<ClusterPagePriority> demands, bool complete, ulong frameIdentity)
     {
-        EnterActiveOperation();
-        try
-        {
-            lock (_feedbackGate)
-            {
-                ValidateReadbackTicket(ticket, _lastFaultFeedbackFrame);
-                foreach (byte[] payload in payloads) _residency.IngestFaults(payload);
-                _residency.IngestDemand(demands, complete, frameIdentity);
-                _lastFaultFeedbackFrame = ticket.FeedbackSequence;
-            }
-        }
-        finally
-        {
-            ExitActiveOperation();
-        }
+        foreach (byte[] bytes in payloads) _residency.IngestFaults(bytes);
+        _residency.IngestDemand(demands, complete, frameIdentity);
+        _lastFaultFeedbackFrame = ticket.FeedbackSequence;
     }
 
-    public void PumpStreaming()
-    {
-        EnterActiveOperation();
-        try
-        {
-            _residency.PumpStreaming();
-        }
-        finally
-        {
-            ExitActiveOperation();
-        }
-    }
+    public void PumpStreaming() => _residency.PumpStreaming();
 
     public ClusterRenderDiagnostics CaptureDiagnostics()
     {
-        EnterActiveOperation();
-        try
-        {
-            lock (_aggregateStateGate)
-            {
-                if (_aggregateMutationActive)
-                {
-                    throw new InvalidOperationException(
-                        "Cluster diagnostics cannot be captured during aggregate mutation.");
-                }
-                _residency.CaptureDiagnostics(
-                    out ClusterResidencyDiagnostics residency,
-                    out ClusterMeshCacheDiagnostics meshes);
-                return new ClusterRenderDiagnostics(
-                    residency,
-                    meshes);
-            }
-        }
-        finally
-        {
-            ExitActiveOperation();
-        }
+        _residency.CaptureDiagnostics(out ClusterResidencyDiagnostics residency, out ClusterMeshCacheDiagnostics meshes);
+        return new(residency, meshes);
     }
 
-    /// <summary>
-    /// Stops Cluster contributors and destroys Cluster-owned residency while its exact timeline is
-    /// quiescent. Shared batch storage deliberately outlives this pipeline epoch.
-    /// </summary>
-    public void Shutdown(RenderPrepareScope scope)
-    {
-        ArgumentNullException.ThrowIfNull(scope);
-        if (IsCurrentThreadInActiveOperation() || _residency.IsRegistrationOwner)
-        {
-            throw new InvalidOperationException(
-                "A Cluster operation cannot shut down its own resource epoch.");
-        }
-        int state = BeginShutdownExecution();
-        try
-        {
-            // Only Cluster residency is owned here. Shared instance storage has its own explicit
-            // shutdown boundary and must not be retired by a pipeline.
-            using RenderTimelineLease residencyLease = scope.AcquireTimeline(_residencyTimeline);
-            state = EnterStopping(state);
-
-            long started = Stopwatch.GetTimestamp();
-            Task registrationIdle = _residency.StopRegistrations();
-            WaitForActiveOperations(started);
-            if (!_instanceBorrowerReleased)
-            {
-                // Stopping rejects new Cluster operations, and every operation that could touch
-                // shared instance storage has drained. Cluster-owned cleanup must not keep that
-                // independent storage epoch hostage if a later cleanup step is retryable.
-                _instanceBorrower.Dispose();
-                _instanceBorrowerReleased = true;
-            }
-            WaitForRegistrationIdle(registrationIdle, Remaining(started));
-
-            if (state == LifecycleShutdown)
-            {
-                lock (_lifecycleGate)
-                    _shutdownScope = scope;
-                return;
-            }
-
-            if (!_meshSystemShutdown)
-            {
-                _meshPrepare.Dispose();
-                _meshSystemShutdown = true;
-            }
-            if (!_streamStopped)
-            {
-                _residency.StopStreaming(Remaining(started));
-                _streamStopped = true;
-            }
-            if (!_residencyTimeline.WaitForGeneration(0, Remaining(started)))
-            {
-                throw new TimeoutException(
-                    "Cluster residency readers did not retire before resource shutdown.");
-            }
-            if (!_residencyDestroyed)
-            {
-                _residency.DestroyStorage();
-                _residencyDestroyed = true;
-            }
-            lock (_lifecycleGate)
-            {
-                _shutdownScope = scope;
-                _lifecycleState = LifecycleShutdown;
-            }
-        }
-        finally
-        {
-            EndShutdownExecution();
-        }
-    }
-
-    /// <summary>Disposal is valid only after an explicit, committed shutdown boundary.</summary>
     public void Dispose()
     {
-        lock (_lifecycleGate)
-        {
-            if (_shutdownExecuting != 0)
-            {
-                throw new InvalidOperationException(
-                    "Cluster resource shutdown is currently in progress.");
-            }
-            switch (_lifecycleState)
-            {
-                case LifecycleActive:
-                    throw new InvalidOperationException(
-                        "Cluster resources must be shut down at a render prepare boundary before disposal.");
-                case LifecycleStopping:
-                    throw new InvalidOperationException(
-                        "Cluster resource shutdown has not completed.");
-                case LifecycleShutdown:
-                    if (_shutdownScope is null || !_shutdownScope.IsCommitted)
-                    {
-                        throw new InvalidOperationException(
-                            "The prepare scope used for Cluster shutdown must commit before disposal.");
-                    }
-                    _lifecycleState = LifecycleDisposed;
-                    ReleaseRenderWorld(_worldClaim, _worldClaimToken);
-                    return;
-                case LifecycleDisposed:
-                    return;
-                default:
-                    throw new InvalidOperationException("Unknown Cluster render-resource lifecycle.");
-            }
-        }
-    }
-
-    private int BeginShutdownExecution()
-    {
-        lock (_lifecycleGate)
-        {
-            if (_lifecycleState == LifecycleDisposed)
-                throw new ObjectDisposedException(nameof(ClusterRenderResources));
-            if (_shutdownExecuting != 0)
-                throw new InvalidOperationException("Cluster resource shutdown is already in progress.");
-            _shutdownExecuting = 1;
-            return _lifecycleState;
-        }
-    }
-
-    private int EnterStopping(int observedState)
-    {
-        lock (_lifecycleGate)
-        {
-            if (_shutdownExecuting == 0)
-                throw new InvalidOperationException("Cluster resource shutdown ownership was lost.");
-            if (_lifecycleState != observedState)
-                throw new InvalidOperationException("Cluster resource lifecycle changed during shutdown validation.");
-            if (_lifecycleState == LifecycleActive)
-                _lifecycleState = LifecycleStopping;
-            return _lifecycleState;
-        }
-    }
-
-    private void EndShutdownExecution()
-    {
-        lock (_lifecycleGate)
-        {
-            if (_shutdownExecuting == 0)
-                throw new InvalidOperationException("Cluster resource shutdown is not in progress.");
-            _shutdownExecuting = 0;
-            Monitor.PulseAll(_lifecycleGate);
-        }
-    }
-
-    private void EnterActiveOperation(bool trackContext = true)
-    {
-        lock (_lifecycleGate)
-        {
-            if (_lifecycleState != LifecycleActive)
-                throw new ObjectDisposedException(nameof(ClusterRenderResources));
-            _activeOperations = checked(_activeOperations + 1);
-            if (trackContext)
-            {
-                int threadId = Environment.CurrentManagedThreadId;
-                _activeOperationThreadDepths.TryGetValue(threadId, out int depth);
-                _activeOperationThreadDepths[threadId] = checked(depth + 1);
-            }
-        }
-    }
-
-    private void ExitActiveOperation(bool trackContext = true)
-    {
-        lock (_lifecycleGate)
-        {
-            if (_activeOperations <= 0)
-                throw new InvalidOperationException("Cluster active-operation count is already zero.");
-            if (trackContext)
-            {
-                int threadId = Environment.CurrentManagedThreadId;
-                if (!_activeOperationThreadDepths.TryGetValue(threadId, out int depth) || depth <= 0)
-                    throw new InvalidOperationException("Cluster active-operation depth is already zero.");
-                if (depth == 1)
-                    _activeOperationThreadDepths.Remove(threadId);
-                else
-                    _activeOperationThreadDepths[threadId] = depth - 1;
-            }
-            _activeOperations--;
-            if (_activeOperations == 0)
-                Monitor.PulseAll(_lifecycleGate);
-        }
-    }
-
-    private bool IsCurrentThreadInActiveOperation()
-    {
-        lock (_lifecycleGate)
-        {
-            return _activeOperationThreadDepths.TryGetValue(
-                Environment.CurrentManagedThreadId,
-                out int depth)
-                && depth != 0;
-        }
-    }
-
-    private void WaitForActiveOperations(long started)
-    {
-        lock (_lifecycleGate)
-        {
-            while (_activeOperations != 0)
-            {
-                TimeSpan remaining = Remaining(started);
-                if (!Monitor.Wait(_lifecycleGate, remaining) && _activeOperations != 0)
-                {
-                    throw new TimeoutException(
-                        $"Cluster operations did not drain within {_shutdownTimeout}.");
-                }
-            }
-        }
-    }
-
-    private static void WaitForRegistrationIdle(Task idle, TimeSpan timeout)
-    {
-        try
-        {
-            idle.WaitAsync(timeout).GetAwaiter().GetResult();
-        }
-        catch (TimeoutException error)
-        {
-            throw new TimeoutException(
-                $"Cluster mesh registration did not drain within {timeout}.",
-                error);
-        }
-    }
-
-    private TimeSpan Remaining(long started)
-    {
-        TimeSpan remaining = _shutdownTimeout - Stopwatch.GetElapsedTime(started);
-        if (remaining <= TimeSpan.Zero)
-            throw new TimeoutException($"Cluster shutdown exceeded its {_shutdownTimeout} deadline.");
-        return remaining;
-    }
-
-    private void ValidateReadbackTicket(
-        ClusterReadbackTicket ticket,
-        ulong lastSubmittedFrame)
-    {
-        if (!ticket.IsValid)
-            throw new ArgumentException("The Cluster readback ticket is invalid.", nameof(ticket));
-        if (ticket.EpochId != _epoch)
-        {
-            throw new ArgumentException(
-                $"The readback belongs to Cluster epoch {ticket.EpochId}, not {_epoch}.",
-                nameof(ticket));
-        }
-        if (ticket.FeedbackSequence <= lastSubmittedFrame)
-        {
-            throw new ArgumentException(
-                $"Cluster feedback frame {ticket.FeedbackSequence} is not newer than " +
-                $"the consumed frame {lastSubmittedFrame}.",
-                nameof(ticket));
-        }
-    }
-
-    private static ClusterWorldClaim ClaimRenderWorld(RenderWorld renderWorld, object token)
-    {
-        ClusterWorldClaim claim = s_worldClaims.GetValue(
-            renderWorld,
-            static _ => new ClusterWorldClaim());
-        lock (claim.Gate)
-        {
-            if (claim.OwnerToken is not null)
-            {
-                throw new InvalidOperationException(
-                    "A RenderWorld can own only one active Cluster resource epoch.");
-            }
-            claim.OwnerToken = token;
-            return claim;
-        }
-    }
-
-    private static void ReleaseRenderWorld(ClusterWorldClaim claim, object token)
-    {
-        lock (claim.Gate)
-        {
-            if (!ReferenceEquals(claim.OwnerToken, token))
-                throw new InvalidOperationException("The RenderWorld Cluster claim is not owned by this epoch.");
-            claim.OwnerToken = null;
-        }
-    }
-
-    private static void TryDispose(IDisposable? value)
-    {
-        try
-        {
-            value?.Dispose();
-        }
-        catch
-        {
-        }
-    }
-
-    internal readonly struct ClusterGeometryProducer : IRenderInstanceProducer
-    {
-        private readonly ResolvedRenderInstanceProperty<RenderTransform> _currentTransform;
-        private readonly ResolvedRenderInstanceProperty<RenderPreviousTransform> _previousTransform;
-        private readonly ResolvedRenderInstanceProperty<uint> _bvhRoot;
-        private readonly ResolvedRenderInstanceProperty<float> _boundsExpansion;
-        private readonly ResolvedRenderInstanceProperty<RenderDeformBounds> _deformBounds;
-
-        private readonly ResolvedRenderInstanceProperty<RenderXray> _xray;
-        private readonly ResolvedRenderInstanceProperty<uint> _depthCacheClass;
-        private readonly ResolvedRenderInstanceProperty<FirstPersonMeshData> _firstPerson;
-
-        public ClusterGeometryProducer()
-        {
-            RenderInstancePropertyLayout clusterProperties = ClusterRenderFeature.GeometryLayout;
-            _currentTransform = clusterProperties.Resolve<RenderTransform>(
-                RenderInstanceTransformProperties.CurrentTransformKey);
-            _previousTransform = clusterProperties.Resolve<RenderPreviousTransform>(
-                RenderInstanceTransformProperties.PreviousTransformKey);
-            _bvhRoot = clusterProperties.Resolve<uint>(ClusterRenderFeature.BvhRootKey);
-            _boundsExpansion = clusterProperties.Resolve<float>(ClusterRenderFeature.BoundsExpansionKey);
-            _deformBounds = clusterProperties.Resolve<RenderDeformBounds>(ClusterRenderFeature.DeformBoundsKey);
-            _xray = clusterProperties.Resolve<RenderXray>(ClusterRenderFeature.XrayKey);
-            _depthCacheClass = clusterProperties.Resolve<uint>(ClusterRenderFeature.DepthCacheClassKey);
-            _firstPerson = clusterProperties.Resolve<FirstPersonMeshData>(ClusterRenderFeature.FirstPersonKey);
-        }
-
-        public RenderInstancePropertyLayout Properties => ClusterRenderFeature.GeometryLayout;
-
-        public RenderInstanceChanges GetChanges(
-            ReadOnlyQueryPacket packet,
-            uint lastSystemVersion) =>
-            packet.ChangedSince<RenderTransform>(lastSystemVersion)
-            || packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)
-            || MeshChanged(packet, lastSystemVersion)
-            || XrayChanged(packet, lastSystemVersion)
-                ? RenderInstanceChanges.Values
-                : RenderInstanceChanges.None;
-
-        internal static bool MeshChanged(ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
-            packet.ChangedSince<RenderClusterGeometry>(lastSystemVersion)
-            || packet.Has<RenderMesh>() && packet.ChangedSince<RenderMesh>(lastSystemVersion)
-            || packet.Has<RenderDeformBounds>() && packet.ChangedSince<RenderDeformBounds>(lastSystemVersion);
-
-        internal static bool XrayChanged(ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
-            packet.Has<RenderXray>() && packet.ChangedSince<RenderXray>(lastSystemVersion);
-
-        public void Bind(RenderInstanceWriteSlice destination)
-            => Bind(destination, true, true, true);
-
-        internal void Bind(RenderInstanceWriteSlice destination, bool current, bool previous, bool mesh, bool xray = true)
-        {
-            if (current) destination.BindPerInstance(_currentTransform);
-            if (previous) destination.BindPerInstance(_previousTransform);
-            if (xray) destination.BindPerInstance(_xray);
-            if (mesh)
-            {
-                destination.BindPerInstance(_depthCacheClass);
-                destination.BindPerInstance(_firstPerson);
-                destination.BindPerInstance(_bvhRoot);
-                destination.BindPerInstance(_boundsExpansion);
-                destination.BindPerInstance(_deformBounds);
-            }
-        }
-
-        public void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet)
-            => Write(destination, packet, true, true, true);
-
-        internal void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet,
-            bool current, bool previous, bool mesh, bool xray = true)
-        {
-            if (current) destination.Write(_currentTransform, packet.Read<RenderTransform>());
-            if (previous) destination.Write(_previousTransform, packet.Read<RenderPreviousTransform>());
-            if (xray)
-            {
-                if (packet.TryRead<RenderXray>(out var effects)) destination.Write(_xray, effects);
-                else for (int row = 0; row < packet.Count; row++) destination.Write(_xray, row, default(RenderXray));
-            }
-            if (!mesh) return;
-            bool hasMesh = packet.TryRead<RenderMesh>(out var meshes);
-            for (int row = 0; row < packet.Count; row++)
-            {
-                destination.Write(_depthCacheClass, row, hasMesh ? (uint)meshes[row].DepthCacheClass : 0u);
-                destination.Write(_firstPerson, row, hasMesh ? meshes[row].FirstPerson : default);
-            }
-
-            ReadOnlySpan<RenderClusterGeometry> geometries = packet.Read<RenderClusterGeometry>();
-            uint[]? rentedRoots = null;
-            float[]? rentedExpansions = null;
-            scoped Span<uint> roots;
-            scoped Span<float> expansions;
-            if (packet.Count <= 1_024)
-            {
-                roots = stackalloc uint[packet.Count];
-                expansions = stackalloc float[packet.Count];
-            }
-            else
-            {
-                rentedRoots = ArrayPool<uint>.Shared.Rent(packet.Count);
-                rentedExpansions = ArrayPool<float>.Shared.Rent(packet.Count);
-                roots = rentedRoots.AsSpan(0, packet.Count);
-                expansions = rentedExpansions.AsSpan(0, packet.Count);
-            }
-            try
-            {
-                for (int row = 0; row < geometries.Length; row++)
-                {
-                    roots[row] = geometries[row].Geometry.RootBvh;
-                    expansions[row] = geometries[row].BoundsExpansion;
-                }
-                destination.Write(_bvhRoot, roots);
-                destination.Write(_boundsExpansion, expansions);
-                if (packet.TryRead<RenderDeformBounds>(out var bounds)) destination.Write(_deformBounds, bounds);
-                else
-                    for (int row = 0; row < packet.Count; row++) destination.Write(_deformBounds, row, default(RenderDeformBounds));
-            }
-            finally
-            {
-                if (rentedRoots is not null)
-                    ArrayPool<uint>.Shared.Return(rentedRoots);
-                if (rentedExpansions is not null)
-                    ArrayPool<float>.Shared.Return(rentedExpansions);
-            }
-        }
-    }
-
-    private sealed class ClusterWorldClaim
-    {
-        internal object Gate { get; } = new();
-
-        internal object? OwnerToken { get; set; }
+        if (_disposed) return;
+        _meshPrepare.Dispose();
+        _residency.Dispose();
+        _disposed = true;
     }
 }

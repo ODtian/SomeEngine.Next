@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using DefaultGame;
 using SomeEngine.Core.Math;
 using SomeEngine.Geometry.Cluster;
@@ -22,7 +22,7 @@ public sealed class BlendTerrainRenderingTests(SceneContentFixture content)
         TerrainEdit edit = default;
         var application = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
             {
@@ -57,7 +57,7 @@ public sealed class BlendTerrainRenderingTests(SceneContentFixture content)
         var scene = new TerrainScene(adapter, new TerrainChunkGrid(4, 1));
         var reference = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
             {

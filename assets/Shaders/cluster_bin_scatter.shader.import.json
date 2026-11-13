@@ -1,68 +1,55 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 28,
-  "input_hash": "f7477c55d9400245629e0abaf2f57b93ea4ee6e3845f266501829778e830ee18",
+  "importer_version": 36,
+  "input_hash": "293d1a29235c5f899e01f48a2ae09caa77e3d21062d603f51989a4a3ec3e8f8d",
   "inputs": [
     {
       "relative_path": "assets/Shaders/cluster_bin_batches.slang",
-      "content_hash": "482abc229e5383061284e939882a58541ef2de1831666c79b61befcfa49d57b7"
-    },
-    {
-      "relative_path": "assets/Shaders/cluster_bin_common.slang",
-      "content_hash": "ad55c1187ad217af460809a3277e407ddf6932272eb091cb2dd4592cceef53e8"
-    },
-    {
-      "relative_path": "assets/Shaders/cluster_bin_io.slang",
-      "content_hash": "9bdcb1cbe3238c73e5afa78b11ce6c0883b59f684336d1382e7b5460a4c66284"
+      "content_hash": "8b7a9b2770d866929e7e0ad5b24885afac4aa41aa1f45fa087bde13cd9be4a18"
     },
     {
       "relative_path": "assets/Shaders/cluster_bin_scatter.shader",
-      "content_hash": "f5b512d85e13e3aa7449d4fec25dfedca97d7d0b60b867f068885cc36ef7232f"
+      "content_hash": "30db68e3af488901162d813527d7bb342f144b8e546cb83c8711bedfc9fccd38"
     },
     {
       "relative_path": "assets/Shaders/cluster_bin_scatter.slang",
-      "content_hash": "40f025adc8d965fdb2de4c2e2b250d5986189450a5e23a083933c671075ad840"
+      "content_hash": "f45a3f550bd569959e811a20ed742218932cb897dcc52c63c1ee8c585afacfb6"
     },
     {
       "relative_path": "assets/Shaders/cluster_instance_properties.slang",
-      "content_hash": "a881c699f3ae666c6d0cda6a391ac173605c29c5f87cb028185a5d57b4726a01"
-    },
-    {
-      "relative_path": "assets/Shaders/cluster_structures.slang",
-      "content_hash": "8b0a185ac68ba4914c404c61e292df4f0ea7a705a6cccdccd220a85a3069d2b0"
+      "content_hash": "a12b057d53d6d11e71b6a110a3df4e28eb6c7579784825a9f2bcf69f84391295"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
-      "content_hash": "b3deb519f6691bbb7bbd28a7d6e5f162dc95b49212ad3bdcf4ff4d78eee5cc06"
-    },
-    {
-      "relative_path": "assets/Shaders/render_instance_properties.slang",
-      "content_hash": "d63867a87e179b0b11ab4cd4a06b5a8f937f1d219d2816853db156eef7c14b8a"
-    },
-    {
-      "relative_path": "assets/Shaders/render_instance_transform.slang",
-      "content_hash": "bee8de55a909be0fe22219acb566c9275974e7a7e2f42966b3452cbb5d979927"
-    },
-    {
-      "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
-    },
-    {
-      "relative_path": "assets/Shaders/wave_aggregation.slang",
-      "content_hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
+      "content_hash": "2a8c5188255ace644be4e94e3e29ebf4d0fc880ef9c96bdd4990ab8346b0fcab"
     }
   ],
   "reported_inputs": [],
+  "asset_inputs": [
+    "5aef5c7d-4bc6-468d-890e-b75e68af3b91",
+    "bf2e8b09-821f-49f3-ac34-c534942b1e75",
+    "dfc9bdd3-7801-44c4-bd86-9116719a1022",
+    "8bf0bbd7-91f9-480e-8a97-945b7173afbd",
+    "61cd15ab-6575-47b7-916d-540762b8f2ed",
+    "928f32a6-22ab-401e-9c48-a2a9c9d00eda"
+  ],
   "outputs": [
     {
       "asset_guid": "5615ca30-754a-5df8-a5a3-8553940e2846",
       "sub_asset_key": "",
-      "input_hash": "f7477c55d9400245629e0abaf2f57b93ea4ee6e3845f266501829778e830ee18",
+      "input_hash": "293d1a29235c5f899e01f48a2ae09caa77e3d21062d603f51989a4a3ec3e8f8d",
       "dependencies": [],
       "asset_path": "cluster_bin_scatter.shader.asset",
-      "version": "a57c42ad-24ab-5dff-4867-523a60504916",
-      "content_hash": "B526382881A75EF1FE6F57546C903F97B66165EA6133A758CBA62D40F3E955B4",
-      "asset_dependencies": []
+      "version": "725df65d-12c5-e70f-9c25-6f4384bd25c4",
+      "content_hash": "9E1EE5D14124D83EE09D1EB173AF05EA0C4BA1243C5540B99034117DB5769F62",
+      "asset_dependencies": [
+        "5aef5c7d-4bc6-468d-890e-b75e68af3b91",
+        "61cd15ab-6575-47b7-916d-540762b8f2ed",
+        "8bf0bbd7-91f9-480e-8a97-945b7173afbd",
+        "928f32a6-22ab-401e-9c48-a2a9c9d00eda",
+        "bf2e8b09-821f-49f3-ac34-c534942b1e75",
+        "dfc9bdd3-7801-44c4-bd86-9116719a1022"
+      ]
     }
   ]
 }

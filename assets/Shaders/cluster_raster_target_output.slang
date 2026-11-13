@@ -1,10 +1,10 @@
-#include "vsm_page_entry.slang"
+__exported import vsm_page_entry;
 #ifndef CLUSTER_RASTER_TARGET_OUTPUT_SLANG
 #define CLUSTER_RASTER_TARGET_OUTPUT_SLANG
 
-#include "cluster_raster_target_view.slang"
+__exported import cluster_raster_target_view;
 
-#include "cluster_raster_target_resources.slang"
+__exported import cluster_raster_target_resources;
 StructuredBuffer<VisibleCluster> RasterOutputVisibleClusters;
 RWTexture2DArray<uint> RasterTargetOutput;
 #ifdef CLUSTER_TARGET_DEPTH_CACHE
@@ -199,8 +199,8 @@ bool ResolveCachedRasterTargetPixel(
 
     uint2 pagePixel = virtualPixel & (target.PageSize - 1u);
     uint2 pageCoord = uint2(
-        page % target.PhysicalPagesPerRow,
-        page / target.PhysicalPagesPerRow);
+        page % target.AtlasPagesPerRow,
+        page / target.AtlasPagesPerRow);
 #ifdef CLUSTER_TARGET_DEPTH_CACHE
     if (depthCacheClass == 1u && (RasterTargetPageMetadata[page].Flags & 8u) == 0u)
         return false;
@@ -231,8 +231,8 @@ bool ResolveRasterTargetPixel(int2 pixel, uint targetViewIndex, out uint2 target
 
     uint2 pagePixel = virtualPixel & (target.PageSize - 1u);
     uint2 pageCoord = uint2(
-        page % target.PhysicalPagesPerRow,
-        page / target.PhysicalPagesPerRow);
+        page % target.AtlasPagesPerRow,
+        page / target.AtlasPagesPerRow);
 #ifdef CLUSTER_TARGET_DEPTH_CACHE
     if (depthCacheClass == 1u && (RasterTargetPageMetadata[page].Flags & 8u) == 0u) return false;
 #endif

@@ -1,3 +1,7 @@
+__exported import vsm_types;
+__exported import vsm_addressing;
+__exported import vsm_prefilter_math;
+
 #ifndef VSM_PREFILTER_SAMPLING_SLANG
 #define VSM_PREFILTER_SAMPLING_SLANG
 
@@ -13,8 +17,8 @@ bool TrySampleVirtualShadowPrefiltered(VirtualShadowMapParameters view, Structur
     uint atlasPage;
     if (!IsVirtualShadowPageTag(entry, VirtualShadowWorldPage(view, 0u, virtualPage)) ||
         !VirtualShadowPageHasOwnDepth(entry) ||
-        !DecodeVirtualShadowPage(entry, view.PhysicalPagesPerRow, atlasPage)) return false;
-    uint2 atlasBase = uint2(atlasPage % view.PhysicalPagesPerRow, atlasPage / view.PhysicalPagesPerRow) * (view.PageSize + 2u);
+        !DecodeVirtualShadowPage(entry, view.AtlasPagesPerRow, atlasPage)) return false;
+    uint2 atlasBase = uint2(atlasPage % view.AtlasPagesPerRow, atlasPage / view.AtlasPagesPerRow) * (view.PageSize + 2u);
     int2 base = int2(floor(texel)) - int2(virtualPage * view.PageSize) + int2(atlasBase) + 1;
     float2 fraction = frac(texel);
     float top = lerp(filteredAtlas.Load(int3(base, 0)), filteredAtlas.Load(int3(base + int2(1, 0), 0)), fraction.x);

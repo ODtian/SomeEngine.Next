@@ -29,10 +29,12 @@ public sealed partial class ValidationLayer
         }
     }
 
-    internal Buffer ImportNativeBuffer(Device device, Func<Buffer> create)
+    internal Buffer ImportNativeBuffer(Device device, in BufferDesc description, in ImportedResourceState state, Func<Buffer> create)
     {
         RequireDevice(device);
         RequireCapability<ExternalResources>(device);
+        ValidateBufferDescription(device, description, MemoryType.DeviceLocal);
+        ValidateImportedResourceState(state, texture: false);
         var validationState = new ResourceValidationState(buffer: true);
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -64,10 +66,17 @@ public sealed partial class ValidationLayer
         }
     }
 
-    internal Texture ImportNativeTexture(Device device, in TextureDesc description, Func<TextureDesc, Texture> create)
+    internal Texture ImportNativeTexture(
+        Device device,
+        in TextureDesc description,
+        in ImportedResourceState state,
+        Func<TextureDesc, Texture> create
+    )
     {
         RequireDevice(device);
         RequireCapability<ExternalResources>(device);
+        ValidateTextureDescription(device, description);
+        ValidateImportedResourceState(state, texture: true);
         var validationState = new ResourceValidationState(buffer: false);
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -103,6 +112,7 @@ public sealed partial class ValidationLayer
     {
         RequireDevice(device);
         RequireCapability<ExternalResources>(device);
+        ValidateHeapDescription(device, desc);
         var metadata = new HeapValidationState(desc.VisibleNodeMask);
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -137,7 +147,11 @@ public sealed partial class ValidationLayer
     {
         ContextValidationState state = RequireRecording(context);
         foreach (Resource resource in retainedResources)
+        {
+            if (resource is not (Buffer or Texture))
+                throw new ArgumentException("Native command-list resources must be buffers or textures.", nameof(retainedResources));
             RequireOnDevice(context.Device, resource, "native command-list retained Resource");
+        }
 
         lock (state)
         {

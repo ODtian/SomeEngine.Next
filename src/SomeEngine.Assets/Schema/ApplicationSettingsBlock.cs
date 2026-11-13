@@ -4,7 +4,7 @@ namespace SomeEngine.Assets.Schema;
 
 [AssetBlock("SomeEngine.Assets.Schema.ApplicationSettingsBlock")]
 [BinarySerializable, TextSerializable]
-[BinaryFields(nameof(Scene), nameof(Pipeline), nameof(VirtualShadowMap), nameof(UiShader), nameof(UiVertexEntry), nameof(UiPixelEntry), nameof(PresentationShader), nameof(PresentationVertexEntry), nameof(PresentationPixelEntry), nameof(LightingShader), nameof(LightingEntryPoint), nameof(TemporalShader), nameof(TemporalVertexEntry), nameof(TemporalPixelEntry), nameof(TranslucencyShader), nameof(TranslucencyVertexEntry), nameof(TranslucencyPixelEntry), nameof(DebugShader), nameof(DebugVertexEntry), nameof(DebugPixelEntry), nameof(Width), nameof(Height))]
+[BinaryFields(nameof(Scene), nameof(Pipeline), nameof(VirtualShadowMap), nameof(UiShader), nameof(UiVertexEntry), nameof(UiPixelEntry), nameof(PresentationShader), nameof(PresentationVertexEntry), nameof(PresentationPixelEntry), nameof(LightingShader), nameof(TemporalShader), nameof(TemporalVertexEntry), nameof(TemporalPixelEntry), nameof(TranslucencyShader), nameof(TranslucencyVertexEntry), nameof(TranslucencyPixelEntry), nameof(DebugShader), nameof(DebugVertexEntry), nameof(DebugPixelEntry), nameof(Width), nameof(Height))]
 public sealed partial class ApplicationSettingsBlock : AssetBlock
 {
     public partial AssetId<WorldAsset> Scene { get; set; }
@@ -17,7 +17,6 @@ public sealed partial class ApplicationSettingsBlock : AssetBlock
     public partial string PresentationVertexEntry { get; set; }
     public partial string PresentationPixelEntry { get; set; }
     public partial AssetId<ShaderAsset> LightingShader { get; set; }
-    public partial string LightingEntryPoint { get; set; }
     public partial AssetId<ShaderAsset> TemporalShader { get; set; }
     public partial string TemporalVertexEntry { get; set; }
     public partial string TemporalPixelEntry { get; set; }
@@ -36,7 +35,6 @@ public sealed partial class ApplicationSettingsBlock : AssetBlock
         UiPixelEntry = "fragmentMain";
         PresentationVertexEntry = "vertexMain";
         PresentationPixelEntry = "fragmentMain";
-        LightingEntryPoint = "main";
         TemporalVertexEntry = "vertexMain";
         TemporalPixelEntry = "fragmentMain";
         TranslucencyVertexEntry = "vertexMain";

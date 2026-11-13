@@ -1,7 +1,7 @@
 #ifndef FEATURE_VISIBLE_CLUSTERS_SLANG
 #define FEATURE_VISIBLE_CLUSTERS_SLANG
 
-#include "cluster_structures.slang"
+__exported import cluster_structures;
 
 uint ActiveVisibleClusterCount(
     ByteAddressBuffer phaseOneCounts,

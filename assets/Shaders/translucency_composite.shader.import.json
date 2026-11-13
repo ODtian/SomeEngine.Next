@@ -1,32 +1,33 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 28,
-  "input_hash": "d212d179469e09903f07a560a4af9804dccc8a41606ba40ab7e375cdbab8bd91",
+  "importer_version": 36,
+  "input_hash": "daf5ef630118329690ced0eabc312b4b8e28e07e9b8d84d39b221dba00e2f637",
   "inputs": [
     {
-      "relative_path": "assets/Shaders/fullscreen_triangle.slang",
-      "content_hash": "a379eb11e577feb64d5fa47621d9ecad73fc1708619af7c527677c7f53055e1c"
-    },
-    {
       "relative_path": "assets/Shaders/translucency_composite.shader",
-      "content_hash": "2f8cdb9083fdd1333b9d6c0ebe1a3ed79fadd633135daeffb26989b8411ea945"
+      "content_hash": "61e4a81f30660f4518caf735ca0f5dc7707dadc7edb3b24dfdf210ff6bf51fd3"
     },
     {
       "relative_path": "assets/Shaders/translucency_composite.slang",
-      "content_hash": "b763481d7a6b38baef5fda4c87cd31c1bd86da359330d3112edd4b68eb0b1e96"
+      "content_hash": "de75b37b228f338b6b99437086a57630c9c328c2b12a8a21bb2a81bc0ab747ba"
     }
   ],
   "reported_inputs": [],
+  "asset_inputs": [
+    "b15691ed-c5af-4086-b4ee-19c3914e0ab7"
+  ],
   "outputs": [
     {
       "asset_guid": "d1a4dd79-a52d-5819-b62c-65200b625726",
       "sub_asset_key": "",
-      "input_hash": "d212d179469e09903f07a560a4af9804dccc8a41606ba40ab7e375cdbab8bd91",
+      "input_hash": "daf5ef630118329690ced0eabc312b4b8e28e07e9b8d84d39b221dba00e2f637",
       "dependencies": [],
       "asset_path": "translucency_composite.shader.asset",
-      "version": "c21db0cc-b641-4f3b-5315-71fca8f8c5c6",
-      "content_hash": "73F6DC55EB76959D7E1977B7806C7280F6BEA724E8AE8B64395AF6C26696E38E",
-      "asset_dependencies": []
+      "version": "8a53cbbd-990b-8010-eb55-459f82e0dce0",
+      "content_hash": "C007744A5427C6D72D150BC6C54B8DD94F6F10B12AEB9B294C7D7B10367CBEB3",
+      "asset_dependencies": [
+        "b15691ed-c5af-4086-b4ee-19c3914e0ab7"
+      ]
     }
   ]
 }

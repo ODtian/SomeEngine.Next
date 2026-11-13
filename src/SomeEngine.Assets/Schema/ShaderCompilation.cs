@@ -22,6 +22,12 @@ internal partial class ShaderSourceFiles(ISlangFileSystem? supplied) : ISlangFil
 
     public unsafe void* CastAs(Guid guid) => null;
 
+    internal void AddSource(string path, string text)
+    {
+        string fullPath = Path.GetFullPath(path);
+        _files[fullPath] = Slang.CreateBlob(System.Text.Encoding.UTF8.GetBytes(text));
+    }
+
     public SlangResult LoadFile(string path, out ISlangBlob outBlob)
     {
         string fullPath = Path.GetFullPath(path);

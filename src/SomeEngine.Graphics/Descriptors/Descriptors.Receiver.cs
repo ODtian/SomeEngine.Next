@@ -4,16 +4,16 @@ public partial interface IGraphicsBackend
 {
     DescriptorTable CreateDescriptorTable(
         Device device,
-        ReadOnlySpan<DescriptorSlotDesc> slots,
+        ReadOnlySpan<DescriptorEntryDesc> entries,
         string? label = null,
         uint nodeIndex = uint.MaxValue,
         CancellationToken cancellationToken = default);
 
-    DescriptorIndex GetDescriptorIndex(DescriptorTable table, uint slot);
+    DescriptorIndex GetDescriptorIndex(DescriptorTable table, uint entry);
 
     void WriteDescriptor(
         DescriptorTable table,
-        uint slot,
+        uint entry,
         in ResourceBinding value);
 
     PersistentParameterBindings CreatePersistentParameterBindings(

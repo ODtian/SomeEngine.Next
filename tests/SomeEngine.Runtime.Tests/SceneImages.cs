@@ -6,6 +6,33 @@ namespace SomeEngine.Runtime.Tests;
 
 internal static class SceneImages
 {
+    internal static void AssertLinearEqualRegion(SceneLinearImage expected, SceneLinearImage actual,
+        int left, int top, int width, int height, float tolerance, [CallerMemberName] string test = "")
+    {
+        try
+        {
+            Assert.Equal(expected.Frame.Width, actual.Frame.Width);
+            Assert.Equal(expected.Frame.Height, actual.Frame.Height);
+            float maximum = 0;
+            int largest = 0;
+            for (int y = top; y < top + height; y++)
+            for (int x = left; x < left + width; x++)
+            for (int channel = 0; channel < 4; channel++)
+            {
+                int index = (y * actual.Frame.Width + x) * 4 + channel;
+                float difference = MathF.Abs((float)expected.Pixels.Span[index] - (float)actual.Pixels.Span[index]);
+                if (difference > maximum) { maximum = difference; largest = index; }
+            }
+            Assert.True(maximum <= tolerance,
+                $"Linear color error {maximum} at pixel ({largest / 4 % actual.Frame.Width}, {largest / 4 / actual.Frame.Width}), channel {largest % 4}; tolerance {tolerance}.");
+        }
+        catch (XunitException)
+        {
+            SaveFailure(Preview(expected), Preview(actual), test);
+            throw;
+        }
+    }
+
     internal static void AssertLinearEqual(SceneLinearImage expected, SceneLinearImage actual, float tolerance,
         [CallerMemberName] string test = "")
     {

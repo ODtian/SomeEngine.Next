@@ -1,3 +1,7 @@
+__exported import vsm_types;
+__exported import vsm_addressing;
+__exported import vsm_receiver_mask_bits;
+
 #ifndef VSM_RECEIVER_MASK_COMMON_SLANG
 #define VSM_RECEIVER_MASK_COMMON_SLANG
 
@@ -41,5 +45,5 @@ uint2 LoadVirtualShadowReceiverMask(RWTexture2DArray<uint> masks, VirtualShadowM
     return uint2(masks[uint3(address, layer)], masks[uint3(address + uint2(0, 1), layer)]);
 }
 
-#include "vsm_receiver_mask_bits.slang"
+__exported import vsm_receiver_mask_bits;
 #endif

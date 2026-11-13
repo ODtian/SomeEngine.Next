@@ -16,10 +16,8 @@ internal static class CopyGraphTestSupport
             support.Device,
             [support.GraphicsQueue, support.CopyQueue]);
         using RenderGraphEdit edit = graph.BeginEdit();
-        GraphBufferId uploadId = edit.RegisterExternalBuffer(upload,
-            [Endpoint(upload, support.CopyQueue, ResourceContentState.Defined)]);
-        GraphBufferId readbackId = edit.RegisterExternalBuffer(readback,
-            [Endpoint(readback, support.GraphicsQueue, ResourceContentState.Undefined)]);
+        GraphBufferId uploadId = edit.RegisterExternalBuffer(upload);
+        GraphBufferId readbackId = edit.RegisterExternalBuffer(readback);
         GraphBufferId transient = edit.CreateTransientBuffer(new BufferDesc(
             ByteCount,
             BufferUsages.CopySource | BufferUsages.CopyDestination));
@@ -36,7 +34,7 @@ internal static class CopyGraphTestSupport
         string label,
         Queue queue,
         in CopyState state) =>
-        edit.DeclareBufferCopy(label, PassQueueSelection.Exact(queue),
+        edit.DeclareBufferCopy(label, PassQueueSelection.OnQueue(queue),
             new GraphBufferSlice(state.Source, new BufferRange(0, state.Size)),
             new GraphBufferSlice(state.Destination, new BufferRange(0, state.Size)));
 
@@ -47,7 +45,7 @@ internal static class CopyGraphTestSupport
         GraphBufferId buffer,
         uint value)
     {
-        return edit.DeclareCopyPass(label, PassQueueSelection.Exact(queue),
+        return edit.DeclareCopyPass(label, PassQueueSelection.OnQueue(queue),
             (ref PassDefinition access) => access.Write(buffer, new BufferRange(0, 64),
                 PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete),
             (ref CopyPassCommandScope commands) =>
@@ -60,7 +58,7 @@ internal static class CopyGraphTestSupport
         string label,
         Queue queue,
         GraphBufferId buffer) =>
-        edit.DeclareCopyPass(label, PassQueueSelection.Exact(queue),
+        edit.DeclareCopyPass(label, PassQueueSelection.OnQueue(queue),
             (ref PassDefinition access) => access.Read(buffer, new BufferRange(0, 64),
                 PipelineSync.Copy, ResourceAccess.CopySource),
             options: new PassOptions(Culling: PassCullingMode.NeverCull));
@@ -87,9 +85,9 @@ internal static class CopyGraphTestSupport
         new(new BufferRange(0, buffer.Info.Size),
             buffer.InitialSync, buffer.InitialAccess, contents, queue);
 
-    internal static RenderGraphSnapshot CaptureSnapshot(in RenderGraphDiagnosticsView view)
+    internal static RenderGraphDiagnosticsData CaptureDiagnostics(in RenderGraphDiagnosticsView view)
     {
-        return RenderGraphSnapshot.Capture(view);
+        return RenderGraphDiagnosticsData.Capture(view);
     }
 
     internal readonly record struct CopyState(

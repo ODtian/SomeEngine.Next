@@ -1,44 +1,39 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 28,
-  "input_hash": "6a5fc790b997e2593d4f260632e927ede4d22a1c790401591a6ffb8a95eea242",
+  "importer_version": 36,
+  "input_hash": "380875c5e6f8a7e374b213653143c7704e5a17af84e590ee12d8268d88f8b14a",
   "inputs": [
     {
-      "relative_path": "assets/Shaders/cluster_structures.slang",
-      "content_hash": "8b0a185ac68ba4914c404c61e292df4f0ea7a705a6cccdccd220a85a3069d2b0"
-    },
-    {
       "relative_path": "assets/Shaders/cluster_tessellation_bin.shader",
-      "content_hash": "6f72ccd67c5a162c6befb40b140b8575d971496a852461da1d9302c2cc31edc5"
+      "content_hash": "77b162d8367500f203eee32812e3ad448d35e6044ce37aa0009d0c953a85c16f"
     },
     {
       "relative_path": "assets/Shaders/cluster_tessellation_bin.slang",
-      "content_hash": "db813b349bc92fd44897a5653e76e7af51b069d35693d594666b99f091864e77"
-    },
-    {
-      "relative_path": "assets/Shaders/cluster_tessellation_types.slang",
-      "content_hash": "6bd34c6fefe33af1b2e4a651438193c519048a75e1a814cfac2f434b98f5e366"
-    },
-    {
-      "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
-    },
-    {
-      "relative_path": "assets/Shaders/wave_aggregation.slang",
-      "content_hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
+      "content_hash": "14525ccda9ab1999ba195ee8fab9e2abf59bb51735ccb051bc117b81b64f4016"
     }
   ],
   "reported_inputs": [],
+  "asset_inputs": [
+    "4501d5a1-8d0c-4317-a68e-585870c026d4",
+    "09e14460-91f8-4afc-83da-3bd2df60247f",
+    "928f32a6-22ab-401e-9c48-a2a9c9d00eda",
+    "9a6de19a-b7ea-4092-ab70-1d25f8e14595"
+  ],
   "outputs": [
     {
       "asset_guid": "ab50e035-870d-5e6b-9ecc-0d7325cb6f49",
       "sub_asset_key": "",
-      "input_hash": "6a5fc790b997e2593d4f260632e927ede4d22a1c790401591a6ffb8a95eea242",
+      "input_hash": "380875c5e6f8a7e374b213653143c7704e5a17af84e590ee12d8268d88f8b14a",
       "dependencies": [],
       "asset_path": "cluster_tessellation_bin.shader.asset",
-      "version": "defb9807-1a9b-da08-eef4-27cc12e0a981",
-      "content_hash": "01F1733A89C0924FCD205CD9EE42CFE6F1A878CBC1BE757827F1B58D1E0191B8",
-      "asset_dependencies": []
+      "version": "fc3de5b3-0692-295b-cb6e-9bb3221485ea",
+      "content_hash": "95F547E8B5DA9EAFCF141FDD13E2B8570FEC5B7B2066C43DF77ACCFF625E8B24",
+      "asset_dependencies": [
+        "09e14460-91f8-4afc-83da-3bd2df60247f",
+        "4501d5a1-8d0c-4317-a68e-585870c026d4",
+        "928f32a6-22ab-401e-9c48-a2a9c9d00eda",
+        "9a6de19a-b7ea-4092-ab70-1d25f8e14595"
+      ]
     }
   ]
 }

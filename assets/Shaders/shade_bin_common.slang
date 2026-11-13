@@ -1,10 +1,10 @@
 #ifndef SHADE_BIN_COMMON_SLANG
 #define SHADE_BIN_COMMON_SLANG
 
-#include "cluster_structures.slang"
+__exported import cluster_structures;
 #include "cluster_instance_properties.slang"
-#include "cluster_bin_io.slang"
-#include "visbuffer_encoding.slang"
+__exported import cluster_bin_io;
+__exported import visbuffer_encoding;
 
 struct ShadePixelWork
 {
@@ -30,7 +30,8 @@ uint FindShadeBin(
     ShadeBinUniforms uniforms,
     uint slotOffset,
     DrawRequest cluster,
-    uint triangle)
+    uint triangle,
+    out uint materialAddress)
 {
     uint clusterOffset =
         cluster.PageOffset + pageHeap.Load(cluster.PageOffset + 16u) +
@@ -38,12 +39,20 @@ uint FindShadeBin(
     uint material = LocalMaterial(
         pageHeap, clusterOffset, cluster.PageOffset,
         triangle);
+    materialAddress = slotOffset + material;
     return SlotBin(
         slots,
         slotOffset,
         material,
         uniforms.SlotCapacity,
         uniforms.ShadeBinCount);
+}
+
+uint FindShadeBin(StructuredBuffer<uint> slots, ByteAddressBuffer pageHeap,
+    ShadeBinUniforms uniforms, uint slotOffset, DrawRequest cluster, uint triangle)
+{
+    uint materialAddress;
+    return FindShadeBin(slots, pageHeap, uniforms, slotOffset, cluster, triangle, materialAddress);
 }
 
 uint MaterialSlotOffset(

@@ -1,5 +1,5 @@
-#include "hiz_common.slang"
-#include "resource_effects.slang"
+__exported import hiz_common;
+__exported import resource_effects;
 
 [ResourceEffect(ResourceEffects.Read, ResourceQualifiers.None)]
 RWTexture2DArray<float> Source;

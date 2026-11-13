@@ -10,7 +10,7 @@ struct VirtualShadowRasterWorkUniforms
     uint ActivePageCapacity;
     uint PageSize;
     uint PageHiZMipCount;
-    uint PhysicalPagesPerRow;
+    uint AtlasPagesPerRow;
     uint InstanceGroupCount;
     uint HasPreviousHistory;
     uint WorkFeedbackEnabled;

@@ -1,4 +1,4 @@
-using SomeEngine.Core.Diagnostics;
+﻿using SomeEngine.Core.Diagnostics;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -29,6 +29,14 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
 
     /// <summary>Computes detached glyph instances with chunk jobs.</summary>
     public bool Parallel { get; set; } = true;
+
+    public void SetAtlasSource(Entity source)
+    {
+        atlasSource = source;
+        _atlas = null;
+        _atlasMirror = Entity.Null;
+        _canvasEntities.Clear();
+    }
 
     public void DeclareReads(RenderExtractionQuery query)
     {

@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 
 namespace SomeEngine.RenderGraph.Tests;
 
@@ -50,12 +50,10 @@ public sealed class RepeatedFrameTests
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
             GraphBufferId sourceId = edit.RegisterExternalBuffer(
-                source,
-                [Endpoint(source, ResourceContentState.Defined)]);
+                source);
             GraphBufferId destinationId = edit.RegisterExternalBuffer(
-                destination,
-                [Endpoint(destination, ResourceContentState.Undefined)]);
-            edit.DeclareBufferCopy("registered copy", PassQueueSelection.Exact(support.GraphicsQueue),
+                destination);
+            edit.DeclareBufferCopy("registered copy", PassQueueSelection.OnQueue(support.GraphicsQueue),
                 new GraphBufferSlice(sourceId, new BufferRange(0, CopySize)),
                 new GraphBufferSlice(destinationId, new BufferRange(0, CopySize)));
             edit.Commit();
@@ -146,7 +144,7 @@ public sealed class RepeatedFrameTests
                 usages: TextureUsages.ColorAttachment));
             _ = edit.AddCopyPass<ClearTextureState, byte>(
                 "stable transient texture clear",
-                PassQueueSelection.Exact(support.GraphicsQueue),
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
                 new ClearTextureState(texture, range),
                 new PassOptions(
                     Culling: PassCullingMode.NeverCull,
@@ -271,7 +269,7 @@ public sealed class RepeatedFrameTests
                 TextureViewDimension.Texture2D);
             _ = edit.AddRasterPass<GraphColorAttachmentViewId, byte>(
                 "stable raster attachment",
-                PassQueueSelection.Exact(support.GraphicsQueue),
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
                 view,
                 new PassOptions(
                     Culling: PassCullingMode.NeverCull,
@@ -335,7 +333,7 @@ public sealed class RepeatedFrameTests
     {
         _ = edit.AddCopyPass<ClearState, byte>(
             label,
-            PassQueueSelection.Exact(queue),
+            PassQueueSelection.OnQueue(queue),
             new ClearState(buffer, value),
             new PassOptions(
                 Culling: PassCullingMode.NeverCull,
@@ -363,7 +361,7 @@ public sealed class RepeatedFrameTests
     {
         _ = edit.AddCopyPass<ClearState, byte>(
             label,
-            PassQueueSelection.Exact(queue),
+            PassQueueSelection.OnQueue(queue),
             new ClearState(buffer, value),
             new PassOptions(
                 Culling: PassCullingMode.NeverCull,

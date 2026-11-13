@@ -103,7 +103,7 @@ public sealed class GraphEditBehaviorTests
         Assert.True(recorded.IndexOf(4) < recorded.IndexOf(3));
 
         GraphPassId Add(RenderGraphEdit edit, int value) => edit.AddCopyFramePass(
-            $"record {value}", PassQueueSelection.Exact(support.GraphicsQueue), value,
+            $"record {value}", PassQueueSelection.OnQueue(support.GraphicsQueue), value,
             new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread),
             static (ref PassDefinition _, ref int _) => { },
             (ref CopyPassCommandScope _, in int number) => recorded.Add(number));

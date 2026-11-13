@@ -25,21 +25,15 @@ public sealed partial record ShaderRef
     }
 
     public static async ValueTask<Dictionary<AssetId<ShaderAsset>, Shader>> LoadAsync(
-        IEnumerable<Guid> references,
-        AssetLoader files,
-        WeakValues<AssetResourceKey<ShaderAsset>, Shader> values,
-        IGlobalSession slang, SessionDesc settings,
+        IEnumerable<Guid> references, AssetLoader files, ShaderLibrary library,
         CancellationToken cancellationToken = default)
     {
-        var shaders = new Dictionary<AssetId<ShaderAsset>, Shader>();
-        foreach (Guid id in references.Where(static id => id != Guid.Empty).Distinct())
-        {
-            var reference = new AssetId<ShaderAsset>(id);
-            shaders.Add(reference, await ShaderAsset.GetAsync(files, reference, values, slang, settings,
-                cancellationToken).ConfigureAwait(false));
-        }
-        cancellationToken.ThrowIfCancellationRequested();
-        return shaders;
+        AssetId<ShaderAsset>[] ids = references.Where(id => id != Guid.Empty).Distinct()
+            .Select(id => new AssetId<ShaderAsset>(id)).ToArray();
+        Shader[] values = await Task.WhenAll(ids.Select(id => library.GetAsync(files, id, cancellationToken).AsTask()))
+            .ConfigureAwait(false);
+        return ids.Select((id, index) => (Id: id, Shader: values[index]))
+            .ToDictionary(value => value.Id, value => value.Shader);
     }
 
     public AssetId<ShaderAsset> Asset { get; init; }

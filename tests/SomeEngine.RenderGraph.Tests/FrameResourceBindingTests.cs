@@ -7,7 +7,7 @@ namespace SomeEngine.RenderGraph.Tests;
 public sealed class FrameResourceBindingTests
 {
     [Fact]
-    public void DeclaredExternalSlotsBindPerFrameResources()
+    public void RegisteredResourcesAreAvailableToEveryFrame()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
         using Buffer source = support.Backend.CreateBuffer(
@@ -27,15 +27,11 @@ public sealed class FrameResourceBindingTests
         GraphBufferId destinationSlot;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            sourceSlot = edit.DeclareExternalBuffer(
-                new BufferDesc(ByteCount, BufferUsages.CopySource),
-                MemoryType.Upload);
-            destinationSlot = edit.DeclareExternalBuffer(
-                new BufferDesc(ByteCount, BufferUsages.CopyDestination),
-                MemoryType.Readback);
+            sourceSlot = edit.RegisterExternalBuffer(source);
+            destinationSlot = edit.RegisterExternalBuffer(destination);
             _ = edit.AddCopyPass<CopyState, byte>(
                 "external slots",
-                PassQueueSelection.Exact(support.GraphicsQueue),
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
                 new CopyState(sourceSlot, destinationSlot, ByteCount),
                 default,
                 DeclareCopy,
@@ -47,10 +43,8 @@ public sealed class FrameResourceBindingTests
         QueueCompletion[] completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         using (RenderGraphFrame frame = graph.BeginFrame())
         {
-            frame.BindExternalBuffer(sourceSlot, source,
-                [Endpoint(source, support.GraphicsQueue, ResourceContentState.Defined)]);
-            frame.BindExternalBuffer(destinationSlot, destination,
-                [Endpoint(destination, support.GraphicsQueue, ResourceContentState.Undefined)]);
+
+
             Assert.Equal(1, frame.Execute(completions));
         }
         support.Wait(completions);
@@ -81,14 +75,12 @@ public sealed class FrameResourceBindingTests
         CopyState copy;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            GraphBufferId sourceId = edit.RegisterExternalBuffer(source,
-                [Endpoint(source, support.GraphicsQueue, ResourceContentState.Defined)]);
-            GraphBufferId destinationId = edit.RegisterExternalBuffer(destination,
-                [Endpoint(destination, support.GraphicsQueue, ResourceContentState.Undefined)]);
+            GraphBufferId sourceId = edit.RegisterExternalBuffer(source);
+            GraphBufferId destinationId = edit.RegisterExternalBuffer(destination);
             copy = new CopyState(sourceId, destinationId, size);
             pass = edit.AddCopyPass<CopyState, DynamicCopyFrame>(
                 "dynamic range copy",
-                PassQueueSelection.Exact(support.GraphicsQueue),
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
                 copy,
                 default,
                 (ref PassDefinition definition, ref CopyState state) =>
@@ -183,7 +175,7 @@ public sealed class FrameResourceBindingTests
             state = new TextureWriteState(texture);
             pass = edit.AddCopyPass<TextureWriteState, DynamicTextureWriteFrame>(
                 "dynamic texture range",
-                PassQueueSelection.Exact(support.GraphicsQueue),
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
                 state,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 (ref PassDefinition definition, ref TextureWriteState definitionState) =>

@@ -14,7 +14,7 @@ namespace SomeEngine.Graphics.Direct3D12;
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable snapshots may be shared.</para>
 /// <para><b>Ownership:</b> Pure value; owns no swapchain or OS handle.</para>
-/// <para><b>After Dispose:</b> This type has no independent Dispose state; a captured snapshot remains readable.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; a captured data remains readable.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct D3D12PresentationInfo(
@@ -55,15 +55,11 @@ internal sealed unsafe partial class D3D12Backend
     public Swapchain CreateSwapchain(Device device, in SwapchainDesc desc)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
-        if (desc.Surface is null)
-            throw new ArgumentNullException(nameof(desc), "SwapchainDesc.Surface is required.");
+
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12Surface surface = RequireSurface(desc.Surface);
         nativeDevice.ThrowIfUnavailable();
-        surface.ThrowIfDisposed();
-        _ = nativeDevice.RequireCapability<Presentation>(nameof(CreateSwapchain));
 
-        ValidateSwapchainDescription(nativeDevice, desc);
         bool tearingSupported = QueryTearingSupport(nativeDevice);
         EnsureSupported(
             desc.Config,
@@ -251,28 +247,23 @@ internal sealed unsafe partial class D3D12Backend
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiPresentation);
         D3D12Queue nativeQueue = RequireQueue(queue, nameof(queue));
-        if (nativeQueue.Type != QueueType.Graphics)
-            throw new ArgumentException("Present requires a Graphics Queue.", nameof(queue));
-        if (image.Lease is not D3D12SwapchainImageLease lease)
-            throw new ArgumentException("The image does not belong to this D3D12 backend.", nameof(image));
-        if (!ReferenceEquals(nativeQueue.Device, lease.Swapchain.Device))
-            throw new ArgumentException("The Queue and SwapchainImage belong to different Devices.", nameof(image));
 
-        D3D12Swapchain nativeSwapchain = lease.NativeSwapchain;
-        nativeSwapchain.RequirePresentationQueue(nativeQueue, nameof(queue));
+        D3D12SwapchainImageUse handle = (D3D12SwapchainImageUse)image.ImageUse!;
+
+        D3D12Swapchain nativeSwapchain = handle.NativeSwapchain;
+
         nativeQueue.Device.ThrowIfUnavailable();
-        nativeSwapchain.ValidatePresent(nativeQueue, lease, image.Sequence);
 
         using (nativeQueue.Gate.EnterScope())
         {
             nativeQueue.Device.ThrowIfUnavailable();
             long started = Stopwatch.GetTimestamp();
-            _ = lease.TryGetSubmissionCompletion(out _, out ulong completion);
+            _ = handle.TryGetSubmissionCompletion(out _, out ulong completion);
             try
             {
                 PresentStatus status = nativeSwapchain.PresentUnderQueueGate(
                     nativeQueue,
-                    lease,
+                    handle,
                     image.Sequence);
                 nativeSwapchain.RecordPresent(
                     status,
@@ -306,26 +297,8 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    internal static D3D12PresentationInfo GetPresentationInfo(
-        Device device,
-        Swapchain swapchain)
-    {
-        if (device is not D3D12Device nativeDevice)
-        {
-            throw new ArgumentException(
-                "The Device was not created by the Direct3D 12 backend.",
-                nameof(device));
-        }
-        if (swapchain is not D3D12Swapchain nativeSwapchain ||
-            !ReferenceEquals(nativeSwapchain.Device, nativeDevice))
-        {
-            throw new ArgumentException(
-                "The Swapchain was not created for this Direct3D 12 Device.",
-                nameof(swapchain));
-        }
-        nativeSwapchain.ThrowIfDisposed();
-        return nativeSwapchain.GetPresentationInfo();
-    }
+    internal static D3D12PresentationInfo GetPresentationInfo(Device device, Swapchain swapchain) =>
+        ((D3D12Swapchain)swapchain).GetPresentationInfo();
 
     private bool QueryTearingSupport(D3D12Device device)
     {
@@ -348,100 +321,6 @@ EnsureFactory(), DxgiFeature.PresentAllowTearing,
                 "IDXGIFactory5::CheckFeatureSupport(PresentAllowTearing)");
         }
         return supported != 0;
-    }
-
-    private static void ValidateSwapchainDescription(
-        D3D12Device device,
-        in SwapchainDesc description)
-    {
-        if (description.Surface is null)
-            throw new ArgumentNullException(nameof(description), "SwapchainDesc.Surface is required.");
-        if (description.ImageCount is < 2 or > 16)
-            throw new ArgumentOutOfRangeException(nameof(description), "ImageCount must be between 2 and 16.");
-
-        TextureUsages unsupported = description.ImageUsages &
-            (TextureUsages.DepthStencilAttachment |
-             TextureUsages.ShadingRate |
-             TextureUsages.SamplerFeedback |
-             TextureUsages.Shareable);
-        if (unsupported != TextureUsages.None)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(description),
-                $"Swapchain ImageUsages contains unsupported usages: {unsupported}.");
-        }
-        ValidateSwapchainConfig(device, description.Config, nameof(description));
-    }
-
-    private static void ValidateSwapchainConfig(
-        D3D12Device device,
-        in SwapchainConfig config,
-        string parameterName)
-    {
-        if (config.MaximumFrameLatency is < 1 or > 16)
-            throw new ArgumentOutOfRangeException(parameterName, "MaximumFrameLatency must be between 1 and 16.");
-        if (config.Width > device.Capabilities.Limits.MaximumTextureDimension2D ||
-            config.Height > device.Capabilities.Limits.MaximumTextureDimension2D)
-        {
-            throw new ArgumentOutOfRangeException(parameterName, "The swapchain extent exceeds the Device limit.");
-        }
-        if (!Enum.IsDefined(config.Format) ||
-            !Enum.IsDefined(config.ColorSpace) ||
-            !Enum.IsDefined(config.PresentType))
-        {
-            throw new ArgumentOutOfRangeException(parameterName, "SwapchainConfig contains an unknown enum value.");
-        }
-        if (config.PresentType == PresentType.Fifo && config.AllowTearing)
-            throw new ArgumentException("FIFO presentation cannot allow tearing.", parameterName);
-        if (config.PresentType == PresentType.Mailbox && config.AllowTearing)
-            throw new ArgumentException("Mailbox presentation cannot allow tearing.", parameterName);
-        if (config.PresentType == PresentType.Immediate && !config.AllowTearing)
-            throw new ArgumentException("Immediate presentation requires tearing.", parameterName);
-        ValidateHdr10Metadata(config, parameterName);
-    }
-
-    private static void ValidateHdr10Metadata(
-        in SwapchainConfig config,
-        string parameterName)
-    {
-        if (config.Hdr10Metadata is not Hdr10Metadata metadata)
-            return;
-        if (config.ColorSpace != ColorSpace.Hdr10)
-        {
-            throw new ArgumentException(
-                "HDR10 metadata can be supplied only for an HDR10 swapchain color space.",
-                parameterName);
-        }
-
-        const ushort maximumChromaticity = 50_000;
-        if (metadata.RedPrimaryX > maximumChromaticity ||
-            metadata.RedPrimaryY > maximumChromaticity ||
-            metadata.GreenPrimaryX > maximumChromaticity ||
-            metadata.GreenPrimaryY > maximumChromaticity ||
-            metadata.BluePrimaryX > maximumChromaticity ||
-            metadata.BluePrimaryY > maximumChromaticity ||
-            metadata.WhitePointX > maximumChromaticity ||
-            metadata.WhitePointY > maximumChromaticity)
-        {
-            throw new ArgumentOutOfRangeException(
-                parameterName,
-                "HDR10 chromaticity coordinates must be in the CTA-861 range 0..50000.");
-        }
-        if (metadata.MaximumMasteringLuminance == 0 ||
-            metadata.MinimumMasteringLuminance >
-                checked((ulong)metadata.MaximumMasteringLuminance * 10_000UL))
-        {
-            throw new ArgumentOutOfRangeException(
-                parameterName,
-                "HDR10 mastering luminance values are inconsistent.");
-        }
-        if (metadata.MaximumContentLightLevel != 0 &&
-            metadata.MaximumFrameAverageLightLevel > metadata.MaximumContentLightLevel)
-        {
-            throw new ArgumentOutOfRangeException(
-                parameterName,
-                "HDR10 maximum frame-average light level cannot exceed maximum content light level.");
-        }
     }
 
     private static SwapchainSupport[] CreateSwapchainSupport(
@@ -496,9 +375,10 @@ EnsureFactory(), DxgiFeature.PresentAllowTearing,
                 return;
             }
         }
-        throw new ArgumentException(
-            "The requested format, color space, presentation type, and tearing policy are unsupported.",
-            parameterName);
+        throw new GraphicsException(
+            GraphicsError.NativeFailure,
+            "The requested format, color space, presentation type, and tearing policy are unsupported."
+        );
     }
 
     private static void ConfigureNativeSwapchain(
@@ -519,12 +399,7 @@ EnsureFactory(), DxgiFeature.PresentAllowTearing,
                 PresentationTrace.CheckColorSpaceSupport(native, colorSpace, &colorSupport),
             NativeOperationType.Ordinary,
             "IDXGISwapChain3::CheckColorSpaceSupport");
-        if ((colorSupport & (uint)SwapChainColorSpaceSupportFlag.Present) == 0)
-        {
-            throw new ArgumentException(
-                "The DXGI presentation target cannot present the requested color space.",
-                nameof(config));
-        }
+
         ThrowIfFailed(
             device,
                 PresentationTrace.SetColorSpace1(native, colorSpace),
@@ -597,7 +472,7 @@ EnsureFactory(), DxgiFeature.PresentAllowTearing,
             DxgiFormat.FormatB8G8R8A8Unorm,
         Format.R10G10B10A2UNorm => DxgiFormat.FormatR10G10B10A2Unorm,
         Format.R16G16B16A16Float => DxgiFormat.FormatR16G16B16A16Float,
-        _ => throw new ArgumentOutOfRangeException(nameof(format), "The Format is not a DXGI flip-model format."),
+        _ => default,
     };
 
     private static DxgiColorSpace ToNativeColorSpace(ColorSpace colorSpace) => colorSpace switch
@@ -605,7 +480,7 @@ EnsureFactory(), DxgiFeature.PresentAllowTearing,
         ColorSpace.Srgb => DxgiColorSpace.RgbFullG22NoneP709,
         ColorSpace.ScRgb => DxgiColorSpace.RgbFullG10NoneP709,
         ColorSpace.Hdr10 => DxgiColorSpace.RgbFullG2084NoneP2020,
-        _ => throw new ArgumentOutOfRangeException(nameof(colorSpace)),
+        _ => default,
     };
 
     private static uint ToPresentInterval(PresentType type) => type switch
@@ -613,7 +488,7 @@ EnsureFactory(), DxgiFeature.PresentAllowTearing,
         PresentType.Immediate => 0,
         PresentType.Mailbox => 0,
         PresentType.Fifo => 1,
-        _ => throw new ArgumentOutOfRangeException(nameof(type)),
+        _ => default,
     };
 
     private static uint ToPresentFlags(in SwapchainConfig config) =>
@@ -628,7 +503,9 @@ EnsureFactory(), DxgiFeature.PresentAllowTearing,
         private readonly object _acquireGate = new();
         private IDXGISwapChain4* _native;
         private nint _frameLatencyHandle;
-        private D3D12SwapchainImageLease[] _images = [];
+        internal override IReadOnlyList<SwapchainImageUse> ImageUses => _images;
+        internal override bool IsOutOfDate => Volatile.Read(ref _outOfDate);
+        private D3D12SwapchainImageUse[] _images = [];
         private D3D12PresentationRetirement? _nativeGeneration;
         private ulong _nextSequence = 1;
         private bool _outOfDate;
@@ -678,16 +555,6 @@ EnsureFactory(), DxgiFeature.PresentAllowTearing,
             {
                 _images = CreateBackBuffers(Info.Config);
                 _nativeGeneration = CapturePresentationGeneration(_images);
-            }
-        }
-
-        internal void RequirePresentationQueue(D3D12Queue queue, string parameterName)
-        {
-            if (!ReferenceEquals(queue, _presentationQueue))
-            {
-                throw new ArgumentException(
-                    "A SwapchainImage can be submitted and presented only on the Graphics Queue that owns its native swapchain.",
-                    parameterName);
             }
         }
 
@@ -793,14 +660,8 @@ EnsureFactory(), DxgiFeature.PresentAllowTearing,
             in SwapchainAcquireOptions options,
             out SwapchainImage image)
         {
-            int timeoutMilliseconds = Timeouts.ToMilliseconds(
-                options.Timeout,
-                nameof(options));
-            if (options.PreserveContents)
-            {
-                throw new NotSupportedException(
-                    "The D3D12 swapchain uses FLIP_DISCARD and cannot guarantee preserved back-buffer contents.");
-            }
+            int timeoutMilliseconds = Timeouts.GetMilliseconds(options.Timeout);
+
             image = default;
             lock (_acquireGate)
             {
@@ -839,8 +700,8 @@ EnsureFactory(), DxgiFeature.PresentAllowTearing,
                         return SwapchainAcquireStatus.OutOfDate;
                     }
 
-                    D3D12SwapchainImageLease lease = _images[imageIndex];
-                    while (lease.IsOutstanding)
+                    D3D12SwapchainImageUse handle = _images[imageIndex];
+                    while (handle.IsOutstanding)
                     {
                         int milliseconds = RemainingMilliseconds(timeoutMilliseconds, deadline);
                         if (milliseconds == 0 || !Monitor.Wait(_gate, milliseconds))
@@ -854,67 +715,34 @@ EnsureFactory(), DxgiFeature.PresentAllowTearing,
                             _outOfDate = true;
                             return SwapchainAcquireStatus.OutOfDate;
                         }
-                        lease = _images[imageIndex];
+                        handle = _images[imageIndex];
                     }
 
                     if (_nextSequence == ulong.MaxValue)
-                        throw new InvalidOperationException("The Swapchain acquisition sequence domain is exhausted.");
+                        throw new GraphicsException(GraphicsError.NativeFailure, "The Swapchain acquisition sequence domain is exhausted.");
                     ulong sequence = _nextSequence++;
-                    lease.BeginAcquire(
+                    handle.BeginAcquire(
                         sequence,
                         Info.Generation,
                         PipelineSync.None,
                         ResourceAccess.NoAccess,
                         TextureLayout.Undefined);
-                    image = new SwapchainImage(lease, sequence);
+                    image = new SwapchainImage(handle, sequence);
                     return SwapchainAcquireStatus.Success;
                 }
             }
         }
 
-        internal void ValidatePresent(
-            D3D12Queue queue,
-            D3D12SwapchainImageLease lease,
-            ulong sequence)
-        {
-            lock (_gate)
-            {
-                ThrowIfOperational();
-                if (_outOfDate)
-                    throw new InvalidOperationException("The Swapchain is OutOfDate and must be reconfigured.");
-                lease.ValidatePresent(queue, sequence);
-            }
-        }
-
-        internal void ValidateSubmission(
-            D3D12Queue queue,
-            D3D12SwapchainImageLease lease,
-            ulong sequence,
-            bool presentReady)
-        {
-            lock (_gate)
-            {
-                ThrowIfOperational();
-                if (_outOfDate)
-                    throw new InvalidOperationException("The Swapchain is OutOfDate and must be reconfigured.");
-                RequirePresentationQueue(queue, nameof(queue));
-                lease.ValidateSubmission(sequence, presentReady);
-            }
-        }
-
         internal PresentStatus PresentUnderQueueGate(
             D3D12Queue queue,
-            D3D12SwapchainImageLease lease,
+            D3D12SwapchainImageUse handle,
             ulong sequence)
         {
             lock (_gate)
             {
                 ThrowIfOperational();
-                if (_outOfDate)
-                    throw new InvalidOperationException("The Swapchain is OutOfDate and must be reconfigured.");
-                lease.ValidatePresent(queue, sequence);
-                if (!lease.TryBeginPresent(sequence))
-                    throw new InvalidOperationException("The SwapchainImage has no Present right.");
+
+                _ = handle.TryBeginPresent(sequence);
 
                 int result = PresentationTrace.Present(
 _native, ToPresentInterval(Info.Config.PresentType),
@@ -943,7 +771,7 @@ _native, ToPresentInterval(Info.Config.PresentType),
                         if (result < 0)
                         {
                             _outOfDate = true;
-                            lease.CompletePresent(contentsPreserved: false);
+                            handle.CompletePresent(contentsPreserved: false);
                             Monitor.PulseAll(_gate);
                             ThrowIfFailed(
                                 _device,
@@ -955,7 +783,7 @@ _native, ToPresentInterval(Info.Config.PresentType),
                         break;
                 }
 
-                lease.CompletePresent(
+                handle.CompletePresent(
                     status is PresentStatus.Success or PresentStatus.Suboptimal);
                 Monitor.PulseAll(_gate);
                 return status;
@@ -964,7 +792,6 @@ _native, ToPresentInterval(Info.Config.PresentType),
 
         internal ReconfigureStatus Reconfigure(in SwapchainConfig config)
         {
-            ValidateSwapchainConfig(_device, config, nameof(config));
 
             using (_presentationQueue.Gate.EnterScope())
             {
@@ -973,20 +800,16 @@ _native, ToPresentInterval(Info.Config.PresentType),
                     ThrowIfOperational();
                     if (!IsSupported(config))
                     {
-                        if (_outOfDate)
-                        {
-                            throw new InvalidOperationException(
-                                "The Swapchain is OutOfDate and requires a supported reconfiguration or replacement.");
-                        }
+
                         return ReconfigureStatus.Unsupported;
                     }
-                    foreach (D3D12SwapchainImageLease image in _images)
+                    foreach (D3D12SwapchainImageUse image in _images)
                     {
                         if (image.IsOutstanding)
                             return ReconfigureStatus.Busy;
                     }
                     if (Info.Generation == ulong.MaxValue)
-                        throw new InvalidOperationException("The Swapchain generation domain is exhausted.");
+                        throw new GraphicsException(GraphicsError.NativeFailure, "The Swapchain generation domain is exhausted.");
 
                     DrainPresentationGenerationUnderQueueGate();
                     InvalidateAndReleaseBackBuffers(deviceLost: false);
@@ -1031,7 +854,7 @@ _native, Info.ImageCount,
                             Width = resolved.Width,
                             Height = resolved.Height,
                         };
-                        D3D12SwapchainImageLease[] rebuilt = CreateBackBuffers(resolvedConfig);
+                        D3D12SwapchainImageUse[] rebuilt = CreateBackBuffers(resolvedConfig);
                         D3D12PresentationRetirement rebuiltGeneration =
                             CapturePresentationGeneration(rebuilt);
                         Info.Config = resolvedConfig;
@@ -1059,7 +882,7 @@ _native, Info.ImageCount,
                     return;
                 _deviceLost = true;
                 _outOfDate = true;
-                foreach (D3D12SwapchainImageLease image in _images)
+                foreach (D3D12SwapchainImageUse image in _images)
                     image.Invalidate(deviceLost: true);
                 Monitor.PulseAll(_gate);
             }
@@ -1088,10 +911,10 @@ _native, Info.ImageCount,
             _device.UnregisterChild(this);
         }
 
-        private D3D12SwapchainImageLease[] CreateBackBuffers(
+        private D3D12SwapchainImageUse[] CreateBackBuffers(
             in SwapchainConfig config)
         {
-            D3D12SwapchainImageLease[] result = new D3D12SwapchainImageLease[Info.ImageCount];
+            D3D12SwapchainImageUse[] result = new D3D12SwapchainImageUse[Info.ImageCount];
             int created = 0;
             try
             {
@@ -1140,10 +963,10 @@ _device.Native, _presentationQueue.NodeMask,
                             ResourceAccess.NoAccess,
                             TextureLayout.Present);
                         resource = null;
-                        D3D12SwapchainImageLease lease = new(this, index, texture);
-                        texture.SwapchainLease = lease;
+                        D3D12SwapchainImageUse handle = new(this, index, texture);
+                        texture.SwapchainUse = handle;
                         _device.RegisterChild(texture);
-                        result[index] = lease;
+                        result[index] = handle;
                         created++;
                     }
                     catch
@@ -1182,7 +1005,7 @@ _device.Native, _presentationQueue.NodeMask,
             try
             {
                 QueueCompletion completion = _presentationQueue.SignalCompletionUnderGate();
-                _presentationQueue.WaitForCompletionUnderGate(completion.Value);
+                _presentationQueue.WaitForCompletionUnderGate(completion.SubmittedValue);
                 _presentationQueue.CollectCompletedUnderGate();
                 generation.Dispose();
             }
@@ -1194,29 +1017,26 @@ _device.Native, _presentationQueue.NodeMask,
                 }
                 else
                 {
-                    if (Interlocked.CompareExchange(
+                    _ = Interlocked.CompareExchange(
                             ref _nativeGeneration,
                             generation,
-                            null) is not null)
-                    {
-                        throw new InvalidOperationException(
-                            "The presentation generation retirement authority was concurrently replaced.");
-                    }
+                            null);
+
                 }
                 throw;
             }
         }
 
         private D3D12PresentationRetirement CapturePresentationGeneration(
-            D3D12SwapchainImageLease[] images)
+            D3D12SwapchainImageUse[] images)
         {
             try
             {
-                return D3D12PresentationRetirement.Capture(_native, images);
+                return D3D12PresentationRetirement.RetainGeneration(_native, images);
             }
             catch
             {
-                foreach (D3D12SwapchainImageLease image in images)
+                foreach (D3D12SwapchainImageUse image in images)
                 {
                     image.Invalidate(deviceLost: false);
                     image.Texture.DisposeFromParent();
@@ -1235,7 +1055,7 @@ _device.Native, _presentationQueue.NodeMask,
             {
                 QueueCompletion completion = _presentationQueue.SignalCompletionUnderGate();
                 _presentationQueue.RegisterPresentationRetirementUnderGate(
-                    completion.Value,
+                    completion.SubmittedValue,
                     generation);
             }
             catch (Exception exception)
@@ -1261,9 +1081,9 @@ _device.Native, _presentationQueue.NodeMask,
 
         private void InvalidateAndReleaseBackBuffers(bool deviceLost)
         {
-            D3D12SwapchainImageLease[] images = _images;
+            D3D12SwapchainImageUse[] images = _images;
             _images = [];
-            foreach (D3D12SwapchainImageLease image in images)
+            foreach (D3D12SwapchainImageUse image in images)
             {
                 image.Invalidate(deviceLost);
                 image.Texture.DisposeFromParent();
@@ -1297,7 +1117,7 @@ _device.Native, _presentationQueue.NodeMask,
 
         private void ThrowIfOperational()
         {
-            ThrowIfDisposed();
+
             _device.ThrowIfUnavailable();
             if (_deviceLost)
             {
@@ -1338,31 +1158,30 @@ _device.Native, _presentationQueue.NodeMask,
         IntrusiveRetirementPayload<D3D12PresentationRetirement>
     {
         private IDXGISwapChain4* _swapchain;
-        private NativeLease[] _images;
+        private NativeResourceData[] _images;
         private int _disposed;
 
         private D3D12PresentationRetirement(
             IDXGISwapChain4* swapchain,
-            NativeLease[] images)
+            NativeResourceData[] images)
         {
             _swapchain = swapchain;
             _images = images;
         }
 
-        internal static D3D12PresentationRetirement Capture(
+        internal static D3D12PresentationRetirement RetainGeneration(
             IDXGISwapChain4* swapchain,
-            D3D12SwapchainImageLease[] images)
+            D3D12SwapchainImageUse[] images)
         {
-            if (swapchain is null)
-                throw new ObjectDisposedException(nameof(D3D12Swapchain));
-            var retained = new NativeLease[images.Length];
+
+            var retained = new NativeResourceData[images.Length];
             int count = 0;
             _ = PresentationTrace.AddRef(swapchain);
             try
             {
                 for (; count < retained.Length; count++)
                 {
-                    NativeLease lifetime = images[count].Texture.NativeLifetime;
+                    NativeResourceData lifetime = images[count].Texture.NativeData;
                     lifetime.Retain();
                     retained[count] = lifetime;
                 }
@@ -1381,7 +1200,7 @@ _device.Native, _presentationQueue.NodeMask,
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0)
                 return;
-            foreach (NativeLease image in _images)
+            foreach (NativeResourceData image in _images)
                 image.Release();
             _images = [];
             IDXGISwapChain4* swapchain = _swapchain;
@@ -1394,13 +1213,13 @@ _device.Native, _presentationQueue.NodeMask,
     private sealed partial class D3D12Queue
     {
         private IntrusiveRetirementChain<D3D12PresentationRetirement>
-            _pendingPresentationRetirements;
+            _presentationRetirements;
         private IntrusiveRetirementChain<D3D12PresentationRetirement>
             _untrustedPresentationRetirements;
         internal void RegisterPresentationRetirementUnderGate(
             ulong completion,
             D3D12PresentationRetirement payload) =>
-            _pendingPresentationRetirements.Append(payload, completion);
+            _presentationRetirements.Append(payload, completion);
 
         internal void RegisterUntrustedPresentationRetirementUnderGate(
             D3D12PresentationRetirement payload) =>
@@ -1490,19 +1309,19 @@ _device.Native, _presentationQueue.NodeMask,
         }
 
         internal ulong GetPresentationRetirementTargetUnderGate() =>
-            _pendingPresentationRetirements.Target;
+            _presentationRetirements.Target;
 
         private void CollectPresentationRetirementsUnderGate(ulong completed)
-            => _pendingPresentationRetirements.Collect(completed);
+            => _presentationRetirements.Collect(completed);
 
         internal void AbandonPresentationRetirementsUnderGate()
         {
-            _pendingPresentationRetirements.Abandon();
+            _presentationRetirements.Abandon();
             _untrustedPresentationRetirements.Abandon();
         }
     }
 
-    private sealed class D3D12SwapchainImageLease : SwapchainImageLease
+    private sealed class D3D12SwapchainImageUse : SwapchainImageUse
     {
         private readonly object _gate = new();
         private ulong _sequence;
@@ -1512,7 +1331,7 @@ _device.Native, _presentationQueue.NodeMask,
         private bool _hasPresented;
         private int _outstanding;
 
-        internal D3D12SwapchainImageLease(
+        internal D3D12SwapchainImageUse(
             D3D12Swapchain swapchain,
             uint imageIndex,
             D3D12Texture texture)
@@ -1565,10 +1384,7 @@ _device.Native, _presentationQueue.NodeMask,
             lock (_gate)
             {
                 ulong sequence = _sequence;
-                Validate(sequence);
-                if (GetStatus(sequence) != SwapchainImageStatus.Acquired)
-                    throw new InvalidOperationException("A swapchain Texture can be recorded only while Acquired.");
-                Texture.ThrowIfDisposed();
+
                 return sequence;
             }
         }
@@ -1580,34 +1396,13 @@ _device.Native, _presentationQueue.NodeMask,
         {
             lock (_gate)
             {
-                Validate(sequence);
-                if (!presentReady)
-                {
-                    throw new InvalidOperationException(
-                        "The submitted SwapchainImage was not explicitly returned to Present/NoAccess.");
-                }
+
                 if (!base.TryBeginSubmit(sequence))
                     return false;
                 _submittedQueue = queue;
                 _completion = 0;
                 _presentReady = true;
                 return true;
-            }
-        }
-
-        internal void ValidateSubmission(ulong sequence, bool presentReady)
-        {
-            lock (_gate)
-            {
-                Validate(sequence);
-                if (GetStatus(sequence) != SwapchainImageStatus.Acquired)
-                    throw new InvalidOperationException("The SwapchainImage has no submission right.");
-                if (!presentReady)
-                {
-                    throw new InvalidOperationException(
-                        "The submitted SwapchainImage was not explicitly returned to Present/NoAccess.");
-                }
-                Texture.ThrowIfDisposed();
             }
         }
 
@@ -1629,27 +1424,8 @@ _device.Native, _presentationQueue.NodeMask,
         {
             lock (_gate)
             {
-                Validate(sequence);
-                if (!ReferenceEquals(_submittedQueue, queue) || completion == 0)
-                    throw new InvalidOperationException("The SwapchainImage submission provenance is invalid.");
-                _completion = completion;
-            }
-        }
 
-        internal void ValidatePresent(D3D12Queue queue, ulong sequence)
-        {
-            lock (_gate)
-            {
-                Validate(sequence);
-                if (GetStatus(sequence) != SwapchainImageStatus.Submitted ||
-                    !ReferenceEquals(_submittedQueue, queue) ||
-                    _completion == 0 ||
-                    !_presentReady)
-                {
-                    throw new InvalidOperationException(
-                        "Present requires the current image's accepted Graphics-Queue submission and explicit Present/NoAccess state.");
-                }
-                Texture.ThrowIfDisposed();
+                _completion = completion;
             }
         }
 
@@ -1698,16 +1474,16 @@ _device.Native, _presentationQueue.NodeMask,
 
     private sealed partial class D3D12Texture
     {
-        internal D3D12SwapchainImageLease? SwapchainLease
+        internal D3D12SwapchainImageUse? SwapchainUse
         {
-            get => NativeResource.SwapchainLease;
-            set => NativeResource.SwapchainLease = value;
+            get => NativeResource.SwapchainUse;
+            set => NativeResource.SwapchainUse = value;
         }
     }
 
     private sealed partial class D3D12TextureResource
     {
-        internal D3D12SwapchainImageLease? SwapchainLease { get; set; }
+        internal D3D12SwapchainImageUse? SwapchainUse { get; set; }
     }
 
     private sealed partial class D3D12CommandContext
@@ -1719,30 +1495,23 @@ _device.Native, _presentationQueue.NodeMask,
             Recording.RecordSwapchainState(texture, layout, access);
     }
 
-    private sealed partial class D3D12CommandSlot
+    private sealed partial class D3D12CommandBuffer
     {
-        private readonly Dictionary<D3D12SwapchainImageLease, D3D12RecordedSwapchainUse>
+        private readonly Dictionary<D3D12SwapchainImageUse, D3D12RecordedSwapchainUse>
             _swapchainUses = new(ReferenceEqualityComparer.Instance);
         private ulong[] _swapchainSequences = [];
         private int _swapchainUseCapacity;
 
-        internal void CaptureSwapchainUses(
-            ReadOnlySpan<D3D12SwapchainImageLease> leases)
+        internal void RecordSwapchainUses(
+            ReadOnlySpan<D3D12SwapchainImageUse> leases)
         {
             for (int index = 0; index < leases.Length; index++)
                 _swapchainSequences[index] = leases[index].CaptureForRecording();
             for (int index = 0; index < leases.Length; index++)
             {
-                D3D12SwapchainImageLease lease = leases[index];
+                D3D12SwapchainImageUse handle = leases[index];
                 ulong sequence = _swapchainSequences[index];
-                if (_swapchainUses.TryGetValue(
-                        lease,
-                        out D3D12RecordedSwapchainUse use) &&
-                    use.Sequence != sequence)
-                {
-                    throw new InvalidOperationException(
-                        "A command slot cannot reference two acquisitions of the same swapchain image.");
-                }
+
             }
             for (int index = 0; index < leases.Length; index++)
             {
@@ -1752,24 +1521,19 @@ _device.Native, _presentationQueue.NodeMask,
             }
         }
 
-        internal void CaptureSwapchainUse(D3D12TextureResource texture)
+        internal void RecordSwapchainUse(D3D12TextureResource texture)
         {
-            D3D12SwapchainImageLease? lease = texture.SwapchainLease;
-            if (lease is null)
+            D3D12SwapchainImageUse? handle = texture.SwapchainUse;
+            if (handle is null)
                 return;
-            CaptureSwapchainUse(lease);
+            RecordSwapchainUse(handle);
         }
 
-        internal void CaptureSwapchainUse(D3D12SwapchainImageLease lease)
+        internal void RecordSwapchainUse(D3D12SwapchainImageUse handle)
         {
-            ulong sequence = lease.CaptureForRecording();
-            if (_swapchainUses.TryGetValue(lease, out D3D12RecordedSwapchainUse use) &&
-                use.Sequence != sequence)
-            {
-                throw new InvalidOperationException(
-                    "A command slot cannot reference two acquisitions of the same swapchain image.");
-            }
-            _swapchainUses[lease] = new D3D12RecordedSwapchainUse(sequence, PresentReady: false);
+            ulong sequence = handle.CaptureForRecording();
+
+            _swapchainUses[handle] = new D3D12RecordedSwapchainUse(sequence, PresentReady: false);
         }
 
         internal void RecordSwapchainState(
@@ -1777,17 +1541,12 @@ _device.Native, _presentationQueue.NodeMask,
             TextureLayout layout,
             ResourceAccess access)
         {
-            D3D12SwapchainImageLease? lease = texture.SwapchainLease;
-            if (lease is null)
+            D3D12SwapchainImageUse? handle = texture.SwapchainUse;
+            if (handle is null)
                 return;
-            ulong sequence = lease.CaptureForRecording();
-            if (_swapchainUses.TryGetValue(lease, out D3D12RecordedSwapchainUse use) &&
-                use.Sequence != sequence)
-            {
-                throw new InvalidOperationException(
-                    "A command slot cannot reference two acquisitions of the same swapchain image.");
-            }
-            _swapchainUses[lease] = new D3D12RecordedSwapchainUse(
+            ulong sequence = handle.CaptureForRecording();
+
+            _swapchainUses[handle] = new D3D12RecordedSwapchainUse(
                 sequence,
                 layout == TextureLayout.Present && access == ResourceAccess.NoAccess);
         }
@@ -1795,28 +1554,22 @@ _device.Native, _presentationQueue.NodeMask,
         internal int SwapchainUseCount => _swapchainUses.Count;
 
         internal int AccumulateSwapchainUses(
-            D3D12SwapchainImageLease[] destinationLeases,
+            D3D12SwapchainImageUse[] destinationLeases,
             D3D12SubmittedSwapchainUse[] destinationUses,
             int destinationCount)
         {
-            foreach ((D3D12SwapchainImageLease lease, D3D12RecordedSwapchainUse use) in _swapchainUses)
+            foreach ((D3D12SwapchainImageUse handle, D3D12RecordedSwapchainUse use) in _swapchainUses)
             {
                 int destinationIndex = 0;
                 while (destinationIndex < destinationCount &&
-                       !ReferenceEquals(destinationLeases[destinationIndex], lease))
+                       !ReferenceEquals(destinationLeases[destinationIndex], handle))
                 {
                     destinationIndex++;
                 }
 
-                if (destinationIndex < destinationCount &&
-                    destinationUses[destinationIndex].Sequence != use.Sequence)
-                {
-                    throw new InvalidOperationException(
-                        "One Submit cannot reference two acquisitions of the same swapchain image.");
-                }
                 if (destinationIndex == destinationCount)
                 {
-                    destinationLeases[destinationIndex] = lease;
+                    destinationLeases[destinationIndex] = handle;
                     destinationCount++;
                 }
                 destinationUses[destinationIndex] = new D3D12SubmittedSwapchainUse(
@@ -1829,22 +1582,22 @@ _device.Native, _presentationQueue.NodeMask,
         internal void ClearSwapchainUses() => _swapchainUses.Clear();
     }
 
-    private sealed partial class D3D12RecordedCommandsLease
+    private sealed partial class D3D12CommandRecording
     {
         internal int GetSwapchainUseCount(ulong sequence)
         {
-            EnsureSequence(sequence);
-            return _slot.SwapchainUseCount;
+
+            return _commandBuffer.SwapchainUseCount;
         }
 
         internal int AccumulateSwapchainUses(
             ulong sequence,
-            D3D12SwapchainImageLease[] destinationLeases,
+            D3D12SwapchainImageUse[] destinationLeases,
             D3D12SubmittedSwapchainUse[] destinationUses,
             int destinationCount)
         {
-            EnsureSequence(sequence);
-            return _slot.AccumulateSwapchainUses(
+
+            return _commandBuffer.AccumulateSwapchainUses(
                 destinationLeases,
                 destinationUses,
                 destinationCount);
@@ -1861,16 +1614,8 @@ _device.Native, _presentationQueue.NodeMask,
 
     private static partial class RequireD3D12
     {
-        internal static D3D12Surface Surface(Surface value) =>
-            value as D3D12Surface ??
-            throw new ArgumentException(
-                "The Surface was not created by the Direct3D 12 backend.",
-                nameof(value));
+        internal static D3D12Surface Surface(Surface value) =>(D3D12Surface)value;
 
-        internal static D3D12Swapchain Swapchain(Swapchain value) =>
-            value as D3D12Swapchain ??
-            throw new ArgumentException(
-                "The Swapchain was not created by the Direct3D 12 backend.",
-                nameof(value));
+        internal static D3D12Swapchain Swapchain(Swapchain value) =>(D3D12Swapchain)value;
     }
 }

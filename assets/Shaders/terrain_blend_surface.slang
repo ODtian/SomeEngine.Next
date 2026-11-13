@@ -1,4 +1,4 @@
-#include "terrain_blend_input.slang"
+__exported import terrain_blend_input;
 
 int2 TerrainColumnCells(int x, int z)
 {

@@ -7,7 +7,7 @@
 #define VSM_BLUE_NOISE_TEXTURE 1
 Texture2D<float4> VirtualShadowBlueNoise;
 #include "vsm_projection.slang"
-#include "vsm_receiver_projection.slang"
+__exported import vsm_receiver_projection;
 
 struct VirtualShadowSamplingUniforms
 {

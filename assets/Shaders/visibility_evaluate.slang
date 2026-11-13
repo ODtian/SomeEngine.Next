@@ -1,8 +1,8 @@
 #ifndef VISIBILITY_EVALUATE_SLANG
 #define VISIBILITY_EVALUATE_SLANG
 
-#include "common.slang"
-#include "cluster_structures.slang"
+__exported import common;
+__exported import cluster_structures;
 
 [__AttributeUsage(_AttributeTargets.Struct)]
 struct VisibilityDepthAttribute { string behavior; };
@@ -39,7 +39,6 @@ struct VisibilityPixelInput
     DrawRequest Source;
     uint TriangleID;
     uint ViewIndex;
-    uint TargetPolicy;
     uint TargetViewIndex;
 };
 
@@ -119,8 +118,7 @@ struct OpaqueVisibilityEvaluate<TVertex> : IVisibilityEvaluate<TVertex>
     VisibilityPixelResult evaluate(VisibilityPixelInput input, Varying varying)
     {
         VisibilityPixelResult result;
-        result.Visible = input.TargetPolicy == 0u ||
-            input.EncodedTargetDepth < input.EncodedDepth ? 1u : 0u;
+        result.Visible = input.EncodedTargetDepth <= input.EncodedDepth ? 1u : 0u;
         result.Depth = input.Depth;
         return result;
     }

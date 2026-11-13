@@ -75,7 +75,7 @@ internal sealed class ClusterMaterialScalars
             writes.Add((range.Offset, value));
         }
         ClusterBytes bytes = Bytes.WithChanges(byteCount, writes);
-        ClusterBytes offsets = Offsets.WithChanges(checked((int)assignments.SlotCapacity * sizeof(uint)), offsetWrites);
+        ClusterBytes offsets = Offsets.WithChanges(checked((int)assignments.MaterialAddressCapacity * sizeof(uint)), offsetWrites);
         return new ClusterMaterialScalars
         {
             _ranges = ranges, _free = free, Offsets = offsets, Bytes = bytes,

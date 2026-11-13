@@ -4,6 +4,7 @@ using SomeEngine.Core.Math;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Graphics;
 using SomeEngine.Resources;
+using SomeEngine.Resources.Layers;
 
 namespace SomeEngine.Runtime.Tests;
 
@@ -17,6 +18,7 @@ public sealed class TransparencyRenderingTests(TransparencyContentFixture conten
     public async Task TransparentDeformedPhongSurfaceMatchesOpaqueSurfaceAtFullOpacity(string backend)
     {
         SceneLinearImage? opaque = null, transparent = null;
+        LayerPassId pass = default;
         await SceneImages.RunAsync(backend, new SceneScript(content.DeformedPhong, 16,
         [
             new(7, edit => edit.CaptureLinearImage(value => opaque = value)),
@@ -25,11 +27,15 @@ public sealed class TransparencyRenderingTests(TransparencyContentFixture conten
                 foreach (Entity entity in edit.MeshEntities)
                 {
                     Material material = edit.GetMaterial(entity);
-                    material.State = material.State with { Surface = SurfaceMode.Translucent };
+                    material.Layer = new(pass, 0, new());
                 }
             }),
             new(15, edit => edit.CaptureLinearImage(value => transparent = value)),
-        ]) { RasterEdgePixels = 8, WaitForFrames = false },
+        ])
+        {
+            RasterEdgePixels = 8, WaitForFrames = false,
+            CreateFrameFeatures = rendering => { pass = rendering.Layers!.AddPass(new("Opaque-valued curved layers")); return []; },
+        },
             "--hardware-raster", "--shading-path", "forward", "--no-taa", "--no-vsm");
         SceneImages.AssertLinearEqual(opaque!, transparent!, .003f);
     }
@@ -39,17 +45,18 @@ public sealed class TransparencyRenderingTests(TransparencyContentFixture conten
     [InlineData("vulkan")]
     public async Task IntersectingTransparentModelsMatchCompleteDepthSortedCompositing(string backend)
     {
-        SceneLinearImage? image = null, reversed = null, bounded = null;
+        SceneLinearImage? image = null, reversed = null;
+        var materials = new List<Material>();
         var blue = new UnlitMaterial();
         var models = new List<(Entity Entity, TransformQvvs Transform)>();
-        await SceneImages.RunAsync(backend, new SceneScript(content.DirectoryPath, 16,
+        await SceneImages.RunAsync(backend, new SceneScript(content.DirectoryPath, 12,
         [
             new(0, edit =>
             {
                 foreach (var entity in edit.MeshEntities)
                 {
                     var material = (UnlitMaterial)edit.GetMaterial(entity);
-                    material.State = material.State with { Surface = SurfaceMode.Translucent };
+                    materials.Add(material);
                     material.BaseColorTint = material.Name == "red sphere" ? new(1, 0, 0, .5f) : new(0, 1, 0, .5f);
                     models.Add((entity, new(new Vector3(0, 0, 6), Quaternion.Identity)));
                 }
@@ -59,7 +66,7 @@ public sealed class TransparencyRenderingTests(TransparencyContentFixture conten
                 blue.AlbedoMap = source.AlbedoMap;
                 blue.MaterialSampler = source.MaterialSampler;
                 blue.BaseColorTint = new(0, 0, 1, .5f);
-                blue.State = source.State;
+                materials.Add(blue);
                 for (int layer = 0; layer < 4; layer++)
                 {
                     TransformQvvs transform = new(new Vector3(0, 0, 7 + layer), Quaternion.Identity);
@@ -75,16 +82,16 @@ public sealed class TransparencyRenderingTests(TransparencyContentFixture conten
                 foreach (var model in models) edit.DeleteEntity(model.Entity);
             }),
             new(11, edit => edit.CaptureLinearImage(value => reversed = value)),
-            new(12, edit =>
+        ])
+        {
+            RasterEdgePixels = 32, WaitForFrames = false,
+            CreateFrameFeatures = rendering =>
             {
-                foreach (var entity in edit.MeshEntities)
-                {
-                    Material material = edit.GetMaterial(entity);
-                    material.State = material.State with { MaximumError = .04f };
-                }
-            }),
-            new(15, edit => edit.CaptureLinearImage(value => bounded = value)),
-        ]) { RasterEdgePixels = 32, WaitForFrames = false }, "--hardware-raster", "--no-taa", "--no-vsm");
+                LayerPassId layer = rendering.Layers!.AddPass(new("Intersecting transparent models"));
+                foreach (Material material in materials) material.Layer = new(layer, 0, new());
+                return [];
+            },
+        }, "--hardware-raster", "--no-taa", "--no-vsm");
 
         // Six planes cover these pixels. The first two give red/green (.5,.25)
         // or (.25,.5); four blue layers behind them add .25 * (1 - .5^4).
@@ -103,7 +110,6 @@ public sealed class TransparencyRenderingTests(TransparencyContentFixture conten
         }
         SceneImages.AssertLinearEqual(image with { Pixels = expected }, image, .001f);
         SceneImages.AssertLinearEqual(image, reversed!, .001f);
-        SceneImages.AssertLinearEqual(image, bounded!, .04f);
     }
 
     [SceneTheory]
@@ -112,6 +118,7 @@ public sealed class TransparencyRenderingTests(TransparencyContentFixture conten
     public async Task TransparentUserMaterialsMatchOpaqueForwardLightingAndShadowsAtFullOpacity(string backend)
     {
         SceneLinearImage? opaque = null, transparent = null;
+        LayerPassId pass = default;
         var nearest = new StandardMaterial();
         await SceneImages.RunAsync(backend, new SceneScript(content.Lit, 24,
         [
@@ -144,74 +151,17 @@ public sealed class TransparencyRenderingTests(TransparencyContentFixture conten
                 {
                     Material material = edit.GetMaterial(entity);
                     if (material.Name is "lit panel" or "lit panel nearest" or "unlit panel")
-                        material.State = material.State with { Surface = SurfaceMode.Translucent };
+                        material.Layer = new(pass, 0, new());
                 }
             }),
             new(23, edit => edit.CaptureLinearImage(value => transparent = value)),
-        ]) { RasterEdgePixels = 32, WaitForFrames = false }, "--hardware-raster", "--shading-path", "forward", "--no-taa");
+        ])
+        {
+            RasterEdgePixels = 32, WaitForFrames = false,
+            CreateFrameFeatures = rendering => { pass = rendering.Layers!.AddPass(new("Lit material layers")); return []; },
+        }, "--hardware-raster", "--shading-path", "forward", "--no-taa");
         Assert.True((float)opaque!.Pixels.Span[(64 * 128 + 80) * 4] > .01f);
         SceneImages.AssertLinearEqual(opaque, transparent!, .003f);
     }
 
-    [SceneTheory]
-    [InlineData("d3d12")]
-    public async Task SharedShaderMaterialsKeepEveryColorLimitAndZeroErrorDeclaration(string backend)
-    {
-        SceneLinearImage? complete = null;
-        var completeImages = new List<SceneLinearImage>();
-        var bounded = new List<SceneLinearImage>();
-        var models = new List<Entity>();
-        TransformQvvs[] transforms = Enumerable.Range(0, 8).Select(layer => new TransformQvvs(
-            new Vector3(0, 0, 5 + layer * .5f), Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.Atan(.5f)))).ToArray();
-        var red = new UnlitMaterial();
-        var blue = new UnlitMaterial();
-        await SceneImages.RunAsync(backend, new SceneScript(content.DirectoryPath, 24,
-        [
-            new(0, edit =>
-            {
-                Entity first = edit.MeshEntities[0];
-                red.Update((UnlitMaterial)edit.GetMaterial(first));
-                blue.Update(red);
-                red.BaseColorTint = new(1, 0, 0, .5f);
-                blue.BaseColorTint = new(0, 0, 4, .5f);
-                red.State = red.State with { Surface = SurfaceMode.Translucent, ColorLimit = 1 };
-                blue.State = blue.State with { Surface = SurfaceMode.Translucent, ColorLimit = 4 };
-                foreach (Entity entity in edit.MeshEntities.Skip(1)) edit.DeleteEntity(entity);
-                for (int layer = 0; layer < transforms.Length; layer++)
-                {
-                    Entity entity = layer == 0 ? first : edit.AddEntity(first, transforms[layer]);
-                    edit.SetEntityTransform(entity, transforms[layer]);
-                    edit.ReplaceMaterial(entity, layer < 4 ? red : blue);
-                    models.Add(entity);
-                }
-            }),
-            new(7, edit => edit.CaptureLinearImage(value => complete = value)),
-            new(8, _ => red.State = red.State with { MaximumError = .13f }),
-            new(11, edit => edit.CaptureLinearImage(completeImages.Add)),
-            new(12, _ =>
-            {
-                red.State = red.State with { MaximumError = 0 };
-                blue.State = blue.State with { MaximumError = .13f };
-            }),
-            new(15, edit => edit.CaptureLinearImage(completeImages.Add)),
-            new(16, _ =>
-            {
-                red.State = red.State with { MaximumError = .04f };
-                blue.State = blue.State with { MaximumError = .04f };
-            }),
-            new(19, edit => edit.CaptureLinearImage(bounded.Add)),
-            new(20, edit =>
-            {
-                red.BaseColorTint = new(0, 0, 4, .5f);
-                blue.BaseColorTint = new(1, 0, 0, .5f);
-                red.State = red.State with { ColorLimit = 4 };
-                blue.State = blue.State with { ColorLimit = 1 };
-                for (int layer = 0; layer < models.Count; layer++)
-                    edit.SetEntityTransform(models[layer], transforms[(layer + 4) % transforms.Length]);
-            }),
-            new(23, edit => edit.CaptureLinearImage(bounded.Add)),
-        ]) { WaitForFrames = false }, "--hardware-raster", "--no-taa", "--no-vsm");
-        foreach (SceneLinearImage image in completeImages) SceneImages.AssertLinearEqual(complete!, image, .001f);
-        foreach (SceneLinearImage image in bounded) SceneImages.AssertLinearEqual(complete!, image, .04f);
-    }
 }

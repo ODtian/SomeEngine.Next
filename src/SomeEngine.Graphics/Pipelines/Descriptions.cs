@@ -407,14 +407,14 @@ public readonly struct StreamOutputElement
         uint stream,
         byte startComponent,
         byte componentCount,
-        byte outputSlot)
+        byte outputBinding)
     {
         Variable = variable;
         IsGap = gap;
         Stream = stream;
         StartComponent = startComponent;
         ComponentCount = componentCount;
-        OutputSlot = outputSlot;
+        OutputBinding = outputBinding;
     }
 
     public VariableLayoutReflection Variable { get; }
@@ -422,21 +422,21 @@ public readonly struct StreamOutputElement
     public uint Stream { get; }
     public byte StartComponent { get; }
     public byte ComponentCount { get; }
-    public byte OutputSlot { get; }
+    public byte OutputBinding { get; }
 
     public static StreamOutputElement Output(
         VariableLayoutReflection variable,
         uint stream,
         byte startComponent,
         byte componentCount,
-        byte outputSlot) =>
-        new(variable, false, stream, startComponent, componentCount, outputSlot);
+        byte outputBinding) =>
+        new(variable, false, stream, startComponent, componentCount, outputBinding);
 
     public static StreamOutputElement Gap(
         uint stream,
         byte componentCount,
-        byte outputSlot) =>
-        new(VariableLayoutReflection.Null, true, stream, 0, componentCount, outputSlot);
+        byte outputBinding) =>
+        new(VariableLayoutReflection.Null, true, stream, 0, componentCount, outputBinding);
 }
 
 /// <remarks>

@@ -7,6 +7,8 @@
 - 视觉都是材质加用户 shader。`Surface`（填充、圆角、描边、阴影，由 `Background`/`Corner`/`Border`/`Shadow` 修饰或复合容器 Build 写在参与布局的节点上）、`Image`、`Glyphs` 使用引擎自带的普通材质；渲染管线依赖用户 shader 解释绘制数据与顶点布局。
 - 界面 pass 的拓扑在增删 `Canvas`、改变渲染目标或深度测试配置时通过显式修改维护，放在持久 RenderGraph 中。
 - 实例数据按 ECS 写版本以块为单位增量提取，更新 Rendering world 中常驻的实例缓冲；静态界面不重新提取。
+- Canvas 在图协调阶段编码变化的实例，并通过 RenderGraph 创建持久 device buffer。实例数量和容量相同时复用资源及 SRV，构建帧时只提交变化的数据；上传版本在完整帧提交后推进。
+- 字形图集页由 RenderGraph 持有纹理与跨帧 barrier 状态。页尺寸与数量在协调阶段显式修改，脏矩形通过图的上传页复制；提交回调记录图集已上传的版本。
 - 节点的最终呈现为布局结果、用户变换与 `PresentationOffset` 的叠加。
 - 绘制顺序取树序；裁剪矩形位于实例数据中。
 - 世界空间界面与屏幕界面使用同一套元素，`Canvas` 指向世界中的实体，由其变换定位。

@@ -13,9 +13,7 @@ public readonly struct QueueCompletion : IEquatable<QueueCompletion>
 
     internal QueueCompletion(Queue queue, ulong value)
     {
-        _queue = queue ?? throw new ArgumentNullException(nameof(queue));
-        if (value is 0 or ulong.MaxValue)
-            throw new ArgumentOutOfRangeException(nameof(value));
+        _queue = queue;
         _value = value;
     }
 
@@ -32,6 +30,8 @@ public readonly struct QueueCompletion : IEquatable<QueueCompletion>
     }
 
     internal bool IsInitialized => _queue is not null && _value is > 0 and < ulong.MaxValue;
+    internal Queue QueueReference => _queue!;
+    internal ulong SubmittedValue => _value;
 
     public bool Equals(QueueCompletion other) =>
         ReferenceEquals(_queue, other._queue) && _value == other._value;

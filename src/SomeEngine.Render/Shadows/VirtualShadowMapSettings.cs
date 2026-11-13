@@ -115,19 +115,19 @@ public sealed partial record VirtualShadowMapSettings
             return result;
         }
     }
-    public uint PhysicalPagesPerRow => AtlasSize / PageSize;
-    public uint MaxPhysicalPages
+    public uint AtlasPagesPerRow => AtlasSize / PageSize;
+    public uint MaxPages
     {
         get
         {
-            uint row = PhysicalPagesPerRow;
+            uint row = AtlasPagesPerRow;
             uint requested = _atlasPageCapacity ?? Math.Min(2048u, checked(row * row));
             return checked((requested + row - 1u) / row * row);
         }
         init => _atlasPageCapacity = value;
     }
 
-    public uint AtlasHeight => checked(MaxPhysicalPages / PhysicalPagesPerRow * PageSize);
+    public uint AtlasHeight => checked(MaxPages / AtlasPagesPerRow * PageSize);
 
     public uint PageTableMipPagesPerRow(uint mip)
     {
@@ -208,7 +208,7 @@ public sealed partial record VirtualShadowMapSettings
             throw new ArgumentException(
                 "Virtual-shadow dimensions must be power-of-two page multiples ordered as page <= atlas <= virtual resolution.");
         }
-        if (MaxPhysicalPages == 0 || AtlasHeight > 16384u || MaxPhysicalPages > (1u << 18))
+        if (MaxPages == 0 || AtlasHeight > 16384u || MaxPages > (1u << 18))
             throw new ArgumentOutOfRangeException(nameof(AtlasSize), "Raster region indices require at most 262144 physical pages.");
         if (!float.IsFinite(DepthBias) || DepthBias < 0.0f)
             throw new ArgumentOutOfRangeException(nameof(DepthBias));

@@ -23,12 +23,20 @@ public sealed class MaterialShaderCompositionTests
                 StructuredBuffer<Triangle> Triangles;
                 RWTexture2DArray<float4> Color;
 
+                struct SurfaceColorOutput : ISurfaceOutput
+                {
+                    [mutating] void SetIndex(uint index) { }
+                    void Write(uint3 pixel, float4 color) { Color[pixel] = float4(color.rgb, 1); }
+                    void Write(uint3 pixel, float3 premultipliedColor, float3 transmittance)
+                    { Color[pixel] = float4(premultipliedColor, 1); }
+                };
+
                 [shader("compute")]
                 [numthreads(1, 1, 1)]
                 void Shade(uniform {{materialType}} material, uint3 thread : SV_DispatchThreadID)
                 {
                     material.evaluateSurface(PixelInputs[thread.x], Surfaces[thread.x],
-                        float3(1, 0, 0), Triangles[thread.x], Color);
+                        float3(1, 0, 0), Triangles[thread.x], SurfaceColorOutput());
                 }
                 """);
 

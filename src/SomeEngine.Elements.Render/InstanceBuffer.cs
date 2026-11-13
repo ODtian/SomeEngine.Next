@@ -1,40 +1,60 @@
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
-using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Elements.Render;
 
-/// <summary>Material instance bytes with sampled buffer ranges starting at each instance.</summary>
-internal sealed class InstanceBuffer(Buffer buffer, BufferSrv[] views) : IDisposable
+/// <summary>Canvas instance bytes and the graph buffer used by their material views.</summary>
+internal sealed class InstanceBuffer(GraphBufferId buffer, GraphPassId upload, byte[] bytes, BufferSrv[] views)
+    : IDisposable, IRenderGraphFrameExecutionObserver
 {
-    internal Buffer Buffer { get; } = buffer;
+    private byte[] _bytes = bytes;
+    private ulong _version = 1;
+    private ulong _uploadedVersion;
+    internal GraphBufferId Buffer { get; } = buffer;
+    internal GraphPassId UploadPass { get; } = upload;
     internal BufferSrv[] Views { get; } = views;
-    internal BufferBoundaryState[] Boundaries { get; set; } =
-        [new(BufferRange.Whole, buffer.InitialSync, buffer.InitialAccess, ResourceContentState.Defined)];
 
-    internal static InstanceBuffer Create(IGraphicsBackend backend, Device device, Buffer buffer, int count, int instanceByteCount)
+    internal void Upload(ref RenderGraphFrame frame)
     {
+        if (_uploadedVersion == _version) return;
+        frame.WriteBuffer(Buffer, 0, _bytes);
+        frame.ObserveExecution(this);
+    }
+
+    public void OnFrameSubmitted(in RenderGraphSubmission submission) => _uploadedVersion = _version;
+
+    internal static InstanceBuffer Create(IGraphicsBackend backend, Device device,
+        global::SomeEngine.RenderGraph.RenderGraph graph, byte[] bytes, int count, int stride, string label, InstanceBuffer? previous = null)
+    {
+        if (previous is not null && previous._bytes.Length == bytes.Length && previous.Views.Length == count)
+        {
+            previous._bytes = bytes;
+            previous._version++;
+            return previous;
+        }
+        GraphBufferId buffer;
+        GraphPassId upload;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            buffer = edit.CreatePersistentBuffer(new BufferDesc((ulong)bytes.Length,
+                BufferUsages.ShaderRead | BufferUsages.CopySource | BufferUsages.CopyDestination, label));
+            upload = edit.AddBufferUploadPass(buffer);
+            edit.Commit();
+        }
+        SomeEngine.Graphics.Buffer resource = graph.GetBuffer(buffer);
         var views = new BufferSrv[count];
-        try
+        for (int index = 0; index < count; index++)
         {
-            for (int index = 0; index < count; index++)
-            {
-                ulong offset = (ulong)index * (ulong)instanceByteCount;
-                views[index] = backend.CreateBufferSrv(device, new BufferSrvDesc(buffer,
-                    new BufferRange(offset, buffer.Info.Size - offset), Label: "Canvas instance range"));
-            }
-            return new(buffer, views);
+            ulong offset = (ulong)index * (ulong)stride;
+            views[index] = backend.CreateBufferSrv(device, new BufferSrvDesc(resource,
+                new BufferRange(offset, resource.Info.Size - offset), Label: "Canvas instance range"));
         }
-        catch
-        {
-            foreach (BufferSrv? view in views) view?.Dispose();
-            throw;
-        }
+        return new(buffer, upload, bytes, views);
     }
 
     public void Dispose()
     {
         foreach (BufferSrv view in Views) view.Dispose();
-        Buffer.Dispose();
+        _bytes = [];
     }
 }

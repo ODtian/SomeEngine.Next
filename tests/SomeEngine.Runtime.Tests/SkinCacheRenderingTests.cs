@@ -50,10 +50,10 @@ public sealed partial class SkinningRenderingTests
         ApplicationFrameTiming[] cached = await MeasurePanelAnimationAsync(content);
         Assert.Equal(200, inline.Length);
         Assert.Equal(200, cached.Length);
-        Assert.True(cached.Average(frame => GroupMs(frame, ClusterPipelineSystem.DeformationEvaluationTimeGroup)) > 0);
-        Assert.Equal(0, inline.Sum(frame => GroupMs(frame, ClusterPipelineSystem.DeformationEvaluationTimeGroup)));
-        Assert.True(inline.Average(frame => GroupMs(frame, ClusterPipelineSystem.RasterTimeGroup)) > 0);
-        Assert.True(cached.Average(frame => GroupMs(frame, ClusterPipelineSystem.RasterTimeGroup)) > 0);
+        Assert.True(cached.Average(frame => GroupMs(frame, ClusterGeometryPipeline.DeformationEvaluationTimeGroup)) > 0);
+        Assert.Equal(0, inline.Sum(frame => GroupMs(frame, ClusterGeometryPipeline.DeformationEvaluationTimeGroup)));
+        Assert.True(inline.Average(frame => GroupMs(frame, ClusterGeometryPipeline.RasterTimeGroup)) > 0);
+        Assert.True(cached.Average(frame => GroupMs(frame, ClusterGeometryPipeline.RasterTimeGroup)) > 0);
         _output.WriteLine("Workload: 1920x1080, 4 panels/16 vertices/8 triangles, 2 independent 2-bone characters, "
             + "2 materials, current+previous rows, CPU pose at 60 Hz; fixed camera/LOD=1; D3D12 hardware, async compute, "
             + "asynchronous game/render frames, VSync/TAA/VSM/UI disabled; 200 frames, warmup=64, samples=128; "
@@ -77,9 +77,9 @@ public sealed partial class SkinningRenderingTests
             AnimationMs = Distribution(sample.Select(frame => frame.AnimationMs)),
             ExtractionMs = Distribution(sample.Select(frame => frame.ExtractionMs)),
             GpuMs = Distribution(sample.Select(frame => frame.Gpu.ElapsedMs)),
-            CacheAllocationMs = Distribution(sample.Select(frame => GroupMs(frame, ClusterPipelineSystem.DeformationTimeGroup))),
-            CacheEvaluationMs = Distribution(sample.Select(frame => GroupMs(frame, ClusterPipelineSystem.DeformationEvaluationTimeGroup))),
-            RasterMs = Distribution(sample.Select(frame => GroupMs(frame, ClusterPipelineSystem.RasterTimeGroup))),
+            CacheAllocationMs = Distribution(sample.Select(frame => GroupMs(frame, ClusterGeometryPipeline.DeformationTimeGroup))),
+            CacheEvaluationMs = Distribution(sample.Select(frame => GroupMs(frame, ClusterGeometryPipeline.DeformationEvaluationTimeGroup))),
+            RasterMs = Distribution(sample.Select(frame => GroupMs(frame, ClusterGeometryPipeline.RasterTimeGroup))),
             GpuPasses = Distribution(sample.Select(frame => (double)frame.Gpu.Passes.Count)),
             TimestampQueries = Distribution(sample.Select(frame => frame.Gpu.Passes.Count * 4.0)),
             Queues = sample.SelectMany(frame => frame.Gpu.Passes).Select(pass => $"{pass.QueueType}:{pass.QueueIndex}").Distinct().ToArray(),
@@ -156,14 +156,12 @@ public sealed partial class SkinningRenderingTests
             string evaluate = SkinEvaluator.Replace("USER_READER", FloatReader)
                 .Replace("struct PanelSkin : IVertexEvaluate", "struct PanelSkin : IVertexDeformCache")
                 .Replace("float3 getPosition(Vertex value)", CacheEncoding + "\nfloat3 getPosition(Vertex value)");
-            string cached = shader
-                .Replace("typedef StaticVertexEval VertexEvaluate;", "#include \"vertex_deform_cache.slang\"\n" + evaluate
-                    + "\ntypedef PanelSkin DeformEvaluate;\ntypedef CachedVertexEval<PanelSkin> VertexEvaluate;")
-                .Replace("typedef StaticPositionEval RasterVertexEvaluate;", "typedef VertexEvaluate RasterVertexEvaluate;")
-                .Replace("#define CLUSTER_POSITION_RASTER 1", "#define CLUSTER_POSITION_RASTER 1\n"
-                    + "#define CLUSTER_VERTEX_ENCODING \"someengine.cluster.positions.uint16.v1+someengine.tests.skin.float.v1\"\n"
-                    + "#define CLUSTER_DEFORM_VERTEX_ENCODING CLUSTER_VERTEX_ENCODING");
-            await File.WriteAllTextAsync(ShaderPath, cached + "\n#include \"cluster_deform.slang\"\n");
+            string cached = CreateMaterialSource("import vertex_deform_cache;\n" + evaluate,
+                "CachedVertexEval<PanelSkin>", "someengine.tests.skin.float.v1");
+            await File.WriteAllTextAsync(ShaderPath, cached + "\n#include \"cluster_common.slang\"\n"
+                + "ByteAddressBuffer PageHeap;\ntypedef PanelSkin DeformEvaluate;\n"
+                + "#define CLUSTER_DEFORM_VERTEX_ENCODING \"someengine.cluster.positions.uint16.v1+someengine.tests.skin.float.v1\"\n"
+                + "#include \"cluster_deform.slang\"\n");
             await project.BuildAsync(ShaderPath.Replace(".slang", ".shader"));
         }
 

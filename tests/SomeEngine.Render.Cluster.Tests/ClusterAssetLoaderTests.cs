@@ -41,14 +41,12 @@ public sealed class ClusterAssetLoaderTests
         await using ClusterShadersAsset second = opened[1];
         Assert.NotSame(first, second);
         Assert.Equal(shaderGuids.Order(), first.Describe().Dependencies.Order());
-        var values = new WeakValues<AssetResourceKey<ShaderAsset>, Shader>();
+        using var library = new ShaderLibrary(TestShaderLoading.Slang, TestShaderLoading.CreateSessionDescription());
         Dictionary<AssetId<ShaderAsset>, Shader> references = await ShaderRef.LoadAsync(
-            first.GetBlock<ClusterShadersBlock>().References(), loader, values,
-            TestShaderLoading.Slang, TestShaderLoading.CreateSessionDescription());
+            first.GetBlock<ClusterShadersBlock>().References(), loader, library);
         ClusterShaders shaders = first.GetBlock<ClusterShadersBlock>().Create(first.Name, references);
         Dictionary<AssetId<ShaderAsset>, Shader> otherReferences = await ShaderRef.LoadAsync(
-            second.GetBlock<ClusterShadersBlock>().References(), loader, values,
-            TestShaderLoading.Slang, TestShaderLoading.CreateSessionDescription());
+            second.GetBlock<ClusterShadersBlock>().References(), loader, library);
         ClusterShaders other = second.GetBlock<ClusterShadersBlock>().Create(second.Name, otherReferences);
         Assert.NotSame(shaders, other);
         Assert.Equal("MainCluster", shaders.Name);
@@ -110,7 +108,7 @@ public sealed class ClusterAssetLoaderTests
         definition.GetBlock<ShaderSourceBlock>().SourceNames = ["cluster-test.slang"];
         return SlangShaderImporter.CompileDefinition(
             definition,
-            Path.Combine(directory, name + ".shader"),
+            Path.Combine(directory, name + ".shader"), [SlangShaderSharp.SlangCompileTarget.Dxil, SlangShaderSharp.SlangCompileTarget.Spirv],
             projectRoot: directory);
     }
 

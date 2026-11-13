@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using SlangShaderSharp;
 using SomeEngine.Assets.Schema;
@@ -7,38 +8,27 @@ namespace SomeEngine.Assets.Importers;
 
 public static partial class SlangShaderImporter
 {
-    public const uint ImporterVersion = 29;
+    public const uint ImporterVersion = 36;
 
     private static readonly Lazy<IGlobalSession> s_globalSession = new(Shader.CreateSlangGlobalSession);
+    private static readonly ConcurrentBag<IGlobalSession> s_compilers = [];
 
     public static IGlobalSession GlobalSession => s_globalSession.Value;
 
-    private static IGlobalSession CreateGlobalSession()
-    {
-        SlangResult result = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession session);
-        if (result.Failed || session is null)
-            throw new InvalidOperationException($"Slang global session creation failed with {result}.");
-        session.SetDownstreamCompilerPath(SlangPassThrough.Dxc, AppContext.BaseDirectory);
-        return session;
-    }
+    private static IGlobalSession TakeCompiler() =>
+        s_compilers.TryTake(out IGlobalSession? compiler) ? compiler : Shader.CreateSlangGlobalSession();
 
-    public static TargetDesc[] CreateDefaultTargets(IGlobalSession slang)
-    {
-        ArgumentNullException.ThrowIfNull(slang);
-        return
-        [
-            new TargetDesc
+    public static TargetDesc[] CreateTargets(IGlobalSession slang, IReadOnlyList<SlangCompileTarget> targets)
+        => targets.Select(target => new TargetDesc
+        {
+            Format = target,
+            Profile = slang.FindProfile(target switch
             {
-                Format = SlangCompileTarget.Dxil,
-                Profile = slang.FindProfile("sm_6_6"),
-            },
-            new TargetDesc
-            {
-                Format = SlangCompileTarget.Spirv,
-                Profile = slang.FindProfile("glsl_460"),
-            },
-        ];
-    }
+                SlangCompileTarget.Dxil => "sm_6_6",
+                SlangCompileTarget.Spirv => "glsl_460",
+                _ => throw new NotSupportedException($"Shader target {target} has no engine profile."),
+            }),
+        }).ToArray();
 
     public static SessionDesc CreateSessionDescription(
         string sourcePath,

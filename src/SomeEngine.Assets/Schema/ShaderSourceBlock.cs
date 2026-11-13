@@ -4,11 +4,19 @@ namespace SomeEngine.Assets.Schema;
 
 /// <summary>Slang inputs that can be acquired asynchronously and compiled into a resident shader.</summary>
 [AssetBlock("SomeEngine.Assets.Schema.ShaderSourceBlock"), BinarySerializable, TextSerializable]
-[BinaryFields(nameof(SourceNames), nameof(Inputs), nameof(Specializations))]
+[BinaryFields(nameof(SourceNames), nameof(Inputs), nameof(Specializations), nameof(SourceOnly), nameof(Dependencies))]
 public sealed partial class ShaderSourceBlock : ShaderInputBlock
 {
     /// <summary>Ordered inputs selected from this shader asset's strongly typed blocks.</summary>
     public IList<ShaderInputLocation> Inputs { get => SelectedInputs; set => SelectedInputs = value; }
+
+    /// <summary>Stores a reusable Slang input without linking target code.</summary>
+    public bool SourceOnly { get => ContainsOnlySource; set => ContainsOnlySource = value; }
+
+    /// <summary>Shared Slang inputs loaded before this asset's own IR.</summary>
+    public IList<AssetId<ShaderAsset>> Dependencies { get => SourceDependencies; set => SourceDependencies = value; }
+
+    public override IEnumerable<Guid> References() => Dependencies.Select(reference => reference.Value);
 
     internal bool HasSerializedSources
     {

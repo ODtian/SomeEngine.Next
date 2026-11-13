@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using DefaultGame;
 using SomeEngine.Job;
 using SomeEngine.Resources;
@@ -21,7 +21,7 @@ public sealed class TerrainLodRenderingTests(SceneContentFixture content)
         int placement = 0;
         var application = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
             {
@@ -61,7 +61,7 @@ public sealed class TerrainLodRenderingTests(SceneContentFixture content)
         fresh.RaiseDetail();
         var reference = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "9"]),
             UpdateFrame = frame =>
             {

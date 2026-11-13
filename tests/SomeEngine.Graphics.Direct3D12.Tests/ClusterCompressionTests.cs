@@ -387,7 +387,7 @@ public sealed class ClusterCompressionTests(D3D12TestCompiler shaderCompiler)
         using Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(size, BufferUsages.CopyDestination), MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(8, 2, 8));
+        backend.Begin(context, new CommandRecordingDesc(8, 2));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.None, PipelineSync.ComputeShading,
             ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
         backend.SetPipeline(context, pipeline);

@@ -1,24 +1,15 @@
-# RHI-LIFE-003 — Logical disposal and physical native retention 
+# RHI-LIFE-003 — Resource disposal and native retention
 
-Public wrapper lifetime and physical native lifetime are separate facts. `NativeLease` owns or
-borrows one COM reference and may retain only dependencies required by the native object:
+Each Device holds a `DeferredReleases` queue. Disposing a resource records the submitted value of every device queue and transfers its native objects and descriptor allocations into that queue. `CollectCompleted` releases an entry once every recorded queue value has completed.
 
-- a placed resource retains its Heap allocation;
-- a view retains the resource whose descriptor it names;
-- a Pipeline retains native root/state objects and its Slang program ownership;
-- persistent bindings, indirect layouts and shader tables retain the Pipeline state they use;
-- a command recording that binds persistent parameters retains the exact immutable published
-  parameter-data generation, not the mutable public wrapper; the same generation is retained once per
-  recording even when selected by several material runs;
-- RecordedCommands retain captured native objects;
-- sparse mapping generations retain mapped Heaps;
-- swapchain image generations retain their back buffers.
+Native objects retain the dependencies required by their construction: placed resources retain their heap allocation, views retain their resources, and pipelines retain their native state. These dependencies retire together with the object that uses them.
 
-When `Submit` is accepted, command and presentation dependencies remain retained until the Queue
-completion retires them. Caller disposal can end a wrapper before that completion without invalidating
-accepted GPU work. There is no public switch that lets a caller disable this correctness rule.
+ValidationLayer tracks resource references in recorded commands until submission or discard. Disposing a referenced resource during that interval reports `ResourceDisposedWhileRecorded`. Accepted GPU work remains valid through the Device release queue.
 
-Native constructors are failure-atomic: a failed dependency retain or managed owner construction
-returns every already-acquired COM reference and suballocation.
+Recorded command handles carry one status: Executable, Submitted, or Discarded. Command recording reuse is requested explicitly through `CommandRecordingDesc.Repeatable`; recording data belongs to its command context.
+
+`D3D12Diagnostics.LiveNativeObjects` reports registered native wrappers until their deferred release
+finishes. The WARP behavior checks submit a copy, dispose its source, verify the copied bytes and
+observe the count drop after completion collection. A separate ValidationLayer check covers disposal
+between recording and submission.
 ^rhi-life-003
-

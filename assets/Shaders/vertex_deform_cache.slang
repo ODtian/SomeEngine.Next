@@ -1,7 +1,7 @@
 #ifndef VERTEX_DEFORM_CACHE_SLANG
 #define VERTEX_DEFORM_CACHE_SLANG
 
-#include "vertex_evaluate_interfaces.slang"
+__exported import vertex_evaluate_interfaces;
 
 // The user chooses both the vertex value and its byte representation. A region can
 // contain a header, packed attributes, shared data, and current/previous results.

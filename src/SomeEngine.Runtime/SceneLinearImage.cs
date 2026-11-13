@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.Numerics;
 using System.Text.Json;
 using SomeEngine.Render.Frame;
@@ -26,10 +26,12 @@ public sealed record SceneFrame
     public float FarPlane { get; init; }
     public SceneMeshTransform[] Meshes { get; init; } = [];
     public SceneLight[] Lights { get; init; } = [];
-    public RuntimeStartupOptions Options { get; init; } = RuntimeStartupOptions.Parse([]);
+    public ApplicationOptions Options { get; init; } = ApplicationOptions.Parse([]);
     public TemporalResolveSettings TemporalSettings { get; init; } = TemporalResolveSettings.Default;
     public float RasterEdgePixels { get; init; } = 4;
     public uint ClusterWorkCapacity { get; init; } = 1_048_576;
+    public uint? RasterBatchCapacity { get; init; }
+    public ClusterVisibilityMode? VisibilityMode { get; init; }
     public string Adapter { get; init; } = "";
     public string DriverVersion { get; init; } = "";
     /// <summary>Configured quality, not a measurement of adaptive resolution or resident pages.</summary>

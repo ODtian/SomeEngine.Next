@@ -1,5 +1,5 @@
-#include "hiz_common.slang"
-#include "resource_effects.slang"
+__exported import hiz_common;
+__exported import resource_effects;
 
 Texture2DArray<float> DepthTexture;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]

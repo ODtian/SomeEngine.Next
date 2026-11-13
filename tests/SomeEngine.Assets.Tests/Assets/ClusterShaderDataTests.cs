@@ -22,18 +22,18 @@ public sealed class ClusterShaderDataTests
             "Shaders",
             "standard.shader.asset");
         await using ShaderAsset file = await ShaderAsset.OpenAsync(path);
-        foreach (TargetDesc targetDescription in SlangShaderImporter.CreateDefaultTargets(
-                     ShaderTestCompilation.Slang))
+        foreach (TargetDesc targetDescription in SlangShaderImporter.CreateTargets(
+                     ShaderTestCompilation.Slang, [SlangShaderSharp.SlangCompileTarget.Dxil, SlangShaderSharp.SlangCompileTarget.Spirv]))
         {
             SessionDesc description = SlangShaderImporter.CreateSessionDescription(
                 path,
                 [targetDescription]);
-            Shader saved = await file.GetBlock<ShaderBlock>().CreateAsync(
+            Shader saved = await SomeEngine.Resources.ShaderLibrary.CreateAsync(file.GetBlock<ShaderBlock>(),
                 file.GetBlock<ShaderSourceBlock>(),
                 ShaderTestCompilation.Slang,
                 description,
                 file.Name);
-            Shader direct = await file.GetBlock<ShaderSourceBlock>().CreateAsync(
+            Shader direct = await SomeEngine.Resources.ShaderLibrary.CreateAsync(file.GetBlock<ShaderSourceBlock>(),
                 ShaderTestCompilation.Slang,
                 description,
                 file.Name);
@@ -275,9 +275,9 @@ public sealed class ClusterShaderDataTests
 
     [Theory]
     [InlineData(
-        "clustered_light_grid.shader.asset",
-        "BuildClusteredLightGrid",
-        "ClusteredLightGrid|LightBuffer|LightIndexList|LightingViews")]
+        "clustered_light_binning.shader.asset",
+        "ExpandScreenItems",
+        "LightBinningKinds|LightBinningViews|LightBuffer|ScreenBinningCellCounts|ScreenBinningItemOffsets|ScreenBinningUniforms")]
     [InlineData(
         "temporal_resolve.shader.asset",
         "PSMain",

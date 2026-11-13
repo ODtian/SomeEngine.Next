@@ -19,10 +19,6 @@ internal sealed unsafe partial class D3D12Backend
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
-        _ = nativeDevice.RequireCapability<SparseResources>(nameof(CreateReservedBuffer));
-        if (desc.Size == 0)
-            throw new ArgumentOutOfRangeException(nameof(desc), "A reserved Buffer must have a nonzero size.");
-        RequireDefaultReservedResourcePlacement(desc.NodePlacement, nameof(desc));
 
         NativeResourceDesc nativeDescription = CreateBufferDescription(desc);
         NativeResource* native = CreateReservedResource(
@@ -76,10 +72,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
-        SparseResources capability =
-            nativeDevice.RequireCapability<SparseResources>(nameof(CreateReservedTexture));
-        RequireDefaultReservedResourcePlacement(desc.NodePlacement, nameof(desc));
-        ValidateReservedTextureSupport(nativeDevice, capability, desc);
+
         NativeResourceDesc nativeDescription = CreateTextureDescription(desc);
         nativeDescription.Layout =
             Silk.NET.Direct3D12.TextureLayout.Layout64KBUndefinedSwizzle;
@@ -134,41 +127,11 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    private static void ValidateReservedTextureSupport(
-        D3D12Device device,
-        SparseResources capability,
-        in TextureDesc description)
-    {
-        ReadOnlySpan<Format> formats = description.Dimension switch
-        {
-            TextureDimension.Texture2D => capability.SupportedTexture2DFormats,
-            TextureDimension.Texture3D => capability.SupportedTexture3DFormats,
-            TextureDimension.Texture1D => throw new NotSupportedException(
-                "D3D12 reserved Texture1D resources are unavailable."),
-            _ => throw new ArgumentOutOfRangeException(nameof(description)),
-        };
-        if (!formats.Contains(description.Format))
-        {
-            throw new NotSupportedException(
-                $"D3D12 tiled resources do not support {description.Dimension} {description.Format}.");
-        }
-
-        FormatSupport support = device.Capabilities.GetFormatSupport(description.Format);
-        if (!support.SupportsSparseSampleCount(description.SampleCount))
-        {
-            throw new NotSupportedException(
-                $"D3D12 tiled resources do not support {description.SampleCount}x " +
-                $"multisampling for {description.Format}.");
-        }
-    }
-
     public SparseResourceInfo GetSparseResourceInfo(Resource resource)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
-        RequireBackendOwner(resource, nameof(resource));
-        _ = RequireDevice(resource.Device, nameof(resource))
-            .RequireCapability<SparseResources>(nameof(GetSparseResourceInfo));
-        return GetSparseState(resource).Info;
+
+        return GetSparseStateOrNull(resource)?.Info ?? default;
     }
 
     public QueueCompletion UpdateSparseMappings(
@@ -177,19 +140,15 @@ internal sealed unsafe partial class D3D12Backend
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Queue nativeQueue = RequireQueue(queue, nameof(queue));
-        SparseResources capability = nativeQueue.NativeDevice.RequireCapability<SparseResources>(
-            nameof(UpdateSparseMappings));
-        if ((uint)mappings.Length > capability.MaximumMappingsPerCall)
-            throw new ArgumentOutOfRangeException(nameof(mappings));
 
         CapabilityWorkspace workspace = nativeQueue.AcquireCapabilityWorkspace();
         try
         {
-            PreparedSparseMapping[] prepared = PrepareSparseMappings(
+            SparseMappingBatch[] batch = PrepareSparseMappings(
                 nativeQueue,
                 mappings,
                 workspace);
-            return SubmitSparseMappings(nativeQueue, prepared, mappings.Length, ref workspace);
+            return SubmitSparseMappings(nativeQueue, batch, mappings.Length, ref workspace);
         }
         catch
         {
@@ -198,34 +157,34 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    private PreparedSparseMapping[] PrepareSparseMappings(
+    private SparseMappingBatch[] PrepareSparseMappings(
         D3D12Queue nativeQueue,
         ReadOnlySpan<SparseMappingDesc> mappings,
         CapabilityWorkspace workspace)
     {
-        PreparedSparseMapping[] prepared = workspace.PrepareMappings(mappings.Length);
+        SparseMappingBatch[] batch = workspace.PrepareMappings(mappings.Length);
         for (int index = 0; index < mappings.Length; index++)
         {
             ref readonly SparseMappingDesc mapping = ref mappings[index];
             D3D12SparseState state = GetSparseState(mapping.Resource);
-            EnsureSameDevice(nativeQueue.NativeDevice, mapping.Resource.Device, nameof(mappings));
-            SparseLogicalRegion logicalRegion = state.PrepareRegion(mapping.ResourceTiles);
+
+            SparseResourceRegion resourceRegion = state.PrepareRegion(mapping.ResourceTiles);
             D3D12Heap? heap = ResolveSparseMappingHeap(nativeQueue, mapping, out TileRangeFlags flags, out uint heapOffset);
-            prepared[index] = new PreparedSparseMapping(
+            batch[index] = new SparseMappingBatch(
                 state,
                 GetNativeResource(mapping.Resource),
                 heap,
-                logicalRegion,
+                resourceRegion,
                 ToNativeCoordinate(mapping.ResourceTiles.Start),
                 ToNativeRegion(mapping.ResourceTiles),
                 flags,
                 heapOffset,
                 mapping.ResourceTiles.TileCount);
-            workspace.RetainForSubmission(GetNativeLifetime(mapping.Resource), mapping.Resource);
+            workspace.RetainForSubmission(GetNativeData(mapping.Resource), mapping.Resource);
             if (heap is not null)
-                workspace.RetainForSubmission(heap.NativeLifetime, heap);
+                workspace.RetainForSubmission(heap.NativeData, heap);
         }
-        return prepared;
+        return batch;
     }
 
     private D3D12Heap? ResolveSparseMappingHeap(
@@ -239,51 +198,34 @@ internal sealed unsafe partial class D3D12Backend
         {
             case SparseMappingType.Mapped:
             case SparseMappingType.Reused:
-                if (mapping.Heap is null)
-                    throw new ArgumentException("A mapped sparse range requires a Heap.", "mappings");
-                D3D12Heap heap = RequireHeap(mapping.Heap);
-                EnsureSameDevice(nativeQueue.NativeDevice, heap.Device, "mappings");
-                heap.ThrowIfDisposed();
-                if (heap.Info.MemoryType != MemoryType.DeviceLocal)
-                    throw new ArgumentException("Sparse mappings require a DeviceLocal Heap.", "mappings");
-                ValidateSparseHeapCompatibility(mapping.Resource, heap, "mappings");
-                if (mapping.HeapTileOffset > uint.MaxValue)
-                    throw new ArgumentOutOfRangeException("mappings");
+
+                D3D12Heap heap = RequireHeap(mapping.Heap!);
+
                 heapOffset = (uint)mapping.HeapTileOffset;
                 ulong consumedTiles = mapping.Type == SparseMappingType.Reused
                     ? 1UL
                     : mapping.ResourceTiles.TileCount;
                 ulong heapTiles = heap.Info.Size / SparseTileSize;
-                if (mapping.HeapTileOffset > heapTiles ||
-                    consumedTiles > heapTiles - mapping.HeapTileOffset)
-                {
-                    throw new ArgumentOutOfRangeException(
-                        "mappings",
-                        "The sparse mapping exceeds its Heap tile range.");
-                }
+
                 nativeFlags = mapping.Type == SparseMappingType.Reused
                     ? TileRangeFlags.ReuseSingleTile
                     : TileRangeFlags.None;
                 return heap;
 
             case SparseMappingType.Unmapped:
-                if (mapping.Heap is not null || mapping.HeapTileOffset != 0)
-                {
-                    throw new ArgumentException(
-                        "An unmapped sparse range cannot name a Heap or Heap offset.",
-                        "mappings");
-                }
+
                 nativeFlags = TileRangeFlags.Null;
                 return null;
 
             default:
-                throw new ArgumentOutOfRangeException("mappings");
+                nativeFlags = default;
+                return null;
         }
     }
 
     private QueueCompletion SubmitSparseMappings(
         D3D12Queue nativeQueue,
-        PreparedSparseMapping[] prepared,
+        SparseMappingBatch[] batch,
         int mappingCount,
         ref CapabilityWorkspace workspace)
     {
@@ -294,16 +236,16 @@ internal sealed unsafe partial class D3D12Backend
             using (nativeQueue.Gate.EnterScope())
             {
                 nativeQueue.Device.ThrowIfUnavailable();
-                generations = workspace.CreateUpdateGenerations(prepared.AsSpan(0, mappingCount));
+                generations = workspace.CreateUpdateGenerations(batch.AsSpan(0, mappingCount));
                 for (int index = 0; index < mappingCount; index++)
                 {
-                    IssueSparseMapping(nativeQueue, prepared[index]);
+                    IssueSparseMapping(nativeQueue, batch[index]);
                     accepted = true;
                 }
                 CommitSparseGenerations(generations);
                 generations = null;
                 QueueCompletion completion = nativeQueue.SignalCompletionUnderGate();
-                nativeQueue.RegisterCapabilityPayloadUnderGate(completion.Value, workspace);
+                nativeQueue.RegisterCapabilityPayloadUnderGate(completion.SubmittedValue, workspace);
                 workspace = null!;
                 return completion;
             }
@@ -328,7 +270,7 @@ internal sealed unsafe partial class D3D12Backend
 
     private static void IssueSparseMapping(
         D3D12Queue nativeQueue,
-        in PreparedSparseMapping mapping)
+        in SparseMappingBatch mapping)
     {
         ID3D12Heap* nativeHeap = mapping.Heap is null ? null : mapping.Heap.Native;
         TiledResourceCoordinate coordinate = mapping.Coordinate;
@@ -355,22 +297,16 @@ internal sealed unsafe partial class D3D12Backend
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Queue nativeQueue = RequireQueue(queue, nameof(queue));
-        SparseResources capability = nativeQueue.NativeDevice.RequireCapability<SparseResources>(
-            nameof(CopySparseMappings));
-        if ((uint)copies.Length > capability.MaximumMappingsPerCall)
-            throw new ArgumentOutOfRangeException(nameof(copies));
 
         CapabilityWorkspace workspace = nativeQueue.AcquireCapabilityWorkspace();
         try
         {
-            PreparedSparseCopy[] prepared = workspace.PrepareCopies(copies.Length);
+            SparseCopyBatch[] batch = workspace.PrepareCopies(copies.Length);
             for (int index = 0; index < copies.Length; index++)
             {
                 ref readonly SparseMappingCopyDesc copy = ref copies[index];
                 D3D12SparseState destinationState = GetSparseState(copy.Destination);
                 D3D12SparseState sourceState = GetSparseState(copy.Source);
-                EnsureSameDevice(nativeQueue.NativeDevice, copy.Destination.Device, nameof(copies));
-                EnsureSameDevice(nativeQueue.NativeDevice, copy.Source.Device, nameof(copies));
 
                 SparseTileRegion destinationRegion = copy.Region with
                 {
@@ -380,11 +316,11 @@ internal sealed unsafe partial class D3D12Backend
                 {
                     Start = copy.SourceStart,
                 };
-                SparseLogicalRegion logicalDestination =
+                SparseResourceRegion logicalDestination =
                     destinationState.PrepareRegion(destinationRegion);
-                SparseLogicalRegion logicalSource = sourceState.PrepareRegion(sourceRegion);
+                SparseResourceRegion logicalSource = sourceState.PrepareRegion(sourceRegion);
 
-                prepared[index] = new PreparedSparseCopy(
+                batch[index] = new SparseCopyBatch(
                     destinationState,
                     sourceState,
                     GetNativeResource(copy.Destination),
@@ -394,8 +330,8 @@ internal sealed unsafe partial class D3D12Backend
                     ToNativeCoordinate(copy.DestinationStart),
                     ToNativeCoordinate(copy.SourceStart),
                     ToNativeRegion(copy.Region));
-                workspace.RetainForSubmission(GetNativeLifetime(copy.Destination), copy.Destination);
-                workspace.RetainForSubmission(GetNativeLifetime(copy.Source), copy.Source);
+                workspace.RetainForSubmission(GetNativeData(copy.Destination), copy.Destination);
+                workspace.RetainForSubmission(GetNativeData(copy.Source), copy.Source);
             }
 
             bool accepted = false;
@@ -406,10 +342,10 @@ internal sealed unsafe partial class D3D12Backend
                 {
                     nativeQueue.Device.ThrowIfUnavailable();
                     generations = workspace.CreateCopyGenerations(
-                        prepared.AsSpan(0, copies.Length));
+                        batch.AsSpan(0, copies.Length));
                     for (int index = 0; index < copies.Length; index++)
                     {
-                        ref readonly PreparedSparseCopy copy = ref prepared[index];
+                        ref readonly SparseCopyBatch copy = ref batch[index];
                         TiledResourceCoordinate destination = copy.DestinationCoordinate;
                         TiledResourceCoordinate source = copy.SourceCoordinate;
                         TileRegionSize region = copy.Region;
@@ -426,7 +362,7 @@ internal sealed unsafe partial class D3D12Backend
                     CommitSparseGenerations(generations);
                     generations = null;
                     QueueCompletion completion = nativeQueue.SignalCompletionUnderGate();
-                    nativeQueue.RegisterCapabilityPayloadUnderGate(completion.Value, workspace);
+                    nativeQueue.RegisterCapabilityPayloadUnderGate(completion.SubmittedValue, workspace);
                     workspace = null!;
                     return completion;
                 }
@@ -460,7 +396,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
-        _ = nativeDevice.RequireCapability<Residency>(nameof(GetResidencyInfo));
+
         IDXGIAdapter3* adapter = (IDXGIAdapter3*)nativeDevice.NativeAdapter;
         ulong localBudget = 0;
         ulong localUsage = 0;
@@ -495,41 +431,33 @@ internal sealed unsafe partial class D3D12Backend
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Heap native = RequireHeap(heap);
-        _ = RequireDevice(heap.Device, nameof(heap))
-            .RequireCapability<Residency>(nameof(GetResidencyResource));
-        native.ThrowIfDisposed();
+
         return new ResidencyResource(
             native.Device,
-            D3D12ResidencyHandle.ForLease(native.NativeDevice, native, native.NativeLifetime));
+            D3D12ResidencyHandle.ForUse(native.NativeDevice, native, native.NativeData), heap);
     }
 
     public ResidencyResource GetResidencyResource(Resource resource)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
-        RequireBackendOwner(resource, nameof(resource));
         D3D12Device device = RequireDevice(resource.Device, nameof(resource));
-        _ = device.RequireCapability<Residency>(nameof(GetResidencyResource));
-        resource.ThrowIfDisposed();
+
         if (GetMemoryAllocationOrNull(resource) is D3D12MemoryAllocation allocation)
         {
             return new ResidencyResource(
                 resource.Device,
-                D3D12ResidencyHandle.ForLease(
+                D3D12ResidencyHandle.ForUse(
                     device,
                     resource,
-                    allocation.HeapLifetime));
+                    allocation.HeapLifetime), resource);
         }
-        if (resource.Heap is not null || GetSparseStateOrNull(resource) is not null)
-        {
-            throw new NotSupportedException(
-                "Only committed D3D12 resources have an independent residency identity.");
-        }
+
         return new ResidencyResource(
             resource.Device,
-            D3D12ResidencyHandle.ForLease(
+            D3D12ResidencyHandle.ForUse(
                 device,
                 resource,
-                GetNativeLifetime(resource)));
+                GetNativeData(resource)), resource);
     }
 
     public ResidencyResource GetResidencyResource(QueryPool pool)
@@ -537,26 +465,16 @@ internal sealed unsafe partial class D3D12Backend
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12QueryPool native = RequireQueryPool(pool);
         D3D12Device device = RequireDevice(pool.Device, nameof(pool));
-        _ = device.RequireCapability<Residency>(nameof(GetResidencyResource));
-        native.ThrowIfDisposed();
+
         return new ResidencyResource(
             pool.Device,
-            D3D12ResidencyHandle.ForLease(
+            D3D12ResidencyHandle.ForUse(
                 device,
                 pool,
-                native.NativeLifetime));
+                native.NativeData), pool);
     }
 
-    public ResidencyResource GetResidencyResource(DescriptorTable table)
-    {
-        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
-        D3D12DescriptorTable native = RequireDescriptorTable(table);
-        _ = RequireDevice(table.Device, nameof(table))
-            .RequireCapability<Residency>(nameof(GetResidencyResource));
-        native.ThrowIfDisposed();
-        throw new NotSupportedException(
-            "D3D12 DescriptorTables are CPU staging allocations; their shader-visible execution arenas are command-scoped and have no stable independent residency identity.");
-    }
+    public ResidencyResource GetResidencyResource(DescriptorTable table) => default;
 
     public QueueCompletion EnqueueMakeResident(
         Queue queue,
@@ -564,9 +482,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Queue nativeQueue = RequireQueue(queue, nameof(queue));
-        _ = nativeQueue.NativeDevice.RequireCapability<Residency>(nameof(EnqueueMakeResident));
-        if (resources.IsEmpty)
-            throw new ArgumentException("At least one residency resource is required.", nameof(resources));
+
         CapabilityWorkspace workspace = nativeQueue.AcquireCapabilityWorkspace();
         nint[] pointers;
         try
@@ -601,7 +517,7 @@ internal sealed unsafe partial class D3D12Backend
                 }
                 QueueCompletion completion = nativeQueue.SignalCompletionUnderGate();
                 nativeQueue.RegisterCapabilityPayloadUnderGate(
-                    completion.Value,
+                    completion.SubmittedValue,
                     workspace);
                 workspace = null!;
                 return completion;
@@ -629,9 +545,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
-        _ = nativeDevice.RequireCapability<Residency>(nameof(Evict));
-        if (resources.IsEmpty)
-            throw new ArgumentException("At least one residency resource is required.", nameof(resources));
+
         CapabilityWorkspace workspace = nativeDevice.AcquireResidencyWorkspace();
         nint[] pointers;
         try
@@ -662,18 +576,6 @@ internal sealed unsafe partial class D3D12Backend
         finally
         {
             workspace.Dispose();
-        }
-    }
-
-    private static void RequireDefaultReservedResourcePlacement(
-        in ResourceNodePlacement placement,
-        string parameterName)
-    {
-        if (placement.CreationNodeMask != 0 || placement.VisibleNodeMask != 0)
-        {
-            throw new ArgumentException(
-                "A reserved resource is node-neutral until its tiles are mapped; explicit creation placement is not supported.",
-                parameterName);
         }
     }
 
@@ -725,8 +627,7 @@ internal sealed unsafe partial class D3D12Backend
         NativeResource* resource,
         uint requestedSubresourceCount)
     {
-        if (requestedSubresourceCount == 0)
-            throw new ArgumentOutOfRangeException(nameof(requestedSubresourceCount));
+
         SubresourceTiling[] tilings = new SubresourceTiling[requestedSubresourceCount];
         uint totalTiles = 0;
         PackedMipInfo packed = default;
@@ -760,39 +661,28 @@ internal sealed unsafe partial class D3D12Backend
         return new D3D12SparseState(device, info, tilings, requestedSubresourceCount);
     }
 
-    private static D3D12SparseState GetSparseState(Resource resource) =>
-        GetSparseStateOrNull(resource)
-        ?? throw new ArgumentException("The Resource is not a reserved sparse resource.", nameof(resource));
+    private static D3D12SparseState GetSparseState(Resource resource) => GetSparseStateOrNull(resource)!;
 
     private static D3D12SparseState? GetSparseStateOrNull(Resource resource) => resource switch
     {
         Buffer buffer => RequireD3D12.Buffer(buffer).SparseState,
         Texture texture => RequireD3D12.Texture(texture).SparseState,
-        _ => throw new ArgumentOutOfRangeException(nameof(resource)),
+        _ => null,
     };
 
     private static NativeResource* GetNativeResource(Resource resource) => resource switch
     {
         Buffer buffer => RequireD3D12.Buffer(buffer).Native,
         Texture texture => RequireD3D12.Texture(texture).Native,
-        _ => throw new ArgumentOutOfRangeException(nameof(resource)),
+        _ => default!,
     };
 
-    private static NativeLease GetNativeLifetime(Resource resource) => resource switch
+    private static NativeResourceData GetNativeData(Resource resource) => resource switch
     {
-        Buffer buffer => RequireD3D12.Buffer(buffer).NativeLifetime,
-        Texture texture => RequireD3D12.Texture(texture).NativeLifetime,
-        _ => throw new ArgumentOutOfRangeException(nameof(resource)),
+        Buffer buffer => RequireD3D12.Buffer(buffer).NativeData,
+        Texture texture => RequireD3D12.Texture(texture).NativeData,
+        _ => default!,
     };
-
-    private static void EnsureSameDevice(
-        D3D12Device expected,
-        Device actual,
-        string parameterName)
-    {
-        if (!ReferenceEquals(expected, actual))
-            throw new ArgumentException("Every object must belong to the supplied Device.", parameterName);
-    }
 
     private static TiledResourceCoordinate ToNativeCoordinate(in SparseTileCoordinate value) =>
         new(value.X, value.Y, value.Z, value.Subresource);
@@ -804,53 +694,6 @@ internal sealed unsafe partial class D3D12Backend
             value.Boxed ? value.Width : 0,
             value.Boxed ? checked((ushort)value.Height) : (ushort)0,
             value.Boxed ? checked((ushort)value.Depth) : (ushort)0);
-
-    private static void ValidateSparseHeapCompatibility(
-        Resource resource,
-        D3D12Heap heap,
-        string parameterName)
-    {
-        SomeEngine.Graphics.HeapFlags requiredClass;
-        bool shareable;
-        switch (resource)
-        {
-            case Buffer buffer:
-                requiredClass = SomeEngine.Graphics.HeapFlags.Buffers;
-                shareable = (buffer.Info.Usages & BufferUsages.Shareable) != 0;
-                break;
-
-            case Texture texture:
-                requiredClass =
-                    (texture.Info.Usages & (TextureUsages.ColorAttachment |
-                                            TextureUsages.DepthStencilAttachment)) != 0
-                        ? SomeEngine.Graphics.HeapFlags.Attachments
-                        : SomeEngine.Graphics.HeapFlags.Textures;
-                shareable = (texture.Info.Usages & TextureUsages.Shareable) != 0;
-                break;
-
-            default:
-                throw new ArgumentOutOfRangeException(nameof(resource));
-        }
-
-        SomeEngine.Graphics.HeapFlags classes = heap.Info.Flags &
-            (SomeEngine.Graphics.HeapFlags.Buffers |
-             SomeEngine.Graphics.HeapFlags.Textures |
-             SomeEngine.Graphics.HeapFlags.Attachments);
-        bool unrestricted = classes == SomeEngine.Graphics.HeapFlags.None ||
-            BitOperations.PopCount((uint)classes) > 1;
-        if (!unrestricted && (classes & requiredClass) == 0)
-        {
-            throw new ArgumentException(
-                "The Heap class is incompatible with the sparse resource.",
-                parameterName);
-        }
-        if (shareable && (heap.Info.Flags & SomeEngine.Graphics.HeapFlags.Shareable) == 0)
-        {
-            throw new ArgumentException(
-                "A shareable sparse resource requires a shareable Heap.",
-                parameterName);
-        }
-    }
 
     private static void CommitSparseGenerations(
         List<(D3D12SparseState State, SparseMappingGeneration Generation)> generations)
@@ -878,16 +721,15 @@ internal sealed unsafe partial class D3D12Backend
     private static ulong SaturatingAdd(ulong left, ulong right) =>
         ulong.MaxValue - left < right ? ulong.MaxValue : left + right;
 
-
-    private readonly struct PreparedSparseMapping
+    private readonly struct SparseMappingBatch
     {
         private readonly nint _resource;
 
-        internal PreparedSparseMapping(
+        internal SparseMappingBatch(
             D3D12SparseState state,
             NativeResource* resource,
             D3D12Heap? heap,
-            in SparseLogicalRegion logicalRegion,
+            in SparseResourceRegion resourceRegion,
             TiledResourceCoordinate coordinate,
             TileRegionSize region,
             TileRangeFlags rangeFlags,
@@ -897,7 +739,7 @@ internal sealed unsafe partial class D3D12Backend
             State = state;
             _resource = (nint)resource;
             Heap = heap;
-            LogicalRegion = logicalRegion;
+            ResourceRegion = resourceRegion;
             Coordinate = coordinate;
             Region = region;
             RangeFlags = rangeFlags;
@@ -908,7 +750,7 @@ internal sealed unsafe partial class D3D12Backend
         internal D3D12SparseState State { get; }
         internal NativeResource* Resource => (NativeResource*)_resource;
         internal D3D12Heap? Heap { get; }
-        internal SparseLogicalRegion LogicalRegion { get; }
+        internal SparseResourceRegion ResourceRegion { get; }
         internal TiledResourceCoordinate Coordinate { get; }
         internal TileRegionSize Region { get; }
         internal TileRangeFlags RangeFlags { get; }
@@ -916,18 +758,18 @@ internal sealed unsafe partial class D3D12Backend
         internal uint TileCount { get; }
     }
 
-    private readonly struct PreparedSparseCopy
+    private readonly struct SparseCopyBatch
     {
         private readonly nint _destination;
         private readonly nint _source;
 
-        internal PreparedSparseCopy(
+        internal SparseCopyBatch(
             D3D12SparseState destinationState,
             D3D12SparseState sourceState,
             NativeResource* destination,
             NativeResource* source,
-            in SparseLogicalRegion destinationRegion,
-            in SparseLogicalRegion sourceRegion,
+            in SparseResourceRegion destinationRegion,
+            in SparseResourceRegion sourceRegion,
             TiledResourceCoordinate destinationCoordinate,
             TiledResourceCoordinate sourceCoordinate,
             TileRegionSize region)
@@ -947,8 +789,8 @@ internal sealed unsafe partial class D3D12Backend
         internal D3D12SparseState SourceState { get; }
         internal NativeResource* Destination => (NativeResource*)_destination;
         internal NativeResource* Source => (NativeResource*)_source;
-        internal SparseLogicalRegion DestinationRegion { get; }
-        internal SparseLogicalRegion SourceRegion { get; }
+        internal SparseResourceRegion DestinationRegion { get; }
+        internal SparseResourceRegion SourceRegion { get; }
         internal TiledResourceCoordinate DestinationCoordinate { get; }
         internal TiledResourceCoordinate SourceCoordinate { get; }
         internal TileRegionSize Region { get; }
@@ -967,7 +809,6 @@ internal sealed unsafe partial class D3D12Backend
         internal ID3D12Fence* Fence => (ID3D12Fence*)_fence;
         internal ulong Value { get; }
     }
-
 
     private sealed class D3D12SparseState : IDisposable
     {
@@ -996,19 +837,31 @@ internal sealed unsafe partial class D3D12Backend
             Info = info;
             _tilings = tilings;
             _subresourceCount = subresourceCount;
+            var layouts = new SparseSubresourceLayout[subresourceCount];
+            for (uint subresource = 0; subresource < subresourceCount; subresource++)
+            {
+                uint segment = GetPipelineKeySegment(subresource);
+                bool packed = IsPacked(segment);
+                uint next = TryGetNextSegment(segment, out uint following) ? following : uint.MaxValue;
+                if (packed) layouts[subresource] = new(Info.PackedMips.PackedMipTileCount, 1, 1, true, next);
+                else
+                {
+                    SubresourceTiling tiling = GetStandardTiling(segment);
+                    layouts[subresource] = new(tiling.WidthInTiles, tiling.HeightInTiles, tiling.DepthInTiles, false, next);
+                }
+            }
+            Info = info with { Subresources = layouts };
             _current = new SparseMappingGeneration(this);
             _current.Configure([], []);
         }
 
         internal SparseResourceInfo Info { get; }
 
-        internal SparseLogicalRegion PrepareRegion(in SparseTileRegion region)
+        internal SparseResourceRegion PrepareRegion(in SparseTileRegion region)
         {
             lock (_gate)
             {
-                ObjectDisposedException.ThrowIf(_current is null, this);
-                ValidateRegion(region);
-                return new SparseLogicalRegion(this, region);
+                return new SparseResourceRegion(this, region);
             }
         }
 
@@ -1016,8 +869,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             lock (_gate)
             {
-                SparseMappingGeneration current = _current
-                    ?? throw new ObjectDisposedException(nameof(D3D12SparseState));
+                SparseMappingGeneration current = _current!;
                 current.Retain();
                 return current;
             }
@@ -1027,8 +879,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             lock (_gate)
             {
-                SparseMappingGeneration current = _current
-                    ?? throw new ObjectDisposedException(nameof(D3D12SparseState));
+                SparseMappingGeneration current = _current!;
                 current.Retain();
                 builder.Reset(current);
             }
@@ -1036,7 +887,7 @@ internal sealed unsafe partial class D3D12Backend
 
         internal SparseMappingGeneration CreateGeneration(
             IReadOnlyList<SparseMappingRange> ranges,
-            IReadOnlyList<NativeLease> heaps)
+            IReadOnlyList<NativeResourceData> heaps)
         {
             SparseMappingGeneration generation;
             lock (_gate)
@@ -1068,78 +919,27 @@ internal sealed unsafe partial class D3D12Backend
             }
         }
 
-        private void ValidateRegion(in SparseTileRegion region)
-        {
-            if (region.TileCount == 0 || region.Start.Subresource >= _subresourceCount)
-                throw new ArgumentOutOfRangeException(nameof(region));
-
-            GetStartSegmentAndOffset(region.Start, out uint segment, out ulong offset);
-            if (region.Boxed)
-            {
-                if (IsPacked(segment) ||
-                    region.Width == 0 || region.Height == 0 || region.Depth == 0 ||
-                    region.Height > ushort.MaxValue || region.Depth > ushort.MaxValue ||
-                    checked((ulong)region.Width * region.Height * region.Depth) != region.TileCount)
-                {
-                    throw new ArgumentOutOfRangeException(nameof(region));
-                }
-
-                SubresourceTiling tiling = GetStandardTiling(segment);
-                if (region.Width > tiling.WidthInTiles - region.Start.X ||
-                    region.Height > tiling.HeightInTiles - region.Start.Y ||
-                    region.Depth > tiling.DepthInTiles - region.Start.Z)
-                {
-                    throw new ArgumentOutOfRangeException(nameof(region));
-                }
-                return;
-            }
-
-            ulong remaining = region.TileCount;
-            while (remaining != 0)
-            {
-                ulong tileCount = GetSegmentTileCount(segment);
-                if (offset >= tileCount)
-                    throw new ArgumentOutOfRangeException(nameof(region));
-                ulong consumed = Math.Min(remaining, tileCount - offset);
-                remaining -= consumed;
-                if (remaining == 0)
-                    return;
-                if (!TryGetNextSegment(segment, out segment))
-                    throw new ArgumentOutOfRangeException(nameof(region));
-                offset = 0;
-            }
-        }
-
         internal void GetStartSegmentAndOffset(
             in SparseTileCoordinate coordinate,
             out uint segment,
             out ulong offset)
         {
-            segment = GetCanonicalSegment(coordinate.Subresource);
+            segment = GetPipelineKeySegment(coordinate.Subresource);
             if (IsPacked(segment))
             {
-                if (coordinate.Y != 0 || coordinate.Z != 0 ||
-                    coordinate.X >= Info.PackedMips.PackedMipTileCount)
-                {
-                    throw new ArgumentOutOfRangeException(nameof(coordinate));
-                }
+
                 offset = coordinate.X;
                 return;
             }
 
             SubresourceTiling tiling = GetStandardTiling(segment);
-            if (coordinate.X >= tiling.WidthInTiles ||
-                coordinate.Y >= tiling.HeightInTiles ||
-                coordinate.Z >= tiling.DepthInTiles)
-            {
-                throw new ArgumentOutOfRangeException(nameof(coordinate));
-            }
+
             offset = checked(
                 ((ulong)coordinate.Z * tiling.HeightInTiles + coordinate.Y) *
                 tiling.WidthInTiles + coordinate.X);
         }
 
-        private uint GetCanonicalSegment(uint subresource)
+        private uint GetPipelineKeySegment(uint subresource)
         {
             if (!IsPacked(subresource))
                 return subresource;
@@ -1211,7 +1011,7 @@ internal sealed unsafe partial class D3D12Backend
             {
                 next = checked(segment + 1);
                 if (next < _subresourceCount)
-                    next = GetCanonicalSegment(next);
+                    next = GetPipelineKeySegment(next);
             }
             return next < _subresourceCount;
         }
@@ -1245,21 +1045,21 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed class SparseMappingGeneration
     {
-        private readonly D3D12SparseState _owner;
+        private readonly D3D12SparseState _sparseState;
         private SparseMappingRange[] _ranges = [];
-        private NativeLease[] _heaps = [];
+        private NativeResourceData[] _heaps = [];
         private int _rangeCount;
         private int _heapCount;
         private int _references;
 
-        internal SparseMappingGeneration(D3D12SparseState owner) => _owner = owner;
+        internal SparseMappingGeneration(D3D12SparseState sparseState) => _sparseState = sparseState;
 
         internal SparseMappingGeneration? PoolNext { get; set; }
         internal ReadOnlySpan<SparseMappingRange> Ranges => _ranges.AsSpan(0, _rangeCount);
 
         internal void Configure(
             IReadOnlyList<SparseMappingRange> ranges,
-            IReadOnlyList<NativeLease> heaps)
+            IReadOnlyList<NativeResourceData> heaps)
         {
             _ranges = EnsureCapacity(_ranges, ranges.Count);
             int heapCount = heaps.Count;
@@ -1299,7 +1099,6 @@ internal sealed unsafe partial class D3D12Backend
                     return;
                 current = exchanged;
             }
-            throw new ObjectDisposedException(nameof(SparseMappingGeneration));
         }
 
         internal void Release()
@@ -1309,11 +1108,11 @@ internal sealed unsafe partial class D3D12Backend
             for (int index = 0; index < _heapCount; index++)
             {
                 _heaps[index].Release();
-                _heaps[index] = null!;
+                _heaps[index] = default;
             }
             _rangeCount = 0;
             _heapCount = 0;
-            _owner.ReturnGeneration(this);
+            _sparseState.ReturnGeneration(this);
         }
 
         private static T[] EnsureCapacity<T>(T[] current, int count) =>
@@ -1322,7 +1121,7 @@ internal sealed unsafe partial class D3D12Backend
                 : new T[checked(Math.Max(count, current.Length == 0 ? 4 : current.Length * 2))];
     }
 
-    private readonly record struct SparseLogicalRegion(
+    private readonly record struct SparseResourceRegion(
         D3D12SparseState State,
         SparseTileRegion Region)
     {
@@ -1341,11 +1140,11 @@ internal sealed unsafe partial class D3D12Backend
         uint Segment,
         ulong Start,
         ulong End,
-        NativeLease Heap);
+        NativeResourceData Heap);
 
     private readonly record struct SparseMappingRun(
         ulong TileCount,
-        NativeLease? Heap);
+        NativeResourceData? Heap);
 
     private struct SparseIntervalEnumerator
     {
@@ -1400,8 +1199,7 @@ internal sealed unsafe partial class D3D12Backend
             _remaining -= tileCount;
             if (_remaining != 0)
             {
-                if (!_state.TryGetNextSegment(_segment, out _segment))
-                    throw new InvalidOperationException("The validated sparse region became invalid.");
+
                 _offset = 0;
             }
             return true;
@@ -1426,17 +1224,17 @@ internal sealed unsafe partial class D3D12Backend
                 _ranges.Add(range);
         }
 
-        internal void Replace(in SparseLogicalRegion region, NativeLease? heap)
+        internal void Replace(in SparseResourceRegion region, NativeResourceData? heap)
         {
-            ThrowIfDisposed();
+
             SparseIntervalEnumerator intervals = region.GetEnumerator();
             while (intervals.MoveNext())
                 Replace(intervals.Current, heap);
         }
 
-        internal void Read(in SparseLogicalRegion region, List<SparseMappingRun> runs)
+        internal void Read(in SparseResourceRegion region, List<SparseMappingRun> runs)
         {
-            ThrowIfDisposed();
+
             runs.Clear();
             SparseIntervalEnumerator intervals = region.GetEnumerator();
             while (intervals.MoveNext())
@@ -1444,10 +1242,10 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         internal void Replace(
-            in SparseLogicalRegion region,
+            in SparseResourceRegion region,
             ReadOnlySpan<SparseMappingRun> runs)
         {
-            ThrowIfDisposed();
+
             int runIndex = 0;
             ulong runOffset = 0;
             SparseIntervalEnumerator intervals = region.GetEnumerator();
@@ -1457,8 +1255,7 @@ internal sealed unsafe partial class D3D12Backend
                 ulong destinationOffset = 0;
                 while (destinationOffset != interval.TileCount)
                 {
-                    if ((uint)runIndex >= (uint)runs.Length)
-                        throw new InvalidOperationException("Captured sparse mapping data was truncated.");
+
                     ref readonly SparseMappingRun run = ref runs[runIndex];
                     ulong tileCount = Math.Min(
                         interval.TileCount - destinationOffset,
@@ -1478,16 +1275,15 @@ internal sealed unsafe partial class D3D12Backend
                     }
                 }
             }
-            if (runIndex != runs.Length || runOffset != 0)
-                throw new InvalidOperationException("Captured sparse mapping data exceeded its destination.");
+
         }
 
         internal SparseMappingGeneration Build(
             D3D12SparseState state,
-            HashSet<NativeLease> unique,
-            List<NativeLease> heaps)
+            HashSet<NativeResourceData> unique,
+            List<NativeResourceData> heaps)
         {
-            ThrowIfDisposed();
+
             unique.Clear();
             heaps.Clear();
             foreach (SparseMappingRange range in _ranges)
@@ -1553,7 +1349,7 @@ internal sealed unsafe partial class D3D12Backend
             }
         }
 
-        private void Replace(in SparseTileInterval interval, NativeLease? heap)
+        private void Replace(in SparseTileInterval interval, NativeResourceData? heap)
         {
             ulong end = interval.End;
             int index = LowerBound(interval.Segment, interval.Start);
@@ -1598,7 +1394,7 @@ internal sealed unsafe partial class D3D12Backend
                         interval.Segment,
                         interval.Start,
                         end,
-                        heap));
+                        heap.Value));
             }
             if (right is SparseMappingRange rightRange)
                 _ranges.Insert(insert, rightRange);
@@ -1633,7 +1429,7 @@ internal sealed unsafe partial class D3D12Backend
                 SparseMappingRange left = _ranges[index];
                 SparseMappingRange right = _ranges[index + 1];
                 if (left.Segment == right.Segment && left.End == right.Start &&
-                    ReferenceEquals(left.Heap, right.Heap))
+                    left.Heap == right.Heap)
                 {
                     _ranges[index] = left with { End = right.End };
                     _ranges.RemoveAt(index + 1);
@@ -1646,14 +1442,14 @@ internal sealed unsafe partial class D3D12Backend
         private static void AppendRun(
             List<SparseMappingRun> runs,
             ulong tileCount,
-            NativeLease? heap)
+            NativeResourceData? heap)
         {
             if (tileCount == 0)
                 return;
             if (runs.Count != 0)
             {
                 SparseMappingRun previous = runs[^1];
-                if (ReferenceEquals(previous.Heap, heap))
+                if (previous.Heap == heap)
                 {
                     runs[^1] = previous with
                     {
@@ -1665,31 +1461,29 @@ internal sealed unsafe partial class D3D12Backend
             runs.Add(new SparseMappingRun(tileCount, heap));
         }
 
-        private void ThrowIfDisposed() =>
-            ObjectDisposedException.ThrowIf(_source is null, this);
     }
 
     private sealed class D3D12ResidencyHandle
     {
         private D3D12ResidencyHandle(
             D3D12Device device,
-            GraphicsObject owner,
-            NativeLease lifetime)
+            GraphicsObject sparseState,
+            NativeResourceData lifetime)
         {
             Device = device;
-            Owner = owner;
+            Resource = sparseState;
             Lifetime = lifetime;
         }
 
         internal D3D12Device Device { get; }
-        internal GraphicsObject Owner { get; }
-        internal NativeLease Lifetime { get; }
+        internal GraphicsObject Resource { get; }
+        internal NativeResourceData Lifetime { get; }
 
-        internal static D3D12ResidencyHandle ForLease(
+        internal static D3D12ResidencyHandle ForUse(
             D3D12Device device,
-            GraphicsObject owner,
-            NativeLease lifetime) =>
-            new(device, owner, lifetime);
+            GraphicsObject sparseState,
+            NativeResourceData lifetime) =>
+            new(device, sparseState, lifetime);
     }
 
     private sealed class CapabilityWorkspace :
@@ -1697,7 +1491,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         private readonly D3D12Device _device;
         private readonly D3D12Queue? _queue;
-        private readonly HashSet<NativeLease> _lifetimes = new(ReferenceEqualityComparer.Instance);
+        private readonly HashSet<NativeResourceData> _lifetimes = [];
         private readonly HashSet<GraphicsObject> _owners = new(ReferenceEqualityComparer.Instance);
         private readonly Dictionary<D3D12SparseState, SparseMappingBuilder> _builders =
             new(ReferenceEqualityComparer.Instance);
@@ -1707,11 +1501,10 @@ internal sealed unsafe partial class D3D12Backend
         private readonly List<(D3D12SparseState State, SparseMappingGeneration Generation)>
             _generations = [];
         private readonly List<SparseMappingRun> _runs = [];
-        private readonly HashSet<NativeLease> _generationHeapSet =
-            new(ReferenceEqualityComparer.Instance);
-        private readonly List<NativeLease> _generationHeaps = [];
-        private PreparedSparseMapping[] _mappings = [];
-        private PreparedSparseCopy[] _copies = [];
+        private readonly HashSet<NativeResourceData> _generationHeapSet = [];
+        private readonly List<NativeResourceData> _generationHeaps = [];
+        private SparseMappingBatch[] _mappings = [];
+        private SparseCopyBatch[] _copies = [];
         private nint[] _residencyPointers = [];
         private int _mappingCount;
         private int _copyCount;
@@ -1728,14 +1521,14 @@ internal sealed unsafe partial class D3D12Backend
         internal CapabilityWorkspace? PoolNext { get; set; }
         internal bool IsEmpty => _lifetimes.Count == 0 && _owners.Count == 0;
 
-        internal PreparedSparseMapping[] PrepareMappings(int count)
+        internal SparseMappingBatch[] PrepareMappings(int count)
         {
             _mappings = EnsureCapacity(_mappings, count);
             _mappingCount = count;
             return _mappings;
         }
 
-        internal PreparedSparseCopy[] PrepareCopies(int count)
+        internal SparseCopyBatch[] PrepareCopies(int count)
         {
             _copies = EnsureCapacity(_copies, count);
             _copyCount = count;
@@ -1752,24 +1545,20 @@ internal sealed unsafe partial class D3D12Backend
             for (int index = 0; index < resources.Length; index++)
             {
                 ref readonly ResidencyResource resource = ref resources[index];
-                if (resource.IsDefault || resource.Value is not D3D12ResidencyHandle handle)
-                    throw new ArgumentException("A default or foreign ResidencyResource is invalid.", nameof(resources));
-                EnsureSameDevice(device, resource.Device, nameof(resources));
-                if (!ReferenceEquals(device, handle.Device))
-                    throw new ArgumentException("A foreign ResidencyResource is invalid.", nameof(resources));
-                NativeLease lease = handle.Lifetime;
-                nint pointer = lease.Pointer;
-                if (pointer == 0)
-                    throw new ObjectDisposedException(handle.Owner.GetType().FullName);
+                D3D12ResidencyHandle handle = (D3D12ResidencyHandle)resource.Value!;
+
+                NativeResourceData resourceData = handle.Lifetime;
+                nint pointer = resourceData.Pointer;
+
                 _residencyPointers[index] = pointer;
                 if (retainForSubmission)
-                    RetainForSubmission(lease, handle.Owner);
+                    RetainForSubmission(resourceData, handle.Resource);
             }
             return _residencyPointers;
         }
 
         internal List<(D3D12SparseState State, SparseMappingGeneration Generation)>
-            CreateUpdateGenerations(ReadOnlySpan<PreparedSparseMapping> mappings)
+            CreateUpdateGenerations(ReadOnlySpan<SparseMappingBatch> mappings)
         {
             _generations.Clear();
             if (mappings.Length == 0)
@@ -1779,10 +1568,10 @@ internal sealed unsafe partial class D3D12Backend
             _generations.EnsureCapacity(mappings.Length);
             try
             {
-                foreach (ref readonly PreparedSparseMapping mapping in mappings)
+                foreach (ref readonly SparseMappingBatch mapping in mappings)
                 {
                     SparseMappingBuilder builder = GetBuilder(mapping.State);
-                    builder.Replace(mapping.LogicalRegion, mapping.Heap?.NativeLifetime);
+                    builder.Replace(mapping.ResourceRegion, mapping.Heap?.NativeData);
                 }
 
                 foreach ((D3D12SparseState state, SparseMappingBuilder builder) in _builders)
@@ -1805,7 +1594,7 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         internal List<(D3D12SparseState State, SparseMappingGeneration Generation)>
-            CreateCopyGenerations(ReadOnlySpan<PreparedSparseCopy> copies)
+            CreateCopyGenerations(ReadOnlySpan<SparseCopyBatch> copies)
         {
             _generations.Clear();
             if (copies.Length == 0)
@@ -1817,7 +1606,7 @@ internal sealed unsafe partial class D3D12Backend
             _generations.EnsureCapacity(copies.Length);
             try
             {
-                foreach (ref readonly PreparedSparseCopy copy in copies)
+                foreach (ref readonly SparseCopyBatch copy in copies)
                 {
                     SparseMappingBuilder source = GetBuilder(copy.SourceState);
                     SparseMappingBuilder destination = GetBuilder(copy.DestinationState);
@@ -1851,7 +1640,7 @@ internal sealed unsafe partial class D3D12Backend
             }
         }
 
-        internal void RetainForSubmission(NativeLease lifetime, GraphicsObject owner)
+        internal void RetainForSubmission(NativeResourceData lifetime, GraphicsObject sparseState)
         {
             lifetime.Retain();
             bool added = false;
@@ -1860,7 +1649,7 @@ internal sealed unsafe partial class D3D12Backend
                 added = _lifetimes.Add(lifetime);
                 if (!added)
                     lifetime.Release();
-                _owners.Add(owner);
+                _owners.Add(sparseState);
             }
             catch
             {
@@ -1879,7 +1668,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0)
                 return;
-            foreach (NativeLease lifetime in _lifetimes)
+            foreach (NativeResourceData lifetime in _lifetimes)
                 lifetime.Release();
             _lifetimes.Clear();
             _owners.Clear();
@@ -1949,7 +1738,7 @@ internal sealed unsafe partial class D3D12Backend
             {
                 ThrowIfUnavailable();
                 if (_nextResidencyValue == ulong.MaxValue)
-                    throw new InvalidOperationException("The residency-fence value domain is exhausted.");
+                    throw new GraphicsException(GraphicsError.NativeFailure, "The residency-fence value domain is exhausted.");
                 if (_residencyFence is null)
                 {
                     Guid iid = ID3D12Fence.Guid;
@@ -2016,7 +1805,7 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed partial class D3D12Queue
     {
-        private IntrusiveRetirementChain<CapabilityWorkspace> _pendingCapabilityPayloads;
+        private IntrusiveRetirementChain<CapabilityWorkspace> _capabilityPayloads;
         private IntrusiveRetirementChain<CapabilityWorkspace> _untrustedCapabilityPayloads;
         private readonly object _capabilityWorkspaceGate = new();
         private CapabilityWorkspace? _capabilityWorkspacePool;
@@ -2053,7 +1842,7 @@ internal sealed unsafe partial class D3D12Backend
                 payload.Dispose();
                 return;
             }
-            _pendingCapabilityPayloads.Append(payload, completion);
+            _capabilityPayloads.Append(payload, completion);
         }
 
         internal void RegisterUntrustedCapabilityPayload(CapabilityWorkspace payload)
@@ -2071,17 +1860,17 @@ internal sealed unsafe partial class D3D12Backend
             _untrustedCapabilityPayloads.Append(payload, 0);
 
         private ulong GetCapabilityRetirementTargetUnderGate() =>
-            _pendingCapabilityPayloads.Target;
+            _capabilityPayloads.Target;
 
         private bool HasUntrustedCapabilityRetirementsUnderGate =>
             _untrustedCapabilityPayloads.HasAny;
 
         private void CollectCapabilityRetirementsUnderGate(ulong completed)
-            => _pendingCapabilityPayloads.Collect(completed);
+            => _capabilityPayloads.Collect(completed);
 
         private void AbandonCapabilityRetirementsUnderGate()
         {
-            _pendingCapabilityPayloads.Abandon();
+            _capabilityPayloads.Abandon();
             _untrustedCapabilityPayloads.Abandon();
         }
     }

@@ -1,4 +1,4 @@
-using System.Buffers;
+﻿using System.Buffers;
 using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Cluster;
@@ -25,7 +25,7 @@ internal sealed class SparseClusterPageStorage : IClusterPageStorage
 {
     private readonly uint _capacity;
     private readonly Dictionary<uint, ClusterPageBytes> _pages = [];
-    private readonly HashSet<uint> _stagedOffsets = [];
+    private readonly HashSet<uint> _uploadOffsets = [];
     private int _disposed;
 
     internal SparseClusterPageStorage(uint capacity)
@@ -56,15 +56,15 @@ internal sealed class SparseClusterPageStorage : IClusterPageStorage
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         if (!_pages.TryGetValue(offset, out ClusterPageBytes? bytes) || bytes.Length != length)
             throw new InvalidOperationException($"Page-heap range at {offset} is not allocated.");
-        _stagedOffsets.Add(offset);
+        _uploadOffsets.Add(offset);
     }
 
     public ClusterStagedUpload[] CaptureStagedUploads()
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        if (_stagedOffsets.Count == 0)
+        if (_uploadOffsets.Count == 0)
             return [];
-        uint[] offsets = [.. _stagedOffsets];
+        uint[] offsets = [.. _uploadOffsets];
         Array.Sort(offsets);
         var uploads = new ClusterStagedUpload[offsets.Length];
         for (int index = 0; index < offsets.Length; index++)
@@ -83,7 +83,7 @@ internal sealed class SparseClusterPageStorage : IClusterPageStorage
             uint offset = checked((uint)upload.Offset);
             if (!_pages.TryGetValue(offset, out ClusterPageBytes? bytes) ||
                 bytes.Length != upload.Bytes.Length ||
-                !_stagedOffsets.Contains(offset))
+                !_uploadOffsets.Contains(offset))
             {
                 throw new InvalidOperationException(
                     $"Page-heap staging range [{upload.Offset}, {checked(upload.Offset + (ulong)upload.Bytes.Length)}) is stale.");
@@ -92,7 +92,7 @@ internal sealed class SparseClusterPageStorage : IClusterPageStorage
         foreach (ref readonly ClusterStagedUpload upload in uploads)
         {
             uint offset = checked((uint)upload.Offset);
-            _stagedOffsets.Remove(offset);
+            _uploadOffsets.Remove(offset);
             _pages.Remove(offset, out ClusterPageBytes? bytes);
             bytes!.Release();
         }
@@ -104,7 +104,7 @@ internal sealed class SparseClusterPageStorage : IClusterPageStorage
         if (!_pages.TryGetValue(offset, out ClusterPageBytes? bytes) || bytes.Length != length)
             throw new InvalidOperationException($"Page-heap range [{offset}, {checked(offset + (uint)length)}) is not owned by this storage.");
         _pages.Remove(offset);
-        _stagedOffsets.Remove(offset);
+        _uploadOffsets.Remove(offset);
         bytes.Release();
     }
 
@@ -114,7 +114,7 @@ internal sealed class SparseClusterPageStorage : IClusterPageStorage
         {
             foreach (ClusterPageBytes bytes in _pages.Values) bytes.Release();
             _pages.Clear();
-            _stagedOffsets.Clear();
+            _uploadOffsets.Clear();
         }
     }
 }
@@ -134,7 +134,7 @@ internal sealed class SparseClusterBvhStorage : IClusterBvhStorage
 {
     private readonly ulong _capacity;
     private readonly SortedDictionary<ulong, ClusterPageBytes> _blocks = [];
-    private readonly List<(ulong Offset, int Length)> _stagedRanges = [];
+    private readonly List<(ulong Offset, int Length)> _uploadRanges = [];
     private int _disposed;
 
     internal SparseClusterBvhStorage(ulong capacity) => _capacity = capacity;
@@ -176,19 +176,19 @@ internal sealed class SparseClusterBvhStorage : IClusterBvhStorage
         _ = GetRange(offset, length);
         // Registration and page changes can touch the same mesh before one
         // upload. A containing range already carries its updated bytes.
-        foreach ((ulong start, int byteCount) in _stagedRanges)
+        foreach ((ulong start, int byteCount) in _uploadRanges)
             if (offset >= start && offset + (uint)length <= start + (uint)byteCount)
                 return;
-        _stagedRanges.Add((offset, length));
+        _uploadRanges.Add((offset, length));
     }
 
     public ClusterStagedUpload[] CaptureStagedUploads()
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        var uploads = new ClusterStagedUpload[_stagedRanges.Count];
+        var uploads = new ClusterStagedUpload[_uploadRanges.Count];
         for (int index = 0; index < uploads.Length; index++)
         {
-            (ulong offset, int length) = _stagedRanges[index];
+            (ulong offset, int length) = _uploadRanges[index];
             uploads[index] = new ClusterStagedUpload(offset, GetRange(offset, length));
         }
         return uploads;
@@ -197,15 +197,15 @@ internal sealed class SparseClusterBvhStorage : IClusterBvhStorage
     public void CompleteStagedUploads(ReadOnlySpan<ClusterStagedUpload> uploads)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        if (uploads.Length > _stagedRanges.Count)
+        if (uploads.Length > _uploadRanges.Count)
             throw new InvalidOperationException("The BVH staging completion is ahead of pending uploads.");
         for (int index = 0; index < uploads.Length; index++)
         {
-            (ulong offset, int length) = _stagedRanges[index];
+            (ulong offset, int length) = _uploadRanges[index];
             if (uploads[index].Offset != offset || uploads[index].Bytes.Length != length)
                 throw new InvalidOperationException("The BVH staging completion is stale.");
         }
-        _stagedRanges.RemoveRange(0, uploads.Length);
+        _uploadRanges.RemoveRange(0, uploads.Length);
     }
 
     public void Release(ulong offset, int length)
@@ -219,7 +219,7 @@ internal sealed class SparseClusterBvhStorage : IClusterBvhStorage
     }
 
     public void DiscardStagedRange(ulong offset, int length) =>
-        _stagedRanges.RemoveAll(range => range.Offset >= offset &&
+        _uploadRanges.RemoveAll(range => range.Offset >= offset &&
             checked(range.Offset + (uint)range.Length) <= checked(offset + (uint)length));
 
     public void Dispose()
@@ -228,7 +228,7 @@ internal sealed class SparseClusterBvhStorage : IClusterBvhStorage
         {
             foreach (ClusterPageBytes bytes in _blocks.Values) bytes.Release();
             _blocks.Clear();
-            _stagedRanges.Clear();
+            _uploadRanges.Clear();
         }
     }
 }

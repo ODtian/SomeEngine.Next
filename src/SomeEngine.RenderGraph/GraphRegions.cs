@@ -198,7 +198,7 @@ public ref partial struct RenderGraphEdit
     private void ValidateRegion(GraphRegionId region)
     {
         if (region == default) return;
-        DevelopmentCheck.Require(region.Value.Owner == Graph.Identity && Structure.Regions.Contains(region.Value),
+        DevelopmentCheck.Require(region.Value.ScopeId == Graph.Identity && Structure.Regions.Contains(region.Value),
             "The region must belong to this graph structure.");
     }
 }

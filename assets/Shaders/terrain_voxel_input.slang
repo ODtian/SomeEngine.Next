@@ -1,7 +1,7 @@
 #ifndef TERRAIN_VOXEL_INPUT
 #define TERRAIN_VOXEL_INPUT
 
-#include "terrain_surface_sources.slang"
+__exported import terrain_surface_sources;
 
 int TerrainVoxelPage(TerrainScalarSource source, int coordinate)
 {

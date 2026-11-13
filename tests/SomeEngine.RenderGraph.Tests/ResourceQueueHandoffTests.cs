@@ -56,7 +56,7 @@ public sealed class ResourceQueueHandoffTests
             GraphPassId reset = AddClear(edit, "mixed-state reset", support.CopyQueue, buffer, 0);
             GraphPassId mixed = edit.AddComputePass<GraphBufferId, byte>(
                 "mixed read and write",
-                PassQueueSelection.Exact(support.ComputeQueue),
+                PassQueueSelection.OnQueue(support.ComputeQueue),
                 buffer,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition access, ref GraphBufferId resource) =>
@@ -111,7 +111,7 @@ public sealed class ResourceQueueHandoffTests
                 0);
             GraphPassId partialRead = edit.AddComputePass<GraphBufferId, byte>(
                 "partial indirect read",
-                PassQueueSelection.Exact(support.GraphicsQueue),
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
                 buffer,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition access, ref GraphBufferId resource) =>
@@ -153,13 +153,13 @@ public sealed class ResourceQueueHandoffTests
                     BufferUsages.Indirect));
             GraphPassId reset = AddClear(
                 edit,
-                "ownership reset",
+                "source reset",
                 support.CopyQueue,
                 buffer,
                 0);
             GraphPassId write = edit.AddComputePass<GraphBufferId, byte>(
                 "whole compute write",
-                PassQueueSelection.Exact(support.ComputeQueue),
+                PassQueueSelection.OnQueue(support.ComputeQueue),
                 buffer,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition access, ref GraphBufferId resource) =>
@@ -172,7 +172,7 @@ public sealed class ResourceQueueHandoffTests
                 static (ref ComputePassCommandScope _, in GraphBufferId _, in byte _) => { });
             GraphPassId partialRead = edit.AddComputePass<GraphBufferId, byte>(
                 "partial cross-queue indirect read",
-                PassQueueSelection.Exact(support.GraphicsQueue),
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
                 buffer,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition access, ref GraphBufferId resource) =>
@@ -224,7 +224,7 @@ public sealed class ResourceQueueHandoffTests
                     label);
                 _ = frame.AddCopyPass(
                     $"consume {label}",
-                    PassQueueSelection.Exact(queue),
+                    PassQueueSelection.OnQueue(queue),
                     upload,
                     new PassOptions(Culling: PassCullingMode.NeverCull),
                     static (ref PassDefinition access, ref GraphBufferSlice resource) =>
@@ -255,11 +255,10 @@ public sealed class ResourceQueueHandoffTests
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
             GraphBufferId resource = edit.RegisterExternalBuffer(
-                buffer,
-                [Endpoint(buffer, support.GraphicsQueue, ResourceContentState.Undefined)]);
+                buffer);
             _ = edit.AddCopyPass<GraphBufferId, byte>(
                 "write acquired external buffer",
-                PassQueueSelection.Exact(support.CopyQueue),
+                PassQueueSelection.OnQueue(support.CopyQueue),
                 resource,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition access, ref GraphBufferId target) =>
@@ -305,17 +304,10 @@ public sealed class ResourceQueueHandoffTests
         {
             TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Color);
             GraphTextureId resource = edit.RegisterExternalTexture(
-                texture,
-                [new TextureBoundaryState(
-                    range,
-                    texture.InitialSync,
-                    texture.InitialAccess,
-                    texture.InitialLayout,
-                    ResourceContentState.Undefined,
-                    support.GraphicsQueue)]);
+                texture);
             _ = edit.AddCopyPass<GraphTextureId, byte>(
                 "write acquired external texture",
-                PassQueueSelection.Exact(support.CopyQueue),
+                PassQueueSelection.OnQueue(support.CopyQueue),
                 resource,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 (ref PassDefinition access, ref GraphTextureId target) =>
@@ -355,11 +347,9 @@ public sealed class ResourceQueueHandoffTests
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
             GraphBufferId localResource = edit.RegisterExternalBuffer(
-                local,
-                [Endpoint(local, support.CopyQueue, ResourceContentState.Undefined)]);
+                local);
             GraphBufferId transferredResource = edit.RegisterExternalBuffer(
-                transferred,
-                [Endpoint(transferred, support.GraphicsQueue, ResourceContentState.Undefined)]);
+                transferred);
             GraphPassId first = AddClear(
                 edit,
                 "copy-local pass before acquire",

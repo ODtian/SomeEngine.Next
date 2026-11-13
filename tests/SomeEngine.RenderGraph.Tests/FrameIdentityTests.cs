@@ -15,7 +15,7 @@ public sealed class FrameIdentityTests
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
             buffer = edit.CreateTransientBuffer(new BufferDesc(64, BufferUsages.CopyDestination));
-            pass = edit.DeclareCopyPass("write", PassQueueSelection.Exact(support.GraphicsQueue));
+            pass = edit.DeclareCopyPass("write", PassQueueSelection.OnQueue(support.GraphicsQueue));
             edit.Commit();
         }
         RenderGraphFrame first = graph.BeginFrame();
@@ -46,7 +46,7 @@ public sealed class FrameIdentityTests
         GraphBufferCbvId view;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            buffer = edit.DeclareExternalBuffer(new BufferDesc(
+            buffer = edit.CreatePersistentBuffer(new BufferDesc(
                 256,
                 BufferUsages.Constant));
             view = edit.CreateBufferCbv(buffer, new BufferRange(0, 64));
@@ -107,7 +107,7 @@ public sealed class FrameIdentityTests
         {
             rejected = true;
         }
-        Assert.True(rejected, "A copied frame lease must not revive when its FrameSlot is reused.");
+        Assert.True(rejected, "A copied frame lease must not revive when its FrameResources is reused.");
 
         stale.Dispose();
         _ = second.CreateBuffer(new BufferDesc(64, BufferUsages.CopySource));
@@ -123,21 +123,21 @@ public sealed class FrameIdentityTests
             support.Device,
             [support.GraphicsQueue],
             new RenderGraphDesc(MaximumFramesInFlight: 1));
-        GraphExtensionPointId point;
+        GraphRegionId point;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            point = edit.AddExtensionPoint("dynamic");
+            point = edit.AddRegion("dynamic");
             edit.Commit();
         }
         QueueCompletion[] completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
 
         RenderGraphFrame first = graph.BeginFrame();
-        RenderGraphFrameExtension extension = first.BeginExtension(point);
-        RenderGraphFrameExtension stale = extension;
+        RenderGraphFrame extension = first;
+        RenderGraphFrame stale = extension;
         Assert.Equal(0, first.Execute(completions));
 
         RenderGraphFrame second = graph.BeginFrame();
-        using RenderGraphFrameExtension current = second.BeginExtension(point);
+        RenderGraphFrame current = second;
         bool rejected = false;
         try
         {

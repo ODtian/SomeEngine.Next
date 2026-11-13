@@ -7,6 +7,8 @@ public sealed partial class ValidationLayer
     public Buffer CreateReservedBuffer(Device device, in BufferDesc desc)
     {
         RequireCapability<SparseResources>(device);
+        ValidateBufferDescription(device, desc, MemoryType.DeviceLocal);
+        ValidateReservedPlacement(device, desc.NodePlacement);
         var state = new ResourceValidationState(buffer: true);
         BufferDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(device);
@@ -41,7 +43,9 @@ public sealed partial class ValidationLayer
 
     public Texture CreateReservedTexture(Device device, in TextureDesc desc)
     {
-        RequireCapability<SparseResources>(device);
+        SparseResources capability = RequireCapability<SparseResources>(device);
+        ValidateTextureDescription(device, desc);
+        ValidateReservedTexture(device, capability, desc);
         var state = new ResourceValidationState(buffer: false);
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -77,7 +81,7 @@ public sealed partial class ValidationLayer
     {
         Require(resource);
         RequireCapability<SparseResources>(resource.Device);
-        return Backend.GetSparseResourceInfo(resource);
+        return ReadSparseInfo(resource);
     }
 
     public QueueCompletion UpdateSparseMappings(
@@ -85,12 +89,13 @@ public sealed partial class ValidationLayer
         ReadOnlySpan<SparseMappingDesc> mappings)
     {
         RequireQueue(queue);
-        RequireCapability<SparseResources>(queue.Device);
+        SparseResources capability = RequireCapability<SparseResources>(queue.Device);
+        ValidateSparseQueue(queue);
+        if ((uint)mappings.Length > capability.MaximumMappingsPerCall) throw new ArgumentOutOfRangeException(nameof(mappings));
         foreach (SparseMappingDesc mapping in mappings)
         {
             RequireOnDevice(queue.Device, mapping.Resource, "Sparse resource");
-            if (mapping.Heap is not null)
-                RequireOnDevice(queue.Device, mapping.Heap, "Sparse Heap");
+            ValidateSparseMapping(queue.Device, mapping);
         }
         return Backend.UpdateSparseMappings(queue, mappings);
     }
@@ -100,11 +105,17 @@ public sealed partial class ValidationLayer
         ReadOnlySpan<SparseMappingCopyDesc> copies)
     {
         RequireQueue(queue);
-        RequireCapability<SparseResources>(queue.Device);
+        SparseResources capability = RequireCapability<SparseResources>(queue.Device);
+        ValidateSparseQueue(queue);
+        if ((uint)copies.Length > capability.MaximumMappingsPerCall) throw new ArgumentOutOfRangeException(nameof(copies));
         foreach (SparseMappingCopyDesc copy in copies)
         {
             RequireOnDevice(queue.Device, copy.Source, "Sparse mapping source");
             RequireOnDevice(queue.Device, copy.Destination, "Sparse mapping destination");
+            SparseResourceInfo source = ReadSparseInfo(copy.Source);
+            SparseResourceInfo destination = ReadSparseInfo(copy.Destination);
+            ValidateSparseRegion(queue.Device, source, copy.Region with { Start = copy.SourceStart });
+            ValidateSparseRegion(queue.Device, destination, copy.Region with { Start = copy.DestinationStart });
         }
         return Backend.CopySparseMappings(queue, copies);
     }
@@ -126,6 +137,9 @@ public sealed partial class ValidationLayer
     {
         Require(resource);
         RequireCapability<Residency>(resource.Device);
+        if (resource.Heap is not null || Backend.TryGetCapability(resource.Device, out SparseResources? sparse) && sparse is not null &&
+            Backend.GetSparseResourceInfo(resource).TotalTileCount != 0)
+            throw new NotSupportedException("Placed and sparse resources use heap residency.");
         return Backend.GetResidencyResource(resource);
     }
 
@@ -140,7 +154,7 @@ public sealed partial class ValidationLayer
     {
         Require(table);
         RequireCapability<Residency>(table.Device);
-        return Backend.GetResidencyResource(table);
+        throw new NotSupportedException("Descriptor tables use the command context descriptor storage.");
     }
 
     public QueueCompletion EnqueueMakeResident(
@@ -149,22 +163,14 @@ public sealed partial class ValidationLayer
     {
         RequireQueue(queue);
         RequireCapability<Residency>(queue.Device);
-        foreach (ResidencyResource resource in resources)
-        {
-            if (resource.IsDefault || !ReferenceEquals(resource.Device, queue.Device))
-                Reject("Residency", "ResidencyResource is invalid or belongs to another Device.");
-        }
+        ValidateResidencyInputs(queue.Device, resources);
         return Backend.EnqueueMakeResident(queue, resources);
     }
 
     public void Evict(Device device, ReadOnlySpan<ResidencyResource> resources)
     {
         RequireCapability<Residency>(device);
-        foreach (ResidencyResource resource in resources)
-        {
-            if (resource.IsDefault || !ReferenceEquals(resource.Device, device))
-                Reject("Residency", "ResidencyResource is invalid or belongs to another Device.");
-        }
+        ValidateResidencyInputs(device, resources);
         Backend.Evict(device, resources);
     }
 
@@ -179,13 +185,10 @@ public sealed partial class ValidationLayer
             sampled.SampleCount != 1 ||
             (sampled.Usages & TextureUsages.Sampled) == 0)
         {
-            Reject(
-                "SamplerFeedback",
-                "Sampler feedback requires a single-sampled Texture2D with Sampled usage.",
-                desc.Label);
+            throw new ArgumentException("Sampler feedback requires a sampled single-sample Texture2D.", nameof(desc));
         }
         if (!capability.SupportedFormats.Contains(sampled.Format))
-            Reject("SamplerFeedback", $"Format {sampled.Format} does not support sampler feedback.");
+            throw new NotSupportedException($"Format {sampled.Format} does not support sampler feedback.");
         if (!Enum.IsDefined(desc.Type) ||
             desc.MipRegionWidth < capability.MinimumMipRegionWidth ||
             desc.MipRegionHeight < capability.MinimumMipRegionHeight ||
@@ -194,10 +197,7 @@ public sealed partial class ValidationLayer
             !IsPowerOfTwo(desc.MipRegionWidth) ||
             !IsPowerOfTwo(desc.MipRegionHeight))
         {
-            Reject(
-                "SamplerFeedback",
-                "Sampler-feedback mip-region dimensions must be supported powers of two.",
-                desc.Label);
+            throw new ArgumentOutOfRangeException(nameof(desc));
         }
         var state = new ResourceValidationState(buffer: false);
         SamplerFeedbackTextureDesc createDesc = desc;
@@ -240,10 +240,7 @@ public sealed partial class ValidationLayer
         RequireOnDevice(device, texture, "Sampler feedback Texture");
         RequireOnDevice(device, desc.Texture, "Sampler feedback UAV Texture");
         if (!ReferenceEquals(texture, desc.Texture))
-            Reject(
-                "SamplerFeedback",
-                "SamplerFeedbackUav must describe the supplied feedback Texture.",
-                desc.Label);
+            throw new ArgumentException("The UAV describes the supplied feedback texture.", nameof(desc));
         TextureInfo info = texture.Info;
         TextureSubresourceRange range = desc.Range;
         TextureViewDimension expectedDimension = info.ArrayLayerCount == 1
@@ -257,10 +254,7 @@ public sealed partial class ValidationLayer
             range.ArrayLayerCount != info.ArrayLayerCount ||
             range.Aspects is not (TextureAspects.Color or TextureAspects.Plane0))
         {
-            Reject(
-                "SamplerFeedback",
-                "A sampler-feedback UAV must describe the complete feedback Texture.",
-                desc.Label);
+            throw new ArgumentException("A sampler-feedback UAV describes the complete feedback texture.", nameof(desc));
         }
         TextureUavDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(texture);
@@ -308,6 +302,7 @@ public sealed partial class ValidationLayer
         RequireCapability<SamplerFeedback>(context.Device);
         RequireOnDevice(context.Device, feedback, "Sampler feedback Texture");
         RequireOnDevice(context.Device, destination, "Sampler feedback destination");
+        ValidateFeedbackBufferDestination(feedback, destination, destinationRange);
         PrepareCommandDependencies(state, feedback, destination);
         Backend.ResolveSamplerFeedback(context, feedback, destination, destinationRange);
         RecordCommandDependency(state, feedback);
@@ -324,6 +319,7 @@ public sealed partial class ValidationLayer
         RequireCapability<SamplerFeedback>(context.Device);
         RequireOnDevice(context.Device, feedback, "Sampler feedback Texture");
         RequireOnDevice(context.Device, destination, "Sampler feedback destination");
+        ValidateFeedbackTextureDestination(feedback, destination, destinationRange);
         PrepareCommandDependencies(state, feedback, destination);
         Backend.ResolveSamplerFeedback(context, feedback, destination, destinationRange);
         RecordCommandDependency(state, feedback);
@@ -448,7 +444,7 @@ public sealed partial class ValidationLayer
         PipelineBindingValidationState pipelineBindings = ReflectPipelineBindings(
             desc.Reflection,
             ReadOnlySpan<SlangShaderSharp.EntryPointReflection>.Empty);
-        pipelineBindings.AddStaticSamplers(desc.StaticSamplers);
+        pipelineBindings.AddStaticSamplers(device, desc.StaticSamplers);
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
         {
@@ -507,7 +503,7 @@ public sealed partial class ValidationLayer
         PipelineBindingValidationState bindings = ReflectPipelineBindings(
             desc.Reflection,
             ReadOnlySpan<SlangShaderSharp.EntryPointReflection>.Empty);
-        bindings.AddStaticSamplers(desc.StaticSamplers);
+        bindings.AddStaticSamplers(device, desc.StaticSamplers);
         var objectInfo = new ValidationObjectInfo(device);
         Task<Pipeline> creation = Backend.CreateRayTracingPipelineAsync(device, desc, cache);
         return RegisterRayTracingPipelineAsync(
@@ -876,6 +872,8 @@ public sealed partial class ValidationLayer
         if (!capability.IndirectDispatch)
             Reject("MeshShaders", "Indirect mesh dispatch is unavailable on this Device.");
         RequireOnDevice(context.Device, arguments.Buffer, "Indirect arguments");
+        BufferRange range = arguments.Range.Resolve(arguments.Buffer.Info.Size);
+        if (range.Size < 12 || (range.Offset & 3) != 0) throw new ArgumentOutOfRangeException(nameof(arguments));
         PrepareCommandDependency(state, arguments.Buffer);
         Backend.DispatchMeshIndirect(context, arguments);
         RecordCommandDependency(state, arguments.Buffer);
@@ -903,7 +901,8 @@ public sealed partial class ValidationLayer
 
     public void SetShadingRateImage(CommandContext context, Texture? texture)
     {
-        ContextValidationState state = RequireGraphicsRecording(context);
+        ContextValidationState state = context.Device.Capabilities.CompileTarget == SlangShaderSharp.SlangCompileTarget.Spirv
+            ? RequireGraphicsOutsideRendering(context) : RequireGraphicsRecording(context);
         VariableRateShading capability = RequireCapability<VariableRateShading>(context.Device);
         if (!capability.ShadingRateImage)
             Reject("VariableRateShading", "Shading-rate images are unavailable on this Device.");
@@ -946,7 +945,7 @@ public sealed partial class ValidationLayer
             desc.Reflection,
             ReadOnlySpan<SlangShaderSharp.EntryPointReflection>.Empty,
             useConservativeWorkGraphEntries: true);
-        pipelineBindings.AddStaticSamplers(desc.StaticSamplers);
+        pipelineBindings.AddStaticSamplers(device, desc.StaticSamplers);
         HashSet<EntryPointReflection> reflectedEntries = CollectReflectedWorkGraphEntries(
             pipelineBindings.Reflection,
             capability.MaximumNodeCount);
@@ -1006,7 +1005,7 @@ public sealed partial class ValidationLayer
             desc.Reflection,
             ReadOnlySpan<SlangShaderSharp.EntryPointReflection>.Empty,
             useConservativeWorkGraphEntries: true);
-        bindings.AddStaticSamplers(desc.StaticSamplers);
+        bindings.AddStaticSamplers(device, desc.StaticSamplers);
         HashSet<EntryPointReflection> reflectedEntries = CollectReflectedWorkGraphEntries(
             bindings.Reflection,
             capability.MaximumNodeCount);
@@ -1197,15 +1196,19 @@ public sealed partial class ValidationLayer
         if (!Enum.IsDefined(initialization))
             Reject("WorkGraphs", "WorkGraphInitialization is invalid.");
         _ = RequireCapability<WorkGraphs>(context.Device);
+        WorkGraphMemoryRequirements requirements = Backend.GetWorkGraphMemoryRequirements(pipeline);
         bool backingIsUsed = false;
         if (backingMemory is BufferRegion suppliedBacking)
         {
             RequireOnDevice(context.Device, suppliedBacking.Buffer, "Work-graph backing Buffer");
-            WorkGraphMemoryRequirements requirements =
-                Backend.GetWorkGraphMemoryRequirements(pipeline);
             BufferRange suppliedRange = suppliedBacking.Range.Resolve(suppliedBacking.Buffer.Info.Size);
             backingIsUsed = requirements.NormalizeBackingSize(suppliedRange.Size) != 0;
+            if (backingIsUsed && ((suppliedBacking.Buffer.Info.Usages & BufferUsages.ShaderWrite) == 0 ||
+                suppliedRange.Offset % 8 != 0))
+                throw new ArgumentException("Work graph backing memory requires ShaderWrite usage and an aligned range.", nameof(backingMemory));
         }
+        else if (requirements.MinimumSize != 0)
+            throw new ArgumentException("The work graph requires backing memory.", nameof(backingMemory));
         if (backingIsUsed && backingMemory is BufferRegion preparedBacking)
             PrepareCommandDependencies(state, pipeline, preparedBacking.Buffer);
         else
@@ -1499,7 +1502,7 @@ public sealed partial class ValidationLayer
                     $"Indirect argument {argument.Type} is unavailable on this Device.");
             }
         }
-        PipelineType actionPipelineType = ClassifyIndirectAction(desc.Arguments);
+        PipelineType actionPipelineType = ValidateIndirectDescription(device, desc);
         var state = new IndirectLayoutValidationState(actionPipelineType, desc.Pipeline);
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -1556,6 +1559,9 @@ public sealed partial class ValidationLayer
             PipelineType.Graphics or PipelineType.Mesh
                 ? RequireDraw(context)
                 : RequireComputeOutsideRendering(context);
+        if (count is not null && layoutState.ActionPipelineType == PipelineType.Compute &&
+            context.Device is IPipelineFeatures { CountedDispatch: false })
+            throw new NotSupportedException("Counted indirect dispatch is unavailable on this device.");
         RequirePipeline(
             state,
             context,
@@ -2042,7 +2048,7 @@ public sealed partial class ValidationLayer
         ulong primitiveCount = 0;
         const AccelerationStructureGeometryOptions supportedGeometryOptions =
             AccelerationStructureGeometryOptions.Opaque |
-            AccelerationStructureGeometryOptions.NoDuplicateAnyHitInvocation;
+            AccelerationStructureGeometryOptions.NoRepeatedAnyHit;
         foreach (ref readonly AccelerationStructureGeometry geometry in geometries)
         {
             if (geometry.Count == 0 ||

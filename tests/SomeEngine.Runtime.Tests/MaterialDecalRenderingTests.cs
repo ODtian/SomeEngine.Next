@@ -5,6 +5,7 @@ using SomeEngine.Assets.Schema;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Resources;
+using SomeEngine.Resources.Layers;
 
 namespace SomeEngine.Runtime.Tests;
 
@@ -103,6 +104,7 @@ public sealed class MaterialDecalRenderingTests(TransparencyContentFixture conte
     public async Task TransparentHitsFollowMaterialDecalVolumesAcrossSceneEdits(string backend)
     {
         SceneLinearImage? before = null, rear = null, front = null, removed = null;
+        var materials = new List<Material>();
         Entity decal = default;
         var red = new StandardMaterial { BaseColorTint = new(1, 0, 0, 1) };
         TransformQvvs volume = new(new Vector3(0, 0, 6), Quaternion.Identity) { Stretch = new(3, 3, .1f) };
@@ -114,8 +116,8 @@ public sealed class MaterialDecalRenderingTests(TransparencyContentFixture conte
                 {
                     var material = (UnlitMaterial)edit.GetMaterial(entity);
                     bool nearest = material.Name == "red sphere";
-                    material.State = material.State with { Surface = SurfaceMode.Translucent };
                     material.BaseColorTint = new(0, 0, 1, .5f);
+                    materials.Add(material);
                     edit.SetEntityTransform(entity, new(new Vector3(0, 0, nearest ? 4 : 6),
                         Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.Atan(nearest ? .5f : -.5f))));
                 }
@@ -135,7 +137,16 @@ public sealed class MaterialDecalRenderingTests(TransparencyContentFixture conte
             new(11, edit => edit.CaptureLinearImage(value => front = value)),
             new(12, edit => edit.DeleteEntity(decal)),
             new(15, edit => edit.CaptureLinearImage(value => removed = value)),
-        ]) { BlendReferenceCapacity = 1, WaitForFrames = false }, "--hardware-raster", "--no-taa", "--no-vsm");
+        ])
+        {
+            WaitForFrames = false,
+            CreateFrameFeatures = rendering =>
+            {
+                LayerPassId pass = rendering.Layers!.AddPass(new("Decal receiver layers"));
+                foreach (Material material in materials) material.Layer = new(pass, 0, new());
+                return [];
+            },
+        }, "--hardware-raster", "--no-taa", "--no-vsm");
 
         foreach ((SceneLinearImage image, Vector3 color) in new[]
         {

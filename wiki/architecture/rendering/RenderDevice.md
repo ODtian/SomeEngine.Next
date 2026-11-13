@@ -1,29 +1,13 @@
 # RenderDevice
 
-## Definition
-RenderDevice 是一个 Graphics.Device 对应的 render-side 长期设备状态，位于 SomeEngine.Render。
+`RenderDevice` 保存一台 Graphics.Device 上的资产纹理、纹理视图与材质 descriptor 索引。构造接收同一 renderer 的 `RenderGraph` 和 `RenderPipelines`。图持有 GPU 资源、同步状态与完成信息，pipeline 服务持有 pipeline cache 及创建结果。
 
-## Responsibilities
-- per-device asset realization
-- Texture SRV/UAV cache
-- streaming uploads
-- backing replacement
-- device-side missing resources
-- 已提交工作结束后的旧 Graphics 资源回收
+纹理资源在帧准备阶段通过 `PrepareTexture(Texture)` 或现有冷路径访问分配，使用 `CreatePersistentTexture` 取得图身份。帧内 `PrepareTexture(ref frame, ...)` 只把当前驻留 tile 放入帧上传页，声明 copy 与 shader 消费依赖。上传 tile、完成 pass 和本帧 chunk 集合由 `frame.GetFrameData` 保存。
 
-## Invariants
-- RenderDevice 与 RenderGraph 正交；两者都建立在 Graphics 之上。
-- RenderGraph 不认识资产 Texture 或 RenderDevice。
-- RenderDevice 不包含 RenderGraph；同一 Graphics.Device 可以服务多张图。
-- feature 先显式取得真实 Graphics 资源，再显式交给 RenderGraph 声明访问。
-- 长期集合持有 GPU 记录；业务 Texture 由普通引用、当帧工作、上传事务和完整更新各自按实际使用期持有。
-- TextureDevices 的 GC 收尾提交设备释放请求，CollectCompleted 在渲染线程处理队列。已登记帧与实际 GPU 完成共同保护旧分配和视图。
-- 设备关闭与更新登记、GC 入队在设备记录上原子交接；关闭在锁外清理 Texture 关联并推进更新完成，随后收尾全部设备记录及请求。
+只有完整提交回调会推进已上传 chunk、首个驻留 mip、设备资产关联与内容修订。丢弃帧后，下一次暂存继续读取上次完整提交的纹理数据。替换后的旧 graph 资源通过图的结构移除退役，视图与 descriptor 通过 `graph.RetireAfterSubmittedFrames` 退役。
 
-## Relations
+`CollectCompleted` 先推进图的完成帧，再消费资产的设备释放请求。`Dispose` 等待图中已提交帧完成，移除图资源并释放设备描述数据。
 
-应用的呈现 pass 通过 `OrderTextureUploadsBefore` 排在当帧纹理上传完成之后，并通过 Cluster 的 `PageFaultReadbackPass` 排在缺页反馈的提前提交之后。呈现与当帧图像读回由同一次交换链图像提交覆盖；首个场景帧沿这一公共路径验收。
+图进入 Lost 后，`Dispose` 释放资产视图、descriptor 和 CPU 数据，图持有的 GPU 资源在 `RenderGraph.Dispose` 中释放。renderer 最终关闭时，先等待提交并卸载 UI、呈现、时间处理、外部 feature 和透明消费方，再由 `RenderGraph.Dispose` 释放录制与图资源，随后释放内部 feature 和 `RenderDevice` 的 CPU 数据及原生包装，最后结束 `RenderPipelines`。
 
-[[architecture/assets/Texture-Device-Realization]] · [[architecture/render-graph/Resource-Access]]
-
-图帧提交完成后，`RenderGraph.CollectCompleted()` 或后续 `BeginFrame` 推进帧登记回收并清除帧级 Texture 引用；`RenderDevice.CollectCompleted()` 消费设备释放队列，沿已登记的 GPU 完成位置释放原生纹理和视图。业务在结束消费时按这两个各自的完成入口推进收尾。
+参见 [[architecture/assets/Texture-Device-Realization]]、[[architecture/render-graph/Resource-Access]]、[[architecture/render-graph/Frame-Submission]]。

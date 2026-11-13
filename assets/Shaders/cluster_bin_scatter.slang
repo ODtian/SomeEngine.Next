@@ -1,6 +1,6 @@
-#include "cluster_bin_common.slang"
+__exported import cluster_bin_common;
 #include "cluster_instance_properties.slang"
-#include "resource_effects.slang"
+__exported import resource_effects;
 
 ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 ByteAddressBuffer InstanceData;
@@ -10,6 +10,8 @@ ConstantBuffer<RasterBinningUniforms> Uniforms;
 StructuredBuffer<VisibleCluster> VisibleClusters;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> BinnedClusterIndexBuffer;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWStructuredBuffer<uint> RasterSpillClusters;
 ByteAddressBuffer DrawArgs;
 ByteAddressBuffer ClusterReadOffsetArgs;
 ByteAddressBuffer ClusterReadOffsetArgs1;
@@ -17,14 +19,17 @@ ByteAddressBuffer ClusterReadOffsetArgs2;
 StructuredBuffer<uint> RasterSlots;
 ByteAddressBuffer PageHeap;
 
-void WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware, bool depthBuckets)
+bool WriteRasterBatch(uint bin, uint visibleIndex, uint workIndex, bool isSoftware, bool depthBuckets)
 {
-    if (!ScatterRaster(RasterBinMeta, BinnedClusterIndexBuffer, bin, visibleIndex, workIndex, isSoftware, DepthBuckets, VisibleClusterDepthBucket(VisibleClusters[visibleIndex])))
+    bool stored = ScatterRaster(RasterBinMeta, BinnedClusterIndexBuffer, bin, visibleIndex, workIndex,
+        isSoftware, DepthBuckets, VisibleClusterDepthBucket(VisibleClusters[visibleIndex]));
+    if (!stored)
         RejectClusterWork(16u);
+    return stored;
 }
 
 #include "cluster_bin_batches.slang"
-#include "cluster_work_status.slang"
+__exported import cluster_work_status;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> DepthBuckets;
 
@@ -50,8 +55,9 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
         visibleIndex,
         isSoftware);
 
+    RasterSpillClusters[visibleIndex] = 0xffffffffu;
+
     DrawRequest entry = VisibleClusterRequest(VisibleClusters[visibleIndex]);
-    if (Uniforms.PolicyTarget == 0u && LoadInstanceXray(InstanceData, InstanceProperties, entry.InstanceID).Enabled != 0u) return;
     uint4 vertReuseBatchWords;
     uint vertexCount;
     uint triangleCount;
@@ -74,11 +80,12 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
             InstanceProperties,
             CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD),
         entry.InstanceID);
-    BuildRasterBatches(
+    bool spilled = BuildRasterBatches(
         visibleIndex,
         slotOffset,
         materials,
         vertexCount,
         triangleCount,
         isSoftware);
+    if (spilled) RasterSpillClusters[visibleIndex] = visibleIndex;
 }

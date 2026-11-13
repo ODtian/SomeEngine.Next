@@ -1,4 +1,4 @@
-namespace SomeEngine.RenderGraph;
+﻿namespace SomeEngine.RenderGraph;
 
 /// <summary>Reserves completed frame resources while data and graph edits are assembled.</summary>
 public sealed class RenderGraphNextFrame : IDisposable
@@ -8,10 +8,10 @@ public sealed class RenderGraphNextFrame : IDisposable
     private const int Discarded = 2;
     private int _state;
     public RenderGraph Graph { get; }
-    internal FrameSlot FrameStorage { get; }
+    internal FrameResources FrameStorage { get; }
     internal ulong Identity { get; }
 
-    internal RenderGraphNextFrame(RenderGraph graph, FrameSlot frameStorage, ulong identity)
+    internal RenderGraphNextFrame(RenderGraph graph, FrameResources frameStorage, ulong identity)
     {
         Graph = graph;
         FrameStorage = frameStorage;
@@ -24,6 +24,13 @@ public sealed class RenderGraphNextFrame : IDisposable
         int previous = Interlocked.CompareExchange(ref _state, Started, Open);
         DevelopmentCheck.Require(previous == Open,
             "The next frame must be open when it is started.");
+    }
+
+    /// <summary>Holds CPU feature data while world preparation and graph edits run.</summary>
+    public T GetFrameData<T>(object feature, Func<T> create) where T : class
+    {
+        EnsureOpen();
+        return FrameStorage.GetFrameData(feature, create);
     }
 
     /// <summary>Returns mapped upload bytes for a range of a persistent device buffer.</summary>
@@ -54,6 +61,7 @@ public sealed class RenderGraphNextFrame : IDisposable
     {
         if (Interlocked.CompareExchange(ref _state, Discarded, Open) != Open) return;
         FrameStorage.GetBufferTransfers(Graph).ResetUploads();
+        FrameStorage.ClearFeatureData();
         Graph.EndFrame(Identity);
     }
 }
@@ -67,29 +75,29 @@ public sealed partial class RenderGraph
         DevelopmentCheck.Require(timeout >= TimeSpan.Zero || timeout == Timeout.InfiniteTimeSpan,
             "A frame wait requires a positive timeout or an infinite wait.");
         CollectCompleted();
-        FrameSlot storage;
+        FrameResources storage;
         ulong identity;
         lock (_structureGate)
         {
             DevelopmentCheck.Require(_frameToken == 0, "A CPU frame must finish before opening another frame.");
             int index = _preferredFrameIndex;
-            ulong firstFrameIdentity = _frameSlots[index].FrameIdentity;
-            for (int probe = 0; probe < _frameSlots.Length; probe++)
+            ulong firstFrameIdentity = _frameResources[index].FrameIdentity;
+            for (int probe = 0; probe < _frameResources.Length; probe++)
             {
-                int candidate = (_preferredFrameIndex + probe) % _frameSlots.Length;
-                if (_frameSlots[candidate].IsReady(_backend))
+                int candidate = (_preferredFrameIndex + probe) % _frameResources.Length;
+                if (_frameResources[candidate].IsReady(_backend))
                 {
                     index = candidate;
                     break;
                 }
-                if (_frameSlots[candidate].FrameIdentity < firstFrameIdentity)
+                if (_frameResources[candidate].FrameIdentity < firstFrameIdentity)
                 {
                     index = candidate;
-                    firstFrameIdentity = _frameSlots[candidate].FrameIdentity;
+                    firstFrameIdentity = _frameResources[candidate].FrameIdentity;
                 }
             }
-            storage = _frameSlots[index];
-            identity = AllocateOwnerIdentity();
+            storage = _frameResources[index];
+            identity = AllocateScopeIdentity();
             _frameToken = checked((long)identity);
         }
         try
@@ -132,6 +140,7 @@ public sealed partial class RenderGraph
             EnsureBufferUploadPasses(uploads);
             lock (_structureGate)
             {
+                _schedule.Update(_structureIndex, options);
                 execution = next.FrameStorage.BeginExecution(this, next.Identity, options, _structureIndex, StructureVersion);
                 execution.CollectBufferUploads(uploads);
                 return new RenderGraphFrame(execution);

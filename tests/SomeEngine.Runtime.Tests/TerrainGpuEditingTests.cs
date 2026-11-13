@@ -30,7 +30,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         var range = new HeightRegion(0, 0, 2, 2);
         var application = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "8"]),
             UpdateFrame = frame =>
             {
@@ -99,7 +99,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
             Task<VoxelFieldRead> voxelRead = voxel.ReadCpuAsync(new(0, 1, 1, 2, 1, 1)).AsTask();
             var application = new ApplicationScene(content.DirectoryPath)
             {
-                Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                     "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "12"]),
             };
             application.InstallGeometry(new FieldFeature(terrain));
@@ -144,7 +144,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
             Task<TerrainSurfaceRead>? nextSurface = null;
             var application = new ApplicationScene(content.DirectoryPath)
             {
-                Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                     "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "16"]),
                 UpdateFrame = frame =>
                 {
@@ -253,7 +253,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         Task<VoxelFieldRead> flattenRead = gpu.ReadCpuAsync(range).AsTask();
         var application = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "16"]),
         };
         application.InstallGeometry(new FieldFeature(gpuTerrain));
@@ -300,7 +300,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         Task<HeightFieldRead> flattenRead = gpu.ReadCpuAsync(grid.Range).AsTask();
         var application = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "16"]),
         };
         application.InstallGeometry(new FieldFeature(gpuTerrain));
@@ -339,7 +339,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         Task<VoxelFieldRead> read = gpu.ReadCpuAsync(range).AsTask();
         var application = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "12"]),
         };
         application.InstallGeometry(new FieldFeature(gpuTerrain));
@@ -377,7 +377,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         Task<VoxelFieldRead> latest = field.ReadCpuAsync(range).AsTask();
         var application = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "16"]),
             UpdateFrame = frame => { if (frame.Index == 0) start.Complete(); },
         };
@@ -409,7 +409,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         SceneImage? before = null, after = null, expectedBefore = null, expectedAfter = null;
         var application = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
             {
@@ -435,7 +435,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
 
         var reference = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
             {
@@ -475,7 +475,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         Task<HeightFieldRead> read = gpu.ReadCpuAsync(grid.Range).AsTask();
         var scene = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "12"]),
         };
         scene.InstallGeometry(new FieldFeature(gpuTerrain));
@@ -508,7 +508,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         Task<HeightFieldRead> current = height.ReadCpuAsync(height.Grid.Range).AsTask();
         var scene = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "12"]),
             UpdateFrame = frame => { if (frame.Index == 0) start.Complete(); },
         };
@@ -537,7 +537,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         SceneImage? before = null, after = null, expectedBefore = null, expectedAfter = null;
         var application = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
             {
@@ -599,7 +599,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
             source = source.Parent;
         using var block = new ShaderSourceBlock { SourceNames = ["terrain_height_delta.slang"] };
         IGlobalSession slang = SlangShaderImporter.GlobalSession;
-        return await block.CreateAsync(slang, new SessionDesc
+        return await SomeEngine.Resources.ShaderLibrary.CreateAsync(block, slang, new SessionDesc
         {
             Targets = [new TargetDesc { Format = SlangCompileTarget.Dxil, Profile = slang.FindProfile("sm_6_6") }],
             SearchPaths = [Path.Combine(source!.FullName, "assets/Shaders")],
@@ -613,7 +613,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
             source = source.Parent;
         using var block = new ShaderSourceBlock { SourceNames = ["terrain_voxel_delta.slang"] };
         IGlobalSession slang = SlangShaderImporter.GlobalSession;
-        return await block.CreateAsync(slang, new SessionDesc
+        return await SomeEngine.Resources.ShaderLibrary.CreateAsync(block, slang, new SessionDesc
         {
             Targets = [new TargetDesc { Format = SlangCompileTarget.Dxil, Profile = slang.FindProfile("sm_6_6") }],
             SearchPaths = [Path.Combine(source!.FullName, "assets/Shaders")],
@@ -627,7 +627,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
             source = source.Parent;
         using var block = new ShaderSourceBlock { SourceNames = [sourceName] };
         IGlobalSession slang = SlangShaderImporter.GlobalSession;
-        return await block.CreateAsync(slang, new SessionDesc
+        return await SomeEngine.Resources.ShaderLibrary.CreateAsync(block, slang, new SessionDesc
         {
             Targets = [new TargetDesc { Format = SlangCompileTarget.Dxil, Profile = slang.FindProfile("sm_6_6") }],
             SearchPaths = [Path.Combine(source!.FullName, "assets/Shaders")],
@@ -638,12 +638,11 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
     {
         public IDisposable Install(ApplicationGeometryContext context)
         {
-            var data = new RenderTerrainData(context.Backend, context.Device, context.Graph);
+            var data = new RenderTerrainData(context.Backend, context.Device, context.Graph, context.RenderDevice.Pipelines);
             context.AddGameSystem(new FieldSourceSystem(terrain));
             context.AddExtractor(new TerrainRenderExtractor());
             context.AddPrepareSystem(data);
             context.AddFrameSystem(data);
-            context.AddCompletionObserver(data);
             return data;
         }
     }

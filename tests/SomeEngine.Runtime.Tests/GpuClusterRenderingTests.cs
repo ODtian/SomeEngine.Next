@@ -1,4 +1,4 @@
-using DefaultGame;
+﻿using DefaultGame;
 using SomeEngine.Graphics;
 using SomeEngine.Resources;
 using SomeEngine.Serialization.Containers;
@@ -24,7 +24,7 @@ public sealed class GpuClusterRenderingTests(SceneContentFixture content)
         var scene = new ApplicationScene(content.DirectoryPath)
         {
             SceneCompleted = value => completed = value,
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "4"]),
             UpdateFrame = frame =>
             {
@@ -81,7 +81,7 @@ public sealed class GpuClusterRenderingTests(SceneContentFixture content)
         SceneImage? image = null;
         var scene = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "1"]),
             UpdateFrame = frame =>
             {

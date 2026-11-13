@@ -1,7 +1,7 @@
 #ifndef TERRAIN_SURFACE_SOURCES
 #define TERRAIN_SURFACE_SOURCES
 
-#include "terrain_surface_input.slang"
+__exported import terrain_surface_input;
 
 struct TerrainScalarSource
 {

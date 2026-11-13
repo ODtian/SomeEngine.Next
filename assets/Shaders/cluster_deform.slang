@@ -1,8 +1,8 @@
 #ifndef CLUSTER_DEFORM_SLANG
 #define CLUSTER_DEFORM_SLANG
 
-#include "vertex_deform_cache.slang"
-#include "cluster_bin_common.slang"
+__exported import vertex_deform_cache;
+__exported import cluster_bin_common;
 
 struct ClusterDeformUniforms
 {

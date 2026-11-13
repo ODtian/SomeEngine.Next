@@ -35,8 +35,7 @@ public sealed class QueueSubmissionTests
                     Buffer output = support.Backend.CreateBuffer(support.Device,
                         new BufferDesc(64, BufferUsages.CopyDestination), MemoryType.Readback);
                     outputs.Add(output);
-                    GraphBufferId resource = edit.RegisterExternalBuffer(output,
-                        [Endpoint(output, queues[index], ResourceContentState.Undefined)]);
+                    GraphBufferId resource = edit.RegisterExternalBuffer(output);
                     passes[index] = AddClear(edit, $"merge output {index}", queues[index], resource, (uint)(index + 1));
                 }
                 edit.OrderAfter(passes[1], passes[0]);
@@ -101,8 +100,7 @@ public sealed class QueueSubmissionTests
                     Buffer output = support.Backend.CreateBuffer(support.Device,
                         new BufferDesc(64, BufferUsages.CopyDestination), MemoryType.Readback);
                     outputs.Add(output);
-                    GraphBufferId resource = edit.RegisterExternalBuffer(output,
-                        [Endpoint(output, queues[index], ResourceContentState.Undefined)]);
+                    GraphBufferId resource = edit.RegisterExternalBuffer(output);
                     passes[index] = AddClear(edit, $"queue change output {index}", queues[index], resource, (uint)(index + 1));
                 }
                 edit.OrderAfter(passes[1], passes[0]);
@@ -182,12 +180,11 @@ public sealed class QueueSubmissionTests
                 64,
                 BufferUsages.CopySource | BufferUsages.CopyDestination));
             GraphBufferId readbackId = edit.RegisterExternalBuffer(
-                readback,
-                [Endpoint(readback, support.CopyQueue, ResourceContentState.Undefined)]);
+                readback);
             _ = AddClear(edit, "wave gate", support.CopyQueue, gate, 1);
             GraphPassId delayed = edit.AddCopyPass<DependentClearState, byte>(
                 "cross-queue delayed clear",
-                PassQueueSelection.Exact(support.ComputeQueue),
+                PassQueueSelection.OnQueue(support.ComputeQueue),
                 new DependentClearState(gate, value, 333),
                 default,
                 static (ref PassDefinition access, ref DependentClearState state) =>
@@ -252,14 +249,14 @@ public sealed class QueueSubmissionTests
             GraphBufferId buffer = edit.CreateTransientBuffer(new BufferDesc(
                 64,
                 BufferUsages.CopySource | BufferUsages.CopyDestination));
-            _ = edit.DeclareCopyPass("accepted first wave", PassQueueSelection.Exact(support.CopyQueue),
+            _ = edit.DeclareCopyPass("accepted first wave", PassQueueSelection.OnQueue(support.CopyQueue),
                 (ref PassDefinition access) =>
                     _ = access.Write(buffer, new BufferRange(0, 64),
                         PipelineSync.Copy, ResourceAccess.CopyDestination,
                         WriteCoverage.Complete));
             _ = edit.AddCopyPass<int, byte>(
                 "failing second wave",
-                PassQueueSelection.Exact(support.GraphicsQueue),
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
                 0,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 (ref PassDefinition access, ref int state) =>

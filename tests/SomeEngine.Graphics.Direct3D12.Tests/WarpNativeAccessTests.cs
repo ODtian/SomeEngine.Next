@@ -180,9 +180,9 @@ public sealed unsafe class WarpNativeAccessTests(D3D12TestCompiler shaderCompile
             new BufferDesc(256, BufferUsages.CopySource),
             MemoryType.Upload);
         disposed.Dispose();
-        AssertNotSupportedByValidation(() => backend.GetNativeResource(disposed));
+        Assert.Throws<ObjectDisposedException>(() => backend.GetNativeResource(disposed));
 
-        AssertNotSupportedByValidation(() => backend.GetNativeResource(foreign));
+        Assert.Throws<ArgumentException>(() => backend.GetNativeResource(foreign));
 
         Queue queue = backend.GetQueue(device, QueueType.Compute);
         D3D12CommandQueueLock held = backend.LockCommandQueue(queue);

@@ -2,7 +2,7 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.RenderGraph;
 
-internal sealed partial class FrameExecutor
+internal sealed partial class FrameRecording
 {
     private RecordingBatch[][] _aheadBatches = [];
     private JobHandle[] _aheadJobs = [];

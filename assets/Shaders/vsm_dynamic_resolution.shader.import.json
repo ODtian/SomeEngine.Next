@@ -1,32 +1,37 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 28,
-  "input_hash": "c2df44c5ec3dbb2c2a6f3e755a7c57dfcaf63c5bd36a89ec7a3bd990d09d3a87",
+  "importer_version": 36,
+  "input_hash": "c9fe50218dbd23abb8f3481284d8a9bcc0ad59da61117f294001df04743b8386",
   "inputs": [
     {
-      "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
-    },
-    {
       "relative_path": "assets/Shaders/vsm_dynamic_resolution.shader",
-      "content_hash": "dd50b34c569af795f8f962ab743f7763e335e982cd7e34bcaa12a8498626e870"
+      "content_hash": "60f5b189f4f6012c31663f2fc8be347527418077e5dbd414404641b5d4e84970"
     },
     {
       "relative_path": "assets/Shaders/vsm_dynamic_resolution.slang",
-      "content_hash": "e3d00a2e347a3df547d5abd88a5967f4e9eba6337794013f82bb3d3954d83386"
+      "content_hash": "7c9d06c2966820a1183547e89691c36cdb26b1914ce6c43adeab84963a28d9b2"
+    },
+    {
+      "relative_path": "assets/Shaders/vsm_page_lists.slang",
+      "content_hash": "cf9d5282828abcfd1f39600178b0500fa1bc4746c7c5f75edea585817d99bb02"
     }
   ],
   "reported_inputs": [],
+  "asset_inputs": [
+    "928f32a6-22ab-401e-9c48-a2a9c9d00eda"
+  ],
   "outputs": [
     {
       "asset_guid": "562d6bdf-3c5f-5b24-bb13-4ffc24de67cf",
       "sub_asset_key": "",
-      "input_hash": "c2df44c5ec3dbb2c2a6f3e755a7c57dfcaf63c5bd36a89ec7a3bd990d09d3a87",
+      "input_hash": "c9fe50218dbd23abb8f3481284d8a9bcc0ad59da61117f294001df04743b8386",
       "dependencies": [],
       "asset_path": "vsm_dynamic_resolution.shader.asset",
-      "version": "f7e6bae7-d068-d7a1-ba5f-6198e3846df8",
-      "content_hash": "8E2092A0727808867B8B3BB6410988B187D5E46B02C9786C86D4829833781C92",
-      "asset_dependencies": []
+      "version": "1eab433b-9d9c-e616-ebf4-bcb6baf4ea22",
+      "content_hash": "43DE7AAFE86ADF257F9937D7294B9E871D8EBD416DC7BABC800611CBD0E96FDD",
+      "asset_dependencies": [
+        "928f32a6-22ab-401e-9c48-a2a9c9d00eda"
+      ]
     }
   ]
 }

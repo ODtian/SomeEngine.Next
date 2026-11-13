@@ -7,7 +7,7 @@ namespace SomeEngine.Assets;
 /// <summary>Opens asset files and retains their file data within the configured budgets.</summary>
 public sealed partial class AssetLoader : IAsyncDisposable
 {
-    private readonly IAssetStorage _storage;
+    private readonly IAssetStorage[] _storages;
     private readonly AssetLoaderOptions _options;
     private readonly object _gate = new();
     private readonly Dictionary<(Guid Id, Guid Version), FileRead> _files = [];
@@ -21,9 +21,12 @@ public sealed partial class AssetLoader : IAsyncDisposable
     private int _activeReads;
     private bool _closed;
 
-    public AssetLoader(IAssetStorage storage, AssetLoaderOptions? options = null)
+    public AssetLoader(IAssetStorage storage, AssetLoaderOptions? options = null) : this([storage], options) { }
+
+    /// <summary>Opens assets from the supplied stores in priority order.</summary>
+    public AssetLoader(IEnumerable<IAssetStorage> storages, AssetLoaderOptions? options = null)
     {
-        _storage = storage ?? throw new ArgumentNullException(nameof(storage));
+        _storages = storages.ToArray();
         _options = options ?? new();
         ArgumentNullException.ThrowIfNull(_options.ReadLimits);
         ArgumentNullException.ThrowIfNull(_options.ByteCache);
@@ -35,12 +38,25 @@ public sealed partial class AssetLoader : IAsyncDisposable
         _readConcurrency = new(_options.MaxConcurrentReads, _options.MaxConcurrentReads);
     }
 
+    private bool TryFind(Guid id, out IAssetStorage storage, out AssetEntry entry)
+    {
+        foreach (IAssetStorage candidate in _storages)
+            if (candidate.TryFind(id, out entry))
+            {
+                storage = candidate;
+                return true;
+            }
+        storage = null!;
+        entry = default;
+        return false;
+    }
+
     public int MaxConcurrentReads => _options.MaxConcurrentReads;
 
     /// <summary>The storage-selected file version used by a resource's acquisition key.</summary>
     public Guid GetSourceVersion<T>(AssetId<T> id) where T : Asset
     {
-        if (!_storage.TryFind(id.Value, out AssetEntry entry))
+        if (!TryFind(id.Value, out _, out AssetEntry entry))
             throw new KeyNotFoundException($"Asset {id} was not found in storage.");
         return entry.Version;
     }
@@ -56,7 +72,7 @@ public sealed partial class AssetLoader : IAsyncDisposable
             ObjectDisposedException.ThrowIf(_closed, this);
 
         // Storage may inspect a file header. Never hold the cache lock across external I/O.
-        if (!_storage.TryFind(id.Value, out AssetEntry entry))
+        if (!TryFind(id.Value, out IAssetStorage storage, out AssetEntry entry))
             throw new KeyNotFoundException($"Asset {id} was not found in storage.");
         if (entry.AssetGuid != id.Value)
             throw new InvalidDataException("Storage returned a different asset number.");
@@ -83,7 +99,7 @@ public sealed partial class AssetLoader : IAsyncDisposable
             read.LastAccess = ++_access;
         }
         if (start)
-            _ = ReadFileAsync(entry, wireType, key, read);
+            _ = ReadFileAsync(storage, entry, wireType, key, read);
 
         try
         {
@@ -107,7 +123,7 @@ public sealed partial class AssetLoader : IAsyncDisposable
         }
     }
 
-    private async Task ReadFileAsync(AssetEntry entry, BinaryWireTypeDescriptor wireType,
+    private async Task ReadFileAsync(IAssetStorage storage, AssetEntry entry, BinaryWireTypeDescriptor wireType,
         (Guid Id, Guid Version) key, FileRead read)
     {
         AssetFile? file = null;
@@ -117,7 +133,7 @@ public sealed partial class AssetLoader : IAsyncDisposable
         {
             await _readConcurrency.WaitAsync(_stop.Token).ConfigureAwait(false);
             entered = true;
-            IRangeSource source = await _storage.OpenAsync(entry, _stop.Token).ConfigureAwait(false);
+            IRangeSource source = await storage.OpenAsync(entry, _stop.Token).ConfigureAwait(false);
             BinaryDocument document = await BinaryDocument.OpenAsync(source, wireType, ownsSource: true, _options.ReadLimits, _stop.Token).ConfigureAwait(false);
             try
             {

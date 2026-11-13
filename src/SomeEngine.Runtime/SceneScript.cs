@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using SomeEngine.Animation.Pose;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Entities;
@@ -35,12 +35,13 @@ public sealed class SceneScript
     }
 
     public ClusterShadingPath? ShadingPath { get; init; }
+    public ClusterVisibilityMode? VisibilityMode { get; init; }
     public uint GeometryMemoryBytes { get; init; } = 256u * 1024 * 1024;
     /// <summary>Maximum hierarchy, candidate and deferred entries retained by the geometry pipeline.</summary>
     public uint ClusterWorkCapacity { get; init; } = 1_048_576;
-    public uint BlendTriangleCapacity { get; init; } = ClusterPipelineOptions.DefaultBlendTriangleCapacity;
-    public uint BlendReferenceCapacity { get; init; } = 1_048_576;
-    public Action<ClusterBlendMetrics>? BlendFrameCompleted { get; init; }
+    /// <summary>Raster-batch capacity; null uses the scene default and zero sends all batches through the spill input.</summary>
+    public uint? RasterBatchCapacity { get; init; }
+    public Func<ApplicationRendering, IEnumerable<IApplicationFrameFeature>>? CreateFrameFeatures { get; init; }
     public Func<ApplicationRendering, IApplicationColorFeature>? CreateColorFeature { get; init; }
     public bool WaitForFrames { get; init; } = true;
     public float RasterEdgePixels { get; init; } = 4;
@@ -101,17 +102,17 @@ public sealed record SceneImage(int Frame, int Width, int Height, ReadOnlyMemory
 /// <summary>Scene operations available during a frame action.</summary>
 public sealed class SceneEdit
 {
-    private readonly RuntimeScene _scene;
+    private readonly SceneWorldData _scene;
     private readonly NativeWindow _window;
     private readonly List<Action<SceneImage>> _images = [];
     private readonly List<Action<SceneLinearImage>> _linearImages = [];
-    private readonly List<(Entity Target, Action<GpuPoseReadback> Receive)> _poseReads = [];
+    private readonly List<(Entity Target, Action<GpuPoseReadbackResult> Receive)> _poseReads = [];
     private bool _active;
 
-    internal SceneEdit(RuntimeScene scene, NativeWindow window) => (_scene, _window) = (scene, window);
+    internal SceneEdit(SceneWorldData scene, NativeWindow window) => (_scene, _window) = (scene, window);
     internal IReadOnlyList<Action<SceneImage>> Images => _images;
     internal IReadOnlyList<Action<SceneLinearImage>> LinearImages => _linearImages;
-    internal IReadOnlyList<(Entity Target, Action<GpuPoseReadback> Receive)> PoseReads => _poseReads;
+    internal IReadOnlyList<(Entity Target, Action<GpuPoseReadbackResult> Receive)> PoseReads => _poseReads;
     internal bool FrameCanceled { get; private set; }
     internal bool CameraCut { get; private set; }
     internal bool ShadowMapRefreshRequested { get; private set; }
@@ -212,18 +213,6 @@ public sealed class SceneEdit
         _scene.SetEntityTransform(entity, transform);
     }
 
-    public void SetXray(Entity entity, Xray effect)
-    {
-        RequireAction();
-        _scene.SetXray(entity, effect);
-    }
-
-    public void RemoveXray(Entity entity)
-    {
-        RequireAction();
-        _scene.RemoveXray(entity);
-    }
-
     public IReadOnlyList<Entity> PointLights { get { RequireAction(); return _scene.GetPointLights(); } }
 
     public void SetPointLight(Entity entity, PointLight light)
@@ -263,7 +252,7 @@ public sealed class SceneEdit
     }
 
     /// <summary>Reads this frame's GPU model-space section after rendering has produced its history pair.</summary>
-    public void ReadGpuPose(Entity target, Action<GpuPoseReadback> receive)
+    public void ReadGpuPose(Entity target, Action<GpuPoseReadbackResult> receive)
     {
         RequireAction();
         _poseReads.Add((target, receive));

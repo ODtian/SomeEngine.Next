@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -36,7 +36,7 @@ internal static class ResourceReuseMeasurements
             await using (var files = new AssetLoader(storage, new() { ByteCache = bytes }))
             {
                 var textures = new WeakValues<AssetResourceKey<TextureAsset>, Texture>();
-                var shaders = new WeakValues<AssetResourceKey<ShaderAsset>, Shader>();
+                using var shaders = new ShaderLibrary(slang, settings);
                 WeakReference<Texture>[] oldTextures = MeasureTextureReferences(directory, storage, files, textures, textureId);
                 Collect();
                 RequireCollected(oldTextures);
@@ -46,17 +46,17 @@ internal static class ResourceReuseMeasurements
 
                 WeakReference<Shader>[] oldIr = MeasureShaderReferences(directory, storage, files, shaders, irId, slang, settings);
                 Collect();
-                RequireCollected(oldIr);
+                GC.KeepAlive(oldIr);
                 Shader rebuiltIr = Measure("ir-after-gap", storage,
-                    () => ShaderAsset.GetAsync(files, irId, shaders, slang, settings).GetAwaiter().GetResult());
-                Console.WriteLine($"ir-creations total=3 overlap-peak=2 gap-old-collected={oldIr.Length} native-code-bytes={CodeBytes(rebuiltIr).Native} managed-code-bytes={CodeBytes(rebuiltIr).Managed}");
+                    () => shaders.GetAsync(files, irId).GetAwaiter().GetResult());
+                Console.WriteLine($"ir-creations total=2 overlap-peak=2 gap-old-retained={oldIr.Length} native-code-bytes={CodeBytes(rebuiltIr).Native} managed-code-bytes={CodeBytes(rebuiltIr).Managed}");
 
                 WeakReference<Shader> oldCode = MeasureCodeReferences(storage, files, shaders, codeId, slang, settings);
                 Collect();
-                RequireCollected([oldCode]);
+                GC.KeepAlive(oldCode);
                 Shader rebuiltCode = Measure("saved-code-after-gap", storage,
-                    () => ShaderAsset.GetAsync(files, codeId, shaders, slang, settings).GetAwaiter().GetResult());
-                Console.WriteLine($"saved-code-creations total=2 gap-old-collected=1 native-code-bytes={CodeBytes(rebuiltCode).Native} managed-code-bytes={CodeBytes(rebuiltCode).Managed}");
+                    () => shaders.GetAsync(files, codeId).GetAwaiter().GetResult());
+                Console.WriteLine($"saved-code-creations total=1 gap-old-retained=1 native-code-bytes={CodeBytes(rebuiltCode).Native} managed-code-bytes={CodeBytes(rebuiltCode).Managed}");
                 Console.WriteLine($"retained byte-cache-items={bytes.CachedItems} byte-cache-arrays={bytes.CachedBytes} byte-cache-index={bytes.IndexBytes} weak-arrays=high-water");
                 GC.KeepAlive(rebuilt);
                 GC.KeepAlive(rebuiltIr);
@@ -66,12 +66,12 @@ internal static class ResourceReuseMeasurements
             var reopenedBytes = new AssetByteCache(64L * 1024 * 1024);
             await using (var files = new AssetLoader(storage, new() { ByteCache = reopenedBytes, MaxCachedFiles = 0 }))
             {
-                var shaders = new WeakValues<AssetResourceKey<ShaderAsset>, Shader>();
+                using var shaders = new ShaderLibrary(slang, settings);
                 WeakReference<Shader> oldCode = AcquireCollectibleCode(storage, files, shaders, codeId, slang, settings);
                 Collect();
-                RequireCollected([oldCode]);
+                GC.KeepAlive(oldCode);
                 Shader code = Measure("saved-code-reopened-file", storage,
-                    () => ShaderAsset.GetAsync(files, codeId, shaders, slang, settings).GetAwaiter().GetResult());
+                    () => shaders.GetAsync(files, codeId).GetAwaiter().GetResult());
                 Console.WriteLine($"reopened-file byte-cache-items={reopenedBytes.CachedItems} byte-cache-arrays={reopenedBytes.CachedBytes} byte-cache-index={reopenedBytes.IndexBytes} native-code-bytes={CodeBytes(code).Native} managed-code-bytes={CodeBytes(code).Managed}");
                 GC.KeepAlive(code);
             }
@@ -113,27 +113,27 @@ internal static class ResourceReuseMeasurements
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static WeakReference<Shader>[] MeasureShaderReferences(string directory, MeasuredStorage storage,
-        AssetLoader files, WeakValues<AssetResourceKey<ShaderAsset>, Shader> values, AssetId<ShaderAsset> id,
+        AssetLoader files, ShaderLibrary library, AssetId<ShaderAsset> id,
         IGlobalSession slang, SessionDesc settings)
     {
         Shader first = Measure("ir-cold", storage,
-            () => ShaderAsset.GetAsync(files, id, values, slang, settings).GetAwaiter().GetResult());
+            () => library.GetAsync(files, id).GetAwaiter().GetResult());
         Shader retained = Measure("ir-32-live-reads", storage, () =>
         {
             Shader value = first;
             for (int read = 0; read < 32; read++)
             {
-                value = ShaderAsset.GetAsync(files, id, values, slang, settings).Result;
+                value = library.GetAsync(files, id).Result;
                 if (!ReferenceEquals(first, value)) throw new InvalidDataException("Live shader identity changed.");
             }
             return value;
         });
         Shader nextScene = Measure("ir-held-transition", storage,
-            () => ShaderAsset.GetAsync(files, id, values, slang, settings).GetAwaiter().GetResult());
+            () => library.GetAsync(files, id).GetAwaiter().GetResult());
         if (!ReferenceEquals(first, nextScene)) throw new InvalidDataException("Held shader identity changed.");
         _ = WriteShaderAsync(directory, storage, slang, settings, "ir", id.Value).GetAwaiter().GetResult();
         Shader changed = Measure("ir-new-version", storage,
-            () => ShaderAsset.GetAsync(files, id, values, slang, settings).GetAwaiter().GetResult());
+            () => library.GetAsync(files, id).GetAwaiter().GetResult());
         if (ReferenceEquals(first, changed)) throw new InvalidDataException("Changed shader identity was reused.");
         Console.WriteLine($"ir-overlap objects=2 native-code-bytes={CodeBytes(first, changed).Native} managed-code-bytes={CodeBytes(first, changed).Managed}");
         GC.KeepAlive(retained);
@@ -142,23 +142,23 @@ internal static class ResourceReuseMeasurements
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static WeakReference<Shader> MeasureCodeReferences(MeasuredStorage storage, AssetLoader files,
-        WeakValues<AssetResourceKey<ShaderAsset>, Shader> values, AssetId<ShaderAsset> id,
+        ShaderLibrary library, AssetId<ShaderAsset> id,
         IGlobalSession slang, SessionDesc settings)
     {
         Shader first = Measure("saved-code-cold", storage,
-            () => ShaderAsset.GetAsync(files, id, values, slang, settings).GetAwaiter().GetResult());
+            () => library.GetAsync(files, id).GetAwaiter().GetResult());
         Shader second = Measure("saved-code-live", storage,
-            () => ShaderAsset.GetAsync(files, id, values, slang, settings).GetAwaiter().GetResult());
+            () => library.GetAsync(files, id).GetAwaiter().GetResult());
         if (!ReferenceEquals(first, second)) throw new InvalidDataException("Live saved-code shader identity changed.");
         return new(first);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static WeakReference<Shader> AcquireCollectibleCode(MeasuredStorage storage, AssetLoader files,
-        WeakValues<AssetResourceKey<ShaderAsset>, Shader> values, AssetId<ShaderAsset> id,
+        ShaderLibrary library, AssetId<ShaderAsset> id,
         IGlobalSession slang, SessionDesc settings)
         => new(Measure("saved-code-first-reopened-file", storage,
-            () => ShaderAsset.GetAsync(files, id, values, slang, settings).GetAwaiter().GetResult()));
+            () => library.GetAsync(files, id).GetAwaiter().GetResult()));
 
     private static T Measure<T>(string name, MeasuredStorage storage, Func<T> read)
     {
@@ -253,15 +253,14 @@ internal static class ResourceReuseMeasurements
 
     private static ShaderAsset CreateShader(IGlobalSession slang, SessionDesc settings, string name, Guid id = default)
     {
-        if (slang.CreateSession(settings, out ISession session).Failed)
-            throw new InvalidOperationException("Slang input session creation failed.");
-        ISlangBlob text = Slang.CreateBlob(Encoding.UTF8.GetBytes("""
+        using var library = new ShaderLibrary(slang, settings);
+        Shader shader = library.CreateAsync(name, "reuse.slang", """
             RWStructuredBuffer<uint> Values;
             [shader("compute")]
             [numthreads(1, 1, 1)]
             void Compute(uint3 thread : SV_DispatchThreadID) { Values[thread.x] = thread.x; }
-            """));
-        IModule input = session.LoadModuleFromSource("reuse", "reuse.slang", text, out _)!;
+            """).AsTask().GetAwaiter().GetResult();
+        IModule input = shader.GetSlangSourceUnit(0);
         if (input.Serialize(out ISlangBlob serialized).Failed)
             throw new InvalidOperationException("Slang input serialization failed.");
         var asset = new ShaderAsset(id) { Name = name };

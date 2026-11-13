@@ -1,8 +1,8 @@
-#ifndef UNLIT_MATERIAL_SLANG
+﻿#ifndef UNLIT_MATERIAL_SLANG
 #define UNLIT_MATERIAL_SLANG
-#include "material_interfaces.slang"
-#include "triangle_surface.slang"
-#include "coating_material.slang"
+__exported import material_interfaces;
+__exported import triangle_surface;
+__exported import coating_material;
 
 [MaterialScalars]
 struct UnlitScalars
@@ -31,7 +31,7 @@ UnlitPixelContext BuildUnlitPixelContext(
     return ctx;
 }
 
-struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurfaceEvaluate<SurfaceEval, Triangle>
+struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 {
     Texture2D AlbedoMap;
     SamplerState MaterialSampler;
@@ -54,12 +54,12 @@ struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurf
         return float4(color, albedo.a * scalars.BaseColorTint.a);
     }
 
-    void evaluateSurface(
+    void evaluateSurface<TOutput : ISurfaceOutput>(
         SurfacePixelInput input, SurfaceEval surface, float3 bary,
-        Triangle triangle, RWTexture2DArray<float4> outputColor)
+        Triangle triangle, TOutput output)
     {
         float4 color = evaluateColor(input, surface, bary, triangle);
-        outputColor[input.PixelCoord] = float4(color.rgb, 1.0);
+        output.Write(input.PixelCoord, color);
     }
 
     float4 evaluateDebugColor(uint debugMode, SurfacePixelInput input,
@@ -78,21 +78,13 @@ struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurf
         return float4(1.0, 0.0, 1.0, 1.0);
     }
 
-    void evaluateDebug(
+    void evaluateDebug<TOutput : ISurfaceOutput>(
         uint debugMode, SurfacePixelInput input, SurfaceEval surface, float3 bary,
-        Triangle triangle, RWTexture2DArray<float4> outputColor)
+        Triangle triangle, TOutput output)
     {
-        outputColor[input.PixelCoord] = evaluateDebugColor(debugMode, input, surface, bary, triangle);
+        output.Write(input.PixelCoord, evaluateDebugColor(debugMode, input, surface, bary, triangle));
     }
 
-    float4 evaluateTransparency(uint debugMode, SurfacePixelInput input,
-        SurfaceEval surface, float3 bary, Triangle triangle)
-    {
-        return debugMode == 0u ? evaluateColor(input, surface, bary, triangle) :
-            evaluateDebugColor(debugMode, input, surface, bary, triangle);
-    }
-
-    void markShadowPages(SurfacePixelInput input, SurfaceEval surface, float3 bary, Triangle triangle) {}
 
 };
 

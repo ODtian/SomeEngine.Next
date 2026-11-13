@@ -12,7 +12,7 @@ public sealed class WarpResourceTests
     [InlineData(MapType.ReadWrite)]
     public void Every_named_map_type_maps_and_releases(MapType type)
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -27,7 +27,7 @@ public sealed class WarpResourceTests
     [Fact]
     public void Buffers_report_canonical_memory_type_initial_facts()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer ordinary = backend.CreateBuffer(
             device,
@@ -53,7 +53,7 @@ public sealed class WarpResourceTests
     [Fact]
     public void RecordedCopyRetainsDisposedBufferUntilReadbackCompletes()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
         Assert.NotNull(diagnostics);
@@ -129,7 +129,7 @@ public sealed class WarpResourceTests
     [Fact]
     public void LargeBufferReportsRequestedSize()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
         Assert.NotNull(diagnostics);
@@ -145,7 +145,7 @@ public sealed class WarpResourceTests
     [Fact]
     public void Mapping_uses_absolute_windows_and_one_shared_terminal_sequence()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -175,7 +175,7 @@ public sealed class WarpResourceTests
     [Fact]
     public void Stale_mapping_operations_cannot_observe_or_end_a_reused_mapping_slot()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -204,7 +204,7 @@ public sealed class WarpResourceTests
     [Fact]
     public void Unknown_map_type_is_rejected_without_activating_the_mapping()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -233,7 +233,7 @@ public sealed class WarpResourceTests
     [Fact]
     public void Whole_mapping_is_resolved_and_default_or_zero_length_mappings_are_invalid()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -259,7 +259,7 @@ public sealed class WarpResourceTests
     [Fact]
     public void Mapping_larger_than_Int32MaxValue_is_rejected_before_native_Map()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? sparse));
         Assert.NotNull(sparse);
@@ -280,7 +280,7 @@ public sealed class WarpResourceTests
     [Fact]
     public void Resource_disposal_invalidates_an_active_mapping_once()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Buffer upload = backend.CreateBuffer(
             device,
@@ -298,15 +298,10 @@ public sealed class WarpResourceTests
         upload.Dispose();
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Wait_timeout_domain_is_validated_before_completion_access(
-        bool validationEnabled)
+    [Fact]
+    public void Wait_timeout_domain_is_validated_before_completion_access()
     {
-        using IGraphicsBackend backend = validationEnabled
-            ? new ValidationLayer(D3D12GraphicsBackend.Create())
-            : D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             backend.WaitCpu(default, TimeSpan.FromMilliseconds(-2)));
@@ -324,7 +319,7 @@ public sealed class WarpResourceTests
     [Fact]
     public void Wait_fractional_timeout_polls_and_a_failed_timeout_leaves_the_completion_usable()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using CommandContext context = backend.CreateCommandContext(
             device,

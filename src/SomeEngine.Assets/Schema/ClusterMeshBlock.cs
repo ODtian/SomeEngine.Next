@@ -9,7 +9,8 @@ namespace SomeEngine.Assets.Schema;
 /// <summary>Cluster geometry, its authenticated page descriptions and lazily acquired payload.</summary>
 [AssetBlock("SomeEngine.Assets.Schema.ClusterMeshBlock"), BinarySerializable]
 [BinaryFields(nameof(VertexEncoding), nameof(PayloadKey), nameof(PayloadLength), nameof(BvhOffset),
-    nameof(PageDigests), nameof(LowestDetailPageIndices), nameof(BvhLength), nameof(BvhSha256))]
+    nameof(PageDigests), nameof(LowestDetailPageIndices), nameof(BvhLength), nameof(BvhSha256),
+    nameof(ClusterGeometryIndices), nameof(ClusterGroups), nameof(RegionIndices))]
 public sealed partial class ClusterMeshBlock : AssetBlock
 {
     public static ulong PayloadChunkKey { get; } = BinaryFieldKey.FromName("SomeEngine.Assets.Schema.Mesh.Payload");
@@ -21,6 +22,9 @@ public sealed partial class ClusterMeshBlock : AssetBlock
     public partial IList<uint> LowestDetailPageIndices { get; set; }
     public partial ulong BvhLength { get; set; }
     public partial ImmutableArray<byte> BvhSha256 { get; set; }
+    public partial IList<uint> ClusterGeometryIndices { get; set; }
+    public partial IList<MeshClusterGroup> ClusterGroups { get; set; }
+    public partial IList<int> RegionIndices { get; set; }
 
     partial void Initialize()
     {
@@ -125,7 +129,8 @@ public sealed partial class ClusterMeshBlock : AssetBlock
             ready[index] = await source.ReadPageAsync(checked((int)index), cancellationToken).ConfigureAwait(false);
         return Mesh.Create(name, copy.VertexEncoding, copy.PageDigests.ToImmutableArray(), bvh, ready,
             lowestDetailPageIndices: copy.LowestDetailPageIndices.ToArray(),
-            bounds: shape.Bounds, regions: shape.Regions.ToImmutableArray());
+            bounds: shape.Bounds, regions: shape.Regions.ToImmutableArray(),
+            clusterGeometryIndices: copy.ClusterGeometryIndices.ToArray(), clusterGroups: copy.ClusterGroups.ToArray());
     }
 
     public async ValueTask LoadPagesAsync(Mesh mesh, IEnumerable<int> pageIndices, CancellationToken cancellationToken = default)

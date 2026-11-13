@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="tools/SomeEngine.Transparency.Research.Tests/SomeEngine.Transparency.Research.Tests.csproj" />
   <Project Path="src/SomeEngine.Terrain/SomeEngine.Terrain.csproj" />
   <Project Path="tests/SomeEngine.Terrain.Tests/SomeEngine.Terrain.Tests.csproj" />
   <Project Path="src/SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" />
@@ -102,6 +103,7 @@
   <Folder Name="/templates/" />
   <Folder Name="/tests/">
     <Project Path="tests/SomeEngine.TestRules.Tests/SomeEngine.TestRules.Tests.csproj" />
+    <Project Path="tests/SomeEngine.ArchitectureRules.Tests/SomeEngine.ArchitectureRules.Tests.csproj" />
     <Project Path="tests/SomeEngine.Assets.Consumer.Tests/SomeEngine.Assets.Consumer.Tests.csproj" />
     <Project Path="tests/SomeEngine.ECS.Benchmarks.Tests/SomeEngine.ECS.Benchmarks.Tests.csproj" />
     <Project Path="tests/SomeEngine.Graphics.Benchmarks.Tests/SomeEngine.Graphics.Benchmarks.Tests.csproj" />
@@ -111,6 +113,8 @@
     <Project Path="tools/SomeEngine.Transparency.Research/SomeEngine.Transparency.Research.csproj" />
     <Project Path="tools/SomeEngine.Transparency.Measurements/SomeEngine.Transparency.Measurements.csproj" />
     <Project Path="tools/TestRules/SomeEngine.TestRules.csproj" />
+    <Project Path="tools/ArchitectureRules/SomeEngine.ArchitectureRules.csproj" />
+    <Project Path="tools/BuildContent/BuildContent.csproj" />
     <Project Path="tools/GenerateDefaultAssets/SomeEngine.GenerateDefaultAssets.csproj" />
     <Project Path="tools/SomeEngine.Job.Benchmarks/SomeEngine.Job.Benchmarks.csproj" />
     <Project Path="tools/SomeEngine.SceneContent/SomeEngine.SceneContent.csproj" />

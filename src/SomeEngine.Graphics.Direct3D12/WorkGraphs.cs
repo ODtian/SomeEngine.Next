@@ -3,104 +3,65 @@ using Silk.NET.Direct3D12;
 using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Direct3D12;
-
 internal sealed unsafe partial class D3D12Backend
 {
-    private const string WorkGraphProgramName = "SomeEngine.WorkGraph";
-
-    public Pipeline CreateWorkGraphPipeline(
-        Device device,
-        in WorkGraphPipelineDesc desc,
-        PipelineCache? cache = null)
-        => CreateWorkGraphPipeline(device, desc, cache, null);
-
+    private const string WorkGraphName = "SomeEngine.WorkGraph";
+    public Pipeline CreateWorkGraphPipeline(Device device, in WorkGraphPipelineDesc desc, PipelineCache? cache = null) => CreateWorkGraphPipeline(device, desc, cache, null);
     private Pipeline CreateWorkGraphPipeline(
         Device device,
         in WorkGraphPipelineDesc desc,
         PipelineCache? cache,
-        SlangShaderData? capturedSlangCode)
+        SlangShaderData? capturedSlangCode
+    )
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
-        WorkGraphs capability = ValidateWorkGraphPipelineDescription(nativeDevice, desc);
+        WorkGraphs capability = nativeDevice.RequireCapability<WorkGraphs>(nameof(CreateWorkGraphPipeline));
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
         ShaderReflection reflection = desc.Reflection;
-        EntryPointReflection[] workGraphEntryPoints = CollectWorkGraphEntries(
-            reflection,
-            capability);
-        CompiledShaderLibrary library = CompileShaderLibrary(
-            desc.Code,
-            desc.CodeBlob,
-            reflection,
-            workGraphEntryPoints);
-        D3D12RootSignatureState global = CompileWorkGraphRootSignature(
-            nativeDevice,
-            reflection,
-            workGraphEntryPoints,
-            desc.StaticSamplers);
+        EntryPointReflection[] workGraphEntryPoints = CollectWorkGraphEntries(reflection);
+        CompiledShaderLibrary library = CompileShaderLibrary(desc.Code, desc.CodeBlob, reflection, workGraphEntryPoints);
+        D3D12RootSignatureState global = CompileWorkGraphRootSignature(nativeDevice, reflection, workGraphEntryPoints, desc.StaticSamplers);
         ID3D12StateObject* stateObject = null;
         ID3D12StateObjectProperties1* stateProperties = null;
         ID3D12WorkGraphProperties* graphProperties = null;
-        NativeLease? nativeState = null;
-        NativeLease? statePropertiesLease = null;
-        NativeLease? graphPropertiesLease = null;
+        NativeResourceData? nativeState = null;
+        NativeResourceData? statePropertiesData = null;
+        NativeResourceData? graphPropertiesData = null;
         D3D12RootSignatureState? globalToRelease = global;
         SlangShaderData? retainedCode = null;
         D3D12WorkGraphPipeline? result = null;
         try
         {
-            stateObject = CreateNativeWorkGraphStateObject(
-                nativeDevice,
-                global,
-                library.Code,
-                workGraphEntryPoints,
-                desc.NodeMask);
+            stateObject = CreateNativeWorkGraphStateObject(nativeDevice, global, library.Code, workGraphEntryPoints, desc.NodeMask);
             SetNativeName(stateObject, desc.Label ?? "Work Graph State Object");
-            QueryWorkGraphInterfaces(
-                nativeDevice,
-                stateObject,
-                out stateProperties,
-                out graphProperties);
-            ProgramIdentifier identifier = GetWorkGraphProgramIdentifier(stateProperties);
+            QueryWorkGraphInterfaces(nativeDevice, stateObject, out stateProperties, out graphProperties);
+            ProgramIdentifier identifier = GetWorkGraphIdentifier(stateProperties);
             uint graphIndex = GetWorkGraphIndex(graphProperties);
-            WorkGraphEntryPointState[] entryPoints = ReadMaterializedWorkGraphEntries(
-                capability,
-                graphProperties,
-                graphIndex,
-                workGraphEntryPoints);
-            WorkGraphMemoryRequirements requirements = ReadWorkGraphMemoryRequirements(
-                graphProperties,
-                graphIndex);
-
-            statePropertiesLease = new NativeLease(
-                (IUnknown*)stateProperties,
-                ownsReference: true);
+            WorkGraphEntryPointState[] entryPoints = ReadMaterializedWorkGraphEntries(capability, graphProperties, graphIndex, workGraphEntryPoints);
+            WorkGraphMemoryRequirements requirements = ReadWorkGraphMemoryRequirements(graphProperties, graphIndex);
+            statePropertiesData = new NativeResourceData((IUnknown*)stateProperties, ownsReference: true);
             stateProperties = null;
-            graphPropertiesLease = new NativeLease(
-                (IUnknown*)graphProperties,
-                ownsReference: true);
+            graphPropertiesData = new NativeResourceData((IUnknown*)graphProperties, ownsReference: true);
             graphProperties = null;
-            nativeState = new NativeLease(
-                (IUnknown*)stateObject,
-                ownsReference: true,
-                global.NativeLifetime);
+            nativeState = new NativeResourceData((IUnknown*)stateObject, ownsReference: true, global.NativeData);
             stateObject = null;
             retainedCode = capturedSlangCode ?? desc.SlangCode;
-            NativeLease[] additionalLeases =
-                [statePropertiesLease, graphPropertiesLease];
+            NativeResourceData[] additionalData = [statePropertiesData.Value, graphPropertiesData.Value];
             result = new D3D12WorkGraphPipeline(
                 nativeDevice,
-                nativeState,
+                nativeState.Value,
                 global,
-                additionalLeases,
+                additionalData,
                 retainedCode,
                 identifier,
                 requirements,
                 entryPoints,
-                desc.Label);
+                desc.Label
+            );
             nativeState = null;
-            statePropertiesLease = null;
-            graphPropertiesLease = null;
+            statePropertiesData = null;
+            graphPropertiesData = null;
             globalToRelease = null;
             retainedCode = null;
             nativeDevice.RegisterChild(result);
@@ -108,14 +69,7 @@ internal sealed unsafe partial class D3D12Backend
         }
         catch
         {
-            CleanupFailedWorkGraphPipeline(
-                result,
-                nativeState,
-                statePropertiesLease,
-                graphPropertiesLease,
-                stateObject,
-                stateProperties,
-                graphProperties);
+            CleanupFailedWorkGraphPipeline(result, nativeState, statePropertiesData, graphPropertiesData, stateObject, stateProperties, graphProperties);
             throw;
         }
         finally
@@ -128,48 +82,36 @@ internal sealed unsafe partial class D3D12Backend
         D3D12Device nativeDevice,
         ShaderReflection reflection,
         EntryPointReflection[] entryPoints,
-        ReadOnlySpan<StaticSamplerBinding> staticSamplers) =>
-        D3D12RootSignatureBuilder.Compile(
-            this,
-            nativeDevice,
-            reflection,
-            entryPoints,
-            staticSamplers,
-            PipelineType.WorkGraph,
-            allowInputAssembler: false,
-            allowStreamOutput: false);
-
-    private static WorkGraphs ValidateWorkGraphPipelineDescription(
-        D3D12Device nativeDevice,
-        in WorkGraphPipelineDesc desc)
-    {
-        WorkGraphs capability =
-            nativeDevice.RequireCapability<WorkGraphs>(nameof(CreateWorkGraphPipeline));
-        ArgumentNullException.ThrowIfNull(desc.SlangCode);
-        if (desc.Reflection == ShaderReflection.Null)
-            throw new ArgumentException("A Work Graph pipeline requires Slang reflection.", nameof(desc));
-        if (desc.NodeMask == 0 || (desc.NodeMask & ~nativeDevice.EnabledNodeMask) != 0)
-            throw new ArgumentOutOfRangeException(nameof(desc));
-        return capability;
-    }
-
+        ReadOnlySpan<StaticSamplerBinding> staticSamplers
+    ) => D3D12RootSignatureBuilder.Compile(
+        this,
+        nativeDevice,
+        reflection,
+        entryPoints,
+        staticSamplers,
+        PipelineType.WorkGraph,
+        allowInputAssembler: false,
+        allowStreamOutput: false
+    );
     private static void CleanupFailedWorkGraphPipeline(
         D3D12WorkGraphPipeline? result,
-        NativeLease? nativeState,
-        NativeLease? statePropertiesLease,
-        NativeLease? graphPropertiesLease,
+        NativeResourceData? nativeState,
+        NativeResourceData? statePropertiesData,
+        NativeResourceData? graphPropertiesData,
         ID3D12StateObject* stateObject,
         ID3D12StateObjectProperties1* stateProperties,
-        ID3D12WorkGraphProperties* graphProperties)
+        ID3D12WorkGraphProperties* graphProperties
+    )
     {
         if (result is not null)
         {
             result.Dispose();
             return;
         }
+
         nativeState?.Release();
-        graphPropertiesLease?.Release();
-        statePropertiesLease?.Release();
+        graphPropertiesData?.Release();
+        statePropertiesData?.Release();
         if (graphProperties is not null)
             _ = PipelineTrace.Release(graphProperties);
         if (stateProperties is not null)
@@ -178,9 +120,7 @@ internal sealed unsafe partial class D3D12Backend
             _ = PipelineTrace.Release(stateObject);
     }
 
-    private EntryPointReflection[] CollectWorkGraphEntries(
-        ShaderReflection reflection,
-        WorkGraphs capability)
+    private EntryPointReflection[] CollectWorkGraphEntries(ShaderReflection reflection)
     {
         var entries = new List<EntryPointReflection>();
         for (uint index = 0; index < reflection.EntryPointCount; index++)
@@ -188,20 +128,11 @@ internal sealed unsafe partial class D3D12Backend
             EntryPointReflection entry = reflection.GetEntryPointByIndex(index);
             if (entry.Stage is not (SlangStage.Dispatch or SlangStage.Node))
                 continue;
-            _ = ValidateStateObjectEntryPoint(
-                reflection,
-                entry,
-                [SlangStage.Dispatch, SlangStage.Node],
-                "Work Graph member");
+            _ = ValidateStateObjectEntryPoint(reflection, entry, [SlangStage.Dispatch, SlangStage.Node], "Work Graph member");
             entries.Add(entry);
         }
-        if (entries.Count == 0 || (uint)entries.Count > capability.MaximumNodeCount)
-        {
-            throw new GraphicsException(
-                GraphicsError.PipelineCreation,
-                "The linked Slang program exposes on valid Work Graph nodes or exceeds the Device limit.");
-        }
-        return [.. entries];
+
+        return[..entries];
     }
 
     private ID3D12StateObject* CreateNativeWorkGraphStateObject(
@@ -209,7 +140,8 @@ internal sealed unsafe partial class D3D12Backend
         D3D12RootSignatureState global,
         byte[] code,
         EntryPointReflection[] entryPoints,
-        uint nodeMask)
+        uint nodeMask
+    )
     {
         using NativeStateObjectArena arena = new();
         const int subobjectCount = 4;
@@ -218,11 +150,9 @@ internal sealed unsafe partial class D3D12Backend
         int ordinal = 1;
         GlobalRootSignature* globalDescription = arena.Allocate<GlobalRootSignature>();
         globalDescription->PGlobalRootSignature = global.Native;
-        subobjects[ordinal++] = new StateSubobject(
-            StateSubobjectType.GlobalRootSignature,
-            globalDescription);
+        subobjects[ordinal++] = new StateSubobject(StateSubobjectType.GlobalRootSignature, globalDescription);
         WorkGraphDesc* graph = arena.Allocate<WorkGraphDesc>();
-        graph->ProgramName = arena.String(WorkGraphProgramName);
+        graph->ProgramName = arena.String(WorkGraphName);
         graph->Flags = WorkGraphFlags.IncludeAllAvailableNodes;
         graph->NumEntrypoints = 0;
         graph->PEntrypoints = null;
@@ -231,27 +161,12 @@ internal sealed unsafe partial class D3D12Backend
         subobjects[ordinal++] = new StateSubobject(StateSubobjectType.WorkGraph, graph);
         uint* nativeNodeMask = arena.Allocate<uint>();
         *nativeNodeMask = nodeMask;
-        subobjects[ordinal++] = new StateSubobject(
-            StateSubobjectType.NodeMask,
-            nativeNodeMask);
-        if (ordinal != subobjectCount)
-            throw new InvalidOperationException("The Work Graph state-object layout is incomplete.");
-
-        StateObjectDesc native = new(
-            StateObjectType.Executable,
-            checked((uint)subobjectCount),
-            subobjects);
+        subobjects[ordinal++] = new StateSubobject(StateSubobjectType.NodeMask, nativeNodeMask);
+        StateObjectDesc native = new(StateObjectType.Executable, checked((uint)subobjectCount), subobjects);
         ID3D12StateObject* stateObject = null;
         Guid iid = ID3D12StateObject.Guid;
-        int createResult = DevicePipelineTrace.CreateStateObject(
-nativeDevice.Native, &native,
-            &iid,
-            (void**)&stateObject);
-        ThrowIfFailed(
-            nativeDevice,
-            createResult,
-            NativeOperationType.PipelineCreation,
-            "ID3D12Device5::CreateStateObject(Work Graph)");
+        int createResult = DevicePipelineTrace.CreateStateObject(nativeDevice.Native, &native, &iid, (void**)&stateObject);
+        ThrowIfFailed(nativeDevice, createResult, NativeOperationType.PipelineCreation, "ID3D12Device5::CreateStateObject(Work Graph)");
         return stateObject;
     }
 
@@ -259,79 +174,71 @@ nativeDevice.Native, &native,
         NativeStateObjectArena arena,
         byte[] code,
         EntryPointReflection[] entryPoints,
-        StateSubobject* subobjects)
+        StateSubobject* subobjects
+    )
     {
         ExportDesc* exports = arena.Allocate<ExportDesc>(entryPoints.Length);
         for (int index = 0; index < entryPoints.Length; index++)
         {
-            string name = GetStableEntryPointName(entryPoints[index]);
+            string name = GetEntryPointName(entryPoints[index]);
             exports[index] = new ExportDesc(arena.String(name), null, ExportFlags.None);
         }
+
         DxilLibraryDesc* libraryDescription = arena.Allocate<DxilLibraryDesc>();
-        *libraryDescription = new DxilLibraryDesc(
-            new ShaderBytecode(arena.Bytes(code), (nuint)code.Length),
-            checked((uint)entryPoints.Length),
-            exports);
-        subobjects[0] = new StateSubobject(
-            StateSubobjectType.DxilLibrary,
-            libraryDescription);
+        *libraryDescription = new DxilLibraryDesc(new ShaderBytecode(arena.Bytes(code), (nuint)code.Length), checked((uint)entryPoints.Length), exports);
+        subobjects[0] = new StateSubobject(StateSubobjectType.DxilLibrary, libraryDescription);
     }
 
     private static void QueryWorkGraphInterfaces(
         D3D12Device nativeDevice,
         ID3D12StateObject* stateObject,
         out ID3D12StateObjectProperties1* stateProperties,
-        out ID3D12WorkGraphProperties* graphProperties)
+        out ID3D12WorkGraphProperties* graphProperties
+    )
     {
         stateProperties = null;
         graphProperties = null;
         ID3D12StateObjectProperties1* queriedStateProperties = null;
         Guid statePropertiesIid = ID3D12StateObjectProperties1.Guid;
-        int propertiesResult = PipelineTrace.QueryInterface(
-stateObject, &statePropertiesIid,
-            (void**)&queriedStateProperties);
+        int propertiesResult = PipelineTrace.QueryInterface(stateObject, &statePropertiesIid, (void**)&queriedStateProperties);
         ThrowIfFailed(
             nativeDevice,
             propertiesResult,
             NativeOperationType.PipelineCreation,
-            "ID3D12StateObject::QueryInterface(ID3D12StateObjectProperties1)");
+            "ID3D12StateObject::QueryInterface(ID3D12StateObjectProperties1)"
+        );
         stateProperties = queriedStateProperties;
         ID3D12WorkGraphProperties* queriedGraphProperties = null;
         Guid graphPropertiesIid = ID3D12WorkGraphProperties.Guid;
-        int graphPropertiesResult = PipelineTrace.QueryInterface(
-stateObject, &graphPropertiesIid,
-            (void**)&queriedGraphProperties);
+        int graphPropertiesResult = PipelineTrace.QueryInterface(stateObject, &graphPropertiesIid, (void**)&queriedGraphProperties);
         ThrowIfFailed(
             nativeDevice,
             graphPropertiesResult,
             NativeOperationType.PipelineCreation,
-            "ID3D12StateObject::QueryInterface(ID3D12WorkGraphProperties)");
+            "ID3D12StateObject::QueryInterface(ID3D12WorkGraphProperties)"
+        );
         graphProperties = queriedGraphProperties;
     }
 
-    private static ProgramIdentifier GetWorkGraphProgramIdentifier(
-        ID3D12StateObjectProperties1* stateProperties)
+    private static ProgramIdentifier GetWorkGraphIdentifier(ID3D12StateObjectProperties1* stateProperties)
     {
-        ProgramIdentifier identifier =
-            PipelineTrace.GetProgramIdentifier(stateProperties, WorkGraphProgramName);
+        ProgramIdentifier identifier = PipelineTrace.GetWorkGraphIdentifier(stateProperties, WorkGraphName);
         if (IsZero(identifier))
         {
-            throw new GraphicsException(
-                GraphicsError.PipelineCreation,
-                "The Work Graph program identifier is empty.");
+            throw new GraphicsException(GraphicsError.PipelineCreation, "The Work Graph program identifier is empty.");
         }
+
         return identifier;
     }
 
     private static uint GetWorkGraphIndex(ID3D12WorkGraphProperties* graphProperties)
     {
-        uint graphIndex = PipelineTrace.GetWorkGraphIndex(graphProperties, WorkGraphProgramName);
+        uint graphIndex = PipelineTrace.GetWorkGraphIndex(graphProperties, WorkGraphName);
         if (graphIndex == uint.MaxValue)
         {
-            throw new GraphicsException(
-                GraphicsError.PipelineCreation,
-                "The Work Graph program was not found in its state object.");
+            throw new GraphicsException(GraphicsError.PipelineCreation, "The Work Graph program was not found in its state object.");
         }
+
         return graphIndex;
     }
 
@@ -339,33 +246,23 @@ stateObject, &graphPropertiesIid,
         WorkGraphs capability,
         ID3D12WorkGraphProperties* graphProperties,
         uint graphIndex,
-        EntryPointReflection[] submittedEntryPoints)
+        EntryPointReflection[] submittedEntryPoints
+    )
     {
         uint nativeEntryPointCount = PipelineTrace.GetNumEntrypoints(graphProperties, graphIndex);
         if (nativeEntryPointCount == 0 || nativeEntryPointCount > capability.MaximumNodeCount)
         {
-            throw new GraphicsException(
-                GraphicsError.PipelineCreation,
-                "D3D12 returned an invalid Work Graph entry-point count.");
+            throw new GraphicsException(GraphicsError.PipelineCreation, "D3D12 returned an invalid Work Graph entry-point count.");
         }
-        return ReadWorkGraphEntries(
-            graphProperties,
-            graphIndex,
-            nativeEntryPointCount,
-            submittedEntryPoints,
-            capability.MaximumInputRecordSize);
+
+        return ReadWorkGraphEntries(graphProperties, graphIndex, nativeEntryPointCount, submittedEntryPoints, capability.MaximumInputRecordSize);
     }
 
-    private static WorkGraphMemoryRequirements ReadWorkGraphMemoryRequirements(
-        ID3D12WorkGraphProperties* graphProperties,
-        uint graphIndex)
+    private static WorkGraphMemoryRequirements ReadWorkGraphMemoryRequirements(ID3D12WorkGraphProperties* graphProperties, uint graphIndex)
     {
         Silk.NET.Direct3D12.WorkGraphMemoryRequirements native = default;
         PipelineTrace.GetWorkGraphMemoryRequirements(graphProperties, graphIndex, &native);
-        WorkGraphMemoryRequirements requirements = new(
-            native.MinSizeInBytes,
-            native.MaxSizeInBytes,
-            native.SizeGranularityInBytes);
+        WorkGraphMemoryRequirements requirements = new(native.MinSizeInBytes, native.MaxSizeInBytes, native.SizeGranularityInBytes);
         ValidateWorkGraphRequirements(requirements);
         return requirements;
     }
@@ -374,20 +271,15 @@ stateObject, &graphPropertiesIid,
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12WorkGraphPipeline native = RequireWorkGraphPipeline(pipeline);
-        _ = RequireDevice(pipeline.Device, nameof(pipeline))
-            .RequireCapability<WorkGraphs>(nameof(GetWorkGraphMemoryRequirements));
+        _ = RequireDevice(pipeline.Device, nameof(pipeline)).RequireCapability<WorkGraphs>(nameof(GetWorkGraphMemoryRequirements));
         return native.MemoryRequirements;
     }
 
-    public bool TryGetWorkGraphEntryPoints(
-        Pipeline pipeline,
-        Span<WorkGraphEntryPointInfo> destination,
-        out int requiredCount)
+    public bool TryGetWorkGraphEntryPoints(Pipeline pipeline, Span<WorkGraphEntryPointInfo> destination, out int requiredCount)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12WorkGraphPipeline native = RequireWorkGraphPipeline(pipeline);
-        _ = RequireDevice(pipeline.Device, nameof(pipeline))
-            .RequireCapability<WorkGraphs>(nameof(TryGetWorkGraphEntryPoints));
+        _ = RequireDevice(pipeline.Device, nameof(pipeline)).RequireCapability<WorkGraphs>(nameof(TryGetWorkGraphEntryPoints));
         return native.TryGetEntryPoints(destination, out requiredCount);
     }
 
@@ -395,75 +287,51 @@ stateObject, &graphPropertiesIid,
         CommandContext context,
         Pipeline pipeline,
         in BufferRegion? backingMemory,
-        WorkGraphInitialization initialization)
+        WorkGraphInitialization initialization
+    )
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
-        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12CommandContext command = ((D3D12CommandContext)context);
+        command.BeginPublicCall();
         _ = command.NativeDevice.RequireCapability<WorkGraphs>(nameof(BindWorkGraph));
         D3D12WorkGraphPipeline nativePipeline = RequireWorkGraphPipeline(pipeline);
-
         WorkGraphMemoryRequirements requirements = nativePipeline.MemoryRequirements;
         D3D12Buffer? backing = null;
         BufferRange range = default;
         if (backingMemory is BufferRegion suppliedBacking)
         {
             D3D12Buffer suppliedBuffer = RequireBuffer(suppliedBacking.Buffer);
-            BufferRange suppliedRange = suppliedBacking.Range.Resolve(suppliedBuffer.Info.Size);
-            ulong effectiveSize = requirements.NormalizeBackingSize(suppliedRange.Size);
-            if (effectiveSize != 0 &&
-                ((suppliedBuffer.Info.Usages & BufferUsages.ShaderWrite) == 0 ||
-                 suppliedRange.Offset % 8 != 0))
-            {
-                throw new ArgumentException(
-                    "Work Graph backing memory does not satisfy its native size, alignment, or ShaderWrite requirements.",
-                    nameof(backingMemory));
-            }
+            BufferRange suppliedRange = suppliedBacking.Range.Expand(suppliedBuffer.Info.Size);
+            ulong effectiveSize = requirements.GetBackingSize(suppliedRange.Size);
             if (effectiveSize != 0)
             {
                 backing = suppliedBuffer;
                 range = new BufferRange(suppliedRange.Offset, effectiveSize);
             }
         }
-        else if (requirements.MinimumSize != 0)
-        {
-            throw new ArgumentException(
-                "This Work Graph requires backing memory.",
-                nameof(backingMemory));
-        }
 
-        D3D12WorkGraphProgramState next = new(
-            nativePipeline,
-            backing,
-            range);
-        if (initialization == WorkGraphInitialization.Preserve &&
-            command.WorkGraphProgramMatches(next))
+        D3D12WorkGraphState next = new(nativePipeline, backing, range);
+        if (initialization == WorkGraphInitialization.Preserve && command.WorkGraphMatches(next))
         {
             return;
         }
-        command.PrepareCaptures(backing is null ? 1 : 2, 0, backing is null ? 0 : 1);
+
         command.PrepareDescriptorTables(nativePipeline.RootSignature.DefaultTables);
-        SetProgramDesc native = new() { Type = ProgramType.WorkGraph };
+        SetProgramDesc native = new()
+        {
+            Type = ProgramType.WorkGraph
+        };
         native.WorkGraph = new SetWorkGraphDesc
         {
-            ProgramIdentifier = nativePipeline.ProgramIdentifier,
+            ProgramIdentifier = nativePipeline.WorkGraphIdentifier,
             Flags = ToSetWorkGraphFlags(initialization),
-            BackingMemory = backing is null
-                ? default
-                : new GpuVirtualAddressRange(
-                    ResourceTrace.GetGPUVirtualAddress(backing.Native) + range.Offset,
-                    range.Size),
+            BackingMemory = backing is null ? default : new GpuVirtualAddressRange(ResourceTrace.GetGPUVirtualAddress(backing.Native) + range.Offset, range.Size),
             NodeLocalRootArgumentsTable = default,
         };
-        if (backing is not null)
-            command.Capture(backing);
-        command.CapturePipeline(nativePipeline);
-        D3D12CommandListFastCalls.SetRootSignature(
-            command.List,
-            compute: true,
-            nativePipeline.RootSignature.Native);
-        CommandBindingTrace.SetProgram(command.List, &native);
+        D3D12CommandListFastCalls.SetRootSignature(command, command.List, compute: true, nativePipeline.RootSignature.Native);
+        CommandBindingTrace.SetWorkGraph(command, command.List, &native);
         command.RememberPipeline(nativePipeline);
-        command.RememberWorkGraphProgram(next);
+        command.RememberWorkGraph(next);
         foreach (DefaultRootTable table in nativePipeline.RootSignature.DefaultTables)
             command.SetRootTable(table.RootParameterIndex, table.Heap, 0);
     }
@@ -471,56 +339,30 @@ stateObject, &graphPropertiesIid,
     public void DispatchWorkGraph(CommandContext context, in WorkGraphDispatchDesc desc)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
-        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
-        WorkGraphs capability =
-            command.NativeDevice.RequireCapability<WorkGraphs>(nameof(DispatchWorkGraph));
-        D3D12WorkGraphProgramState program = command.RequireWorkGraphProgram();
+        D3D12CommandContext command = ((D3D12CommandContext)context);
+        command.BeginPublicCall();
+        D3D12WorkGraphState program = command.GetWorkGraphState();
         D3D12WorkGraphPipeline pipeline = program.Pipeline;
         switch (desc.Mode)
         {
             case WorkGraphDispatchInputMode.NodeCpu:
-                if (!capability.CpuInput)
-                    throw new NotSupportedException("CPU Work Graph input is unavailable.");
-                DispatchWorkGraphNodeCpu(
-                    command,
-                    pipeline,
-                    desc.EntryPoint,
-                    desc.Records,
-                    desc.RecordCount,
-                    desc.RecordStride);
+
+                DispatchWorkGraphNodeCpu(command, pipeline, desc.EntryPoint, desc.Records, desc.RecordCount, desc.RecordStride);
                 return;
             case WorkGraphDispatchInputMode.NodeGpu:
-                if (!capability.GpuInput)
-                    throw new NotSupportedException("GPU Work Graph input is unavailable.");
-                DispatchWorkGraphNodeGpu(
-                    command,
-                    pipeline,
-                    desc.EntryPoint,
-                    desc.GpuRecords,
-                    desc.RecordCount,
-                    desc.RecordStride);
+
+                DispatchWorkGraphNodeGpu(command, pipeline, desc.EntryPoint, desc.GpuRecords, desc.RecordCount, desc.RecordStride);
                 return;
             case WorkGraphDispatchInputMode.MultiNodeCpu:
-                if (!capability.CpuInput)
-                    throw new NotSupportedException("CPU Work Graph input is unavailable.");
-                DispatchWorkGraphMultiNodeCpu(
-                    command,
-                    pipeline,
-                    capability,
-                    desc.CpuNodeInputs,
-                    desc.Records);
+
+                DispatchWorkGraphMultiNodeCpu(command, pipeline, desc.CpuNodeInputs, desc.Records);
                 return;
             case WorkGraphDispatchInputMode.MultiNodeGpu:
-                if (!capability.GpuInput)
-                    throw new NotSupportedException("GPU Work Graph input is unavailable.");
-                DispatchWorkGraphMultiNodeGpu(
-                    command,
-                    pipeline,
-                    capability,
-                    desc.GpuNodeInputs);
+
+                DispatchWorkGraphMultiNodeGpu(command, pipeline, desc.GpuNodeInputs);
                 return;
             default:
-                throw new ArgumentOutOfRangeException(nameof(desc));
+                return;
         }
     }
 
@@ -530,45 +372,32 @@ stateObject, &graphPropertiesIid,
         EntryPointReflection entryPoint,
         ReadOnlySpan<byte> records,
         uint recordCount,
-        uint recordStride)
+        uint recordStride
+    )
     {
         WorkGraphEntryPointState entry = pipeline.GetEntryPoint(entryPoint);
-        ValidateWorkGraphRecordLayout(
-            entry,
-            recordCount,
-            recordStride,
-            out ulong requiredBytes,
-            out ulong effectiveStride);
-        if ((ulong)records.Length < requiredBytes)
-            throw new ArgumentException("The CPU Work Graph input span is too small.", nameof(records));
-
+        GetWorkGraphRecordLayout(entry, recordCount, recordStride, out ulong requiredBytes, out ulong effectiveStride);
         ulong copyBytes = entry.RecordSize == 0 ? 0 : requiredBytes;
         _ = checked((int)copyBytes);
         command.PrepareOrdinaryData(copyBytes);
-        DispatchGraphDesc native = new() { Mode = DispatchMode.NodeCpuInput };
+        DispatchGraphDesc native = new()
+        {
+            Mode = DispatchMode.NodeCpuInput
+        };
         if (copyBytes == 0)
         {
-            native.NodeCPUInput = new NodeCpuInput(
-                entry.NativeIndex,
-                recordCount,
-                null,
-                effectiveStride);
-            CommandExecutionTrace.DispatchGraph(command.List, &native);
+            native.NodeCPUInput = new NodeCpuInput(entry.NativeIndex, recordCount, null, effectiveStride);
+            CommandExecutionTrace.DispatchGraph(command, command.List, &native);
             return;
         }
 
-        D3D12OrdinaryDataReservation storage =
-            command.ReserveTransientOrdinaryData(copyBytes);
+        D3D12OrdinaryDataReservation storage = command.ReserveTransientOrdinaryData(copyBytes);
         Span<byte> copy = storage.CommitSpan(checked((int)copyBytes), clear: false);
         records[..copy.Length].CopyTo(copy);
         fixed (byte* pointer = copy)
         {
-            native.NodeCPUInput = new NodeCpuInput(
-                entry.NativeIndex,
-                recordCount,
-                pointer,
-                effectiveStride);
-            CommandExecutionTrace.DispatchGraph(command.List, &native);
+            native.NodeCPUInput = new NodeCpuInput(entry.NativeIndex, recordCount, pointer, effectiveStride);
+            CommandExecutionTrace.DispatchGraph(command, command.List, &native);
         }
     }
 
@@ -578,26 +407,14 @@ stateObject, &graphPropertiesIid,
         EntryPointReflection entryPoint,
         in BufferRegion recordsRegion,
         uint recordCount,
-        uint recordStride)
+        uint recordStride
+    )
     {
         WorkGraphEntryPointState entry = pipeline.GetEntryPoint(entryPoint);
-        ValidateWorkGraphRecordLayout(
-            entry,
-            recordCount,
-            recordStride,
-            out ulong requiredBytes,
-            out ulong effectiveStride);
-        D3D12Buffer records = ResolveWorkGraphGpuInput(
-            recordsRegion,
-            entry,
-            requiredBytes,
-            out ulong address);
-
-        command.PrepareCaptures(1, 0, 1);
+        GetWorkGraphRecordLayout(entry, recordCount, recordStride, out ulong requiredBytes, out ulong effectiveStride);
+        D3D12Buffer records = ResolveWorkGraphGpuInput(recordsRegion, entry, requiredBytes, out ulong address);
         command.PrepareOrdinaryData((ulong)sizeof(NodeGpuInput));
-        D3D12OrdinaryDataReservation header =
-            command.ReserveTransientOrdinaryData((ulong)sizeof(NodeGpuInput));
-        command.Capture(records);
+        D3D12OrdinaryDataReservation header = command.ReserveTransientOrdinaryData((ulong)sizeof(NodeGpuInput));
         NodeGpuInput input = new()
         {
             EntrypointIndex = entry.NativeIndex,
@@ -605,47 +422,27 @@ stateObject, &graphPropertiesIid,
             Records = new GpuVirtualAddressAndStride(address, effectiveStride),
         };
         header.Commit(new ReadOnlySpan<byte>(&input, sizeof(NodeGpuInput)));
-        DispatchGraphDesc native = new() { Mode = DispatchMode.NodeGpuInput };
+        DispatchGraphDesc native = new()
+        {
+            Mode = DispatchMode.NodeGpuInput
+        };
         native.NodeGPUInput = header.Address;
-        CommandExecutionTrace.DispatchGraph(command.List, &native);
+        CommandExecutionTrace.DispatchGraph(command, command.List, &native);
     }
 
     private static void DispatchWorkGraphMultiNodeCpu(
         D3D12CommandContext command,
         D3D12WorkGraphPipeline pipeline,
-        WorkGraphs capability,
         ReadOnlySpan<WorkGraphCpuNodeInput> inputs,
-        ReadOnlySpan<byte> records)
+        ReadOnlySpan<byte> records
+    )
     {
-        if (inputs.IsEmpty || (uint)inputs.Length > capability.MaximumNodeCount)
-            throw new ArgumentOutOfRangeException(nameof(inputs));
-        ValidateUniqueCpuEntries(inputs);
-        for (int index = 0; index < inputs.Length; index++)
-        {
-            ref readonly WorkGraphCpuNodeInput input = ref inputs[index];
-            WorkGraphEntryPointState entry = pipeline.GetEntryPoint(input.EntryPoint);
-            ValidateWorkGraphRecordLayout(
-                entry,
-                input.RecordCount,
-                input.RecordStride,
-                out ulong requiredBytes,
-                out _);
-            if (input.RecordOffset > (uint)records.Length ||
-                requiredBytes > (ulong)records.Length - input.RecordOffset)
-            {
-                throw new ArgumentException(
-                    "A multi-node CPU Work Graph input slice is outside the record packet.",
-                    nameof(inputs));
-            }
-        }
-
         ulong headerBytes = checked((ulong)inputs.Length * (ulong)sizeof(NodeCpuInput));
         ulong recordsOffset = AlignUp(headerBytes, 16);
         ulong totalBytes = checked(recordsOffset + (ulong)records.Length);
         _ = checked((int)totalBytes);
         command.PrepareOrdinaryData(totalBytes);
-        D3D12OrdinaryDataReservation storage =
-            command.ReserveTransientOrdinaryData(totalBytes);
+        D3D12OrdinaryDataReservation storage = command.ReserveTransientOrdinaryData(totalBytes);
         Span<byte> bytes = storage.CommitSpan(checked((int)totalBytes), clear: true);
         records.CopyTo(bytes[checked((int)recordsOffset)..]);
         fixed (byte* basePointer = bytes)
@@ -656,82 +453,47 @@ stateObject, &graphPropertiesIid,
             {
                 ref readonly WorkGraphCpuNodeInput input = ref inputs[index];
                 WorkGraphEntryPointState entry = pipeline.GetEntryPoint(input.EntryPoint);
-                ValidateWorkGraphRecordLayout(
-                    entry,
-                    input.RecordCount,
-                    input.RecordStride,
-                    out _,
-                    out ulong effectiveStride);
-                nativeInputs[index] = new NodeCpuInput(
-                    entry.NativeIndex,
-                    input.RecordCount,
-                    entry.RecordSize == 0 ? null : recordBase + input.RecordOffset,
-                    effectiveStride);
+                GetWorkGraphRecordLayout(entry, input.RecordCount, input.RecordStride, out ulong requiredBytes, out ulong effectiveStride);
+                NativeMemoryChecks.Range((ulong)records.Length, input.RecordOffset, requiredBytes);
+                nativeInputs[index] = new NodeCpuInput(entry.NativeIndex, input.RecordCount, entry.RecordSize == 0 ? null : recordBase + input.RecordOffset, effectiveStride);
             }
 
-            DispatchGraphDesc native = new() { Mode = DispatchMode.MultiNodeCpuInput };
+            DispatchGraphDesc native = new()
+            {
+                Mode = DispatchMode.MultiNodeCpuInput
+            };
             native.MultiNodeCPUInput = new MultiNodeCpuInput
             {
                 NumNodeInputs = checked((uint)inputs.Length),
                 PNodeInputs = nativeInputs,
                 NodeInputStrideInBytes = (ulong)sizeof(NodeCpuInput),
             };
-            CommandExecutionTrace.DispatchGraph(command.List, &native);
+            CommandExecutionTrace.DispatchGraph(command, command.List, &native);
         }
     }
 
     private void DispatchWorkGraphMultiNodeGpu(
         D3D12CommandContext command,
         D3D12WorkGraphPipeline pipeline,
-        WorkGraphs capability,
-        ReadOnlySpan<WorkGraphGpuNodeInput> inputs)
+        ReadOnlySpan<WorkGraphGpuNodeInput> inputs
+    )
     {
-        if (inputs.IsEmpty || (uint)inputs.Length > capability.MaximumNodeCount)
-            throw new ArgumentOutOfRangeException(nameof(inputs));
-        ValidateUniqueGpuEntries(inputs);
-        for (int index = 0; index < inputs.Length; index++)
-        {
-            ref readonly WorkGraphGpuNodeInput input = ref inputs[index];
-            WorkGraphEntryPointState entry = pipeline.GetEntryPoint(input.EntryPoint);
-            ValidateWorkGraphRecordLayout(
-                entry,
-                input.RecordCount,
-                input.RecordStride,
-                out ulong requiredBytes,
-                out _);
-            _ = ResolveWorkGraphGpuInput(input.Records, entry, requiredBytes, out _);
-        }
-
         ulong arrayOffset = AlignUp((ulong)sizeof(MultiNodeGpuInput), 16);
-        ulong totalBytes = checked(
-            arrayOffset + checked((ulong)inputs.Length * (ulong)sizeof(NodeGpuInput)));
+        ulong totalBytes = checked(arrayOffset + checked((ulong)inputs.Length * (ulong)sizeof(NodeGpuInput)));
         _ = checked((int)totalBytes);
-        command.PrepareCaptures(inputs.Length, 0, inputs.Length);
         command.PrepareOrdinaryData(totalBytes);
-        D3D12OrdinaryDataReservation storage =
-            command.ReserveTransientOrdinaryData(totalBytes);
+        D3D12OrdinaryDataReservation storage = command.ReserveTransientOrdinaryData(totalBytes);
         Span<byte> bytes = storage.CommitSpan(checked((int)totalBytes), clear: true);
         fixed (byte* basePointer = bytes)
         {
             MultiNodeGpuInput* header = (MultiNodeGpuInput*)basePointer;
-            NodeGpuInput* nativeInputs =
-                (NodeGpuInput*)(basePointer + checked((nint)arrayOffset));
+            NodeGpuInput* nativeInputs = (NodeGpuInput*)(basePointer + checked((nint)arrayOffset));
             for (int index = 0; index < inputs.Length; index++)
             {
                 ref readonly WorkGraphGpuNodeInput input = ref inputs[index];
                 WorkGraphEntryPointState entry = pipeline.GetEntryPoint(input.EntryPoint);
-                ValidateWorkGraphRecordLayout(
-                    entry,
-                    input.RecordCount,
-                    input.RecordStride,
-                    out ulong requiredBytes,
-                    out ulong effectiveStride);
-                D3D12Buffer records = ResolveWorkGraphGpuInput(
-                    input.Records,
-                    entry,
-                    requiredBytes,
-                    out ulong address);
-                command.Capture(records);
+                GetWorkGraphRecordLayout(entry, input.RecordCount, input.RecordStride, out ulong requiredBytes, out ulong effectiveStride);
+                D3D12Buffer records = ResolveWorkGraphGpuInput(input.Records, entry, requiredBytes, out ulong address);
                 nativeInputs[index] = new NodeGpuInput
                 {
                     EntrypointIndex = entry.NativeIndex,
@@ -739,98 +501,53 @@ stateObject, &graphPropertiesIid,
                     Records = new GpuVirtualAddressAndStride(address, effectiveStride),
                 };
             }
+
             *header = new MultiNodeGpuInput
             {
                 NumNodeInputs = checked((uint)inputs.Length),
-                NodeInputs = new GpuVirtualAddressAndStride(
-                    storage.Address + arrayOffset,
-                    (ulong)sizeof(NodeGpuInput)),
+                NodeInputs = new GpuVirtualAddressAndStride(storage.Address + arrayOffset, (ulong)sizeof(NodeGpuInput)),
             };
         }
-        DispatchGraphDesc native = new() { Mode = DispatchMode.MultiNodeGpuInput };
+
+        DispatchGraphDesc native = new()
+        {
+            Mode = DispatchMode.MultiNodeGpuInput
+        };
         native.MultiNodeGPUInput = storage.Address;
-        CommandExecutionTrace.DispatchGraph(command.List, &native);
+        CommandExecutionTrace.DispatchGraph(command, command.List, &native);
     }
 
-    private D3D12Buffer ResolveWorkGraphGpuInput(
-        in BufferRegion region,
-        in WorkGraphEntryPointState entry,
-        ulong requiredBytes,
-        out ulong address)
+    private D3D12Buffer ResolveWorkGraphGpuInput(in BufferRegion region, in WorkGraphEntryPointState entry, ulong requiredBytes, out ulong address)
     {
         D3D12Buffer records = RequireBuffer(region.Buffer);
-        BufferRange range = region.Range.Resolve(records.Info.Size);
+        BufferRange range = region.Range.Expand(records.Info.Size);
         address = ResourceTrace.GetGPUVirtualAddress(records.Native) + range.Offset;
-        if ((records.Info.Usages & BufferUsages.ShaderRead) == 0 ||
-            range.Size < requiredBytes ||
-            (entry.RecordSize != 0 && address % entry.RecordAlignment != 0))
-        {
-            throw new ArgumentException("A GPU Work Graph input range is invalid.", nameof(region));
-        }
         return records;
     }
 
-    private static void ValidateUniqueCpuEntries(ReadOnlySpan<WorkGraphCpuNodeInput> inputs)
+    private static SetWorkGraphFlags ToSetWorkGraphFlags(WorkGraphInitialization value) => value switch
     {
-        for (int index = 0; index < inputs.Length; index++)
-        {
-            if (inputs[index].EntryPoint == EntryPointReflection.Null)
-                throw new ArgumentException("A Work Graph node input requires a Slang entry point.");
-            for (int prior = 0; prior < index; prior++)
-            {
-                if (inputs[prior].EntryPoint == inputs[index].EntryPoint)
-                    throw new ArgumentException("A multi-node Work Graph dispatch repeats as entry point.");
-            }
-        }
-    }
-
-    private static void ValidateUniqueGpuEntries(ReadOnlySpan<WorkGraphGpuNodeInput> inputs)
-    {
-        for (int index = 0; index < inputs.Length; index++)
-        {
-            if (inputs[index].EntryPoint == EntryPointReflection.Null)
-                throw new ArgumentException("A Work Graph node input requires a Slang entry point.");
-            for (int prior = 0; prior < index; prior++)
-            {
-                if (inputs[prior].EntryPoint == inputs[index].EntryPoint)
-                    throw new ArgumentException("A multi-node Work Graph dispatch repeats as entry point.");
-            }
-        }
-    }
-
-    private static SetWorkGraphFlags ToSetWorkGraphFlags(
-        WorkGraphInitialization value) => value switch
-        {
-            WorkGraphInitialization.Initialize => SetWorkGraphFlags.Initialize,
-            WorkGraphInitialization.Preserve => SetWorkGraphFlags.None,
-            _ => throw new ArgumentOutOfRangeException(nameof(value)),
-        };
-
-    private static void ValidateWorkGraphRecordLayout(
+        WorkGraphInitialization.Initialize => SetWorkGraphFlags.Initialize,
+        WorkGraphInitialization.Preserve => SetWorkGraphFlags.None,
+        _ => default!,
+    };
+    private static void GetWorkGraphRecordLayout(
         in WorkGraphEntryPointState entry,
         uint recordCount,
         uint stride,
         out ulong requiredBytes,
-        out ulong effectiveStride)
+        out ulong effectiveStride
+    )
     {
-        if (recordCount == 0)
-            throw new ArgumentOutOfRangeException(nameof(recordCount));
         if (entry.RecordSize == 0)
         {
-            if (stride != 0)
-                throw new ArgumentOutOfRangeException(nameof(stride));
             requiredBytes = 0;
             effectiveStride = 0;
             return;
         }
-        if (stride != 0 &&
-            (stride < entry.RecordSize || stride % entry.RecordAlignment != 0 || stride % 4 != 0))
-        {
-            throw new ArgumentOutOfRangeException(nameof(stride));
-        }
+
         effectiveStride = stride == 0 ? entry.RecordSize : stride;
-        requiredBytes = checked(
-            checked((ulong)(recordCount - 1) * effectiveStride) + entry.RecordSize);
+        requiredBytes = checked(checked((ulong)(recordCount - 1) * effectiveStride) + entry.RecordSize);
     }
 
     private static void ValidateWorkGraphRequirements(in WorkGraphMemoryRequirements value)
@@ -839,9 +556,8 @@ stateObject, &graphPropertiesIid,
         {
             throw new GraphicsException(
                 GraphicsError.PipelineCreation,
-                $"D3D12 returned invalid Work Graph backing-memory requirements " +
-                $"(minimum {value.MinimumSize}, maximum {value.MaximumSize}, " +
-                $"granularity {value.Granularity}).");
+                $"D3D12 returned invalid Work Graph backing-memory requirements " + $"(minimum {value.MinimumSize}, maximum {value.MaximumSize}, " + $"granularity {value.Granularity})."
+            );
         }
     }
 
@@ -850,15 +566,17 @@ stateObject, &graphPropertiesIid,
         uint graphIndex,
         uint nativeEntryPointCount,
         EntryPointReflection[] submittedEntryPoints,
-        uint maximumInputRecordSize)
+        uint maximumInputRecordSize
+    )
     {
         if (nativeEntryPointCount != checked((uint)submittedEntryPoints.Length))
         {
             throw new GraphicsException(
                 GraphicsError.PipelineCreation,
-                $"D3D12 materialized {nativeEntryPointCount} Work Graph entry points, but " +
-                $"{submittedEntryPoints.Length} Slang entry points were submitted.");
+                $"D3D12 materialized {nativeEntryPointCount} Work Graph entry points, but " + $"{submittedEntryPoints.Length} Slang entry points were submitted."
+            );
         }
+
         var result = new WorkGraphEntryPointState[checked((int)nativeEntryPointCount)];
         var materialized = new HashSet<uint>();
         for (uint ordinal = 0; ordinal < nativeEntryPointCount; ordinal++)
@@ -866,118 +584,83 @@ stateObject, &graphPropertiesIid,
             NodeID id = PipelineTrace.GetEntrypointID(graphProperties, graphIndex, ordinal);
             if (id.Name is null)
             {
-                throw new GraphicsException(
-                    GraphicsError.PipelineCreation,
-                    "D3D12 returned a Work Graph entry point without an identity.");
+                throw new GraphicsException(GraphicsError.PipelineCreation, "D3D12 returned a Work Graph entry point without an identity.");
             }
+
             uint nativeIndex = PipelineTrace.GetEntrypointIndex(graphProperties, graphIndex, id);
             if (nativeIndex == uint.MaxValue)
             {
-                throw new GraphicsException(
-                    GraphicsError.PipelineCreation,
-                    "D3D12 returned a Work Graph entry point that cannot be indexed.");
+                throw new GraphicsException(GraphicsError.PipelineCreation, "D3D12 returned a Work Graph entry point that cannot be indexed.");
             }
+
             if (!materialized.Add(nativeIndex))
             {
-                throw new GraphicsException(
-                    GraphicsError.PipelineCreation,
-                    "D3D12 returned duplicate Work Graph entry-point indices.");
+                throw new GraphicsException(GraphicsError.PipelineCreation, "D3D12 returned duplicate Work Graph entry-point indices.");
             }
 
             uint size = PipelineTrace.GetEntrypointRecordSizeInBytes(graphProperties, graphIndex, nativeIndex);
             uint alignment = PipelineTrace.GetEntrypointRecordAlignmentInBytes(graphProperties, graphIndex, nativeIndex);
             RequireValidWorkGraphEntryPointLayout(maximumInputRecordSize, size, alignment);
-            result[checked((int)ordinal)] = new WorkGraphEntryPointState(
-                submittedEntryPoints[checked((int)ordinal)],
-                nativeIndex,
-                size,
-                alignment);
+            result[checked((int)ordinal)] = new WorkGraphEntryPointState(submittedEntryPoints[checked((int)ordinal)], nativeIndex, size, alignment);
         }
+
         return result;
     }
 
-    private static void RequireValidWorkGraphEntryPointLayout(
-        uint maximumInputRecordSize,
-        uint size,
-        uint alignment)
+    private static void RequireValidWorkGraphEntryPointLayout(uint maximumInputRecordSize, uint size, uint alignment)
     {
-        if (!WorkGraphValidation.IsEntryPointLayoutValid(
-                maximumInputRecordSize,
-                size,
-                alignment))
+        if (!WorkGraphValidation.IsEntryPointLayoutValid(maximumInputRecordSize, size, alignment))
         {
-            throw new GraphicsException(
-                GraphicsError.PipelineCreation,
-                "D3D12 returned invalid Work Graph entry-point layout data.");
+            throw new GraphicsException(GraphicsError.PipelineCreation, "D3D12 returned invalid Work Graph entry-point layout data.");
         }
     }
 
     private static bool IsZero(in ProgramIdentifier identifier)
     {
         ProgramIdentifier copy = identifier;
-        return new ReadOnlySpan<byte>(&copy, sizeof(ProgramIdentifier))
-            .IndexOfAnyExcept((byte)0) < 0;
+        return new ReadOnlySpan<byte>(&copy, sizeof(ProgramIdentifier)).IndexOfAnyExcept((byte)0) < 0;
     }
 
-    private readonly record struct WorkGraphEntryPointState(
-        EntryPointReflection EntryPoint,
-        uint NativeIndex,
-        uint RecordSize,
-        uint RecordAlignment);
-
+    private readonly record struct WorkGraphEntryPointState(EntryPointReflection EntryPoint, uint NativeIndex, uint RecordSize, uint RecordAlignment);
     private sealed class D3D12WorkGraphPipeline : D3D12Pipeline
     {
-        private readonly NativeLease _stateProperties;
-        private readonly NativeLease _graphProperties;
+        private readonly NativeResourceData _stateProperties;
+        private readonly NativeResourceData _graphProperties;
         private readonly WorkGraphEntryPointState[] _entryPoints;
-
         internal D3D12WorkGraphPipeline(
             D3D12Device device,
-            NativeLease native,
+            NativeResourceData native,
             D3D12RootSignatureState root,
-            NativeLease[] additionalLeases,
+            NativeResourceData[] additionalData,
             SlangShaderData slangCode,
             in ProgramIdentifier identifier,
             in WorkGraphMemoryRequirements memoryRequirements,
             WorkGraphEntryPointState[] entryPoints,
-            string? label)
-            : base(
-                device,
-                native,
-                root,
-                [],
-                additionalLeases,
-                slangCode,
-                PipelineType.WorkGraph,
-                label)
+            string? label
+        ) : base(device, native, root, [], additionalData, slangCode, PipelineType.WorkGraph, label)
         {
-            _stateProperties = additionalLeases[0];
-            _graphProperties = additionalLeases[1];
+            _stateProperties = additionalData[0];
+            _graphProperties = additionalData[1];
             _entryPoints = entryPoints;
-            ProgramIdentifier = identifier;
+            WorkGraphIdentifier = identifier;
             MemoryRequirements = memoryRequirements;
         }
 
-        internal ProgramIdentifier ProgramIdentifier { get; }
+        internal ProgramIdentifier WorkGraphIdentifier { get; }
         internal WorkGraphMemoryRequirements MemoryRequirements { get; }
 
         internal WorkGraphEntryPointState GetEntryPoint(EntryPointReflection entryPoint)
         {
-            if (entryPoint == EntryPointReflection.Null)
-                throw new ArgumentException("A Work Graph dispatch requires a Slang entry point.", nameof(entryPoint));
             foreach (ref readonly WorkGraphEntryPointState entry in _entryPoints.AsSpan())
             {
                 if (entry.EntryPoint == entryPoint)
                     return entry;
             }
-            throw new ArgumentException(
-                "The Slang entry point is not a materialized program entry of this Work Graph Pipeline.",
-                nameof(entryPoint));
+
+            return default!;
         }
 
-        internal bool TryGetEntryPoints(
-            Span<WorkGraphEntryPointInfo> destination,
-            out int requiredCount)
+        internal bool TryGetEntryPoints(Span<WorkGraphEntryPointInfo> destination, out int requiredCount)
         {
             requiredCount = _entryPoints.Length;
             if (destination.Length < requiredCount)
@@ -985,56 +668,29 @@ stateObject, &graphPropertiesIid,
             for (int index = 0; index < _entryPoints.Length; index++)
             {
                 WorkGraphEntryPointState entry = _entryPoints[index];
-                destination[index] = new WorkGraphEntryPointInfo(
-                    entry.EntryPoint,
-                    entry.RecordSize,
-                    entry.RecordAlignment);
+                destination[index] = new WorkGraphEntryPointInfo(entry.EntryPoint, entry.RecordSize, entry.RecordAlignment);
             }
+
             return true;
         }
-
     }
 
-    private readonly record struct D3D12WorkGraphProgramState(
-        D3D12WorkGraphPipeline Pipeline,
-        D3D12Buffer? Backing,
-        BufferRange Range);
-
+    private readonly record struct D3D12WorkGraphState(D3D12WorkGraphPipeline Pipeline, D3D12Buffer? Backing, BufferRange Range);
     private sealed partial class D3D12CommandContext
     {
-        private D3D12WorkGraphProgramState? _workGraphProgram;
-
-        internal bool WorkGraphProgramMatches(in D3D12WorkGraphProgramState value) =>
-            _workGraphProgram is D3D12WorkGraphProgramState current &&
-            ReferenceEquals(current.Pipeline, value.Pipeline) &&
-            ReferenceEquals(_pipeline, value.Pipeline) &&
-            ReferenceEquals(current.Backing, value.Backing) &&
-            current.Range == value.Range;
-
-        internal void RememberWorkGraphProgram(in D3D12WorkGraphProgramState value) =>
-            _workGraphProgram = value;
-
-        internal D3D12WorkGraphProgramState RequireWorkGraphProgram()
+        private D3D12WorkGraphState? _workGraph;
+        internal bool WorkGraphMatches(in D3D12WorkGraphState value) => _workGraph is D3D12WorkGraphState current && ReferenceEquals(current.Pipeline, value.Pipeline) && ReferenceEquals(_pipeline, value.Pipeline) && ReferenceEquals(current.Backing, value.Backing) && current.Range == value.Range;
+        internal void RememberWorkGraph(in D3D12WorkGraphState value) => _workGraph = value;
+        internal D3D12WorkGraphState GetWorkGraphState()
         {
-            if (_workGraphProgram is not D3D12WorkGraphProgramState program ||
-                _pipeline is not D3D12WorkGraphPipeline selected ||
-                !ReferenceEquals(selected, program.Pipeline))
-            {
-                throw new InvalidOperationException(
-                    "DispatchWorkGraph requires as active Work Graph program.");
-            }
-            return program;
+            return _workGraph!.Value;
         }
 
-        internal void ResetWorkGraphState() => _workGraphProgram = null;
+        internal void ResetWorkGraphState() => _workGraph = null;
     }
 
     private static partial class RequireD3D12
     {
-        internal static D3D12WorkGraphPipeline WorkGraphPipeline(Pipeline value) =>
-            value as D3D12WorkGraphPipeline ??
-            throw new ArgumentException(
-                "The Pipeline is not a Direct3D 12 Work Graph pipeline.",
-                nameof(value));
+        internal static D3D12WorkGraphPipeline WorkGraphPipeline(Pipeline value) => (D3D12WorkGraphPipeline)value;
     }
 }

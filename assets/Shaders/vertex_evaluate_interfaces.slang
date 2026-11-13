@@ -1,8 +1,8 @@
 #ifndef VERTEX_EVALUATE_INTERFACES_SLANG
 #define VERTEX_EVALUATE_INTERFACES_SLANG
 
-#include "common.slang"
-#include "render_instance_transform.slang"
+__exported import common;
+__exported import render_instance_transform;
 
 struct VertexEvalContext
 {

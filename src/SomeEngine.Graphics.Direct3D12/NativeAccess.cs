@@ -21,11 +21,11 @@ internal sealed class QueueExclusion
 
     internal readonly struct Scope : IDisposable
     {
-        private readonly QueueExclusion _owner;
+        private readonly QueueExclusion _exclusion;
 
-        internal Scope(QueueExclusion owner) => _owner = owner;
+        internal Scope(QueueExclusion exclusion) => _exclusion = exclusion;
 
-        public void Dispose() => _owner.Exit();
+        public void Dispose() => _exclusion.Exit();
     }
 }
 
@@ -82,11 +82,14 @@ public sealed class D3D12Diagnostics : DeviceCapability
     public D3D12PipelineCreationInfo PipelineCreation =>
         D3D12Backend.GetPipelineCreationInfo(Device);
 
+    /// <summary>Device objects whose native release has yet to finish.</summary>
+    public int LiveNativeObjects => D3D12Backend.GetLiveNativeObjectCount(Device);
+
     /// <summary>Returns the retained structured DRED report after Device loss.</summary>
     public D3D12DeviceLossReport? DeviceLossReport =>
         D3D12Backend.GetDeviceLossReport(Device);
 
-    /// <summary>Returns one thread-safe DXGI presentation snapshot for this Device.</summary>
+    /// <summary>Returns one thread-safe DXGI presentation data for this Device.</summary>
     public D3D12PresentationInfo GetPresentationInfo(Swapchain swapchain) =>
         D3D12Backend.GetPresentationInfo(Device, swapchain);
 
@@ -114,24 +117,24 @@ public sealed class D3D12Diagnostics : DeviceCapability
 /// </remarks>
 public readonly unsafe ref struct D3D12CommandQueueLock
 {
-    private readonly D3D12CommandQueueLockLease? _lease;
+    private readonly D3D12CommandQueueLockHandle? _handle;
     private readonly ulong _sequence;
 
-    internal D3D12CommandQueueLock(D3D12CommandQueueLockLease lease, ulong sequence)
+    internal D3D12CommandQueueLock(D3D12CommandQueueLockHandle handle, ulong sequence)
     {
-        _lease = lease;
+        _handle = handle;
         _sequence = sequence;
     }
 
-    public bool IsHeld => _lease?.IsHeld(_sequence) == true;
+    public bool IsHeld => _handle?.IsHeld(_sequence) == true;
 
-    public ID3D12CommandQueue* Pointer => _lease is null
+    public ID3D12CommandQueue* Pointer => _handle is null
         ? throw new InvalidOperationException("The default D3D12CommandQueueLock is not held.")
-        : _lease.GetPointer(_sequence);
+        : _handle.GetPointer(_sequence);
 
-    public void Dispose() => _lease?.Release(_sequence);
+    public void Dispose() => _handle?.Release(_sequence);
 
-    internal D3D12CommandQueueLockLease Lease => _lease ??
+    internal D3D12CommandQueueLockHandle Handle => _handle ??
         throw new InvalidOperationException("The default D3D12CommandQueueLock is not held.");
 
     internal ulong Sequence => _sequence;
@@ -149,29 +152,31 @@ public readonly unsafe ref struct D3D12CommandQueueLock
 /// </remarks>
 public readonly unsafe ref struct D3D12CommandListBorrow
 {
-    private readonly D3D12CommandListBorrowLease? _lease;
+    private readonly D3D12CommandListHandle? _handle;
     private readonly ulong _sequence;
 
-    internal D3D12CommandListBorrow(D3D12CommandListBorrowLease lease, ulong sequence)
+    internal D3D12CommandListBorrow(D3D12CommandListHandle handle, ulong sequence)
     {
-        _lease = lease;
+        _handle = handle;
         _sequence = sequence;
     }
 
-    public bool IsValid => _lease?.IsValid(_sequence) == true;
+    public bool IsValid => _handle?.IsValid(_sequence) == true;
+    internal D3D12CommandListHandle Handle => _handle!;
+    internal ulong Sequence => _sequence;
 
-    public ID3D12GraphicsCommandList10* Pointer => _lease is null
+    public ID3D12GraphicsCommandList10* Pointer => _handle is null
         ? throw new InvalidOperationException("The default D3D12CommandListBorrow is not valid.")
-        : _lease.GetPointer(_sequence);
+        : _handle.GetPointer(_sequence);
 }
 
-internal unsafe abstract class D3D12CommandListBorrowLease
+internal unsafe abstract class D3D12CommandListHandle
 {
     internal abstract bool IsValid(ulong sequence);
     internal abstract ID3D12GraphicsCommandList10* GetPointer(ulong sequence);
 }
 
-internal unsafe abstract class D3D12CommandQueueLockLease
+internal unsafe abstract class D3D12CommandQueueLockHandle
 {
     private const int Released = 0;
     private const int Held = 1;
@@ -186,12 +191,7 @@ internal unsafe abstract class D3D12CommandQueueLockLease
         Volatile.Read(ref _state) == Held &&
         IsHeldCore(sequence);
 
-    internal ID3D12CommandQueue* GetPointer(ulong sequence)
-    {
-        if (!IsHeld(sequence))
-            throw new InvalidOperationException("The D3D12 command Queue lock is no longer held.");
-        return GetPointerCore();
-    }
+    internal virtual ID3D12CommandQueue* GetPointer(ulong sequence) => GetPointerCore();
 
     internal void Release(ulong sequence)
     {
@@ -228,8 +228,6 @@ internal unsafe abstract class D3D12CommandQueueLockLease
 
     internal void Activate(ulong sequence)
     {
-        if (sequence == 0 || Volatile.Read(ref _state) != Released)
-            throw new InvalidOperationException("The D3D12 command Queue lock authority is still active.");
         Volatile.Write(ref _sequence, sequence);
         Volatile.Write(ref _state, Held);
     }
@@ -324,23 +322,24 @@ internal sealed unsafe partial class D3D12Backend
     }
     /// <summary>Returns a Recording-scoped borrowed command list and dirties its full state shadow.</summary>
     /// <remarks>
-    /// The resource span is consumed synchronously. Automatic retirement captures every listed
-    /// resource; Manual retirement captures none and requires the caller to retain every native use.
+    /// The resource span supplies validation dependencies and swapchain acquisitions. Device deferred
+    /// release timing keeps accepted native work alive.
     /// </remarks>
     public D3D12CommandListBorrow BorrowCommandList(
         CommandContext context,
         ReadOnlySpan<Resource> retainedResources)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
-        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12CommandContext command = ((D3D12CommandContext)context);
+        command.BeginPublicCall();
         return command.BorrowNativeCommandList(retainedResources);
     }
 
-    private sealed class D3D12NativeCommandListBorrowLease : D3D12CommandListBorrowLease
+    private sealed class D3D12NativeCommandListHandle : D3D12CommandListHandle
     {
         private readonly D3D12CommandContext _context;
 
-        internal D3D12NativeCommandListBorrowLease(D3D12CommandContext context) =>
+        internal D3D12NativeCommandListHandle(D3D12CommandContext context) =>
             _context = context;
 
         internal override bool IsValid(ulong sequence) =>
@@ -350,18 +349,16 @@ internal sealed unsafe partial class D3D12Backend
             _context.GetNativeCommandListBorrowPointer(sequence);
     }
 
-    private sealed class D3D12NativeQueueLockLease : D3D12CommandQueueLockLease
+    private sealed class D3D12NativeQueueLockHandle : D3D12CommandQueueLockHandle
     {
         private readonly D3D12Queue _queue;
 
-        internal D3D12NativeQueueLockLease(D3D12Queue queue) => _queue = queue;
+        internal D3D12NativeQueueLockHandle(D3D12Queue queue) => _queue = queue;
 
         protected override ID3D12CommandQueue* GetPointerCore()
         {
             _queue.NativeDevice.ThrowIfUnavailable();
-            return _queue.Native is null
-                ? throw new ObjectDisposedException(nameof(Queue))
-                : _queue.Native;
+            return _queue.Native;
         }
 
         protected override void ReleaseCore() => _queue.Gate.Exit();
@@ -370,7 +367,7 @@ internal sealed unsafe partial class D3D12Backend
     private sealed partial class D3D12Queue
     {
         private ulong _nextNativeLockSequence = 1;
-        private readonly D3D12NativeQueueLockLease _nativeLock;
+        private readonly D3D12NativeQueueLockHandle _nativeLock;
 
         internal D3D12CommandQueueLock AcquireNativeLock()
         {
@@ -381,7 +378,7 @@ internal sealed unsafe partial class D3D12Backend
                 _device.ThrowIfUnavailable();
                 if (_nextNativeLockSequence == ulong.MaxValue)
                 {
-                    throw new InvalidOperationException(
+                    throw new GraphicsException(GraphicsError.NativeFailure,
                         "The D3D12 command Queue lock sequence domain is exhausted.");
                 }
 
@@ -406,7 +403,7 @@ internal sealed unsafe partial class D3D12Backend
         private ulong _nativeAccessSequence = 1;
         private ulong _activeNativeCommandListBorrow;
         private object[] _resolvedEncodeResources = [];
-        private readonly D3D12NativeCommandListBorrowLease _nativeCommandListBorrowLease;
+        private readonly D3D12NativeCommandListHandle _nativeCommandListHandle;
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         internal void BeginPublicCall()
@@ -423,14 +420,13 @@ internal sealed unsafe partial class D3D12Backend
         [System.Diagnostics.CodeAnalysis.DoesNotReturn]
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         private static void ThrowNativeAccessSequenceExhausted() =>
-            throw new InvalidOperationException(
+            throw new GraphicsException(GraphicsError.NativeFailure,
                 "The native command-list borrow sequence domain is exhausted.");
 
         internal D3D12CommandListBorrow BorrowNativeCommandList(
             ReadOnlySpan<Resource> retainedResources)
         {
             int resourceCount = retainedResources.Length;
-            PrepareCaptures(resourceCount, 0, resourceCount);
             PrepareSwapchainUses(resourceCount);
             PrepareResolvedResources(resourceCount);
             int resolvedCount = 0;
@@ -442,9 +438,7 @@ internal sealed unsafe partial class D3D12Backend
                     {
                         Buffer buffer => RequireD3D12.Buffer(buffer),
                         Texture texture => RequireD3D12.Texture(texture),
-                        _ => throw new ArgumentException(
-                            "The native command-list retention list contains an unknown Resource type.",
-                            nameof(retainedResources)),
+                        _ => null!,
                     };
                     resolvedCount++;
                 }
@@ -453,8 +447,8 @@ internal sealed unsafe partial class D3D12Backend
                 {
                     switch (_resolvedEncodeResources[index])
                     {
-                        case D3D12Buffer buffer: Capture(buffer); break;
-                        case D3D12TextureResource texture: Capture(texture); break;
+                        case D3D12Buffer: break;
+                        case D3D12TextureResource texture: Recording.RecordSwapchainUse(texture); break;
                     }
                 }
 
@@ -462,7 +456,7 @@ internal sealed unsafe partial class D3D12Backend
                 ulong sequence = _nativeAccessSequence;
                 _activeNativeCommandListBorrow = sequence;
                 return new D3D12CommandListBorrow(
-                    _nativeCommandListBorrowLease,
+                    _nativeCommandListHandle,
                     sequence);
             }
             finally
@@ -478,14 +472,8 @@ internal sealed unsafe partial class D3D12Backend
 
         internal ID3D12GraphicsCommandList10* GetNativeCommandListBorrowPointer(ulong sequence)
         {
-            if (!IsNativeCommandListBorrowValid(sequence))
-            {
-                throw new InvalidOperationException(
-                    "The D3D12 command-list borrow is no longer valid.");
-            }
-
             _device.ThrowIfUnavailable();
-            return RequireNativeRecording(List);
+            return GetNativeRecording(this, List);
         }
     }
 }

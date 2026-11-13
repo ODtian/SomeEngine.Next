@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 #if SOMEENGINE_DEVELOPMENT
 using SomeEngine.Assets.Importers;
 #endif
@@ -44,11 +44,10 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
         string shaders = Path.Combine(contentDirectory, "assets", "Shaders");
         var description = SlangShaderImporter.CreateSessionDescription(
             Path.Combine(shaders, "gpu_cluster_build.slang"),
-            SlangShaderImporter.CreateDefaultTargets(SlangShaderImporter.GlobalSession), [ProjectPaths.EngineShaders]);
+            SlangShaderImporter.CreateTargets(SlangShaderImporter.GlobalSession, [SlangShaderSharp.SlangCompileTarget.Dxil, SlangShaderSharp.SlangCompileTarget.Spirv]), [ProjectPaths.EngineShaders]);
         using var build = new ShaderSourceBlock { SourceNames = ["gpu_cluster_build.slang"] };
-        using var draw = new ShaderSourceBlock { SourceNames = ["gpu_cluster_material.slang"] };
-        Shader buildShader = await build.CreateAsync(SlangShaderImporter.GlobalSession, description, "GPU Cluster example build");
-        Shader drawShader = await draw.CreateAsync(SlangShaderImporter.GlobalSession, description, "GPU Cluster example material");
+        Shader buildShader = await SomeEngine.Resources.ShaderLibrary.CreateAsync(build, SlangShaderImporter.GlobalSession, description, "GPU Cluster example build");
+        Shader drawShader = await SampleMaterialShaders.LoadAsync(contentDirectory, SampleMaterialShaders.GpuCluster);
         return new(buildShader, drawShader);
     }
 #endif
@@ -108,7 +107,6 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
         context.AddExtractor(new ExampleExtractor());
         context.AddPrepareSystem(rendering);
         context.AddFrameSystem(rendering);
-        context.AddCompletionObserver(rendering);
         return rendering;
     }
 
@@ -180,10 +178,10 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
     }
 
     private sealed class ExampleRendering : ISystem<RenderPrepareSystemContext>, ISystem<RenderFrameSystemContext>,
-        IRenderGraphFrameExecutionObserver, IDisposable
+        IDisposable
     {
         private readonly ClusterGpuBuilder _builder;
-        private readonly IGraphicsBackend _backend;
+        private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
         private readonly GpuClusterExample _example;
         private QueryHandle _query;
         private ClusterGeometry _geometry;
@@ -194,15 +192,15 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
         {
             internal ClusterGeometry Geometry = geometry;
             internal ExampleMesh Mesh = mesh;
-            internal GraphPassId Pass;
+            internal ulong FrameIdentity;
             internal bool Complete;
         }
 
         internal ExampleRendering(ApplicationGeometryContext context, Shader shader, GpuClusterExample example)
         {
-            _backend = context.Backend;
+            _graph = context.Graph;
             _example = example;
-            _builder = new(context.Backend, context.Device, context.Cluster, context.Graph,
+            _builder = new(context.Backend, context.Device, context.RenderDevice.Pipelines, context.Cluster, context.Graph,
                 new(shader, "BuildExampleCluster", Encoding, 64 * 20));
         }
         public void OnCreate(ref RenderPrepareSystemContext context) =>
@@ -226,6 +224,11 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
                 }
             });
             if (entity == default) return;
+            if (_build is { FrameIdentity: not 0 } observed && _graph.IsFrameComplete(observed.FrameIdentity))
+            {
+                observed.Complete = true;
+                _example.BuildCompleted = true;
+            }
             if (_build is { Complete: true } completed)
             {
                 if (completed.Geometry != _geometry)
@@ -251,7 +254,7 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
         }
         public void OnUpdate(ref RenderFrameSystemContext context)
         {
-            if (_build is not { } build || build.Pass != default) return;
+            if (_build is not { } build || build.FrameIdentity != 0) return;
             RenderGraphFrame graph = context.Graph;
             ExampleMesh mesh = build.Mesh;
             uint[] counts = [(uint)mesh.Positions.Length, (uint)mesh.Indices.Length];
@@ -260,14 +263,12 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
                 graph.Upload<Vector2>(mesh.Attributes, BufferUsages.ShaderRead),
                 graph.Upload<uint>(mesh.Indices, BufferUsages.ShaderRead),
                 graph.Upload<uint>(counts, BufferUsages.ShaderRead));
-            build.Pass = _builder.Record(ref context, build.Geometry, input);
+            _builder.Record(ref context, build.Geometry, input);
+            graph.ObserveExecution(new BuildSubmission(build));
         }
-        public void OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+        private sealed class BuildSubmission(ExampleBuild build) : IRenderGraphFrameExecutionObserver
         {
-            if (_build is not { Complete: false } build || !result.TryGetPassCompletion(build.Pass, out QueueCompletion completion)) return;
-            if (_backend.WaitCpu(completion, TimeSpan.FromSeconds(30)) != WaitStatus.Completed) throw new TimeoutException();
-            build.Complete = _backend.IsComplete(completion);
-            _example.BuildCompleted = build.Complete;
+            public void OnFrameSubmitted(in RenderGraphSubmission submission) => build.FrameIdentity = submission.FrameIdentity;
         }
         public void Dispose() => _builder.Dispose();
     }

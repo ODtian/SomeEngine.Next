@@ -201,7 +201,7 @@ public readonly struct RenderInstanceProperty<T> : IEquatable<RenderInstanceProp
         ReferenceEquals(_declaration, other._declaration)
         || (_declaration is not null
             && other._declaration is not null
-            && _declaration.HasSameContract(other._declaration));
+            && _declaration.Matches(other._declaration));
 
     public override bool Equals(object? obj) =>
         obj is RenderInstanceProperty<T> other && Equals(other);
@@ -294,7 +294,7 @@ public sealed class RenderInstancePropertyDescriptor
 
     public IReadOnlyList<string> Contributors => _contributors;
 
-    internal bool HasSameContract(RenderInstancePropertyDeclaration declaration) =>
+    internal bool Matches(RenderInstancePropertyDeclaration declaration) =>
         Key == declaration.Key && Encoding == declaration.Encoding;
 
     internal RenderInstancePropertyDeclaration CloneDeclaration() => new(Key, Encoding);
@@ -329,7 +329,7 @@ internal sealed class RenderInstancePropertyDeclaration
 
     internal RenderInstancePropertyEncoding Encoding { get; }
 
-    internal bool HasSameContract(RenderInstancePropertyDeclaration other) =>
+    internal bool Matches(RenderInstancePropertyDeclaration other) =>
         Key == other.Key && Encoding == other.Encoding;
 }
 

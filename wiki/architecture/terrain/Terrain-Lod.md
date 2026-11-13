@@ -10,7 +10,7 @@
 
 `TerrainLodSystem` 读取相机位置，将每个块的八角通过放置变换转换为世界包围盒。相机到该包围盒的距离小于对应阈值时，将块细分为八个子块并继续选择。所有替换块覆盖相同的根范围。随后比较面邻居，把层级差大于一的粗块继续细分，直到面邻接满足 2∶1；粗块的六面标志记录相邻细块所在方向。
 
-`TerrainLodSystem(scene, cameraPosition)` 接收只读位置提供函数。应用安装的 `TerrainGeometryFeature` 通过 `ApplicationGeometryContext.CameraPosition` 读取 `RuntimeScene.Camera`，在游戏系统执行时取得当前位置。公开 `SceneEdit.SetCameraTransform` 更新这个相机，因此下一次游戏更新使用新的视点。
+`TerrainLodSystem(scene, cameraPosition)` 接收只读位置提供函数。应用安装的 `TerrainGeometryFeature` 通过 `ApplicationGeometryContext.CameraPosition` 读取 `SceneWorldData.Camera`，在游戏系统执行时取得当前位置。公开 `SceneEdit.SetCameraTransform` 更新这个相机，因此下一次游戏更新使用新的视点。
 
 ## 配套网格输入
 

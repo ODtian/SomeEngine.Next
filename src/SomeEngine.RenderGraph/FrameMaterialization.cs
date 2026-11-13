@@ -1,9 +1,7 @@
 namespace SomeEngine.RenderGraph;
 
-internal sealed partial class FrameExecutor
+internal sealed partial class FrameRecording
 {
-    private int[][] _resourceBeginFrontiers = [];
-    private int[][] _resourceEndFrontiers = [];
     private readonly HashSet<int> _materializeBuffers = [], _materializeTextures = [], _materializeViews = [];
 
     private void MaterializationChanged((GraphAccessTargetKind Kind, int Index) key, bool updateViewDescriptions = true)
@@ -54,11 +52,8 @@ internal sealed partial class FrameExecutor
     private void Materialize()
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.Materialize);
-        FrameTransientResourceAllocator memory = _frame.Slot.TransientResources
-            ?? throw new InvalidOperationException("The frame slot has no transient resource allocator.");
-        int resourceCount = checked(_buffers.Count + _textures.Count);
-        EnsureCapacity(ref _resourceBeginFrontiers, resourceCount);
-        EnsureCapacity(ref _resourceEndFrontiers, resourceCount);
+        FrameTransientResourceAllocator memory = _frame.Resources.TransientResources
+            ?? throw new InvalidOperationException("The frame index has no transient resource allocator.");
         UpdatePlacements(memory);
 
         foreach (int bufferIndex in _materializeBuffers)
@@ -71,7 +66,7 @@ internal sealed partial class FrameExecutor
                 _buffers[bufferIndex] = buffer;
                 continue;
             }
-            if (buffer.Ownership == RenderGraphResourceOwnership.CallerOwned)
+            if (buffer.Source == RenderGraphResourceSource.Registered)
                 throw new InvalidOperationException("An external Buffer was not bound.");
             if (buffer.Lifetime == RenderGraphResourceLifetime.Persistent)
                 throw new InvalidOperationException("A persistent Buffer was not materialized by the structural commit.");
@@ -91,7 +86,7 @@ internal sealed partial class FrameExecutor
             if (textureIndex >= _textures.Count) continue;
             FrameTexture texture = _textures[textureIndex];
             if (texture.LastPass < 0 || texture.Resource is not null) continue;
-            if (texture.Ownership == RenderGraphResourceOwnership.CallerOwned)
+            if (texture.Source == RenderGraphResourceSource.Registered)
                 throw new InvalidOperationException("An external Texture was not bound.");
             if (texture.Lifetime == RenderGraphResourceLifetime.Persistent)
                 throw new InvalidOperationException("A persistent Texture was not materialized by the structural commit.");
@@ -216,7 +211,7 @@ internal sealed partial class FrameExecutor
             case GraphViewKind.BufferCbv:
             case GraphViewKind.BufferSrv:
             case GraphViewKind.BufferUav:
-                primary = _buffers[view.BufferIndex].Resource;
+                primary = view.BufferIndex < 0 ? null : _buffers[view.BufferIndex].Resource;
                 if (view.AdditionalBufferIndex >= 0)
                     secondary = _buffers[view.AdditionalBufferIndex].Resource;
                 return primary is not null;
@@ -224,7 +219,7 @@ internal sealed partial class FrameExecutor
             case GraphViewKind.TextureUav:
             case GraphViewKind.ColorAttachment:
             case GraphViewKind.DepthStencil:
-                primary = _textures[view.TextureIndex].Resource;
+                primary = view.TextureIndex < 0 ? null : _textures[view.TextureIndex].Resource;
                 return primary is not null;
             default:
                 primary = null;
@@ -232,38 +227,15 @@ internal sealed partial class FrameExecutor
         }
     }
 
-    private void ResolveResourceFrontiers(
+    private void GetResourceFrontiers(
         GraphAccessTargetKind kind,
         int resourceIndex,
-        int frontierIndex,
-        out int[] begin,
-        out int[] end)
+        out long[] begin,
+        out long[] end)
     {
-        begin = PrepareFrontier(_resourceBeginFrontiers[frontierIndex], _queueLaneCount);
-        end = PrepareFrontier(_resourceEndFrontiers[frontierIndex], _queueLaneCount);
-        _resourceBeginFrontiers[frontierIndex] = begin;
-        _resourceEndFrontiers[frontierIndex] = end;
-        Array.Fill(begin, int.MaxValue);
-        Array.Clear(end);
-        bool used = false;
-        foreach (int accessIndex in CollectResourceAccesses(kind, resourceIndex, enabledOnly: false))
-        {
-            FrameResourceAccess access = _accesses[accessIndex];
-            if (!_live[access.PassIndex] || access.TargetKind != kind ||
-                access.ResourceIndex != resourceIndex)
-                continue;
-            used = true;
-            int[] start = _startFrontiers[access.PassIndex];
-            int[] finish = _endFrontiers[access.PassIndex];
-            for (int lane = 0; lane < _queueLaneCount; lane++)
-            {
-                if (start[lane] < begin[lane]) begin[lane] = start[lane];
-                if (finish[lane] > end[lane]) end[lane] = finish[lane];
-            }
-        }
-        if (!used) throw new InvalidOperationException("A transient resource has no live use.");
-        for (int lane = 0; lane < begin.Length; lane++)
-            if (begin[lane] == int.MaxValue) begin[lane] = 0;
+        FrameResourceLifetime uses = Connections.ResourceLifetimes[(kind, resourceIndex)];
+        begin = uses.Begin;
+        end = uses.End;
     }
 
     private readonly Dictionary<GraphIdentity, (GraphAccessTargetKind Kind, int Index)> _allocationRows = [];
@@ -281,19 +253,19 @@ internal sealed partial class FrameExecutor
             if (key.Kind == GraphAccessTargetKind.Buffer)
             {
                 FrameBuffer row = _buffers[key.Index];
-                if (row.Ownership != RenderGraphResourceOwnership.GraphOwned || row.Lifetime != RenderGraphResourceLifetime.PerFrame) continue;
+                if (row.UploadData is not null || row.Source != RenderGraphResourceSource.GraphCreated || row.Lifetime != RenderGraphResourceLifetime.PerFrame) continue;
                 identity = row.AllocationIdentity; first = row.FirstPass; last = row.LastPass;
             }
             else if (key.Kind == GraphAccessTargetKind.Texture)
             {
                 FrameTexture row = _textures[key.Index];
-                if (row.Ownership != RenderGraphResourceOwnership.GraphOwned || row.Lifetime != RenderGraphResourceLifetime.PerFrame) continue;
+                if (row.Source != RenderGraphResourceSource.GraphCreated || row.Lifetime != RenderGraphResourceLifetime.PerFrame) continue;
                 identity = row.AllocationIdentity; first = row.FirstPass; last = row.LastPass;
             }
             else continue;
             if (last < 0) { memory.Deactivate(identity); continue; }
-            ResolveResourceFrontiers(key.Kind, key.Index, key.Kind == GraphAccessTargetKind.Buffer ? key.Index : _buffers.Count + key.Index,
-                out int[] begin, out int[] end);
+            GetResourceFrontiers(key.Kind, key.Index,
+                out long[] begin, out long[] end);
             memory.UpdateLifetime(identity, begin, end, _passes[first].Queue!, _passes[last].Queue!);
         }
         foreach (GraphIdentity identity in memory.ReconcileLifetimes())
@@ -326,11 +298,11 @@ internal sealed partial class FrameExecutor
         {
             if (index >= _buffers.Count) continue;
             ref FrameBuffer row = ref CollectionsMarshal.AsSpan(_buffers)[index];
-            if (row.LastPass < 0 || row.Resource is not null || row.Ownership != RenderGraphResourceOwnership.GraphOwned ||
+            if (row.LastPass < 0 || row.Resource is not null || row.Source != RenderGraphResourceSource.GraphCreated ||
                 row.Lifetime != RenderGraphResourceLifetime.PerFrame) continue;
             if (row.Requirements.Size == 0)
                 row.Requirements = _frame.Backend.GetBufferMemoryRequirements(_frame.Graph.Device, row.Description, row.MemoryType);
-            ResolveResourceFrontiers(GraphAccessTargetKind.Buffer, index, index, out int[] begin, out int[] end);
+            GetResourceFrontiers(GraphAccessTargetKind.Buffer, index, out long[] begin, out long[] end);
             _allocationRequests.Add(new(row.AllocationIdentity, row.Requirements, row.MemoryType, row.Description.NodePlacement,
                 begin, end, _passes[row.FirstPass].Queue!, _passes[row.LastPass].Queue!));
         }
@@ -338,11 +310,11 @@ internal sealed partial class FrameExecutor
         {
             if (index >= _textures.Count) continue;
             ref FrameTexture row = ref CollectionsMarshal.AsSpan(_textures)[index];
-            if (row.LastPass < 0 || row.Resource is not null || row.Ownership != RenderGraphResourceOwnership.GraphOwned ||
+            if (row.LastPass < 0 || row.Resource is not null || row.Source != RenderGraphResourceSource.GraphCreated ||
                 row.Lifetime != RenderGraphResourceLifetime.PerFrame) continue;
             if (row.Requirements.Size == 0)
                 row.Requirements = _frame.Backend.GetTextureMemoryRequirements(_frame.Graph.Device, row.BorrowDescription());
-            ResolveResourceFrontiers(GraphAccessTargetKind.Texture, index, _buffers.Count + index, out int[] begin, out int[] end);
+            GetResourceFrontiers(GraphAccessTargetKind.Texture, index, out long[] begin, out long[] end);
             _allocationRequests.Add(new(row.AllocationIdentity, row.Requirements, MemoryType.DeviceLocal, row.NodePlacement,
                 begin, end, _passes[row.FirstPass].Queue!, _passes[row.LastPass].Queue!));
         }

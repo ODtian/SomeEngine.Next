@@ -90,9 +90,7 @@ public class GltfSourceImporterTests
             var geometry = new GltfMeshImporter();
             var settings = new GltfMeshSettings();
             context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
-                new Guid("ce474674-bd5e-4ae0-b72e-2d50d64e6413"), [ClusterGeometryBlock.BlockTypeId], new ClusterGeometryImporter(), settings));
-            context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
-                new Guid("535b2c57-2964-483b-867a-f38ef1a9fe5b"), [ClusterVertexAttributesBlock.BlockTypeId], new ClusterVertexAttributesImporter(), settings));
+                new Guid("ce474674-bd5e-4ae0-b72e-2d50d64e6413"), [ClusterGeometryBlock.BlockTypeId, ClusterVertexAttributesBlock.BlockTypeId, ClusterMeshBlock.BlockTypeId], new ClusterGeometryImporter(), settings));
             context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(
                 Guid.NewGuid(), [VertexStreamsBlock.BlockTypeId], new GltfVertexStreamsImporter(), settings));
             context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(new AssetImporter<SharpGLTF.Schema2.Mesh, GltfMeshSettings>(

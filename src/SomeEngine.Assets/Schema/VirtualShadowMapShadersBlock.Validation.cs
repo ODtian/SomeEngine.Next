@@ -13,6 +13,7 @@ public sealed partial class VirtualShadowMapShadersBlock
         [
             ResetReceiverMasks,
             ResetFrame,
+            OpaqueRequests,
             MarkCoarsePages,
             AllocatePages,
             ClearPages,
@@ -29,6 +30,7 @@ public sealed partial class VirtualShadowMapShadersBlock
         [
             nameof(ResetReceiverMasks),
             nameof(ResetFrame),
+            nameof(OpaqueRequests),
             nameof(MarkCoarsePages),
             nameof(AllocatePages),
             nameof(ClearPages),

@@ -61,7 +61,7 @@ public sealed class WarpCommandReuseTests(D3D12TestCompiler shaderCompiler)
                 Buffer output = frame < 3 ? first : second;
                 ResourceBinding[] resources = [ResourceBinding.WritableBuffer(frame < 3 ? firstView : secondView),
                     ResourceBinding.ConstantBuffer(constants, new(frame < 3 ? 0ul : 256ul, 256))];
-                backend.Begin(context, new CommandRecordingDesc(frame < 4 ? 8u : 64u, 0, 8));
+                backend.Begin(context, new CommandRecordingDesc(frame < 4 ? 8u : 64u,0));
                 ((IGraphicsBackend)backend).Barrier(context, new BufferBarrier(output, PipelineSync.None, PipelineSync.ComputeShading,
                     ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
                 backend.SetPipeline(context, pipeline);
@@ -129,7 +129,7 @@ public sealed class WarpCommandReuseTests(D3D12TestCompiler shaderCompiler)
         for (int frame = 1; frame <= 2; frame++)
         {
             ResourceBinding[] resources = Enumerable.Repeat(ResourceBinding.WritableBuffer(firstView), count).ToArray();
-            backend.Begin(context, new CommandRecordingDesc(2, 0, (uint)(count + 4)));
+            backend.Begin(context, new CommandRecordingDesc(2, 0));
             ((IGraphicsBackend)backend).Barrier(context, new BufferBarrier(first, PipelineSync.None, PipelineSync.ComputeShading,
                 ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
             ((IGraphicsBackend)backend).Barrier(context, new BufferBarrier(second, PipelineSync.None, PipelineSync.ComputeShading,

@@ -34,10 +34,13 @@ public sealed class CanvasShadowTests
 
     private static void CheckShadow(IGraphicsBackend backend, Device device)
     {
+        using var pipelines = new global::SomeEngine.Render.RenderPipelines(backend, device);
         using var graph = new RenderGraph(backend, device, [backend.GetQueue(device, QueueType.Graphics)]);
         using var world = new RenderWorld();
-        using SurfaceMaterial material = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
-        using var renderer = new CanvasRenderer(backend, device, graph, world, material, Format.R8G8B8A8UNorm);
+        using var shaderLibrary = new SomeEngine.Resources.ShaderLibrary(device.Capabilities.CompileTarget);
+        using var shaderFiles = new SomeEngine.Tests.EngineShaderFiles();
+        SurfaceMaterial material = SurfaceMaterial.Create(shaderLibrary, shaderFiles.Files);
+        using var renderer = new CanvasRenderer(backend, device, pipelines, graph, world, material, Format.R8G8B8A8UNorm);
         using SomeEngine.Graphics.Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(64 * 256, BufferUsages.CopyDestination), MemoryType.Readback);
         Entity canvas = world.CreateEntity(new RenderCanvas(CanvasTarget.Screen, new Size(64, 64), 1));
@@ -62,8 +65,7 @@ public sealed class CanvasShadowTests
                     pass.ColorAttachment(0, view, LoadType.Clear, StoreType.Store, WriteCoverage.Complete,
                         new Vector4(0, 0, 0, 1)),
                 static (ref RasterPassCommandScope _, in GraphColorAttachmentViewId _) => { });
-            GraphBufferId output = edit.RegisterExternalBuffer(readback,
-                [new(BufferRange.Whole, readback.InitialSync, readback.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId output = edit.RegisterExternalBuffer(readback);
             copy = edit.AddCopyFramePass("Read shadow pixels", PassQueueSelection.AnyOfType(QueueType.Graphics),
                 (target, output), new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition pass, ref (GraphTextureId Texture, GraphBufferId Buffer) data) =>

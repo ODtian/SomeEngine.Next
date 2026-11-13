@@ -1,7 +1,7 @@
 #ifndef PHONG_TESSELLATION_SLANG
 #define PHONG_TESSELLATION_SLANG
 
-#include "triangle_surface_inverse.slang"
+__exported import triangle_surface_inverse;
 
 struct PhongCoefficients
 {
@@ -156,6 +156,7 @@ SurfaceEval EvalPhongSurface(
     return result;
 }
 
+[TessellatedSurface]
 struct PhongTessellation : IDomainEvaluate<StandardVertex>
 {
     typealias TriangleData = Triangle;

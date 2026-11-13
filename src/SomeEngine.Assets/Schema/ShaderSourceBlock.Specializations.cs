@@ -7,7 +7,7 @@ namespace SomeEngine.Assets.Schema;
 
 public sealed partial class ShaderSourceBlock
 {
-    private ShaderSpecialization[] ReadSpecializations(Shader shader)
+    internal ShaderSpecialization[] ReadSpecializations(Shader shader)
     {
         var result = new List<ShaderSpecialization>();
         foreach (ShaderSpecialization specialization in Specializations) Add(specialization);

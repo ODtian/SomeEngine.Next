@@ -1,8 +1,8 @@
 #ifndef TRIANGLE_SURFACE_SLANG
 #define TRIANGLE_SURFACE_SLANG
 
-#include "domain_interfaces.slang"
-#include "vertex_evaluate.slang"
+__exported import domain_interfaces;
+__exported import vertex_evaluate;
 
 struct SurfaceVertex
 {

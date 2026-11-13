@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using SlangShaderSharp;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
@@ -6,6 +7,50 @@ namespace SomeEngine.Assets.Tests.Assets;
 
 public sealed class ShaderFileTests
 {
+    [Fact]
+    public async Task ShaderLibraryGeneratesTheRequestedTargetAndItsVariantsFromSavedIr()
+    {
+        using var files = new AssetTestDirectory();
+        string sourcePath = files.File("values.slang");
+        await File.WriteAllTextAsync(sourcePath, """
+            RWStructuredBuffer<uint> Result;
+            [shader("compute")] [numthreads(1,1,1)]
+            void Clear() { Result[0] = 0; }
+            [shader("compute")] [numthreads(1,1,1)]
+            void WriteValue<let value:uint>() { Result[0] = value; }
+            """);
+        using var asset = new ShaderAsset { Name = "Target variants" };
+        ShaderSourceBlock source = asset.GetBlock<ShaderSourceBlock>();
+        source.SourceNames = ["values.slang"];
+        source.Specializations =
+        [new() { EntryPoint = "WriteValue", Arguments = ["3"] },
+         new() { EntryPoint = "WriteValue", Arguments = ["7"] }];
+        SessionDesc dxil = OneTarget(SlangCompileTarget.Dxil);
+        dxil.SearchPaths = [files.Path];
+        await asset.CompileAsync(ShaderTestCompilation.Slang, dxil);
+        var project = new AssetProject(files.Path, []);
+        project.RegisterAsset(await asset.SaveAsync(files.File("values.shader.asset")));
+        File.Delete(sourcePath);
+
+        SessionDesc spirv = OneTarget(SlangCompileTarget.Spirv);
+        spirv.FileSystem = new EmptyShaderFileSystem();
+        await using var loader = new AssetLoader(project.CreateStorage());
+        using var shaders = new ShaderLibrary(ShaderTestCompilation.Slang, spirv);
+        Shader shader = await shaders.GetAsync(loader, asset.Reference);
+
+        Assert.Equal(SlangCompileTarget.Spirv, shader.GetSlangTarget(0).Format);
+        EntryPointReflection clear = shader.RequireSlangEntry(0, "Clear", SlangStage.Compute);
+        Assert.Equal(0x07230203u, BinaryPrimitives.ReadUInt32LittleEndian(shader.GetSlangEntryBlob(0, clear)!.Buffer));
+        Assert.True(shader.TryGetSpecialization("WriteValue", ["3"], out Shader first));
+        Assert.True(shader.TryGetSpecialization("WriteValue", ["7"], out Shader second));
+        EntryPointReflection firstEntry = first.RequireSlangEntry(0, "WriteValue", SlangStage.Compute);
+        EntryPointReflection secondEntry = second.RequireSlangEntry(0, "WriteValue", SlangStage.Compute);
+        Assert.Equal(0x07230203u, BinaryPrimitives.ReadUInt32LittleEndian(first.GetSlangEntryBlob(0, firstEntry)!.Buffer));
+        Assert.Equal(0x07230203u, BinaryPrimitives.ReadUInt32LittleEndian(second.GetSlangEntryBlob(0, secondEntry)!.Buffer));
+        Assert.NotEqual(first.GetSlangEntryBlob(0, firstEntry)!.Buffer.ToArray(),
+            second.GetSlangEntryBlob(0, secondEntry)!.Buffer.ToArray());
+    }
+
     [Fact]
     public async Task ShaderRemainsUsableAfterAssetAndFileReferencesDisappear()
     {
@@ -36,7 +81,7 @@ public sealed class ShaderFileTests
         await using ShaderAsset asset = await ShaderAsset.OpenAsync(path);
 
         SessionDesc spirv = OneTarget(SlangCompileTarget.Spirv);
-        Shader oldShader = await asset.CreateAsync(ShaderTestCompilation.Slang, spirv);
+        Shader oldShader = await SomeEngine.Resources.ShaderLibrary.CreateAsync(asset, ShaderTestCompilation.Slang, spirv);
         Shader newShader = await ShaderTestCompilation.CreateAsync(asset);
 
         Assert.NotSame(oldShader, newShader);
@@ -69,8 +114,7 @@ public sealed class ShaderFileTests
         await File.WriteAllBytesAsync(broken, bytes);
         await using ShaderAsset replacement = await ShaderAsset.OpenAsync(broken);
 
-        await Assert.ThrowsAnyAsync<InvalidDataException>(() => replacement
-            .CreateAsync(ShaderTestCompilation.Slang, sessionDescription)
+        await Assert.ThrowsAnyAsync<InvalidDataException>(() => SomeEngine.Resources.ShaderLibrary.CreateAsync(replacement, ShaderTestCompilation.Slang, sessionDescription)
             .AsTask());
 
         Assert.True(published.TryGetSlangTarget(SlangCompileTarget.Dxil, out _));

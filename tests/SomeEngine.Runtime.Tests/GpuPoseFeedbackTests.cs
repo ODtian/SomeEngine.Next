@@ -58,6 +58,12 @@ public sealed partial class SkinningRenderingTests
                     trace.Animation = animation;
                 }
             },
+            FrameCompleted = frame =>
+            {
+                if (frame.Index != 0) return;
+                GpuPoseReadbackRequest request = Assert.Single(trace.Requests);
+                Assert.False(GpuPoseAnimation.TryGetReadback(frame.World, in request, out _));
+            },
         };
         try
         {
@@ -78,8 +84,7 @@ public sealed partial class SkinningRenderingTests
         AnimationClip cpuClip = clip.CreateClip(definition);
         foreach (GpuPoseReadbackRequest request in trace.Requests)
         {
-            Assert.True(request.Completion.IsCompletedSuccessfully);
-            GpuPoseReadback result = await request.Completion;
+            GpuPoseReadbackResult result = trace.Results[request];
             Assert.Equal(request.Identity, result.Identity);
             Assert.Same(body, result.Identity.Instance);
             Assert.Equal(target, result.Identity.Target);
@@ -102,7 +107,7 @@ public sealed partial class SkinningRenderingTests
     }
 
     [Fact]
-    public async Task CanceledGpuPoseInputCanBeRequestedAgainForTheFollowingSubmission()
+    public async Task DiscardedPoseFramesLeaveTheirRequestsWithoutAResultAndFollowingRequestsReceiveGpuData()
     {
         using SkinContent content = await SkinContent.CreateAsync();
         await content.WriteMeshesAsync(EncodeFloatInfluences);
@@ -113,36 +118,36 @@ public sealed partial class SkinningRenderingTests
         using SkeletonInstance body = storage.CreateInstance(definition);
         var trace = new FeedbackTrace();
         Entity target = default;
-        GpuPoseReadback? followingSubmission = null;
+        GpuPoseReadbackResult? followingSubmission = null;
         var application = new ApplicationScene(content.Project.RootPath)
         {
             Initialize = frame =>
             {
                 GpuPoseAnimation.AddSystems(frame.Systems.Animation);
-                AnimationSystems.Add(frame.Systems.Animation, new FeedbackNodeSystem(), AnimationPhase.Composition);
                 target = GpuPoseAnimation.CreateTarget(frame.World, body);
                 using var builder = new AnimationBuilder(frame.World);
-                builder.Leaf<FeedbackParameters, FeedbackLeaf>(target, new(clip, trace));
+                builder.Leaf<GpuClipParameters, GpuClipLeaf>(target, new(clip));
                 builder.Play();
                 foreach (Entity mesh in frame.Scene.MeshEntities)
                     frame.World.Add(mesh, new MeshSkin(body, new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [1, 2])));
             },
             UpdateFrame = frame =>
             {
-                if (frame.Index == 0)
+                trace.ReadResults(frame.World);
+                if (frame.Index < 2)
                 {
+                    trace.Requests.Add(GpuPoseAnimation.RequestReadback(frame.World, target, new(1, 2)));
                     frame.Scene.ReadGpuPose(target, result => followingSubmission = result);
-                    frame.Scene.CancelFrame();
                 }
+                if (frame.Index == 0) frame.Scene.CancelFrame();
             },
         };
-        await SceneImages.RunAsync("d3d12", new SceneScript(application, 3, []), "--fixed-step", "0.25", "--no-taa", "--no-vsm");
+        await SceneImages.RunAsync("d3d12", new SceneScript(application, 4, []), "--fixed-step", "0.25", "--no-taa", "--no-vsm");
 
         Assert.Equal(2, trace.Requests.Count);
         GpuPoseReadbackRequest canceled = trace.Requests[0], next = trace.Requests[1];
-        Assert.True(canceled.Completion.IsCanceled);
-        Assert.True(next.Completion.IsCompletedSuccessfully);
-        GpuPoseReadback result = await next.Completion;
+        Assert.DoesNotContain(canceled, trace.Results.Keys);
+        GpuPoseReadbackResult result = trace.Results[next];
         Assert.Equal(next.Identity, result.Identity);
         Assert.Equal(canceled.Identity.Starts, result.Identity.Starts);
         Assert.Equal(canceled.Identity.AnimationStarts, result.Identity.AnimationStarts);
@@ -150,7 +155,7 @@ public sealed partial class SkinningRenderingTests
         Assert.Equal(new PoseRange(1, 2), result.Range);
         Assert.Equal(.5f, result.SampleTime);
         Assert.Equal(.5, result.CalculationTime);
-        GpuPoseReadback delivered = Assert.IsType<GpuPoseReadback>(followingSubmission);
+        GpuPoseReadbackResult delivered = Assert.IsType<GpuPoseReadbackResult>(followingSubmission);
         Assert.Equal(result.Identity, delivered.Identity);
         Assert.Equal(result.Version, delivered.Version);
         Assert.Equal(result.CalculationTime, delivered.CalculationTime);
@@ -172,6 +177,12 @@ public sealed partial class SkinningRenderingTests
     {
         internal Entity Animation;
         internal readonly List<GpuPoseReadbackRequest> Requests = [];
+        internal readonly Dictionary<GpuPoseReadbackRequest, GpuPoseReadbackResult> Results = [];
+        internal void ReadResults(World world)
+        {
+            foreach (GpuPoseReadbackRequest request in Requests)
+                if (GpuPoseAnimation.TryGetReadback(world, in request, out GpuPoseReadbackResult result)) Results[request] = result;
+        }
         internal readonly List<(ushort Stage, float Time, uint Completions)> Stages = [];
         internal int StaleResults, AcceptedResults;
     }
@@ -221,20 +232,21 @@ public sealed partial class SkinningRenderingTests
                     world.Replace(node.Target, output);
                     if (time.Time.Time == 0) { AnimationGraph.Submit(world, row.Entity, in node.Placement, true); continue; }
                     FeedbackTrace trace = node.Parameters.Trace;
-                    if (node.Request?.Completion.IsCanceled == true) node.Request = null;
+                    trace.ReadResults(world);
                     if (node.Request is null)
                     {
-                        if (trace.Requests.Count > 0 && trace.Requests[0].Completion.IsCompletedSuccessfully)
+                        if (trace.Requests.Count > 0 && trace.Results.ContainsKey(trace.Requests[0]))
                         {
                             if (!GpuPoseAnimation.SubmitFeedback(world, row.Entity, node.Target, in node.Placement, trace.Requests[0], finished: true))
                                 trace.StaleResults++;
                         }
                         node.Request = GpuPoseAnimation.RequestReadback(world, node.Target, new PoseRange(1, 2));
-                        trace.Requests.Add(node.Request);
+                        trace.Requests.Add(node.Request.Value);
                     }
-                    bool finished = node.Request.Completion.IsCompletedSuccessfully
-                        && node.Request.Completion.Result.Current.Span[1].M41 >= node.Parameters.MinimumX;
-                    if (GpuPoseAnimation.SubmitFeedback(world, row.Entity, node.Target, in node.Placement, node.Request, finished))
+                    GpuPoseReadbackRequest request = node.Request.Value;
+                    bool finished = GpuPoseAnimation.TryGetReadback(world, in request, out GpuPoseReadbackResult result)
+                        && result.Current.Span[1].M41 >= node.Parameters.MinimumX;
+                    if (GpuPoseAnimation.SubmitFeedback(world, row.Entity, node.Target, in node.Placement, request, finished))
                         trace.AcceptedResults++;
                 }
             });

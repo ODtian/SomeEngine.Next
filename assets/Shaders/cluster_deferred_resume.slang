@@ -1,6 +1,6 @@
-#include "cluster_structures.slang"
-#include "resource_effects.slang"
-#include "wave_aggregation.slang"
+__exported import cluster_structures;
+__exported import resource_effects;
+__exported import wave_aggregation;
 
 struct ClusterDeferredResumeUniforms
 {
@@ -105,5 +105,5 @@ void ResumeDeferredClusterWork(uint3 threadId : SV_DispatchThreadID)
     }
 }
 
-#include "cluster_work_status.slang"
-#include "cluster_work_queue.slang"
+__exported import cluster_work_status;
+__exported import cluster_work_queue;

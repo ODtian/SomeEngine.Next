@@ -17,31 +17,31 @@ internal enum GraphIdentityDomain : byte
 internal readonly struct GraphIdentity : IEquatable<GraphIdentity>
 {
     internal GraphIdentity(
-        ulong owner,
-        int slot,
+        ulong scopeId,
+        int index,
         uint generation,
         GraphIdentityDomain domain = GraphIdentityDomain.Unscoped)
     {
-        Owner = owner;
-        Slot = slot;
+        ScopeId = scopeId;
+        Index = index;
         Generation = generation;
         Domain = domain;
     }
 
-    internal ulong Owner { get; }
-    internal int Slot { get; }
+    internal ulong ScopeId { get; }
+    internal int Index { get; }
     internal uint Generation { get; }
     internal GraphIdentityDomain Domain { get; }
-    internal bool IsValid => Owner != 0 && Slot >= 0 && Generation != 0;
+    internal bool IsValid => ScopeId != 0 && Index >= 0 && Generation != 0;
 
     public bool Equals(GraphIdentity other) =>
-        Owner == other.Owner &&
-        Slot == other.Slot &&
+        ScopeId == other.ScopeId &&
+        Index == other.Index &&
         Generation == other.Generation &&
         Domain == other.Domain;
 
     public override bool Equals(object? value) => value is GraphIdentity other && Equals(other);
-    public override int GetHashCode() => HashCode.Combine(Owner, Slot, Generation, Domain);
+    public override int GetHashCode() => HashCode.Combine(ScopeId, Index, Generation, Domain);
     public static bool operator ==(GraphIdentity left, GraphIdentity right) => left.Equals(right);
     public static bool operator !=(GraphIdentity left, GraphIdentity right) => !left.Equals(right);
 }

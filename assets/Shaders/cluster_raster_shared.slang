@@ -1,46 +1,84 @@
 #ifndef CLUSTER_RASTER_SHARED_SLANG
 #define CLUSTER_RASTER_SHARED_SLANG
 
-#include "visbuffer_encoding.slang"
-#include "wave_queue.slang"
-#include "material_interfaces.slang"
-#include "cluster_view.slang"
-#include "depth_projection.slang"
+__exported import visbuffer_encoding;
+__exported import wave_queue;
+__exported import material_interfaces;
+__exported import cluster_view;
+__exported import depth_projection;
 
-float2 CalculateClusterRasterDepthInput(float3 worldPosition, float4 clip, ClusterViewUniforms view)
+struct ClusterRasterOutputPixel
 {
-    if (view.TargetPolicy == 0u) return clip.zw;
+    int2 Position;
+    uint DepthCacheClass;
+    uint FrontFace;
+    uint MaterialAddress;
+};
+
+interface IClusterRasterOutput
+{
+    static bool UsesReverseDepth();
+    int4 scissor(
+        uint visibleClusterIndex,
+        uint targetViewIndex,
+        uint screenWidth,
+        uint screenHeight);
+
+    bool resolvePixel(
+        int2 pixel,
+        uint targetViewIndex,
+        uint visibilityValue,
+        out ClusterRasterOutputPixel outputPixel);
+
+    uint readDepth(ClusterRasterOutputPixel pixel, uint targetViewIndex);
+
+    void write(
+        ClusterRasterOutputPixel pixel,
+        uint viewIndex,
+        uint targetViewIndex,
+        float depth,
+        uint visibilityValue);
+};
+
+float2 CalculateClusterRasterDepthInput<TOutput : IClusterRasterOutput>(float3 worldPosition, float4 clip, ClusterViewUniforms view)
+{
+    if (!TOutput.UsesReverseDepth()) return clip.zw;
     float4 position = float4(ClusterPositionForView(worldPosition, view), 1.0);
     return float2(ProjectReverseDepth(position, view.ViewProj), clip.w);
 }
 
+float ReadClusterRasterDepth<TOutput : IClusterRasterOutput>(float4 pixelPosition, float2 clipDepth, ClusterViewUniforms view)
+{
+    return TOutput.UsesReverseDepth() ? clipDepth.x / clipDepth.y : pixelPosition.z;
+}
+
+float2 CalculateClusterRasterDepthInput(float3 worldPosition, float4 clip, ClusterViewUniforms view)
+{ return clip.zw; }
 float ReadClusterRasterDepth(float4 pixelPosition, float2 clipDepth, ClusterViewUniforms view)
+{ return pixelPosition.z; }
+
+uint EncodeClusterRasterDepth(float depth, uint outputKind)
 {
-    return view.TargetPolicy != 0u ? clipDepth.x / clipDepth.y : pixelPosition.z;
+    return asuint(outputKind != 0u ? saturate(depth) : 1.0 - saturate(depth));
 }
 
-uint EncodeClusterRasterDepth(float depth, uint targetPolicy)
+float ClusterRasterMaterialDepth(float depth, uint outputKind)
 {
-    return asuint(targetPolicy != 0u ? saturate(depth) : 1.0 - saturate(depth));
+    return outputKind != 0u ? 1.0 - depth : depth;
 }
 
-float ClusterRasterMaterialDepth(float depth, uint targetPolicy)
+float ClusterRasterResultDepth(float rasterDepth, float materialDepth, float resultDepth, uint outputKind)
 {
-    return targetPolicy != 0u ? 1.0 - depth : depth;
-}
-
-float ClusterRasterResultDepth(float rasterDepth, float materialDepth, float resultDepth, uint targetPolicy)
-{
-    if (targetPolicy == 0u) return resultDepth;
+    if (outputKind == 0u) return resultDepth;
     // Public material depth stays forward. An unchanged value must not quantize
     // the native raster depth through a forward/reverse round trip.
     return resultDepth == materialDepth ? rasterDepth : 1.0 - resultDepth;
 }
 
-bool ClusterRasterDepthAccepts(float depth, uint encodedDepth, uint earlyDepthEnabled, uint targetPolicy)
+bool ClusterRasterDepthAccepts(float depth, uint encodedDepth, uint earlyDepthEnabled, uint outputKind)
 {
-    uint incomingDepth = EncodeClusterRasterDepth(depth, targetPolicy);
-    return earlyDepthEnabled == 0u || (targetPolicy != 0u
+    uint incomingDepth = EncodeClusterRasterDepth(depth, outputKind);
+    return earlyDepthEnabled == 0u || (outputKind != 0u
         ? incomingDepth > encodedDepth : incomingDepth >= encodedDepth);
 }
 
@@ -52,39 +90,6 @@ static const uint CLUSTER_RASTER_MAX_CLIPPED_VERTICES = 10u;
 static const uint CLUSTER_RASTER_COVERAGE_FLOAT_BOUNDS = 0u;
 static const uint CLUSTER_RASTER_COVERAGE_INTEGER = 1u;
 static const uint CLUSTER_RASTER_COVERAGE_FLOAT_PIXELS = 2u;
-
-struct ClusterRasterOutputPixel
-{
-    int2 Position;
-    uint DepthCacheClass;
-};
-
-interface IClusterRasterOutput
-{
-    int4 scissor(
-        uint visibleClusterIndex,
-        uint targetPolicy,
-        uint targetViewIndex,
-        uint screenWidth,
-        uint screenHeight);
-
-    bool resolvePixel(
-        int2 pixel,
-        uint targetPolicy,
-        uint targetViewIndex,
-        uint visibilityValue,
-        out ClusterRasterOutputPixel outputPixel);
-
-    uint readDepth(ClusterRasterOutputPixel pixel, uint targetPolicy, uint targetViewIndex);
-
-    void write(
-        ClusterRasterOutputPixel pixel,
-        uint viewIndex,
-        uint targetPolicy,
-        uint targetViewIndex,
-        float depth,
-        uint visibilityValue);
-};
 
 struct ClusterRasterTriangle
 {
@@ -103,6 +108,7 @@ struct ClusterRasterTriangle
     int2 MaxPixel;
     uint Valid;
     uint CoverageMode;
+    uint FrontFace;
 };
 
 float ClusterRasterClipDistance(float4 value, uint plane)
@@ -248,6 +254,7 @@ ClusterRasterTriangle SetupClusterRasterTriangle(
     tri.Edge12 = v1 - v2;
     tri.Edge20 = v2 - v0;
     float determinant = tri.Edge01.y * tri.Edge20.x - tri.Edge01.x * tri.Edge20.y;
+    tri.FrontFace = determinant < 0.0 ? 1u : 0u;
     if (determinant == 0.0 || (cullBackfaces && determinant >= 0.0))
         return tri;
     float winding = cullBackfaces || determinant < 0.0 ? 1.0 : -1.0;
@@ -392,7 +399,7 @@ struct ClusterPixelRasterTask<
     DrawRequest Source;
     uint TriangleID;
     uint ViewIndex;
-    uint TargetPolicy;
+    uint VisibilityViewIndex;
     uint TargetViewIndex;
     uint PixelCount;
     uint Scanline;
@@ -422,6 +429,7 @@ struct ClusterPixelRasterTask<
         result.Triangle.C1 = WaveReadLaneAt(Triangle.C1, sourceLane);
         result.Triangle.C2 = WaveReadLaneAt(Triangle.C2, sourceLane);
         result.Triangle.CoverageMode = WaveReadLaneAt(Triangle.CoverageMode, sourceLane);
+        result.Triangle.FrontFace = WaveReadLaneAt(Triangle.FrontFace, sourceLane);
         result.Triangle.MinPixel = int2(
             WaveReadLaneAt(Triangle.MinPixel.x, sourceLane),
             WaveReadLaneAt(Triangle.MinPixel.y, sourceLane));
@@ -463,7 +471,7 @@ struct ClusterPixelRasterTask<
         result.Source.ClusterAndView = WaveReadLaneAt(Source.ClusterAndView, sourceLane);
         result.TriangleID = WaveReadLaneAt(TriangleID, sourceLane);
         result.ViewIndex = WaveReadLaneAt(ViewIndex, sourceLane);
-        result.TargetPolicy = WaveReadLaneAt(TargetPolicy, sourceLane);
+        result.VisibilityViewIndex = WaveReadLaneAt(VisibilityViewIndex, sourceLane);
         result.TargetViewIndex = WaveReadLaneAt(TargetViewIndex, sourceLane);
         result.Scanline = WaveReadLaneAt(Scanline, sourceLane);
         result.EarlyDepthEnabled = WaveReadLaneAt(EarlyDepthEnabled, sourceLane);
@@ -496,7 +504,7 @@ struct ClusterPixelRasterTask<
         DrawRequest source = Source;
         uint triangleID = TriangleID;
         uint viewIndex = ViewIndex;
-        uint targetPolicy = TargetPolicy;
+        uint outputKind = TOutput.UsesReverseDepth() ? 1u : 0u;
         uint targetViewIndex = TargetViewIndex;
         uint scanline = Scanline;
         TVisibility.Varying varying0 = Varying0;
@@ -543,15 +551,16 @@ struct ClusterPixelRasterTask<
             else if (edge0 < 0.0 || edge1 < 0.0 || edge2 < 0.0)
                 continue;
             ClusterRasterOutputPixel outputPixel;
-            if (!Output.resolvePixel(pixel, targetPolicy, targetViewIndex, visibilityValue, outputPixel))
+            if (!Output.resolvePixel(pixel, targetViewIndex, visibilityValue, outputPixel))
                 continue;
+            outputPixel.FrontFace = triangle.FrontFace;
             precise float depthInput =
                 triangle.DepthPlane.x +
                 triangle.DepthPlane.y * edge1 +
                 triangle.DepthPlane.z * edge2;
             float depth = saturate(depthInput);
-            uint encodedDepth = Output.readDepth(outputPixel, targetPolicy, targetViewIndex);
-            if (!ClusterRasterDepthAccepts(depth, encodedDepth, EarlyDepthEnabled, targetPolicy))
+            uint encodedDepth = Output.readDepth(outputPixel, targetViewIndex);
+            if (!ClusterRasterDepthAccepts(depth, encodedDepth, EarlyDepthEnabled, outputKind))
                 continue;
             float3 fanLinear = ClusterRasterLinearBarycentric(
                 triangle,
@@ -610,14 +619,13 @@ struct ClusterPixelRasterTask<
                 varying2,
                 interpolation);
             VisibilityPixelInput pixelInput;
-            pixelInput.PixelCoord = uint3(pixel, viewIndex);
-            pixelInput.Depth = ClusterRasterMaterialDepth(depth, targetPolicy);
-            pixelInput.EncodedDepth = EncodeClusterRasterDepth(depth, targetPolicy);
+            pixelInput.PixelCoord = uint3(pixel, VisibilityViewIndex);
+            pixelInput.Depth = ClusterRasterMaterialDepth(depth, outputKind);
+            pixelInput.EncodedDepth = EncodeClusterRasterDepth(depth, outputKind);
             pixelInput.EncodedTargetDepth = encodedDepth;
             pixelInput.Source = source;
             pixelInput.TriangleID = triangleID;
             pixelInput.ViewIndex = viewIndex;
-            pixelInput.TargetPolicy = targetPolicy;
             pixelInput.TargetViewIndex = targetViewIndex;
             VisibilityPixelResult pixelResult = visibility.evaluate(pixelInput, varying);
             if (pixelResult.Visible == 0u)
@@ -625,9 +633,8 @@ struct ClusterPixelRasterTask<
             Output.write(
                 outputPixel,
                 viewIndex,
-                targetPolicy,
                 targetViewIndex,
-                saturate(ClusterRasterResultDepth(depth, pixelInput.Depth, pixelResult.Depth, targetPolicy)),
+                saturate(ClusterRasterResultDepth(depth, pixelInput.Depth, pixelResult.Depth, outputKind)),
                 visibilityValue);
         }
     }
@@ -646,12 +653,12 @@ void RasterizeClusterTriangleWave<
     DrawRequest source,
     uint triangleID,
     uint viewIndex,
-    uint targetPolicy,
     uint targetViewIndex,
     bool sourceActive,
     uint screenWidth,
     uint screenHeight,
-    bool clipDepth = true, uint earlyDepthEnabled = 0u)
+    bool clipDepth = true, uint earlyDepthEnabled = 0u, bool cullBackFaces = true,
+    uint visibilityViewIndex = 0xffffffffu)
 {
     uint mask0 = ClusterRasterClipMask(clipVerts[0], clipDepth);
     uint mask1 = ClusterRasterClipMask(clipVerts[1], clipDepth);
@@ -700,7 +707,7 @@ void RasterizeClusterTriangleWave<
         };
         ClusterRasterTriangle rasterTriangle = active
             ? SetupClusterRasterTriangle(fan, scissorRect, screenWidth, screenHeight,
-                targetPolicy == 0u ? CLUSTER_RASTER_TWO_SIDED == 0 : CLUSTER_TARGET_RASTER_TWO_SIDED == 0)
+                cullBackFaces)
             : (ClusterRasterTriangle)0;
 
         ClusterPixelRasterTask<TVertex, TVisibility, TOutput> task;
@@ -715,7 +722,7 @@ void RasterizeClusterTriangleWave<
         task.Source = source;
         task.TriangleID = triangleID;
         task.ViewIndex = viewIndex;
-        task.TargetPolicy = targetPolicy;
+        task.VisibilityViewIndex = visibilityViewIndex == 0xffffffffu ? viewIndex : visibilityViewIndex;
         task.TargetViewIndex = targetViewIndex;
         task.EarlyDepthEnabled = earlyDepthEnabled;
         task.Output = output;

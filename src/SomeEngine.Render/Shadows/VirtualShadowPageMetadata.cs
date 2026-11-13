@@ -5,7 +5,7 @@ namespace SomeEngine.Render.Shadows;
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = SizeInBytes)]
 public struct VirtualShadowPageMetadata
 {
-    public const int SizeInBytes = 32;
+    public const int SizeInBytes = 36;
     public uint LastRequestedFrame;
     public uint StaticDepthGeneration;
     public uint RequestFlags;
@@ -13,7 +13,8 @@ public struct VirtualShadowPageMetadata
     public int WorldPageX;
     public int WorldPageY;
     public uint Generation;
-    public uint ViewIndex;
+    public uint RangeId;
+    public uint RangeGeneration;
 }
 
 public static class VirtualShadowPageEntry

@@ -89,14 +89,14 @@ internal sealed class SamplerFailureBackend(IGraphicsBackend backend) : IGraphic
 
     public void SetVertexBuffers(
         CommandContext context,
-        uint firstSlot,
+        uint firstBindingIndex,
         ReadOnlySpan<VertexBufferBinding> bindings) => throw new NotSupportedException();
 
     public void SetIndexBuffer(CommandContext context, in IndexBufferBinding binding) => throw new NotSupportedException();
 
     public void SetStreamOutputBuffers(
         CommandContext context,
-        uint firstSlot,
+        uint firstBindingIndex,
         ReadOnlySpan<StreamOutputBufferBinding> bindings) => throw new NotSupportedException();
 
     public void SetViewports(CommandContext context, ReadOnlySpan<Viewport> viewports) => throw new NotSupportedException();
@@ -405,16 +405,16 @@ internal sealed class SamplerFailureBackend(IGraphicsBackend backend) : IGraphic
 
     public DescriptorTable CreateDescriptorTable(
         Device device,
-        ReadOnlySpan<DescriptorSlotDesc> slots,
+        ReadOnlySpan<DescriptorEntryDesc> slots,
         string? label = null,
         uint nodeIndex = uint.MaxValue,
         CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
-    public DescriptorIndex GetDescriptorIndex(DescriptorTable table, uint slot) => throw new NotSupportedException();
+    public DescriptorIndex GetDescriptorIndex(DescriptorTable table, uint index) => throw new NotSupportedException();
 
     public void WriteDescriptor(
         DescriptorTable table,
-        uint slot,
+        uint index,
         in ResourceBinding value) => throw new NotSupportedException();
 
     public PersistentParameterBindings CreatePersistentParameterBindings(

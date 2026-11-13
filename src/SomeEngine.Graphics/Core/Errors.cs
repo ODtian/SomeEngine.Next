@@ -15,6 +15,7 @@ public enum GraphicsError : byte
     ShaderCompilation,
     PipelineCreation,
     NativeFailure,
+    UnsupportedDeviceFeatures,
 }
 
 /// <summary>Reports a Slang, serialization, native creation, execution, or terminal device failure.</summary>
@@ -45,6 +46,10 @@ public sealed class GraphicsException : Exception
     public GraphicsError Error { get; }
     public long? NativeCode { get; }
     public string? Diagnostic { get; }
+
+    public override string ToString() => Diagnostic is { Length: > 0 }
+        ? $"{base.ToString()}{Environment.NewLine}{Diagnostic}"
+        : base.ToString();
 }
 
 /// <remarks>
@@ -93,12 +98,8 @@ public enum NativeObjectOwnership : byte
 public enum RecordedCommandsStatus : byte
 {
     Executable,
-    Submitting,
     Submitted,
-    Completed,
     Discarded,
-    DeviceLost,
-    Disposed,
 }
 
 /// <remarks>

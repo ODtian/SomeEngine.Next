@@ -1,3 +1,4 @@
+using SomeEngine.Graphics.Validation;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Reflection;
@@ -37,7 +38,7 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
         int ordinarySize = checked((int)GetDataLayout(layout).GetSize(
             SlangParameterCategory.Uniform));
 
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
@@ -62,7 +63,7 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
             device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
 
-        backend.Begin(context, new CommandRecordingDesc(8, 0, 8));
+        backend.Begin(context, new CommandRecordingDesc(8, 0));
         backend.Barrier(
             context,
             new BufferBarrier(
@@ -142,7 +143,7 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
         int ordinarySize = checked((int)GetDataLayout(layout).GetSize(
             SlangParameterCategory.Uniform));
 
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
@@ -181,7 +182,7 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
                 {
                     for (int iteration = 0; iteration < iterations; iteration++)
                     {
-                        backend.Begin(context, new CommandRecordingDesc(4, 0, 4));
+                        backend.Begin(context, new CommandRecordingDesc(4, 0));
                         try
                         {
                             backend.SetPipeline(context, pipeline);
@@ -264,7 +265,7 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
             ?? VariableLayoutReflection.Null;
         Assert.Equal((nint)0, GetDataLayout(layout).BindingRangeCount);
 
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
@@ -354,7 +355,7 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
                 (SlangBindingType.Sampler, 0, 0),
             },
             locations);
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Sampler sampler = backend.CreateSampler(
             device,
@@ -381,7 +382,7 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
             device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
 
-        backend.Begin(context, new CommandRecordingDesc(8, 2, 8));
+        backend.Begin(context, new CommandRecordingDesc(8, 2));
         backend.SetPipeline(context, pipeline);
         backend.SetTransientParameterBindings(
             context,
@@ -401,7 +402,7 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
     [Fact]
     public void Initial_descriptor_capacity_exhaustion_is_atomic_and_context_remains_reusable()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using CommandContext context = backend.CreateCommandContext(
             device,
@@ -411,7 +412,7 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
             context,
             new CommandRecordingDesc(
                 InitialResourceDescriptorCapacity: 64,
-                InitialSamplerDescriptorCapacity:
+            InitialSamplerDescriptorCapacity:
                     checked(device.Capabilities.Limits.SamplerDescriptorCapacity + 1))));
         Assert.Equal(GraphicsError.OutOfDescriptors, failure.Error);
 
@@ -419,14 +420,14 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
             context,
             new CommandRecordingDesc(
                 InitialResourceDescriptorCapacity: 64,
-                InitialSamplerDescriptorCapacity: 64));
+            InitialSamplerDescriptorCapacity: 64));
         using RecordedCommands recorded = backend.End(context);
     }
 
     [Fact]
     public void Resource_typed_null_descriptors_publish_and_sampler_null_is_rejected_on_write()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         ResourceBindingType[] types =
         [
@@ -443,8 +444,8 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
             [ResourceBindingType.Sampler]);
         Assert.Equal(DescriptorTableType.Resource, resources.Type);
         Assert.Equal(DescriptorTableType.Sampler, samplers.Type);
-        Assert.Equal(types, resources.Slots.ToArray().Select(static slot => slot.Type).ToArray());
-        Assert.Equal(ResourceBindingType.Sampler, samplers.Slots[0].Type);
+        Assert.Equal(types, resources.Entries.ToArray().Select(static entry => entry.Type).ToArray());
+        Assert.Equal(ResourceBindingType.Sampler, samplers.Entries[0].Type);
 
         uint resourceFirst = backend.GetDescriptorIndex(resources, 0).Value;
         uint samplerFirst = backend.GetDescriptorIndex(samplers, 0).Value;
@@ -530,17 +531,17 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
             ResourceBinding.StorageTexture(textureUav),
             ResourceBinding.AccelerationStructure(accelerationStructureSrv),
         ];
-        for (int slot = 0; slot < actual.Length; slot++)
-            backend.WriteDescriptor(resources, checked((uint)slot), actual[slot]);
+        for (int entry = 0; entry < actual.Length; entry++)
+            backend.WriteDescriptor(resources, checked((uint)entry), actual[entry]);
         backend.WriteDescriptor(samplers, 0, ResourceBinding.SampledWith(sampler));
         backend.PublishDescriptors(device);
 
-        for (int slot = 0; slot < types.Length; slot++)
+        for (int entry = 0; entry < types.Length; entry++)
         {
             backend.WriteDescriptor(
                 resources,
-                checked((uint)slot),
-                ResourceBinding.Null(types[slot]));
+                checked((uint)entry),
+                ResourceBinding.Null(types[entry]));
         }
         Assert.Throws<ArgumentException>(() => backend.WriteDescriptor(
             samplers,
@@ -548,8 +549,8 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
             ResourceBinding.Null(ResourceBindingType.Sampler)));
         backend.PublishDescriptors(device);
 
-        for (int slot = 0; slot < actual.Length; slot++)
-            backend.WriteDescriptor(resources, checked((uint)slot), actual[slot]);
+        for (int entry = 0; entry < actual.Length; entry++)
+            backend.WriteDescriptor(resources, checked((uint)entry), actual[entry]);
         backend.WriteDescriptor(samplers, 0, ResourceBinding.SampledWith(sampler));
         backend.PublishDescriptors(device);
 
@@ -567,24 +568,24 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
     [Fact]
     public void Unpublished_descriptor_table_disposal_immediately_reuses_index()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer buffer = backend.CreateBuffer(
             device,
             new BufferDesc(256, BufferUsages.ShaderRead));
         BufferSrvDesc description = new(buffer, BufferRange.Whole, Format.R32UInt);
         using BufferSrv view = backend.CreateBufferSrv(device, description);
-        DescriptorSlotDesc slot = new(ResourceBindingType.BufferSrv, Format.R32UInt);
+        DescriptorEntryDesc entry = new(ResourceBindingType.BufferSrv, Format.R32UInt);
 
         DescriptorTable first = backend.CreateSingleDescriptorTable(
             device,
-            slot,
+            entry,
             ResourceBinding.ReadOnlyBuffer(view),
             out DescriptorIndex firstIndex);
         first.Dispose();
         using DescriptorTable replacement = backend.CreateSingleDescriptorTable(
             device,
-            slot,
+            entry,
             ResourceBinding.ReadOnlyBuffer(view),
             out DescriptorIndex replacementIndex);
 
@@ -595,7 +596,7 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
     [Fact]
     public void Published_descriptor_table_numeric_index_reuses_without_reviving_identity()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer buffer = backend.CreateBuffer(
             device,
@@ -605,11 +606,11 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
             new CommandContextDesc(QueueType.Graphics, 0, 1));
         BufferSrvDesc description = new(buffer, BufferRange.Whole, Format.R32UInt);
         using BufferSrv view = backend.CreateBufferSrv(device, description);
-        DescriptorSlotDesc slot = new(ResourceBindingType.BufferSrv, Format.R32UInt);
+        DescriptorEntryDesc entry = new(ResourceBindingType.BufferSrv, Format.R32UInt);
 
         DescriptorTable first = backend.CreateSingleDescriptorTable(
             device,
-            slot,
+            entry,
             ResourceBinding.ReadOnlyBuffer(view),
             out DescriptorIndex retiredIndex);
         backend.PublishDescriptors(device);
@@ -621,7 +622,7 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
 
         using DescriptorTable whileHeld = backend.CreateSingleDescriptorTable(
             device,
-            slot,
+            entry,
             ResourceBinding.ReadOnlyBuffer(view),
             out DescriptorIndex replacementIndex);
         Assert.Equal(retiredIndex.Value, replacementIndex.Value);
@@ -633,7 +634,7 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
     [Fact]
     public void Descriptor_table_contiguous_range_reuses_values_without_reusing_identity()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using CommandContext context = backend.CreateCommandContext(
             device,
@@ -667,7 +668,7 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
     [Fact]
     public void Invalid_table_type_and_slot_writes_preserve_pending_publication()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using DescriptorTable resources = backend.CreateDescriptorTable(
             device,
@@ -738,7 +739,7 @@ public sealed class WarpDescriptorTests(D3D12TestCompiler shaderCompiler)
         using CommandContext context = backend.CreateCommandContext(
             device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(8, 0, 8));
+        backend.Begin(context, new CommandRecordingDesc(8, 0));
         backend.Barrier(
             context,
             new BufferBarrier(

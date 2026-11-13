@@ -1,11 +1,11 @@
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
-#include "vsm_raster_work_common.slang"
-#include "vsm_page_dispatch.slang"
-#include "cluster_view.slang"
-#include "cluster_raster_target_view.slang"
-#include "cluster_view_work.slang"
-#include "resource_effects.slang"
+__exported import vsm_raster_work_common;
+__exported import vsm_page_dispatch;
+__exported import cluster_view;
+__exported import cluster_raster_target_view;
+__exported import cluster_view_work;
+__exported import resource_effects;
 
 ConstantBuffer<VirtualShadowRasterWorkUniforms> ViewCompact;
 StructuredBuffer<uint4> UncachedPageRectBounds;
@@ -86,7 +86,6 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     view.TessellationEdgePixels = source.DicingRate;
     view.HiZMipCount = ViewCompact.PageHiZMipCount;
     view.HiZInvSize = 2.0.xx / float(max(mipResolution, 2u));
-    view.TargetPolicy = 1u;
     view.DepthClipEnabled = source.LightKind == VSM_LIGHT_DIRECTIONAL ? 0u : 1u;
     view.TargetViewIndex = compactIndex;
     view.CullingProjectionIndex = sourceViewIndex + 1u;
@@ -114,7 +113,7 @@ void CompactVirtualShadowViews(uint3 threadId : SV_DispatchThreadID)
     target.PagesPerRow = dimension;
     target.PageSize = source.PageSize;
     target.MipResolution = mipResolution;
-    target.PhysicalPagesPerRow = source.PhysicalPagesPerRow;
+    target.AtlasPagesPerRow = source.AtlasPagesPerRow;
     target.CacheGeneration = source.CacheGeneration;
     target.MipLevel = mipLevel;
     target.WorldPageOriginX = worldOrigin.x;

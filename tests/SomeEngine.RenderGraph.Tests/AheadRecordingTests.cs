@@ -5,7 +5,7 @@ public sealed class AheadRecordingTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void RecordingFailurePreservesEarlierSubmissionsAndAllowsNextFrame(bool disableParallel)
+    public void RecordingFailureMarksTheGraphLostBeforeNotifyingObservers(bool disableParallel)
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
         using var graph = new RenderGraph(support.Backend, support.Device,
@@ -34,7 +34,7 @@ public sealed class AheadRecordingTests
 
         var options = new RenderGraphFrameOptions(FrameSubmissionMode.RecordAhead,
             disableParallel ? RenderGraphDebugOptions.DisableParallelRecording : default);
-        var receiver = new ResultReceiver(first);
+        var receiver = new ResultReceiver();
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         using (RenderGraphFrame frame = graph.BeginFrame(options))
         {
@@ -43,33 +43,19 @@ public sealed class AheadRecordingTests
             try { frame.Execute(completions); }
             catch (Exception exception)
             {
-                Assert.Contains("recording failed", exception.ToString());
+                Assert.IsAssignableFrom<Exception>(exception);
                 failed = true;
             }
             Assert.True(failed);
         }
-        Assert.True(receiver.FirstSubmitted);
-        support.Wait(receiver.Completions);
-        int before = Volatile.Read(ref calls);
-        fail = false;
-        using (RenderGraphFrame frame = graph.BeginFrame(options))
-        {
-            int count = frame.Execute(completions);
-            Assert.Equal(2, count);
-            support.Wait(completions.AsSpan(0, count));
-        }
-        Assert.Equal(before + 4, Volatile.Read(ref calls));
+        Assert.False(receiver.Called);
+        Assert.True(graph.IsLost);
+        Assert.Throws<RenderGraphLostException>(() => graph.TryBeginFrame(out _));
     }
 
-    private sealed class ResultReceiver(GraphPassId first) : IRenderGraphFrameExecutionObserver
+    private sealed class ResultReceiver : IRenderGraphFrameExecutionObserver
     {
-        internal bool FirstSubmitted;
-        internal QueueCompletion[] Completions = [];
-
-        public void OnRenderGraphFrameFinished(RenderGraphFrameResult result)
-        {
-            FirstSubmitted = result.TryGetPassCompletion(first, out _);
-            Completions = result.SubmittedCompletions.ToArray();
-        }
+        internal bool Called;
+        public void OnFrameSubmitted(in RenderGraphSubmission submission) => Called = true;
     }
 }

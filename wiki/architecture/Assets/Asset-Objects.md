@@ -4,6 +4,8 @@
 
 ## 身份和内容分开
 
+引擎 shader 在引擎内容目录烘焙，应用与场景按 GUID 引用。`AssetLoader` 从应用目录及引擎目录这组存储根解析同一身份；进程级 `ShaderLibrary` 按资产身份和内容版本共用已加载的 Shader。
+
 Asset 是身份、引用和生命周期单位。`MeshAsset`、`SkeletonAsset`、`AnimationClipAsset`、`TextureAsset`、`ShaderAsset`、`MaterialAsset` 和 `WorldAsset` 是独立资产类型，不绑定某一种使用对象，也不从使用对象逐字段生成资产镜像。同一身份可以有多个独立打开的对象及内容分支。
 
 `SkeletonAsset`、`AnimationClipAsset` 与 `BoneMaskAsset` 声明身份和 Block 目录，通过资产生成器取得类型化引用、复制、保存和打开 API。骨架、片段与逐骨遮罩的内容 Block 由动画程序集提供，骨架和片段的导入扩展按来源 `.meta` 选择。`BoneMaskBlock` 编码其持有的就绪 `BoneMask`，`CreateMask` 返回同一对象，层叠图通过普通引用持有其使用期，见 [Pose Layers](../animation/Pose-Layers.md)。

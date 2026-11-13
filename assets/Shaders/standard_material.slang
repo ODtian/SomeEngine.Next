@@ -1,45 +1,10 @@
-#ifndef STANDARD_SLANG
+﻿#ifndef STANDARD_SLANG
 #define STANDARD_SLANG
 
-#include "material_interfaces.slang"
-#include "triangle_surface.slang"
-#include "coating_material.slang"
-#include "render_lighting.slang"
-#include "brdf.slang"
-#include "vsm_forward_sampling.slang"
-#include "cluster_instance_properties.slang"
-#include "vsm_receiver_requests.slang"
-
-StructuredBuffer<ClusterViewUniforms> MaterialViews;
-Texture2DArray<float> MaterialDepth;
-ByteAddressBuffer MaterialInstanceData;
-ConstantBuffer<RenderInstancePropertyMetadata> MaterialInstanceProperties;
-
-#ifndef RENDER_LIGHTING_INPUTS_DECLARED
-#define RENDER_LIGHTING_INPUTS_DECLARED
-StructuredBuffer<ClusteredLightGridParameters> LightingViews;
-StructuredBuffer<GPULight> LightBuffer;
-StructuredBuffer<uint2> ClusteredLightGrid;
-StructuredBuffer<uint> LightIndexList;
-#endif
-Texture2DArray<float4> LightingCookieAtlas;
-
-float EvaluateLightingCookie(GPULight light, float3 worldPosition)
-{
-    if (light.CookieIndex < 0)
-        return 1.0;
-    float4 cookiePosition = mul(float4(worldPosition, 1.0), light.WorldToLightCookie);
-    float2 uv = cookiePosition.xy / max(abs(cookiePosition.w), 1e-5);
-    uv = uv * light.CookieScaleOffset.xy + light.CookieScaleOffset.zw;
-    uint width;
-    uint height;
-    uint layers;
-    LightingCookieAtlas.GetDimensions(width, height, layers);
-    int2 pixel = int2(saturate(uv) * float2(max(width, 1u) - 1u, max(height, 1u) - 1u));
-    uint layer = min((uint)light.CookieIndex, max(layers, 1u) - 1u);
-    float cookie = LightingCookieAtlas.Load(int4(pixel, layer, 0)).r;
-    return lerp(1.0, cookie, saturate(light.CookieStrength));
-}
+__exported import material_interfaces;
+__exported import triangle_surface;
+__exported import coating_material;
+__exported import material_lighting;
 
 // C# imports this marked struct through Slang reflection and writes the material
 // scalar payload using Slang's own field offsets and type size.
@@ -77,7 +42,7 @@ StandardPixelContext BuildStandardPixelContext(
     return ctx;
 }
 
-struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurfaceEvaluate<SurfaceEval, Triangle>
+struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>
 {
     // Textures
     Texture2D AlbedoMap;
@@ -114,17 +79,17 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         float3 mappedNormal = normalize(T * normalTS.x + B * normalTS.y + N_geom * normalTS.z);
 
         ClusterViewUniforms cameraView = MaterialViews[input.PixelCoord.z];
-        float3 positionDx = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
+        float3 positionDx = StandardInstanceData::TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
             input.InstanceID, cameraView, ctx.surfacePosition + input.PositionDx);
-        float3 positionDy = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
+        float3 positionDy = StandardInstanceData::TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
             input.InstanceID, cameraView, ctx.surfacePosition + input.PositionDy);
-        ctx.surfacePosition = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
+        ctx.surfacePosition = StandardInstanceData::TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
             input.InstanceID, cameraView, ctx.surfacePosition);
         positionDx -= ctx.surfacePosition;
         positionDy -= ctx.surfacePosition;
-        mappedNormal = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
+        mappedNormal = StandardInstanceData::TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
             input.InstanceID, cameraView, mappedNormal);
-        N_geom = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
+        N_geom = StandardInstanceData::TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
             input.InstanceID, cameraView, N_geom);
         float3 baseColor = albedoSample.rgb * scalars.BaseColorTint.rgb;
         float roughness = saturate(armSample.g * scalars.Roughness);
@@ -150,13 +115,13 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         float3 geometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
             triangle.Position2 - triangle.Position0), surface.Normal);
         if (dot(geometricNormal, surface.Normal) < 0.0) geometricNormal = -geometricNormal;
-        receiver.GeometricNormal = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
+        receiver.GeometricNormal = StandardInstanceData::TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
             input.InstanceID, cameraView, geometricNormal);
         receiver.Flags = SURFACE_RECEIVER_PRESENT | SURFACE_RECEIVER_LIGHTING;
-        if ((LoadInstanceFirstPerson(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID).x & 3u) == 1u)
+        if ((StandardInstanceData::LoadInstanceFirstPerson(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID).x & 3u) == 1u)
             receiver.Flags |= SURFACE_RECEIVER_FIRST_PERSON;
         receiver.Depth = input.Depth;
-        ClusterViewUniforms surfaceView = ApplyFirstPersonViewTransform(MaterialInstanceData, MaterialInstanceProperties,
+        ClusterViewUniforms surfaceView = StandardInstanceData::ApplyFirstPersonViewTransform(MaterialInstanceData, MaterialInstanceProperties,
             input.InstanceID, cameraView);
         float4 sourceClip = mul(float4(ClusterPositionForView(surface.Position, surfaceView), 1.0), surfaceView.ViewProj);
         receiver.DepthOffset = input.VisibilityDepth == 2u ? input.Depth - sourceClip.z / sourceClip.w : 0.0;
@@ -245,12 +210,12 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         return float4(finalColor, opacity);
     }
 
-    void evaluateSurface(
+    void evaluateSurface<TOutput : ISurfaceOutput>(
         SurfacePixelInput input, SurfaceEval surface, float3 bary,
-        Triangle triangle, RWTexture2DArray<float4> outputColor)
+        Triangle triangle, TOutput output)
     {
         float4 color = evaluateColor(input, surface, bary, triangle);
-        outputColor[input.PixelCoord] = float4(color.rgb, 1.0);
+        output.Write(input.PixelCoord, color);
     }
 
     float4 evaluateDebugColor(uint debugMode, SurfacePixelInput input,
@@ -269,28 +234,13 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         return float4(1.0, 0.0, 1.0, 1.0);
     }
 
-    void evaluateDebug(
+    void evaluateDebug<TOutput : ISurfaceOutput>(
         uint debugMode, SurfacePixelInput input, SurfaceEval surface, float3 bary,
-        Triangle triangle, RWTexture2DArray<float4> outputColor)
+        Triangle triangle, TOutput output)
     {
-        outputColor[input.PixelCoord] = evaluateDebugColor(debugMode, input, surface, bary, triangle);
+        output.Write(input.PixelCoord, evaluateDebugColor(debugMode, input, surface, bary, triangle));
     }
 
-    float4 evaluateTransparency(uint debugMode, SurfacePixelInput input,
-        SurfaceEval surface, float3 bary, Triangle triangle)
-    {
-        return debugMode == 0u ? evaluateColor(input, surface, bary, triangle) :
-            evaluateDebugColor(debugMode, input, surface, bary, triangle);
-    }
-
-    void markShadowPages(SurfacePixelInput input, SurfaceEval surface, float3 bary, Triangle triangle)
-    {
-        float3 position = input.VisibilityDepth == 2u ? input.PositionFromDepth : surface.Position;
-        position = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID,
-            MaterialViews[input.PixelCoord.z], position);
-        bool firstPerson = (LoadInstanceFirstPerson(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID).x & 3u) == 1u;
-        MarkVirtualShadowPages(position, input.PixelCoord.z, firstPerson);
-    }
 
 };
 

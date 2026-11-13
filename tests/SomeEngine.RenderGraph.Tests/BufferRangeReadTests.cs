@@ -21,15 +21,11 @@ public sealed class BufferRangeReadTests
         GraphPassId initialize, reader;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            GraphBufferId uploadId = edit.RegisterExternalBuffer(upload,
-                [new BufferBoundaryState(new BufferRange(0, 32), upload.InitialSync,
-                    upload.InitialAccess, ResourceContentState.Defined)]);
-            resultId = edit.RegisterExternalBuffer(result,
-                [new BufferBoundaryState(new BufferRange(0, 8), PipelineSync.Copy,
-                    ResourceAccess.CopyDestination, ResourceContentState.Undefined)]);
+            GraphBufferId uploadId = edit.RegisterExternalBuffer(upload);
+            resultId = edit.RegisterExternalBuffer(result);
             buffer = edit.CreatePersistentBuffer(new BufferDesc(32,
                 BufferUsages.CopyDestination | BufferUsages.CopySource));
-            initialize = edit.AddCopyFramePass("initialize persistent bytes", PassQueueSelection.Exact(support.GraphicsQueue),
+            initialize = edit.AddCopyFramePass("initialize persistent bytes", PassQueueSelection.OnQueue(support.GraphicsQueue),
                 new SparseCopy(uploadId, buffer, 0, 0, 32), default,
                 static (ref PassDefinition pass, ref SparseCopy data) =>
                 {
@@ -39,12 +35,12 @@ public sealed class BufferRangeReadTests
                 }, static (ref CopyPassCommandScope commands, in SparseCopy data) =>
                     commands.CopyBuffer(new BufferCopy(commands.GetBuffer(data.Source), 0,
                         commands.GetBuffer(data.Destination), 0, 32)));
-            edit.AddCopyFramePass("partially update previously initialized bytes", PassQueueSelection.Exact(support.GraphicsQueue),
+            edit.AddCopyFramePass("partially update previously initialized bytes", PassQueueSelection.OnQueue(support.GraphicsQueue),
                 buffer, new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition pass, ref GraphBufferId data) =>
                     pass.Write(data, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Partial),
                 static (ref CopyPassCommandScope commands, in GraphBufferId data) => { });
-            reader = edit.AddCopyFramePass("read changing persistent subset", PassQueueSelection.Exact(support.GraphicsQueue),
+            reader = edit.AddCopyFramePass("read changing persistent subset", PassQueueSelection.OnQueue(support.GraphicsQueue),
                 new SparseCopy(buffer, resultId, 0, 0, 4), default,
                 static (ref PassDefinition pass, ref SparseCopy data) =>
                     pass.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy,
@@ -84,11 +80,11 @@ public sealed class BufferRangeReadTests
         GraphPassId[] readers = new GraphPassId[3];
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            uploadId = edit.DeclareExternalBuffer(new BufferDesc(32, BufferUsages.CopySource), MemoryType.Upload);
-            resultId = edit.DeclareExternalBuffer(new BufferDesc(24, BufferUsages.CopyDestination), MemoryType.Readback);
+            uploadId = edit.RegisterExternalBuffer(upload);
+            resultId = edit.RegisterExternalBuffer(result);
             buffer = edit.CreateTransientBuffer(new BufferDesc(32,
                 BufferUsages.CopyDestination | BufferUsages.CopySource, "sparse intermediate"));
-            edit.AddCopyFramePass("upload two sparse bands", PassQueueSelection.Exact(support.GraphicsQueue),
+            edit.AddCopyFramePass("upload two sparse bands", PassQueueSelection.OnQueue(support.GraphicsQueue),
                 new SparseCopy(uploadId, buffer, 0, 0, 8), default,
                 static (ref PassDefinition pass, ref SparseCopy data) =>
                 {
@@ -100,7 +96,7 @@ public sealed class BufferRangeReadTests
                 }, SparseCopy.RecordBands);
             for (int index = 0; index < readers.Length; index++)
                 readers[index] = edit.AddCopyFramePass("read sparse bands",
-                    PassQueueSelection.Exact(support.GraphicsQueue),
+                    PassQueueSelection.OnQueue(support.GraphicsQueue),
                     new SparseCopy(buffer, resultId, 0, checked((ulong)index * 8), 4), default,
                     static (ref PassDefinition pass, ref SparseCopy data) =>
                         pass.Write(data.Destination, new BufferRange(data.DestinationOffset, 8),
@@ -122,14 +118,8 @@ public sealed class BufferRangeReadTests
             ulong offset = frameIndex < 3 ? 0u : 4u;
             using (RenderGraphFrame frame = graph.BeginFrame(new RenderGraphFrameOptions(Diagnostics: Capture)))
             {
-                frame.BindExternalBuffer(resultId, result,
-                    [new BufferBoundaryState(new BufferRange(0, 24), PipelineSync.Copy,
-                        ResourceAccess.CopyDestination, ResourceContentState.Undefined)]);
-                frame.BindExternalBuffer(uploadId, upload,
-                    [new BufferBoundaryState(new BufferRange(0, 32),
-                        frameIndex == 0 ? upload.InitialSync : PipelineSync.Copy,
-                        frameIndex == 0 ? upload.InitialAccess : ResourceAccess.CopySource,
-                        ResourceContentState.Defined)]);
+
+
                 for (int index = 0; index < readers.Length; index++)
                 {
                     PassDefinition pass = frame.GetPass(readers[index]);
@@ -141,7 +131,7 @@ public sealed class BufferRangeReadTests
                 frame.Execute(completions);
                 support.Wait(completions);
             }
-            Assert.True((frameIndex is not (0 or 3)) == reused, $"Frame {frameIndex}: analysis reused = {reused}");
+            Assert.True((frameIndex != 0) == reused, $"Frame {frameIndex}: analysis reused = {reused}");
             using MappedBuffer readback = support.Backend.Map(result, MapType.Read, BufferRange.Whole);
             for (int reader = 0; reader < readers.Length; reader++)
             {
@@ -152,12 +142,8 @@ public sealed class BufferRangeReadTests
 #if DEBUG
         using (RenderGraphFrame frame = graph.BeginFrame())
         {
-            frame.BindExternalBuffer(resultId, result,
-                [new BufferBoundaryState(new BufferRange(0, 24), PipelineSync.Copy,
-                    ResourceAccess.CopyDestination, ResourceContentState.Undefined)]);
-            frame.BindExternalBuffer(uploadId, upload,
-                [new BufferBoundaryState(new BufferRange(0, 32), PipelineSync.Copy,
-                    ResourceAccess.CopySource, ResourceContentState.Defined)]);
+
+
             PassDefinition pass = frame.GetPass(readers[0]);
             pass.ReadRanges(buffer, new BufferRangeSet([new BufferRange(8, 4)]),
                 PipelineSync.Copy, ResourceAccess.CopySource);

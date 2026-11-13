@@ -77,9 +77,9 @@ public sealed class AssetLoaderTests
             shader.GetSlangEntryBlob(targetIndex, shaderEntry) is not null ||
             !shader.GetSlangEntryBytes(targetIndex, shaderEntry).IsEmpty);
         await using MeshAsset meshFile = await MeshAsset.OpenAsync(loader, new AssetId<MeshAsset>(meshId));
-        var mesh = await meshFile.GetBlock<ClusterGeometryBlock>().CreateAsync(meshFile.GetBlock<MeshBlock>(), await meshFile.GetBlockAsync<ClusterVertexAttributesBlock>(), meshFile.Name);
+        var mesh = await meshFile.GetBlock<ClusterMeshBlock>().CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
         Assert.True(mesh.TryGetPage(0, out _));
-        await meshFile.GetBlock<ClusterGeometryBlock>().LoadPagesAsync(mesh, await meshFile.GetBlockAsync<ClusterVertexAttributesBlock>(), [0]);
+        await meshFile.GetBlock<ClusterMeshBlock>().LoadPagesAsync(mesh, [0]);
         await using MaterialAsset materialFile = await MaterialAsset.OpenAsync(loader, new AssetId<MaterialAsset>(materialId));
         Material material = await materialFile.CreateAsync<StandardMaterial>(loader,
             new Dictionary<AssetId<ShaderAsset>, Shader>(),
@@ -222,7 +222,8 @@ public sealed class AssetLoaderTests
         };
         using var attributes = new ClusterVertexAttributesBlock { VertexIdentity = geometry.VertexIdentity,
             Clusters = [new ClusterVertexAttributes { Data = [.. new byte[16]] }] };
-        asset.SetBlock(shape); asset.SetBlock(geometry); asset.SetBlock(attributes);
+        using var packed = SomeEngine.Assets.Importers.ClusterBuilder.BuildMeshBlock(geometry, attributes);
+        asset.SetBlock(shape); asset.SetBlock(geometry); asset.SetBlock(attributes); asset.SetBlock(packed);
         asset.SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);
     }

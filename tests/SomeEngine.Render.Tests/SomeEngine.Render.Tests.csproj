@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -6,6 +6,9 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/EngineShaderFiles.cs" Link="EngineShaderFiles.cs" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4">
       <PrivateAssets>all</PrivateAssets>
@@ -16,11 +19,17 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/SomeEngine.Runtime/SomeEngine.Runtime.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Render.MaterialBindless/SomeEngine.Render.MaterialBindless.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Graphics.Direct3D12.Validation/SomeEngine.Graphics.Direct3D12.Validation.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../tools/SomeEngine.Transparency.Research/SomeEngine.Transparency.Research.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Render\SomeEngine.Render.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Render.Features/SomeEngine.Render.Features.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Elements.Render/SomeEngine.Elements.Render.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Job\SomeEngine.Job.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Graphics.Direct3D12\SomeEngine.Graphics.Direct3D12.csproj" />

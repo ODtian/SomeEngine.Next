@@ -1,7 +1,7 @@
 #ifndef TRIANGLE_SURFACE_INVERSE_SLANG
 #define TRIANGLE_SURFACE_INVERSE_SLANG
 
-#include "triangle_surface.slang"
+__exported import triangle_surface;
 
 float2 SolveSurfaceNormalEquations(
     float a,

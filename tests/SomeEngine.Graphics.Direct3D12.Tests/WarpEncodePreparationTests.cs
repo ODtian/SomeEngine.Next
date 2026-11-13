@@ -1,4 +1,4 @@
-﻿using SomeEngine.Graphics.Validation;
+using SomeEngine.Graphics.Validation;
 using SomeEngine.Graphics.Direct3D12;
 using Xunit;
 
@@ -9,7 +9,7 @@ public sealed class WarpEncodePreparationTests
     [Fact]
     public void Second_begin_is_rejected_without_replacing_the_active_recording()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using IGraphicsBackend backend = new SomeEngine.Graphics.Validation.ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -24,7 +24,7 @@ public sealed class WarpEncodePreparationTests
             new CommandContextDesc(QueueType.Copy, 0, 1));
         Queue queue = backend.GetQueue(device, QueueType.Copy);
 
-        backend.Begin(context, new CommandRecordingDesc(0, 0, 2));
+        backend.Begin(context, new CommandRecordingDesc(0, 0));
         backend.CopyBuffer(context, new BufferCopy(upload, 0, readback, 0, 64));
         Assert.Throws<InvalidOperationException>(() => backend.Begin(context));
 
@@ -41,7 +41,7 @@ public sealed class WarpEncodePreparationTests
     [Fact]
     public void RepeatedCopyBarrierAndClearRecordingCompletes()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using IGraphicsBackend backend = new SomeEngine.Graphics.Validation.ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -62,7 +62,7 @@ public sealed class WarpEncodePreparationTests
 
         RecordSubmitWait(backend, device, context, queue, upload, destination, readback);
 
-        backend.Begin(context, new CommandRecordingDesc(0, 0, 8));
+        backend.Begin(context, new CommandRecordingDesc(0, 0));
         backend.CopyBuffer(context, new BufferCopy(upload, 0, destination, 0, 256));
         backend.Barrier(context, new BufferBarrier(
             destination,
@@ -100,7 +100,7 @@ public sealed class WarpEncodePreparationTests
             new CommandContextDesc(QueueType.Copy, 0, 1));
         Queue queue = backend.GetQueue(device, QueueType.Copy);
 
-        backend.Begin(context, new CommandRecordingDesc(0, 0, 1));
+        backend.Begin(context, new CommandRecordingDesc(0, 0));
         backend.CopyBuffer(context, new BufferCopy(upload, 0, readback, 0, 64));
         Resource[] invalid = [upload, null!];
         Assert.Throws<ArgumentNullException>(() => backend.BorrowCommandList(context, invalid));
@@ -127,7 +127,7 @@ public sealed class WarpEncodePreparationTests
         Buffer destination,
         Buffer readback)
     {
-        backend.Begin(context, new CommandRecordingDesc(0, 0, 8));
+        backend.Begin(context, new CommandRecordingDesc(0, 0));
         backend.CopyBuffer(context, new BufferCopy(upload, 0, destination, 0, 256));
         backend.Barrier(context, new BufferBarrier(
             destination,

@@ -8,13 +8,13 @@ public sealed class FrameCompletionTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void CompletionCallbacksReportSubmissionAndReleaseFrameAfterCallbackFailure(bool execute)
+    public void ObserversRunOnlyAfterFullSubmissionAndCallbackFailureMakesTheGraphLost(bool execute)
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
         using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue]);
         RenderGraphFrame frame = graph.BeginFrame();
         GraphPassId pass = frame.DeclareGeneralPass("Observed pass", PassQueueSelection.AnyOfType(QueueType.Graphics), options: new PassOptions(Culling: PassCullingMode.NeverCull));
-        var result = new CompletionReceiver(pass);
+        var result = new CompletionReceiver();
         frame.ObserveExecution(new ThrowingCompletionReceiver());
         frame.ObserveExecution(result);
         bool failed = false;
@@ -34,30 +34,22 @@ public sealed class FrameCompletionTests
         {
             frame.Dispose();
         }
-        Assert.True(failed);
-        Assert.True(result.Called);
-        Assert.Equal(execute, result.Submitted);
-        Assert.Equal(execute, result.HasCompletions);
-        using RenderGraphFrame next = graph.BeginFrame();
+        Assert.Equal(execute, failed);
+        Assert.Equal(execute, result.Called);
+        Assert.Equal(execute, graph.IsLost);
+        if (execute) Assert.Throws<RenderGraphLostException>(() => graph.TryBeginFrame(out _));
+        else { using RenderGraphFrame next = graph.BeginFrame(); }
     }
 
-    private sealed class CompletionReceiver(GraphPassId pass) : IRenderGraphFrameExecutionObserver
+    private sealed class CompletionReceiver : IRenderGraphFrameExecutionObserver
     {
         public bool Called { get; private set; }
-        public bool Submitted { get; private set; }
-        public bool HasCompletions { get; private set; }
-        public void OnRenderGraphFrameFinished(RenderGraphFrameResult result)
-        {
-            Called = true;
-            Submitted = result.TryGetPassCompletion(pass, out _);
-            HasCompletions = !result.SubmittedCompletions.IsEmpty;
-        }
+        public void OnFrameSubmitted(in RenderGraphSubmission submission) => Called = true;
     }
 
     private sealed class ThrowingCompletionReceiver : IRenderGraphFrameExecutionObserver
     {
-        public void OnRenderGraphFrameFinished(RenderGraphFrameResult result) =>
-            throw new InvalidOperationException("Completion callback failed");
+        public void OnFrameSubmitted(in RenderGraphSubmission submission) => throw new InvalidOperationException();
     }
 
     [Fact]

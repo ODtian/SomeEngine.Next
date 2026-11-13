@@ -3,7 +3,7 @@ namespace SomeEngine.Graphics.Direct3D12;
 internal sealed unsafe partial class D3D12Backend
 {
     private readonly record struct ResourceReferences(
-        NativeLease? Lifetime,
+        NativeResourceData? Lifetime,
         D3D12SparseState? SparseState,
         D3D12TextureResource? Texture,
         uint VisibleNodeMask)
@@ -11,14 +11,14 @@ internal sealed unsafe partial class D3D12Backend
         internal static ResourceReferences FromBuffer(Buffer value)
         {
             D3D12Buffer buffer = RequireD3D12.Buffer(value);
-            return new(buffer.NativeLifetime, buffer.SparseState, null, buffer.Info.VisibleNodeMask);
+            return new(buffer.NativeData, buffer.SparseState, null, buffer.Info.VisibleNodeMask);
         }
 
         internal static ResourceReferences FromTexture(Texture value) =>
             FromTexture(RequireD3D12.Texture(value));
 
         internal static ResourceReferences FromTexture(D3D12TextureResource texture) =>
-            new(texture.NativeLifetime, texture.SparseState, texture, texture.Info.VisibleNodeMask);
+            new(texture.NativeData, texture.SparseState, texture, texture.Info.VisibleNodeMask);
     }
 
     private static (ResourceReferences Primary, ResourceReferences Secondary)
@@ -46,7 +46,7 @@ internal sealed unsafe partial class D3D12Backend
         GetAccelerationStructureReferences(AccelerationStructureSrv view)
     {
         var structure = RequireD3D12.AccelerationStructure(view.Resource);
-        return (new(structure.NativeLifetime, null, null, structure.Storage.Info.VisibleNodeMask),
+        return (new(structure.NativeData, null, null, structure.Storage.Info.VisibleNodeMask),
             ResourceReferences.FromBuffer(structure.Storage));
     }
 }

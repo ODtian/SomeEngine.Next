@@ -1,11 +1,11 @@
-#include "vsm_page_entry.slang"
-#include "vsm_page_dispatch.slang"
-#include "vsm_depth_cache.slang"
+__exported import vsm_page_entry;
+__exported import vsm_page_dispatch;
+__exported import vsm_depth_cache;
 
 struct VirtualShadowPageClearUniforms
 {
     uint PageSize;
-    uint PhysicalPagesPerRow;
+    uint AtlasPagesPerRow;
     uint AtlasSize;
     uint Pad0;
 };
@@ -27,8 +27,8 @@ void ClearVirtualShadowPages(
     if (pageIndex >= ActivePhysicalPageCount[0]) return;
     uint physicalPage = ActivePhysicalPages[pageIndex].x;
     uint2 physicalPageCoord = uint2(
-        physicalPage % PageClear.PhysicalPagesPerRow,
-        physicalPage / PageClear.PhysicalPagesPerRow);
+        physicalPage % PageClear.AtlasPagesPerRow,
+        physicalPage / PageClear.AtlasPagesPerRow);
     uint2 basePixel = (VirtualShadowDispatchTile(groupId, tiles) * 8u + groupThreadId.xy) * 2u;
     [unroll]
     for (uint y = 0u; y < 2u; y++)

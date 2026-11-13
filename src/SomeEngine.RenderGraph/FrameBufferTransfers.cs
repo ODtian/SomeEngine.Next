@@ -8,33 +8,19 @@ internal sealed class FrameBufferTransfers : IDisposable
     private readonly List<ReadbackPage> _readbackPages = [];
     private readonly List<ReadbackResult> _readbackResults = [];
     private readonly List<UploadPage> _uploadPages = [];
-    private readonly ThreadLocal<List<BufferUpload>> _uploads = new(static () => [], trackAllValues: true);
+    private readonly List<BufferUpload> _uploads = [];
     private readonly object _uploadPageGate = new();
     private UploadPage? _uploadPage;
     private long _uploadSequence;
 
     internal BufferUpload[] TakeUploads()
     {
-        IList<List<BufferUpload>> writes = _uploads.Values;
-        BufferUpload[] uploads = writes.SelectMany(values => values).ToArray();
-        Array.Sort(uploads, static (left, right) => left.Sequence.CompareTo(right.Sequence));
-        foreach (List<BufferUpload> values in writes) values.Clear();
-        return uploads;
-    }
-
-    internal sealed class UploadPage
-    {
-        internal required Buffer Buffer;
-        internal required MappedBuffer Mapping;
-        internal required ulong CommittedBytes;
-        internal BufferBoundaryState[] BoundaryStates = [];
-        internal long Used;
-
-        internal bool TryReserve(long size, out ulong offset)
+        lock (_uploads)
         {
-            long start = Interlocked.Add(ref Used, size) - size;
-            offset = checked((ulong)start);
-            return start <= (long)Buffer.Info.Size - size;
+            BufferUpload[] uploads = _uploads.ToArray();
+            Array.Sort(uploads, static (left, right) => left.Sequence.CompareTo(right.Sequence));
+            _uploads.Clear();
+            return uploads;
         }
     }
 
@@ -44,22 +30,21 @@ internal sealed class FrameBufferTransfers : IDisposable
     internal Span<byte> GetWriteSpan(GraphBufferId buffer, ulong offset, int length)
     {
         BufferUpload upload = ReserveUpload(buffer, offset, length);
-        _uploads.Value!.Add(upload);
+        lock (_uploads) _uploads.Add(upload);
         return GetUploadSpan(upload);
     }
 
     internal void AddUploads(IEnumerable<BufferUpload> uploads)
     {
-        List<BufferUpload> writes = _uploads.Value!;
-        // A group joins frame order at Commit while retaining its own write order.
-        foreach (BufferUpload upload in uploads.OrderBy(upload => upload.Sequence))
-            writes.Add(upload with { Sequence = Interlocked.Increment(ref _uploadSequence) });
+        lock (_uploads)
+            foreach (BufferUpload upload in uploads.OrderBy(upload => upload.Sequence))
+                _uploads.Add(upload with { Sequence = Interlocked.Increment(ref _uploadSequence) });
     }
 
     internal void AddUploadRanges(GraphBufferId buffer, List<BufferRange> ranges)
     {
-        foreach (List<BufferUpload> uploads in _uploads.Values)
-            foreach (BufferUpload upload in uploads)
+        lock (_uploads)
+            foreach (BufferUpload upload in _uploads)
                 if (upload.Destination == buffer)
                     ranges.Add(new BufferRange(upload.Offset, upload.Range.Size));
     }
@@ -140,7 +125,7 @@ internal sealed class FrameBufferTransfers : IDisposable
 
     internal void ResetUploads()
     {
-        foreach (List<BufferUpload> values in _uploads.Values) values.Clear();
+        _uploads.Clear();
         foreach (UploadPage page in _uploadPages) page.Used = 0;
         _uploadPage = _uploadPages.FirstOrDefault();
         _uploadSequence = 0;
@@ -193,7 +178,7 @@ internal sealed class FrameBufferTransfers : IDisposable
         return (new BufferRegion(buffer, new BufferRange(0, size)), created.BoundaryStates);
     }
 
-    internal void SaveBufferStates(RenderGraphFrameResult result)
+    internal void SaveBufferStates(RenderGraphFrameState result)
     {
         foreach (UploadPage page in _uploadPages)
         {
@@ -238,7 +223,7 @@ internal sealed class FrameBufferTransfers : IDisposable
             _budget.Release(page.CommittedBytes);
         }
         _uploadPages.Clear();
-        _uploads.Dispose();
+        _uploads.Clear();
         foreach (ReadbackPage page in _readbackPages)
         {
             page.Buffer.Dispose();

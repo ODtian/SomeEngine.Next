@@ -1,40 +1,41 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 28,
-  "input_hash": "e80caf23a1311798792ac02580f2439489b6a1b3a9be34d4410234a0e46a2743",
+  "importer_version": 36,
+  "input_hash": "bbd7941a6d9ffee89f8e4629815da0abe2255bdcfe9a8f696f3684f1b51b939a",
   "inputs": [
     {
       "relative_path": "assets/Shaders/cluster_deferred_resume.shader",
-      "content_hash": "fe99907d41019adf1a4e778da42786959628f6cbeef8666179956c08c7e8c607"
+      "content_hash": "cf8c62409b903f0e14743d75a6bd723062521cf0a822caa2b644a4bf3bbdf164"
     },
     {
       "relative_path": "assets/Shaders/cluster_deferred_resume.slang",
-      "content_hash": "b8801968b3597c7b2d5d8bda77c7b016220400fda545c2c9601b9364a99c82cd"
-    },
-    {
-      "relative_path": "assets/Shaders/cluster_structures.slang",
-      "content_hash": "8b0a185ac68ba4914c404c61e292df4f0ea7a705a6cccdccd220a85a3069d2b0"
-    },
-    {
-      "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
-    },
-    {
-      "relative_path": "assets/Shaders/wave_aggregation.slang",
-      "content_hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
+      "content_hash": "dab43c8daaaa5a47b840577bb1ecf794f787d8b6c0e34ad5aa2034ae0bfe9946"
     }
   ],
   "reported_inputs": [],
+  "asset_inputs": [
+    "4501d5a1-8d0c-4317-a68e-585870c026d4",
+    "5133849c-30a5-4cd6-a677-631a5658a7e5",
+    "dfc9bdd3-7801-44c4-bd86-9116719a1022",
+    "928f32a6-22ab-401e-9c48-a2a9c9d00eda",
+    "9a6de19a-b7ea-4092-ab70-1d25f8e14595"
+  ],
   "outputs": [
     {
       "asset_guid": "1c40ffb4-67dc-523b-bc03-c033d51f1c86",
       "sub_asset_key": "",
-      "input_hash": "e80caf23a1311798792ac02580f2439489b6a1b3a9be34d4410234a0e46a2743",
+      "input_hash": "bbd7941a6d9ffee89f8e4629815da0abe2255bdcfe9a8f696f3684f1b51b939a",
       "dependencies": [],
       "asset_path": "cluster_deferred_resume.shader.asset",
-      "version": "451d4e15-e0d5-f2cd-b408-5bc53d098ede",
-      "content_hash": "D0ABE9A0CF45DC4613F657BB5C306E79909A7F1D5D1F587B78B5716F5692AE77",
-      "asset_dependencies": []
+      "version": "d378cac6-058d-8c29-00ba-9234d0da4f4a",
+      "content_hash": "03BBA25F9476240E0742C3CA1100A95AF0402ED5EE79389ED0F09A63306D8600",
+      "asset_dependencies": [
+        "4501d5a1-8d0c-4317-a68e-585870c026d4",
+        "5133849c-30a5-4cd6-a677-631a5658a7e5",
+        "928f32a6-22ab-401e-9c48-a2a9c9d00eda",
+        "9a6de19a-b7ea-4092-ab70-1d25f8e14595",
+        "dfc9bdd3-7801-44c4-bd86-9116719a1022"
+      ]
     }
   ]
 }

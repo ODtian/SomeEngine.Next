@@ -22,6 +22,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
     private readonly IdentityRegistry<Device, byte> _devices;
     private readonly IdentityRegistry<Surface, byte> _surfaces;
     private readonly IdentityRegistry<GraphicsObject, ValidationObjectInfo> _objects;
+    private readonly IdentityRegistry<DescriptorTable, bool[]> _descriptorWrites;
     private readonly IdentityRegistry<Resource, ResourceValidationState> _resourceStates;
     private readonly IdentityRegistry<Device, DeviceValidationState> _deviceStates;
     private readonly IdentityRegistry<Heap, HeapValidationState> _heapStates;
@@ -37,10 +38,10 @@ public sealed partial class ValidationLayer : IGraphicsBackend
     private readonly IdentityRegistry<RayTracingShaderTable, RayTracingTableValidationState> _rayTracingTables;
     private readonly IdentityRegistry<CommandContext, ContextValidationState> _contexts;
     private readonly Dictionary<RecordedCommandsKey, RecordedValidationState> _recorded = new();
-    private readonly Dictionary<QuerySlot, QueryValidationState> _queryStates = new();
+    private readonly Dictionary<QueryIndex, QueryValidationState> _queryStates = new();
     private readonly Dictionary<Queue, ulong> _completedQueueValues =
         new(ReferenceEqualityComparer.Instance);
-    private readonly IValidationMessageSink? _sink;
+    private readonly IValidationReporter? _reporter;
     private readonly bool _reportLiveObjectsOnDispose;
     private DisposeGate _disposeGate;
     private IGraphicsBackend? _backend;
@@ -51,11 +52,12 @@ public sealed partial class ValidationLayer : IGraphicsBackend
     {
         ArgumentNullException.ThrowIfNull(backend);
         _backend = backend;
-        _sink = options.MessageSink;
+        _reporter = options.Reporter;
         _reportLiveObjectsOnDispose = options.ReportLiveObjectsOnDispose;
         _devices = new IdentityRegistry<Device, byte>(_gate);
         _surfaces = new IdentityRegistry<Surface, byte>(_gate);
-        _objects = new IdentityRegistry<GraphicsObject, ValidationObjectInfo>(_gate);
+        _objects = new IdentityRegistry<GraphicsObject, ValidationObjectInfo>(_gate, ValidateObjectDisposal);
+        _descriptorWrites = new IdentityRegistry<DescriptorTable, bool[]>(_gate);
         _resourceStates = new IdentityRegistry<Resource, ResourceValidationState>(_gate);
         _deviceStates = new IdentityRegistry<Device, DeviceValidationState>(_gate);
         _heapStates = new IdentityRegistry<Heap, HeapValidationState>(_gate);
@@ -72,7 +74,11 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         _contexts = new IdentityRegistry<CommandContext, ContextValidationState>(_gate);
 
         if (!options.NativeValidationDisabled && backend is INativeValidationControl validationControl)
+        {
+            if (!validationControl.CanEnableNativeValidation)
+                throw new InvalidOperationException("Native validation must be configured before device creation and enabled in the backend options.");
             validationControl.EnableNativeValidation();
+        }
     }
 
     private IGraphicsBackend Backend => Volatile.Read(ref _backend)
@@ -81,15 +87,17 @@ public sealed partial class ValidationLayer : IGraphicsBackend
     public bool TryEnumerateAdapters(
         in AdapterEnumerationOptions options,
         Span<AdapterInfo> destination,
-        out int requiredCount) =>
-        Backend.TryEnumerateAdapters(options, destination, out requiredCount);
+        out int requiredCount)
+    {
+        if (!Enum.IsDefined(options.Preference))
+            throw new ArgumentOutOfRangeException(nameof(options));
+        return Backend.TryEnumerateAdapters(options, destination, out requiredCount);
+    }
 
     public Device CreateDevice(in DeviceDesc desc)
     {
-        if (desc.Queues.IsEmpty)
-            Reject("Device", "DeviceDesc must request at least one Queue.");
-        if (desc.EnabledNodeMask == 0)
-            Reject("Device", "DeviceDesc.EnabledNodeMask must not be zero.");
+        ValidateDeviceDescription(desc, Backend is IBackendShaderTarget target && target.ShaderTarget == SlangShaderSharp.SlangCompileTarget.Dxil);
+        ValidateAdapter(desc.AdapterId);
 
         var deviceState = new DeviceValidationState(
             desc.EnabledNodeMask,
@@ -130,6 +138,20 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         }
     }
 
+    private void ValidateAdapter(AdapterId id)
+    {
+        if (id.IsDefault)
+            return;
+        AdapterEnumerationOptions options = new(IncludeSoftware: true);
+        Backend.TryEnumerateAdapters(options, [], out int count);
+        var adapters = new AdapterInfo[count];
+        Backend.TryEnumerateAdapters(options, adapters, out _);
+        foreach (AdapterInfo adapter in adapters)
+            if (adapter.Id == id)
+                return;
+        throw new ArgumentException("The selected adapter must belong to this graphics backend.", nameof(id));
+    }
+
     public Surface CreateSurface(in SurfaceDesc desc)
     {
         if (desc.WindowHandle == 0)
@@ -168,6 +190,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
     public Queue GetQueue(Device device, QueueType type, uint index = 0)
     {
         RequireDevice(device);
+        _ = _deviceStates.GetValue(device, static _ => throw new InvalidOperationException("Device queue metadata is unavailable.")).GetQueueNodeMask(type, index);
         return Backend.GetQueue(device, type, index);
     }
 
@@ -290,10 +313,12 @@ public sealed partial class ValidationLayer : IGraphicsBackend
     private void RequireDevice(Device? device)
     {
         ArgumentNullException.ThrowIfNull(device);
+        if (device.IsDisposed)
+            throw new ObjectDisposedException(nameof(Device));
         lock (_gate)
         {
             if (!_devices.Contains(device))
-                Reject("Ownership", "The Device was not created through this Validation Layer.", device.Label);
+                RejectArgument("Ownership", "The Device was not created through this Validation Layer.", nameof(device));
         }
         device.ThrowIfUnavailable();
     }
@@ -310,9 +335,9 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         ArgumentNullException.ThrowIfNull(value);
         RequireDevice(value.Device);
         if (value.IsDisposed)
-            Reject("Lifetime", $"{typeof(T).Name} is disposed.", value.Label);
+            throw new ObjectDisposedException(typeof(T).Name);
         if (!_objects.TryGetValue(value, out _))
-            Reject("Ownership", $"{typeof(T).Name} was not created through this Validation Layer.", value.Label);
+            RejectArgument("Ownership", $"{typeof(T).Name} was not created through this Validation Layer.", nameof(value), value.Label);
         return value;
     }
 
@@ -340,9 +365,10 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         where TKey : class
     {
         private readonly object _gate;
+        private readonly Action<GraphicsObject>? _disposing;
         private readonly Dictionary<TKey, TValue> _entries = new(ReferenceEqualityComparer.Instance);
 
-        internal IdentityRegistry(object gate) => _gate = gate;
+        internal IdentityRegistry(object gate, Action<GraphicsObject>? disposing = null) => (_gate, _disposing) = (gate, disposing);
 
         internal void EnsureAdditionalCapacity(int additionalCount = 1)
         {
@@ -358,6 +384,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
                 if (key is GraphicsObject graphicsObject)
                 {
                     graphicsObject.Disposed += RemoveDisposed;
+                    if (_disposing is not null) graphicsObject.Disposing += _disposing;
                     // Disposal may have finished before its validation registration arrived.
                     if (graphicsObject.IsDisposed) Remove(key);
                 }
@@ -391,7 +418,11 @@ public sealed partial class ValidationLayer : IGraphicsBackend
             lock (_gate)
             {
                 if (!_entries.Remove(key)) return false;
-                if (key is GraphicsObject graphicsObject) graphicsObject.Disposed -= RemoveDisposed;
+                if (key is GraphicsObject graphicsObject)
+                {
+                    graphicsObject.Disposed -= RemoveDisposed;
+                    if (_disposing is not null) graphicsObject.Disposing -= _disposing;
+                }
                 return true;
             }
         }
@@ -407,6 +438,16 @@ public sealed partial class ValidationLayer : IGraphicsBackend
             lock (_gate) return _entries.Keys.Count(predicate);
         }
 
+        internal bool AnyValue(Func<TValue, bool> predicate)
+        {
+            lock (_gate) return _entries.Values.Any(predicate);
+        }
+
+        internal bool AnyEntry(Func<TKey, TValue, bool> predicate)
+        {
+            lock (_gate) return _entries.Any(pair => predicate(pair.Key, pair.Value));
+        }
+
         private void RemoveDisposed(GraphicsObject value) => Remove((TKey)(object)value);
     }
 
@@ -415,13 +456,41 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         string area,
         string text,
         string? label = null) =>
-        _sink?.Report(new ValidationMessage(type, area, text, label));
+        _reporter?.Report(new ValidationMessage(type, area, text, label));
 
     [DoesNotReturn]
     private void Reject(string area, string text, string? label = null)
     {
         Report(ValidationMessageType.Error, area, text, label);
         throw new InvalidOperationException(text);
+    }
+
+    [DoesNotReturn]
+    private void RejectArgument(string area, string text, string? parameterName = null, string? label = null)
+    {
+        Report(ValidationMessageType.Error, area, text, label);
+        throw new ArgumentException(text, parameterName);
+    }
+
+    private void ValidateObjectDisposal(GraphicsObject value)
+    {
+        lock (_gate)
+            if (_contexts.AnyValue(context => context.Recording && context.Dependencies.Contains(value)) ||
+                _recorded.Values.Any(recording => recording.Dependencies.Contains(value)))
+            {
+                Report(ValidationMessageType.Error, nameof(ValidationError.ResourceDisposedWhileRecorded),
+                    "A recorded command still references this resource.", value.Label);
+                throw new GraphicsValidationException(ValidationError.ResourceDisposedWhileRecorded,
+                    "A recorded command still references this resource.");
+            }
+    }
+
+    private void ValidateCommandDisposal(RecordedCommands commands)
+    {
+        lock (_gate)
+            if (_recorded.TryGetValue(new RecordedCommandsKey(commands), out RecordedValidationState? recording) && recording.SubmissionInProgress)
+                throw new GraphicsValidationException(ValidationError.ConcurrentCommandUse,
+                    "Command disposal overlaps submission.");
     }
 
     private void RecordCompletion(in QueueCompletion completion)
@@ -525,7 +594,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         private readonly Stack<RecordingValidationPayload> AvailablePayloads = [];
         private readonly Stack<RecordedValidationState> AvailableRecordings = [];
         internal List<QueryValidationEvent> QueryEvents => Payload.QueryEvents;
-        internal Dictionary<QuerySlot, QueryLocalPhase> QueryPhases => Payload.QueryPhases;
+        internal Dictionary<QueryIndex, QueryLocalPhase> QueryPhases => Payload.QueryPhases;
         internal List<ResourceValidationEvent> ResourceEvents => Payload.ResourceEvents;
         internal Dictionary<ResourceCellKey, LocalResourceState> ResourceStates => Payload.ResourceStates;
         internal HashSet<GraphicsObject> Dependencies => Payload.Dependencies;
@@ -595,7 +664,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
     private sealed class RecordingValidationPayload
     {
         internal readonly List<QueryValidationEvent> QueryEvents = [];
-        internal readonly Dictionary<QuerySlot, QueryLocalPhase> QueryPhases = [];
+        internal readonly Dictionary<QueryIndex, QueryLocalPhase> QueryPhases = [];
         internal readonly List<ResourceValidationEvent> ResourceEvents = [];
         internal readonly Dictionary<ResourceCellKey, LocalResourceState> ResourceStates = [];
         internal readonly HashSet<GraphicsObject> Dependencies =
@@ -688,32 +757,32 @@ public sealed partial class ValidationLayer : IGraphicsBackend
     {
         internal RecordedCommandsKey(in RecordedCommands commands)
         {
-            Lease = commands.Lease;
+            Data = commands.Data;
             Sequence = commands.Sequence;
         }
 
-        internal RecordedCommandsKey(RecordedCommandsLease commands, ulong sequence)
+        internal RecordedCommandsKey(RecordedCommandsData commands, ulong sequence)
         {
-            Lease = commands;
+            Data = commands;
             Sequence = sequence;
         }
 
-        internal RecordedCommandsLease Lease { get; }
+        internal RecordedCommandsData Data { get; }
         internal ulong Sequence { get; }
 
         public bool Equals(RecordedCommandsKey other) =>
-            ReferenceEquals(Lease, other.Lease) && Sequence == other.Sequence;
+            ReferenceEquals(Data, other.Data) && Sequence == other.Sequence;
 
         public override bool Equals(object? obj) =>
             obj is RecordedCommandsKey other && Equals(other);
 
         public override int GetHashCode() =>
-            HashCode.Combine(RuntimeHelpers.GetHashCode(Lease), Sequence);
+            HashCode.Combine(RuntimeHelpers.GetHashCode(Data), Sequence);
     }
 
-    private readonly struct QuerySlot : IEquatable<QuerySlot>
+    private readonly struct QueryIndex : IEquatable<QueryIndex>
     {
-        internal QuerySlot(QueryPool pool, uint index)
+        internal QueryIndex(QueryPool pool, uint index)
         {
             Pool = pool;
             Index = index;
@@ -722,10 +791,10 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         internal QueryPool Pool { get; }
         internal uint Index { get; }
 
-        public bool Equals(QuerySlot other) =>
+        public bool Equals(QueryIndex other) =>
             ReferenceEquals(Pool, other.Pool) && Index == other.Index;
 
-        public override bool Equals(object? obj) => obj is QuerySlot other && Equals(other);
+        public override bool Equals(object? obj) => obj is QueryIndex other && Equals(other);
 
         public override int GetHashCode() =>
             HashCode.Combine(RuntimeHelpers.GetHashCode(Pool), Index);
@@ -759,23 +828,26 @@ public sealed partial class ValidationLayer : IGraphicsBackend
     }
 
     private readonly record struct QueryValidationEvent(
-        QuerySlot Slot,
+        QueryIndex Entry,
         QueryValidationEventType Type);
 
     private sealed class RecordedValidationState
     {
-        private ContextValidationState? _owner;
+        internal RecordedCommands Commands = null!;
+        internal bool SubmissionInProgress;
+        private ContextValidationState? _context;
         private RecordingValidationPayload? _payload;
 
         internal void Initialize(
-            ContextValidationState owner,
+            ContextValidationState context,
             RecordingValidationPayload payload)
         {
-            _owner = owner;
+            _context = context;
             _payload = payload;
+            SubmissionInProgress = false;
         }
 
-        internal ContextValidationState Owner => _owner!;
+        internal ContextValidationState Context => _context!;
         internal RecordingValidationPayload Payload => _payload!;
         internal List<QueryValidationEvent> QueryEvents => Payload.QueryEvents;
         internal List<ResourceValidationEvent> ResourceEvents => Payload.ResourceEvents;
@@ -785,7 +857,8 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         {
             RecordingValidationPayload payload = _payload!;
             _payload = null;
-            _owner = null;
+            _context = null;
+            Commands = null!;
             return payload;
         }
     }
@@ -828,9 +901,9 @@ public sealed partial class ValidationLayer : IGraphicsBackend
 
     private sealed class QuerySubmissionReservation
     {
-        internal readonly Dictionary<QuerySlot, QuerySubmissionEntry> Simulated = [];
+        internal readonly Dictionary<QueryIndex, QuerySubmissionEntry> Simulated = [];
         internal readonly List<QuerySubmissionEntry> Entries = [];
-        internal readonly List<KeyValuePair<QuerySlot, QueryValidationState>> NewStates = [];
+        internal readonly List<KeyValuePair<QueryIndex, QueryValidationState>> NewStates = [];
         internal TimelinePoint[] TimelineSignals = [];
 
         internal void Clear()
@@ -851,7 +924,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
 
     private sealed class SubmitValidationWorkspace
     {
-        internal readonly HashSet<SwapchainImageLease> Images =
+        internal readonly HashSet<SwapchainImageUse> Images =
             new(ReferenceEqualityComparer.Instance);
         internal readonly HashSet<RecordedCommandsKey> CommandKeys = [];
         internal readonly List<RecordedValidationState> Recordings = [];

@@ -1,6 +1,6 @@
 namespace SomeEngine.RenderGraph;
 
-internal sealed partial class FrameExecutor
+internal sealed partial class FrameRecording
 {
     private const ulong MinimumSplitBarrierOverlapCost = 8;
     private List<BufferBarrier>[] _beforeBufferBarriers = [];
@@ -11,12 +11,12 @@ internal sealed partial class FrameExecutor
     private List<QueueRelease>[] _releases = [];
     private List<AliasingResource>[] _aliasBeforeResources = [];
     private List<AliasingResource>[] _aliasAfterResources = [];
-    private List<int>[] _physicalPredecessors = [];
-    private readonly List<PendingQueueRelease> _lateReleases = [];
+    private List<int>[] _queuePredecessors = [];
+    private readonly List<QueueReleaseRequest> _lateReleases = [];
     private readonly HashSet<Queue> _transferSources =
         new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<QueueType> _transferTypes = [];
-    private readonly List<PendingBarrierTransition> _pendingBarrierTransitions = [];
+    private readonly List<BarrierTransition> _barrierTransitions = [];
     private readonly List<TextureRegionState> _textureRegions = [];
 
     private void ResolveQuerySynchronization(int poolIndex)
@@ -89,7 +89,7 @@ internal sealed partial class FrameExecutor
         if (previousPass >= 0)
         {
             AddUnique(Synchronization(currentPass).Predecessors, previousPass);
-            _pendingBarrierTransitions.Add(PendingBarrierTransition.ForAliasing(
+            _barrierTransitions.Add(BarrierTransition.ForAliasing(
                 previousPass,
                 currentPass,
                 _executionOrder.Position(currentPass),
@@ -123,7 +123,8 @@ internal sealed partial class FrameExecutor
         if (resource.Lifetime == RenderGraphResourceLifetime.Persistent && resource.Definition is not null)
             resource.EntryBoundaryStates = resource.Definition.BoundaryStates;
         Buffer buffer = resource.Resource!;
-        DevelopmentCheck.Require(buffer is not null, "A live Buffer must be materialized.");
+        DevelopmentCheck.Require(buffer is not null,
+            $"A live Buffer '{resource.Description.Label}' (frame row {bufferIndex}, {resource.Source}, {resource.Lifetime}, passes {resource.FirstPass}..{resource.LastPass}) must be materialized.");
         if (!resource.Placement.Aliases) ResumeBufferTransfers(resource, buffer);
         if (buffer.Device.Capabilities.SupportsConcurrentBufferReads)
         {
@@ -131,8 +132,8 @@ internal sealed partial class FrameExecutor
             return;
         }
         bool aliasActivated = resource.Placement.Aliases;
-        BufferPhysicalState state = aliasActivated
-            ? new BufferPhysicalState(
+        BufferQueueState state = aliasActivated
+            ? new BufferQueueState(
                 PipelineSync.All,
                 ResourceAccess.NoAccess,
                 null,
@@ -216,7 +217,7 @@ internal sealed partial class FrameExecutor
                 }
                 else if (state.Queue is not null && state.Queue.Type != targetQueue.Type)
                 {
-                    _collectSynchronization.LateReleases.Add(new PendingQueueRelease(
+                    _collectSynchronization.LateReleases.Add(new QueueReleaseRequest(
                         state.Queue,
                         targetQueue,
                         pass,
@@ -249,7 +250,7 @@ internal sealed partial class FrameExecutor
                 }
             }
 
-            state = new BufferPhysicalState(
+            state = new BufferQueueState(
                 mergeableWriteChain ? state.Sync | targetSync : targetSync,
                 targetAccess,
                 targetQueue,
@@ -260,7 +261,7 @@ internal sealed partial class FrameExecutor
         }
     }
 
-    private readonly Dictionary<Queue, BufferPhysicalState> _bufferQueueStates =
+    private readonly Dictionary<Queue, BufferQueueState> _bufferQueueStates =
         new(ReferenceEqualityComparer.Instance);
     private readonly List<int> _bufferReaders = [];
 
@@ -286,7 +287,7 @@ internal sealed partial class FrameExecutor
                 mergeableWrites &= row.UnorderedAccessHazards != UnorderedAccessHazardMode.Ordered;
             } while (position < accesses.Count && _accesses[accesses[position]].PassIndex == pass);
             Queue queue = _passes[pass].Queue!;
-            bool seen = _bufferQueueStates.TryGetValue(queue, out BufferPhysicalState previous);
+            bool seen = _bufferQueueStates.TryGetValue(queue, out BufferQueueState previous);
             bool mergeReads = seen && !previous.Writes && !writes &&
                 !ResourceAccessRules.Writes(previous.Access | access);
             if (!writes && !mergeReads && !ResourceAccessRules.Writes(access))
@@ -321,7 +322,7 @@ internal sealed partial class FrameExecutor
                 (previous.Writes || writes || previous.Sync != sync || previous.Access != access))
                 AddBufferTransition(previous.LastPass, pass, buffer, previous.Sync, sync,
                     previous.Access, access, false);
-            _bufferQueueStates[queue] = new BufferPhysicalState(
+            _bufferQueueStates[queue] = new BufferQueueState(
                 mergeWrites || mergeReads ? previous.Sync | sync : sync,
                 mergeReads ? MergeBufferAccess(previous.Access, access) : access,
                 queue, pass, writes, mergeableWrites && writes);
@@ -345,19 +346,19 @@ internal sealed partial class FrameExecutor
 
     private bool RequiresFutureBufferBarrier(
         List<int> accesses,
-        int cursor,
+        int accessPosition,
         PipelineSync previousSync,
         ResourceAccess previousAccess,
         Queue previousQueue,
         bool previousWrites)
     {
-        while (cursor < accesses.Count)
+        while (accessPosition < accesses.Count)
         {
-            int pass = _accesses[accesses[cursor]].PassIndex;
+            int pass = _accesses[accesses[accessPosition]].PassIndex;
             PipelineSync nextSync = PipelineSync.None;
             ResourceAccess nextAccess = ResourceAccess.NoAccess;
             bool nextWrites = false;
-            int end = cursor;
+            int end = accessPosition;
             while (end < accesses.Count && _accesses[accesses[end]].PassIndex == pass)
             {
                 FrameResourceAccess access = _accesses[accesses[end]];
@@ -382,7 +383,7 @@ internal sealed partial class FrameExecutor
             previousAccess = nextAccess;
             previousQueue = nextQueue;
             previousWrites = nextWrites;
-            cursor = end;
+            accessPosition = end;
         }
         return false;
     }
@@ -445,7 +446,7 @@ internal sealed partial class FrameExecutor
                 }
                 if (!found) continue;
                 targetMergeableWrites &= targetWrites;
-                TexturePhysicalState state = region.State;
+                TextureQueueState state = region.State;
                 TextureSubresourceRange cellRange = region.Range;
                 bool initialQueueTransfer = false;
                 if (state.LastPass < 0)
@@ -521,7 +522,7 @@ internal sealed partial class FrameExecutor
                     }
                 }
 
-                _textureRegions[regionIndex] = region with { State = new TexturePhysicalState(
+                _textureRegions[regionIndex] = region with { State = new TextureQueueState(
                     mergeableWriteChain ? state.Sync | access.Sync : access.Sync,
                     access.Access,
                     access.TextureLayout,
@@ -544,7 +545,7 @@ internal sealed partial class FrameExecutor
 
         foreach (TextureRegionState region in _textureRegions)
         {
-            TexturePhysicalState state = region.State;
+            TextureQueueState state = region.State;
             if (state.LastPass < 0)
             {
                 DevelopmentCheck.Require(state.Layout == TextureLayout.Present &&
@@ -589,7 +590,7 @@ internal sealed partial class FrameExecutor
             afterAccess);
         if (!queueChanged && previousPass >= 0)
         {
-            _pendingBarrierTransitions.Add(PendingBarrierTransition.ForBuffer(
+            _barrierTransitions.Add(BarrierTransition.ForBuffer(
                 previousPass,
                 currentPass,
                 _executionOrder.Position(currentPass),
@@ -638,7 +639,7 @@ internal sealed partial class FrameExecutor
                 afterLayout);
             if (!queueChanged && previousPass >= 0 && !hoistableInitialTransition)
             {
-                _pendingBarrierTransitions.Add(PendingBarrierTransition.ForTexture(
+                _barrierTransitions.Add(BarrierTransition.ForTexture(
                     previousPass,
                     currentPass,
                     _executionOrder.Position(currentPass),
@@ -652,9 +653,9 @@ internal sealed partial class FrameExecutor
         }
     }
 
-    private void PlacePendingBarrierTransitions()
+    private void PlaceBarrierTransitions()
     {
-        _pendingBarrierTransitions.Sort(static (left, right) =>
+        _barrierTransitions.Sort(static (left, right) =>
         {
             int byEnd = left.CurrentScheduledOrdinal.CompareTo(
                 right.CurrentScheduledOrdinal);
@@ -665,29 +666,29 @@ internal sealed partial class FrameExecutor
             return byLayer != 0 ? byLayer :
                 left.Texture.Range.FirstMipLevel.CompareTo(right.Texture.Range.FirstMipLevel);
         });
-        foreach (PendingBarrierTransition pending in _pendingBarrierTransitions)
+        foreach (BarrierTransition transition in _barrierTransitions)
         {
             int placementPass = FindExistingBarrierBoundary(
-                pending.PreviousPass,
-                pending.CurrentPass);
-            switch (pending.Kind)
+                transition.PreviousPass,
+                transition.CurrentPass);
+            switch (transition.Kind)
             {
-                case PendingBarrierKind.Buffer:
-                    Synchronization(placementPass).BeforeBuffers.Add(pending.Buffer);
+                case BarrierKind.Buffer:
+                    Synchronization(placementPass).BeforeBuffers.Add(transition.Buffer);
                     break;
-                case PendingBarrierKind.Texture:
-                    Synchronization(placementPass).BeforeTextures.Add(pending.Texture);
+                case BarrierKind.Texture:
+                    Synchronization(placementPass).BeforeTextures.Add(transition.Texture);
                     break;
-                case PendingBarrierKind.Aliasing:
-                    Synchronization(placementPass).AliasBefore.Add(pending.AliasBefore);
-                    Synchronization(placementPass).AliasAfter.Add(pending.AliasAfter);
+                case BarrierKind.Aliasing:
+                    Synchronization(placementPass).AliasBefore.Add(transition.AliasBefore);
+                    Synchronization(placementPass).AliasAfter.Add(transition.AliasAfter);
                     break;
                 default:
                     DevelopmentCheck.Fail("Unknown barrier transition kind.");
                     break;
             }
         }
-        _pendingBarrierTransitions.Clear();
+        _barrierTransitions.Clear();
     }
 
     private int FindFirstQueuePass(int pass)
@@ -736,17 +737,17 @@ internal sealed partial class FrameExecutor
         return currentPass;
     }
 
-    private readonly record struct PendingBarrierTransition(
+    private readonly record struct BarrierTransition(
         int PreviousPass,
         int CurrentPass,
         long CurrentScheduledOrdinal,
-        PendingBarrierKind Kind,
+        BarrierKind Kind,
         BufferBarrier Buffer,
         TextureBarrier Texture,
         AliasingResource AliasBefore,
         AliasingResource AliasAfter)
     {
-        internal static PendingBarrierTransition ForBuffer(
+        internal static BarrierTransition ForBuffer(
             int previousPass,
             int currentPass,
             long currentScheduledOrdinal,
@@ -754,13 +755,13 @@ internal sealed partial class FrameExecutor
                 previousPass,
                 currentPass,
                 currentScheduledOrdinal,
-                PendingBarrierKind.Buffer,
+                BarrierKind.Buffer,
                 barrier,
                 default,
                 default,
                 default);
 
-        internal static PendingBarrierTransition ForTexture(
+        internal static BarrierTransition ForTexture(
             int previousPass,
             int currentPass,
             long currentScheduledOrdinal,
@@ -768,13 +769,13 @@ internal sealed partial class FrameExecutor
                 previousPass,
                 currentPass,
                 currentScheduledOrdinal,
-                PendingBarrierKind.Texture,
+                BarrierKind.Texture,
                 default,
                 barrier,
                 default,
                 default);
 
-        internal static PendingBarrierTransition ForAliasing(
+        internal static BarrierTransition ForAliasing(
             int previousPass,
             int currentPass,
             long currentScheduledOrdinal,
@@ -783,24 +784,24 @@ internal sealed partial class FrameExecutor
                 previousPass,
                 currentPass,
                 currentScheduledOrdinal,
-                PendingBarrierKind.Aliasing,
+                BarrierKind.Aliasing,
                 default,
                 default,
                 before,
                 after);
     }
 
-    private enum PendingBarrierKind : byte
+    private enum BarrierKind : byte
     {
         Buffer,
         Texture,
         Aliasing,
     }
 
-    private BufferPhysicalState InitialBufferState(in FrameBuffer resource, Buffer buffer)
+    private BufferQueueState InitialBufferState(in FrameBuffer resource, Buffer buffer)
     {
         if (resource.EntryBoundaryStates is not { Length: > 0 })
-            return new BufferPhysicalState(
+            return new BufferQueueState(
                 buffer.InitialSync,
                 buffer.InitialAccess,
                 null,
@@ -818,7 +819,7 @@ internal sealed partial class FrameExecutor
             if (queue is null) queue = endpointQueue;
             else if (endpointQueue is not null && !ReferenceEquals(queue, endpointQueue)) queue = null;
         }
-        return new BufferPhysicalState(
+        return new BufferQueueState(
             sync, access, queue, -1, ResourceAccessRules.Writes(access), false);
     }
 
@@ -828,7 +829,7 @@ internal sealed partial class FrameExecutor
         bool aliasActivated)
     {
         _textureRegions.Clear();
-        TexturePhysicalState initial = aliasActivated
+        TextureQueueState initial = aliasActivated
             ? new(PipelineSync.None, ResourceAccess.NoAccess, TextureLayout.Undefined, null, -1, false, false)
             : new(texture.InitialSync, texture.InitialAccess, texture.InitialLayout, null, -1,
                 ResourceAccessRules.Writes(texture.InitialAccess), false);
@@ -844,10 +845,10 @@ internal sealed partial class FrameExecutor
             {
                 if (!SplitTextureRegion(index, endpoint.Range)) continue;
                 TextureRegionState region = _textureRegions[index];
-                TexturePhysicalState current = region.State;
+                TextureQueueState current = region.State;
                 DevelopmentCheck.Require(!region.Assigned || current.Layout == endpoint.Layout,
                     "Multiple initial Texture readers of one subresource must use the same layout.");
-                TexturePhysicalState state = region.Assigned
+                TextureQueueState state = region.Assigned
                     ? new(current.Sync | endpoint.Sync, current.Access | endpoint.Access, current.Layout,
                         ReferenceEquals(current.Queue, endpoint.ReleasedTo ?? endpoint.Queue) ? current.Queue : null, -1,
                         current.Writes || ResourceAccessRules.Writes(endpoint.Access), false)
@@ -890,7 +891,7 @@ internal sealed partial class FrameExecutor
     }
 
     private readonly record struct TextureRegionState(
-        TextureSubresourceRange Range, TexturePhysicalState State, bool Assigned);
+        TextureSubresourceRange Range, TextureQueueState State, bool Assigned);
 
     private bool ResolveInitialBufferTransfers(
         BufferBoundaryState[]? boundaryStates,
@@ -910,7 +911,7 @@ internal sealed partial class FrameExecutor
             if (source is null || ReferenceEquals(source, targetQueue) ||
                 source.Type == targetQueue.Type || !_transferSources.Add(source))
                 continue;
-            _collectSynchronization.LateReleases.Add(new PendingQueueRelease(
+            _collectSynchronization.LateReleases.Add(new QueueReleaseRequest(
                 source,
                 targetQueue,
                 pass,
@@ -922,7 +923,7 @@ internal sealed partial class FrameExecutor
             if (_transferTypes.Add(source.Type))
             {
                 DevelopmentCheck.Require(_transferTypes.Count == 1,
-                    $"Buffer '{buffer.Label}' cannot have overlapping entry ownership on multiple Queue types.");
+                    $"Buffer '{buffer.Label}' cannot have overlapping entry source on multiple Queue types.");
                 transferred = true;
                 Synchronization(pass).Acquires.Add(new QueueAcquire(
                     buffer,
@@ -1024,7 +1025,7 @@ internal sealed partial class FrameExecutor
         ResourceAccess.ResolveDestination |
         ResourceAccess.RayTracingAccelerationStructureWrite;
 
-    private readonly record struct BufferPhysicalState(
+    private readonly record struct BufferQueueState(
         PipelineSync Sync,
         ResourceAccess Access,
         Queue? Queue,
@@ -1032,7 +1033,7 @@ internal sealed partial class FrameExecutor
         bool Writes,
         bool MergeableWrites);
 
-    private readonly record struct TexturePhysicalState(
+    private readonly record struct TextureQueueState(
         PipelineSync Sync,
         ResourceAccess Access,
         TextureLayout Layout,
@@ -1041,7 +1042,7 @@ internal sealed partial class FrameExecutor
         bool Writes,
         bool MergeableWrites);
 
-    private readonly record struct PendingQueueRelease(
+    private readonly record struct QueueReleaseRequest(
         Queue SourceQueue,
         Queue DestinationQueue,
         int ConsumerPass,
@@ -1058,10 +1059,10 @@ internal sealed partial class FrameExecutor
         foreach (BufferBoundaryState state in resource.EntryBoundaryStates ?? [])
         {
             if (state.ReleasedTo is null) continue;
-            _collectSynchronization.LateReleases.Add(new PendingQueueRelease(state.ReleasedTo, state.ReleasedTo,
+            _collectSynchronization.LateReleases.Add(new QueueReleaseRequest(state.ReleasedTo, state.ReleasedTo,
                 -1, buffer, null, PipelineSync.None, ResourceAccess.NoAccess, null,
                 state.Queue!.Type, Release: false));
-            return; // Buffer ownership transfers cover the complete allocation.
+            return; // Buffer source transfers cover the complete allocation.
         }
     }
 
@@ -1074,10 +1075,10 @@ internal sealed partial class FrameExecutor
         {
             if (state.ReleasedTo is null) continue;
             DevelopmentCheck.Require(state.ReleaseRange.HasValue,
-                "A released texture must retain the complete ownership-transfer range.");
+                "A released texture must retain the complete source-transfer range.");
             TextureSubresourceRange range = state.ReleaseRange!.Value;
             if (!_resumedTextureRanges.Add(range)) continue;
-            _collectSynchronization.LateReleases.Add(new PendingQueueRelease(state.ReleasedTo, state.ReleasedTo,
+            _collectSynchronization.LateReleases.Add(new QueueReleaseRequest(state.ReleasedTo, state.ReleasedTo,
                 -1, texture, range, PipelineSync.None, ResourceAccess.NoAccess, TextureLayout.General,
                 state.Queue!.Type, Release: false));
         }
@@ -1102,7 +1103,7 @@ internal sealed partial class FrameExecutor
     private sealed class ResourceSynchronization
     {
         internal readonly Dictionary<int, PassSynchronization> Passes = [];
-        internal readonly List<PendingQueueRelease> LateReleases = [];
+        internal readonly List<QueueReleaseRequest> LateReleases = [];
         internal readonly HashSet<int> WaitPasses = [];
         internal readonly Stack<PassSynchronization> Reusable = [];
 
@@ -1123,7 +1124,7 @@ internal sealed partial class FrameExecutor
     private readonly Dictionary<(GraphAccessTargetKind Kind, int Index), bool> _synchronizationChanges = [];
     private readonly HashSet<int> _changedSynchronizationPasses = [];
     private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _changedBoundaryResources = [];
-    private readonly List<int> _previousPhysicalPredecessors = [];
+    private readonly List<int> _previousQueuePredecessors = [];
     private ResourceSynchronization _collectSynchronization = null!;
     private ResourceSynchronization _synchronizationScratch = new();
     private int _synchronizationPassCount;
@@ -1149,14 +1150,14 @@ internal sealed partial class FrameExecutor
         EnsureCapacity(ref _releases, _passes.Count);
         EnsureCapacity(ref _aliasBeforeResources, _passes.Count);
         EnsureCapacity(ref _aliasAfterResources, _passes.Count);
-        EnsureCapacity(ref _physicalPredecessors, _passes.Count);
+        EnsureCapacity(ref _queuePredecessors, _passes.Count);
         for (int pass = _synchronizationPassCount; pass < _passes.Count; pass++)
         {
             _beforeBufferBarriers[pass] ??= []; _afterBufferBarriers[pass] ??= [];
             _beforeTextureBarriers[pass] ??= []; _afterTextureBarriers[pass] ??= [];
             _acquires[pass] ??= []; _releases[pass] ??= [];
             _aliasBeforeResources[pass] ??= []; _aliasAfterResources[pass] ??= [];
-            _physicalPredecessors[pass] ??= [];
+            _queuePredecessors[pass] ??= [];
         }
         _synchronizationPassCount = _passes.Count;
         foreach (var (key, bindingOnly) in _synchronizationChanges)
@@ -1170,7 +1171,7 @@ internal sealed partial class FrameExecutor
             if (exists)
             {
                 _collectSynchronization = value;
-                _pendingBarrierTransitions.Clear();
+                _barrierTransitions.Clear();
                 _textureQueueTransfers.Clear();
                 ResolveAliasingBarrier(key);
                 switch (key.Kind)
@@ -1180,7 +1181,7 @@ internal sealed partial class FrameExecutor
                     case GraphAccessTargetKind.QueryPool: ResolveQuerySynchronization(key.Index); break;
                     case GraphAccessTargetKind.RayTracingShaderTable: ResolveShaderTableSynchronization(key.Index); break;
                 }
-                PlacePendingBarrierTransitions();
+                PlaceBarrierTransitions();
                 CompactTextureBarriers();
             }
             // Derivation may reject a boundary. Do not detach the previous result until every
@@ -1193,7 +1194,7 @@ internal sealed partial class FrameExecutor
                     _synchronizationByPass[pass].Remove(key);
                 }
                 foreach (int pass in previous.WaitPasses) _initialWaitResources[pass].Remove(key);
-                foreach (PendingQueueRelease release in previous.LateReleases) _lateReleases.Remove(release);
+                foreach (QueueReleaseRequest release in previous.LateReleases) _lateReleases.Remove(release);
             }
             if (!exists)
             {
@@ -1225,9 +1226,9 @@ internal sealed partial class FrameExecutor
             _beforeTextureBarriers[pass].Clear(); _afterTextureBarriers[pass].Clear();
             _acquires[pass].Clear(); _releases[pass].Clear();
             _aliasBeforeResources[pass].Clear(); _aliasAfterResources[pass].Clear();
-            _previousPhysicalPredecessors.Clear();
-            _previousPhysicalPredecessors.AddRange(_physicalPredecessors[pass]);
-            _physicalPredecessors[pass].Clear();
+            _previousQueuePredecessors.Clear();
+            _previousQueuePredecessors.AddRange(_queuePredecessors[pass]);
+            _queuePredecessors[pass].Clear();
             foreach (var key in _synchronizationByPass[pass])
             {
                 PassSynchronization value = _synchronizationByResource[key].Passes[pass];
@@ -1235,10 +1236,10 @@ internal sealed partial class FrameExecutor
                 _beforeTextureBarriers[pass].AddRange(value.BeforeTextures); _afterTextureBarriers[pass].AddRange(value.AfterTextures);
                 _acquires[pass].AddRange(value.Acquires); _releases[pass].AddRange(value.Releases);
                 _aliasBeforeResources[pass].AddRange(value.AliasBefore); _aliasAfterResources[pass].AddRange(value.AliasAfter);
-                foreach (int predecessor in value.Predecessors) AddUnique(_physicalPredecessors[pass], predecessor);
+                foreach (int predecessor in value.Predecessors) AddUnique(_queuePredecessors[pass], predecessor);
             }
-            if (_previousPhysicalPredecessors.Count != _physicalPredecessors[pass].Count ||
-                _previousPhysicalPredecessors.Any(predecessor => !_physicalPredecessors[pass].Contains(predecessor)))
+            if (_previousQueuePredecessors.Count != _queuePredecessors[pass].Count ||
+                _previousQueuePredecessors.Any(predecessor => !_queuePredecessors[pass].Contains(predecessor)))
                 ChangeRecording(pass);
         }
         _synchronizationChanges.Clear();
@@ -1357,7 +1358,7 @@ internal sealed partial class FrameExecutor
             if (key.Kind == GraphAccessTargetKind.Buffer)
             {
                 ref FrameBuffer row = ref CollectionsMarshal.AsSpan(_buffers)[key.Index];
-                if (row.Ownership == RenderGraphResourceOwnership.CallerOwned &&
+                if (row.Source == RenderGraphResourceSource.Registered &&
                     row.Lifetime == RenderGraphResourceLifetime.PerFrame &&
                     row.Definition is not null)
                     row.EntryBoundaryStates = _frame.TryGetBufferData(row.Identity, out var data)
@@ -1368,7 +1369,7 @@ internal sealed partial class FrameExecutor
             else if (key.Kind == GraphAccessTargetKind.Texture)
             {
                 ref FrameTexture row = ref CollectionsMarshal.AsSpan(_textures)[key.Index];
-                if (row.Ownership == RenderGraphResourceOwnership.CallerOwned &&
+                if (row.Source == RenderGraphResourceSource.Registered &&
                     row.Lifetime == RenderGraphResourceLifetime.PerFrame &&
                     row.Definition is not null)
                     row.EntryBoundaryStates = row.Definition.BoundaryStates;
@@ -1397,7 +1398,7 @@ internal sealed partial class FrameExecutor
             changed |= contents[item] != value;
             contents[item] = value;
         }
-        if (changed) ChangeAnalysisResource(GraphAccessTargetKind.QueryPool, index);
+        if (changed) InvalidateResourceState(GraphAccessTargetKind.QueryPool, index);
     }
 
     private void ObserveShaderTableContents(int index)
@@ -1405,7 +1406,7 @@ internal sealed partial class FrameExecutor
         ref FrameRayTracingShaderTable row = ref CollectionsMarshal.AsSpan(_shaderTables)[index];
         row.EntryBoundaryStates = row.Definition.BoundaryStates;
         ResourceContentState contents = ResolveShaderTableContents(row.EntryBoundaryStates);
-        if (contents != row.Contents) ChangeAnalysisResource(GraphAccessTargetKind.RayTracingShaderTable, index);
+        if (contents != row.Contents) InvalidateResourceState(GraphAccessTargetKind.RayTracingShaderTable, index);
         row.Contents = contents;
     }
 
@@ -1469,7 +1470,7 @@ internal sealed partial class FrameExecutor
             if (transfer.ProducerPass >= 0)
                 Synchronization(transfer.ProducerPass).Releases.Add(transfer.Release with { TextureRange = transfer.Range });
             else
-                _collectSynchronization.LateReleases.Add(new PendingQueueRelease(transfer.SourceQueue,
+                _collectSynchronization.LateReleases.Add(new QueueReleaseRequest(transfer.SourceQueue,
                     transfer.DestinationQueue, transfer.ConsumerPass, transfer.Release.Resource,
                     transfer.Range, transfer.Release.Sync, transfer.Release.Access, transfer.Release.Layout));
         }

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
@@ -23,9 +23,9 @@ public sealed class ApplicationGeometryContext
     private readonly RenderFrameSystems _frames;
     private readonly RenderPrepareSystems _preparation;
     private readonly RenderExtractionSystems _extraction;
-    private readonly SystemGroup<ImmediateSystemContext> _gameSystems;
-    private readonly World _gameWorld;
-    private readonly Func<Vector3> _cameraPosition;
+    private SystemGroup<ImmediateSystemContext>? _gameSystems;
+    private World _gameWorld;
+    private Func<Vector3> _cameraPosition;
     private readonly List<IRenderGraphFrameExecutionObserver> _observers = [];
     private readonly List<IDisposable> _resources = [];
     private readonly List<Action> _gameShutdown = [];
@@ -61,7 +61,7 @@ public sealed class ApplicationGeometryContext
 
     /// <summary>Runs on the game world before each extraction.</summary>
     public int AddGameSystem<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> =>
-        _gameSystems.Add(system);
+        _gameSystems!.Add(system);
 
     public void AddExtractor(IRenderExtractionSystem extractor) => _extraction.Add(extractor);
 
@@ -80,11 +80,10 @@ public sealed class ApplicationGeometryContext
     internal RenderTerrainData GetTerrainData()
     {
         if (_terrainData is not null) return _terrainData;
-        _terrainData = new(Backend, Device, Graph);
+        _terrainData = new(Backend, Device, Graph, RenderDevice.Pipelines);
         AddExtractor(new TerrainRenderExtractor());
         AddPrepareSystem(_terrainData);
         AddFrameSystem(_terrainData);
-        AddCompletionObserver(_terrainData);
         _resources.Add(_terrainData);
         return _terrainData;
     }
@@ -95,23 +94,41 @@ public sealed class ApplicationGeometryContext
             if (feature.Install(this) is { } resources) _resources.Add(resources);
     }
 
+    internal void ReplaceGameWorld(World world, Func<Vector3> cameraPosition)
+    {
+        _gameWorld = world;
+        _gameSystems = new(new ImmediateSystemDriver(world));
+        _cameraPosition = cameraPosition;
+    }
+
     internal void DisposeFeatures()
     {
-        _gameSystems.Dispose();
+        _gameSystems?.Dispose();
         for (int index = _resources.Count - 1; index >= 0; index--) _resources[index].Dispose();
         _resources.Clear();
     }
 
-    internal void FinishGame()
+    internal IDisposable TakeGameSystems()
     {
-        foreach (Action shutdown in _gameShutdown) shutdown();
+        var systems = new SceneGameSystems(_gameSystems!, _gameShutdown.ToArray());
+        _gameSystems = null;
         _gameShutdown.Clear();
+        return systems;
+    }
+
+    private sealed class SceneGameSystems(SystemGroup<ImmediateSystemContext> systems, Action[] shutdown) : IDisposable
+    {
+        public void Dispose()
+        {
+            foreach (Action action in shutdown) action();
+            systems.Dispose();
+        }
     }
 
     internal void UpdateGame(double deltaTime)
     {
         var context = new ImmediateSystemContext(_gameWorld, 0, 0, deltaTime);
-        _gameSystems.Update(ref context);
+        _gameSystems!.Update(ref context);
     }
 
     internal void Observe(ref RenderGraphFrame graph)

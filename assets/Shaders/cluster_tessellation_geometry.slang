@@ -1,15 +1,33 @@
 #ifndef CLUSTER_TESSELLATION_GEOMETRY_SLANG
 #define CLUSTER_TESSELLATION_GEOMETRY_SLANG
 
-#include "cluster_tessellation_types.slang"
-#include "cluster_view.slang"
-#include "domain_interfaces.slang"
+__exported import cluster_tessellation_types;
+__exported import cluster_view;
+__exported import domain_interfaces;
 
 float2 TessellationScreenPosition(float4 clip, ClusterViewUniforms view)
 {
     if (clip.w <= 1e-5) return 1e20.xx;
     return (clip.xy / clip.w * float2(0.5, -0.5) + 0.5) * float2(view.ScreenWidth, view.ScreenHeight);
 }
+bool TessellationBoundsIntersectScreen(float3 minimum, float3 maximum, ClusterViewUniforms view, int4 tile, float margin)
+{
+    float2 first = float2(1e20), last = float2(-1e20);
+    [unroll]
+    for (uint corner = 0u; corner < 8u; corner++)
+    {
+        float3 position = float3((corner & 1u) != 0u ? maximum.x : minimum.x,
+            (corner & 2u) != 0u ? maximum.y : minimum.y,
+            (corner & 4u) != 0u ? maximum.z : minimum.z);
+        float4 clip = mul(float4(ClusterPositionForView(position, view), 1.0), view.ViewProj);
+        if (clip.w <= 0.0) return true;
+        float2 pixel = TessellationScreenPosition(clip, view);
+        first = min(first, pixel);
+        last = max(last, pixel);
+    }
+    return all(last + margin >= float2(tile.xy)) && all(first - margin <= float2(tile.zw));
+}
+
 uint TessellationRequestedEdgeFactor(float edgePixels, float targetPixels)
 {
     float requestedFloat = ceil(max(edgePixels, 0.0) / targetPixels);
@@ -51,7 +69,7 @@ void EvaluateTessellationPatch<TVertex, TDomain>(
     float targetEdgePixels,
     out uint3 edgeFactors,
     out uint splitMask,
-    out bool splitInterior)
+    out bool splitInterior, bool shadowPages = false)
     where TDomain : IDomainEvaluate<TVertex>
 {
     // Evaluate each corner exactly once. The domain receives those positions again when
@@ -76,7 +94,7 @@ void EvaluateTessellationPatch<TVertex, TDomain>(
     float2 screen2 = TessellationScreenPosition(clip2, view);
     float targetPixels = view.TessellationEdgePixels > 0.0
         ? view.TessellationEdgePixels : targetEdgePixels;
-    float3 edgePixels = view.TargetPolicy != 0u
+    float3 edgePixels = shadowPages
         ? float3(CalculateTessellationEdgePixels(position0, position1, view),
             CalculateTessellationEdgePixels(position1, position2, view),
             CalculateTessellationEdgePixels(position2, position0, view))
@@ -94,7 +112,7 @@ void EvaluateTessellationPatch<TVertex, TDomain>(
         ClusterProjectedError(min(clip2.w, clip0.w), max(abs(clip2.xy), abs(clip0.xy)), error.Edge.z, scales, size));
     float interiorErrorPixels = ClusterProjectedError(min(clip0.w, min(clip1.w, clip2.w)),
         max(abs(clip0.xy), max(abs(clip1.xy), abs(clip2.xy))), error.Interior, scales, size);
-    if (view.TargetPolicy != 0u)
+    if (shadowPages)
     {
         edgeErrorPixels *= view.GeometryLodScale;
         interiorErrorPixels *= view.GeometryLodScale;

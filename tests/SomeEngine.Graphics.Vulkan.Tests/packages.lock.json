@@ -155,6 +155,7 @@
       "someengine.core": {
         "type": "Project",
         "dependencies": {
+          "SomeEngine.Diagnostics": "[1.0.0, )",
           "SomeEngine.ECS": "[1.0.0, )",
           "SomeEngine.ECS.Systems": "[1.0.0, )",
           "SomeEngine.Job": "[1.0.0, )"
@@ -166,6 +167,7 @@
       "someengine.ecs": {
         "type": "Project",
         "dependencies": {
+          "SomeEngine.Diagnostics": "[1.0.0, )",
           "SomeEngine.Job.Contracts": "[1.0.0, )"
         }
       },

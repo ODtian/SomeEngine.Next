@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -22,7 +22,7 @@ internal sealed class NativeWindow : IDisposable
     private const int ShowNormal = 5;
     private const int UseDefault = unchecked((int)0x80000000);
     private const int WindowUserData = -21;
-    private const int ArrowCursor = 32512;
+    private const int ArrowPointerImage = 32512;
     private const int ErrorClassAlreadyExists = 1410;
 
     private const uint MessageCreate = 0x0001;
@@ -110,7 +110,7 @@ internal sealed class NativeWindow : IDisposable
                 checked(outer.Bottom - outer.Top),
                 0,
                 0,
-                GetModuleHandleW(null),
+                GetLibraryHandle(null),
                 GCHandle.ToIntPtr(_selfHandle));
             if (Handle == 0)
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateWindowExW failed.");
@@ -256,14 +256,14 @@ internal sealed class NativeWindow : IDisposable
         {
             if (_classRegistered)
                 return;
-            nint instance = GetModuleHandleW(null);
+            nint instance = GetLibraryHandle(null);
             var windowClass = new WindowClassEx
             {
                 Size = checked((uint)Marshal.SizeOf<WindowClassEx>()),
                 Style = ClassHorizontalRedraw | ClassVerticalRedraw,
                 WindowProcedure = Marshal.GetFunctionPointerForDelegate(WindowProcedureRoot),
                 Instance = instance,
-                Cursor = LoadCursorW(0, (nint)ArrowCursor),
+                PointerImage = LoadPointerImage(0, (nint)ArrowPointerImage),
                 ClassName = WindowClassName,
             };
             ushort atom = RegisterClassExW(in windowClass);
@@ -589,7 +589,7 @@ internal sealed class NativeWindow : IDisposable
         internal int WindowExtraBytes;
         internal nint Instance;
         internal nint Icon;
-        internal nint Cursor;
+        internal nint PointerImage;
         internal nint BackgroundBrush;
         internal string? MenuName;
         internal string ClassName;
@@ -651,8 +651,8 @@ internal sealed class NativeWindow : IDisposable
         private int _reserved7;
     }
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    private static extern nint GetModuleHandleW(string? moduleName);
+    [DllImport("kernel32.dll", EntryPoint = "GetModuleHandleW", CharSet = CharSet.Unicode)]
+    private static extern nint GetLibraryHandle(string? libraryName);
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -707,8 +707,8 @@ internal sealed class NativeWindow : IDisposable
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern ushort RegisterClassExW(in WindowClassEx windowClass);
 
-    [DllImport("user32.dll")]
-    private static extern nint LoadCursorW(nint instance, nint cursorName);
+    [DllImport("user32.dll", EntryPoint = "LoadCursorW")]
+    private static extern nint LoadPointerImage(nint instance, nint imageName);
 
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
     private static extern nint SetWindowLongPtrW(nint window, int index, nint value);

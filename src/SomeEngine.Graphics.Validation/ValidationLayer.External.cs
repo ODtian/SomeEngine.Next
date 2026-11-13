@@ -15,7 +15,10 @@ public sealed partial class ValidationLayer
         in BufferDesc desc,
         in ImportedResourceState state)
     {
-        RequireCapability<ExternalResources>(device);
+        ExternalResources capability = RequireCapability<ExternalResources>(device);
+        ValidateExternalHandleType(capability.SupportsBufferImport(handle.Type), handle.Type);
+        ValidateBufferDescription(device, desc, MemoryType.DeviceLocal);
+        ValidateImportedResourceState(state, texture: false);
         _ = handle.Value;
         var resourceState = new ResourceValidationState(buffer: true);
         BufferDesc createDesc = desc;
@@ -56,7 +59,10 @@ public sealed partial class ValidationLayer
         in TextureDesc desc,
         in ImportedResourceState state)
     {
-        RequireCapability<ExternalResources>(device);
+        ExternalResources capability = RequireCapability<ExternalResources>(device);
+        ValidateExternalHandleType(capability.SupportsTextureImport(handle.Type), handle.Type);
+        ValidateTextureDescription(device, desc);
+        ValidateImportedResourceState(state, texture: true);
         _ = handle.Value;
         var resourceState = new ResourceValidationState(buffer: false);
         var objectInfo = new ValidationObjectInfo(device);
@@ -94,7 +100,11 @@ public sealed partial class ValidationLayer
         ExternalHandle handle,
         in HeapDesc desc)
     {
-        RequireCapability<ExternalResources>(device);
+        ExternalResources capability = RequireCapability<ExternalResources>(device);
+        ValidateExternalHandleType(capability.SupportsHeapImport(handle.Type), handle.Type);
+        ValidateHeapDescription(device, desc);
+        if ((desc.Flags & HeapFlags.Shareable) == 0)
+            throw new ArgumentException("An imported Heap requires Shareable flags.", nameof(desc));
         _ = handle.Value;
         var metadata = new HeapValidationState(desc.VisibleNodeMask);
         HeapDesc createDesc = desc;
@@ -130,21 +140,30 @@ public sealed partial class ValidationLayer
     public ExternalHandle ExportBuffer(Buffer buffer, ExternalHandleType type)
     {
         Require(buffer);
-        RequireCapability<ExternalResources>(buffer.Device);
+        ExternalResources capability = RequireCapability<ExternalResources>(buffer.Device);
+        ValidateExternalHandleType(capability.SupportsBufferExport(type), type);
+        if ((buffer.Info.Usages & BufferUsages.Shareable) == 0)
+            throw new ArgumentException("The Buffer requires Shareable usage.", nameof(buffer));
         return Backend.ExportBuffer(buffer, type);
     }
 
     public ExternalHandle ExportTexture(Texture texture, ExternalHandleType type)
     {
         Require(texture);
-        RequireCapability<ExternalResources>(texture.Device);
+        ExternalResources capability = RequireCapability<ExternalResources>(texture.Device);
+        ValidateExternalHandleType(capability.SupportsTextureExport(type), type);
+        if ((texture.Info.Usages & TextureUsages.Shareable) == 0)
+            throw new ArgumentException("The Texture requires Shareable usage.", nameof(texture));
         return Backend.ExportTexture(texture, type);
     }
 
     public ExternalHandle ExportHeap(Heap heap, ExternalHandleType type)
     {
         Require(heap);
-        RequireCapability<ExternalResources>(heap.Device);
+        ExternalResources capability = RequireCapability<ExternalResources>(heap.Device);
+        ValidateExternalHandleType(capability.SupportsHeapExport(type), type);
+        if ((heap.Info.Flags & HeapFlags.Shareable) == 0)
+            throw new ArgumentException("The Heap requires Shareable flags.", nameof(heap));
         return Backend.ExportHeap(heap, type);
     }
 
@@ -189,7 +208,8 @@ public sealed partial class ValidationLayer
         ExternalHandle handle,
         string? label = null)
     {
-        RequireCapability<ExternalTimelines>(device);
+        ExternalTimelines capability = RequireCapability<ExternalTimelines>(device);
+        ValidateExternalHandleType(capability.SupportsImport(handle.Type), handle.Type);
         _ = handle.Value;
         var state = new TimelineValidationState(false, 0);
         var objectInfo = new ValidationObjectInfo(device);
@@ -224,7 +244,24 @@ public sealed partial class ValidationLayer
     public ExternalHandle ExportTimeline(ExternalTimeline timeline, ExternalHandleType type)
     {
         Require(timeline);
-        RequireCapability<ExternalTimelines>(timeline.Device);
+        ExternalTimelines capability = RequireCapability<ExternalTimelines>(timeline.Device);
+        ValidateExternalHandleType(capability.SupportsExport(type), type);
         return Backend.ExportTimeline(timeline, type);
+    }
+
+    private static void ValidateExternalHandleType(bool supported, ExternalHandleType type)
+    {
+        if (!Enum.IsDefined(type))
+            throw new ArgumentOutOfRangeException(nameof(type));
+        if (!supported)
+            throw new NotSupportedException($"External handle type {type} is unavailable for this operation.");
+    }
+
+    private static void ValidateImportedResourceState(in ImportedResourceState state, bool texture)
+    {
+        if (!Enum.IsDefined(state.QueueType) || state.Layout is TextureLayout layout && !Enum.IsDefined(layout))
+            throw new ArgumentOutOfRangeException(nameof(state));
+        if (texture != state.Layout.HasValue)
+            throw new ArgumentException("Imported Texture state requires a layout; Buffer state contains sync and access.", nameof(state));
     }
 }

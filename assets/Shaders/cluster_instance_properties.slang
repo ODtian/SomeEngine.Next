@@ -1,10 +1,12 @@
 #ifndef SOMEENGINE_CLUSTER_INSTANCE_PROPERTIES_INCLUDED
 #define SOMEENGINE_CLUSTER_INSTANCE_PROPERTIES_INCLUDED
 
-#include "render_instance_transform.slang"
-#include "render_instance_properties.slang"
+#ifndef CLUSTER_INSTANCE_PROPERTY_IMPORTS
+__exported import render_instance_transform;
+__exported import render_instance_properties;
+__exported import cluster_view;
+#endif
 #include "generated/render_instance_layout.slang"
-#include "cluster_view.slang"
 
 static const uint CLUSTER_UINT32_PROPERTY_STRIDE = 4u;
 static const uint CLUSTER_FLOAT32_PROPERTY_STRIDE = 4u;
@@ -62,29 +64,6 @@ uint2 LoadInstanceFirstPerson(ByteAddressBuffer data, RenderInstancePropertyMeta
 {
     return RenderInstanceLoad<uint2>(data, LoadRenderInstanceMetadata(metadata, RENDER_FIRST_PERSON_METADATA_WORD),
         instanceId, 8u);
-}
-
-struct InstanceXray
-{
-    float4 Visible;
-    float4 Occluded;
-    float MinimumOcclusion, MaximumOcclusion;
-    uint Enabled, Padding;
-};
-
-InstanceXray LoadInstanceXray(ByteAddressBuffer data, RenderInstancePropertyMetadata metadata, uint instanceId)
-{
-    return RenderInstanceLoad<InstanceXray>(data, LoadRenderInstanceMetadata(metadata, RENDER_XRAY_METADATA_WORD),
-        instanceId, 48u);
-}
-
-bool KeepBlendOcclusion(ByteAddressBuffer data, RenderInstancePropertyMetadata metadata,
-    uint instanceId, ClusterViewUniforms view)
-{
-    uint ordered = RenderInstanceLoad<uint>(data,
-        LoadRenderInstanceMetadata(metadata, CLUSTER_BLEND_OCCLUSION_METADATA_WORD), instanceId, 4u);
-    return view.Family == 0u && view.TargetPolicy == 0u &&
-        (ordered != 0u || LoadInstanceXray(data, metadata, instanceId).Enabled != 0u);
 }
 
 bool IsInstanceVisibleToView(uint2 firstPerson, ClusterViewUniforms view)

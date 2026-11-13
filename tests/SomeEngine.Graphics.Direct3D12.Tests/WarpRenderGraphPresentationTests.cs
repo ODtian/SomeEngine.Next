@@ -71,7 +71,7 @@ public sealed class WarpRenderGraphPresentationTests
                 "validated graph backbuffer view");
             _ = frame.AddRasterPass(
                 "clear validated swapchain image",
-                PassQueueSelection.Exact(graphicsQueue),
+                PassQueueSelection.OnQueue(graphicsQueue),
                 new ClearPassData(targetView),
                 default,
                 static (ref PassDefinition access, ref ClearPassData data) =>

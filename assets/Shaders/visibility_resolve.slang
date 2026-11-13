@@ -46,3 +46,17 @@ PSWinnerOutput PSResolveVisibilityWinner(VSOutput input)
     output.Depth = reversedDepth == 0u ? 1.0 : 1.0 - asfloat(reversedDepth);
     return output;
 }
+
+#ifdef VISIBILITY_BUFFER
+[shader("pixel")]
+PSWinnerOutput PSResolveVisibilityNonAtomic(VSOutput input)
+{
+    uint2 pixel = uint2(input.Pos.xy);
+    uint linear = (input.ViewIndex * Uniforms.Height + pixel.y) * Uniforms.Width + pixel.x;
+    uint2 values = Winner.Load2(linear * 8u);
+    PSWinnerOutput output;
+    output.Visibility = values.x;
+    output.Depth = asfloat(values.y);
+    return output;
+}
+#endif

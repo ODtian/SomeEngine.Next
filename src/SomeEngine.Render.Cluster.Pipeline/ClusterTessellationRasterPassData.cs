@@ -16,7 +16,7 @@ internal readonly record struct ClusterTessellationRasterPassData(
 {
     internal static GraphBufferAccessId Declare(ref PassDefinition pass, ref ClusterTessellationRasterPassData data)
     {
-        GraphBufferAccessId arguments = pass.Read(data.IndirectArguments, new BufferRange(data.IndirectOffset, data.UsesMesh ? ClusterIndirectAbi.DispatchBytes : 8u * ClusterIndirectAbi.DrawIndexedBytes),
+        GraphBufferAccessId arguments = pass.Read(data.IndirectArguments, new BufferRange(data.IndirectOffset, data.UsesMesh ? ClusterIndirectLayout.DispatchBytes : 8u * ClusterIndirectLayout.DrawIndexedBytes),
             PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument);
         if (data.UsesMesh) return arguments;
         pass.Read(data.Indices, BufferRange.Whole, PipelineSync.IndexInput, ResourceAccess.IndexBuffer);
@@ -32,7 +32,7 @@ internal readonly record struct ClusterTessellationRasterPassData(
         if (data.UsesMesh)
         {
             commands.DispatchMeshIndirect(new BufferRegion(commands.GetBuffer(data.IndirectArguments),
-                new BufferRange(data.IndirectOffset, ClusterIndirectAbi.DispatchBytes)));
+                new BufferRange(data.IndirectOffset, ClusterIndirectLayout.DispatchBytes)));
             return;
         }
         Buffer indices = commands.GetBuffer(data.Indices);
@@ -41,6 +41,6 @@ internal readonly record struct ClusterTessellationRasterPassData(
         commands.SetVertexBuffers(0, [new VertexBufferBinding(patches, 0, sizeof(uint), patches.Info.Size)]);
         commands.ExecuteIndirect(data.IndirectLayout,
             new BufferRegion(commands.GetBuffer(data.IndirectArguments),
-                new BufferRange(data.IndirectOffset, data.UsesMesh ? ClusterIndirectAbi.DispatchBytes : 8u * ClusterIndirectAbi.DrawIndexedBytes)), 8);
+                new BufferRange(data.IndirectOffset, data.UsesMesh ? ClusterIndirectLayout.DispatchBytes : 8u * ClusterIndirectLayout.DrawIndexedBytes)), 8);
     }
 }

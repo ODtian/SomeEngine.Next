@@ -1,5 +1,5 @@
-#include "triangle_surface.slang"
-#include "unlit_material.slang"
+__exported import triangle_surface;
+__exported import unlit_material;
 
 struct GroundVertexEvaluate : IVertexEvaluate
 {
@@ -23,9 +23,25 @@ struct GroundVertexEvaluate : IVertexEvaluate
     }
 };
 
-typedef GroundVertexEvaluate VertexEvaluate;
-typedef LinearSurface DomainEvaluate;
-typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;
-typedef UnlitMaterial SurfaceEvaluate;
-#define CLUSTER_VERTEX_ENCODING "example.terrain.position_normal_uv.v1"
-#include "Pipeline/cluster_material.slang"
+[VertexEncoding("example.terrain.position_normal_uv.v1")]
+[ConservativeBounds("finite")]
+struct GpuTerrainMaterial : IMaterial
+{
+    typedef GroundVertexEvaluate Vertex;
+    typedef LinearSurface Domain;
+    typedef OpaqueVisibilityEvaluate<Vertex.Vertex> Visibility;
+
+    UnlitMaterial Surface;
+
+    void evaluateSurface<TOutput : ISurfaceOutput>(SurfacePixelInput input,
+        Domain.Surface surface, float3 bary, Domain.TriangleData triangle, TOutput output)
+    {
+        Surface.evaluateSurface<TOutput>(input, surface, bary, triangle, output);
+    }
+
+    void evaluateDebug<TOutput : ISurfaceOutput>(uint debugMode, SurfacePixelInput input,
+        Domain.Surface surface, float3 bary, Domain.TriangleData triangle, TOutput output)
+    {
+        Surface.evaluateDebug<TOutput>(debugMode, input, surface, bary, triangle, output);
+    }
+};

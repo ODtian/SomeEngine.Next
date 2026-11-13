@@ -3,8 +3,7 @@ struct FullscreenVSOut
     float4 Position : SV_POSITION;
 };
 
-[shader("vertex")]
-FullscreenVSOut VSMain(uint vertexId : SV_VertexID)
+FullscreenVSOut MakeFullscreenVertex(uint vertexId : SV_VertexID)
 {
     float2 positions[3] =
     {

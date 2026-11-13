@@ -1,9 +1,9 @@
 #ifndef CLUSTER_BVH_CULL_COMMON_SLANG
 #define CLUSTER_BVH_CULL_COMMON_SLANG
 
-#include "cluster_structures.slang"
+__exported import cluster_structures;
 #include "cluster_instance_properties.slang"
-#include "cluster_view.slang"
+__exported import cluster_view;
 
 float ClusterLocalExpansionForWorldRadius(
     RenderInstanceTransform transform,
@@ -168,7 +168,7 @@ bool ProjectWorldAabbForView(
 {
     if (view.CullingProjectionIndex == 0u)
         return ProjectWorldAabb(worldMin, worldMax, view, projectedBounds);
-    uint2 projection = uint2(view.TargetPolicy, view.CullingProjectionIndex);
+    uint2 projection = uint2(0u, view.CullingProjectionIndex);
     if (any(previous.View != projection))
     {
         previous.Outside = ProjectWorldAabb(worldMin, worldMax, view, previous.Bounds);

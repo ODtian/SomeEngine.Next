@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace SomeEngine.RenderGraph;
 
-internal sealed partial class FrameExecutor
+internal sealed partial class FrameRecording
 {
     internal Buffer GetBuffer(int pass, GraphBufferId id)
     {

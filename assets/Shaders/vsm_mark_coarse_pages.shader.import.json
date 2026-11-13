@@ -1,44 +1,49 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 28,
-  "input_hash": "d50a14364e027b97150be7b17889a946f106f72ce2fb80078adeb53b91fff11a",
+  "importer_version": 36,
+  "input_hash": "7f196d83e48d4d818e14a74a22297259eecfd0cbfcfb72c47ab0cd4a33df465c",
   "inputs": [
     {
-      "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
-    },
-    {
       "relative_path": "assets/Shaders/vsm_mark_coarse_pages.shader",
-      "content_hash": "6a91c958103456ed000e848a0adc00f2c5a2fe82837250fc32396b1b31ca5265"
+      "content_hash": "b5c03129a3de8dcc45be94a3abacf5500ea067423a7d7c2225e2773432f38dad"
     },
     {
       "relative_path": "assets/Shaders/vsm_mark_coarse_pages.slang",
-      "content_hash": "caf78ad9a43fcf7221bb479fb327350441dcf31f2b0766aa776a95497c7e4850"
-    },
-    {
-      "relative_path": "assets/Shaders/vsm_page_request_common.slang",
-      "content_hash": "bed989bcd20d3a5e02285d1956a51a384a8a7900fc9e8d9214f078fa6e95e14a"
+      "content_hash": "454beffa3ec2cee8d8322542238de5f245e65480303063d3be4bd1c570806f7d"
     },
     {
       "relative_path": "assets/Shaders/vsm_sampling.slang",
-      "content_hash": "3436134d8cc5fdaad6fbb862f1e15ca6c7bec3e15fbaff54a4937e7ab0250c46"
-    },
-    {
-      "relative_path": "assets/Shaders/wave_aggregation.slang",
-      "content_hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
+      "content_hash": "94b4da4ac08573558a5c38363d2c7032355e1edd4883443a6aa1e72b55880c5d"
     }
   ],
   "reported_inputs": [],
+  "asset_inputs": [
+    "53bc559c-25c3-4d8f-aace-89503831a49b",
+    "5468582d-af2a-4bc7-a38a-33a3e848f2bd",
+    "7ff316f2-39f7-47ca-99a2-b6c880cc2149",
+    "f583307c-e0ea-4605-babd-f3983abdcdae",
+    "34267efa-d4fd-4cad-a79e-c55ca9a8c646",
+    "21b2035e-e34d-48f0-bdec-86db0fce6993",
+    "788338a0-efdd-4b26-96b1-ac638e7503e2"
+  ],
   "outputs": [
     {
       "asset_guid": "72823443-a8cb-5b69-998b-497eef6660ae",
       "sub_asset_key": "",
-      "input_hash": "d50a14364e027b97150be7b17889a946f106f72ce2fb80078adeb53b91fff11a",
+      "input_hash": "7f196d83e48d4d818e14a74a22297259eecfd0cbfcfb72c47ab0cd4a33df465c",
       "dependencies": [],
       "asset_path": "vsm_mark_coarse_pages.shader.asset",
-      "version": "10cc7b98-6ff9-9be1-9823-773f0e29f8f3",
-      "content_hash": "929C5DF40B6FD6A72D15448DAA249CDA8662175F65D8F44F4481CE98E01C7500",
-      "asset_dependencies": []
+      "version": "6473a5ce-4525-4cf7-e7ac-6102ed0d6b43",
+      "content_hash": "2D6BFB46DD55B4841BAA0BE8F7E4849829931480C7CAB94DCE244050CCC2F583",
+      "asset_dependencies": [
+        "21b2035e-e34d-48f0-bdec-86db0fce6993",
+        "34267efa-d4fd-4cad-a79e-c55ca9a8c646",
+        "53bc559c-25c3-4d8f-aace-89503831a49b",
+        "5468582d-af2a-4bc7-a38a-33a3e848f2bd",
+        "788338a0-efdd-4b26-96b1-ac638e7503e2",
+        "7ff316f2-39f7-47ca-99a2-b6c880cc2149",
+        "f583307c-e0ea-4605-babd-f3983abdcdae"
+      ]
     }
   ]
 }

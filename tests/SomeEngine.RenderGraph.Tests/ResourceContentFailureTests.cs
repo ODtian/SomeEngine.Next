@@ -18,7 +18,7 @@ public sealed class ResourceContentFailureTests
             GraphBufferId buffer = edit.CreateTransientBuffer(new BufferDesc(
                 64,
                 BufferUsages.CopySource | BufferUsages.CopyDestination));
-            _ = edit.DeclareCopyPass("discard contents", PassQueueSelection.Exact(support.GraphicsQueue),
+            _ = edit.DeclareCopyPass("discard contents", PassQueueSelection.OnQueue(support.GraphicsQueue),
                 (ref PassDefinition access) =>
                     _ = access.Write(
                         buffer,
@@ -27,7 +27,7 @@ public sealed class ResourceContentFailureTests
                         ResourceAccess.CopyDestination,
                         WriteCoverage.Complete,
                         ResourceContentState.Undefined));
-            _ = edit.DeclareCopyPass("read discarded contents", PassQueueSelection.Exact(support.GraphicsQueue),
+            _ = edit.DeclareCopyPass("read discarded contents", PassQueueSelection.OnQueue(support.GraphicsQueue),
                 (ref PassDefinition access) =>
                     _ = access.Read(
                         buffer,
@@ -62,11 +62,10 @@ public sealed class ResourceContentFailureTests
             GraphBufferId sourceId = edit.CreateTransientBuffer(new BufferDesc(
                 64,
                 BufferUsages.CopySource | BufferUsages.CopyDestination));
-            GraphBufferId destinationId = edit.RegisterExternalBuffer(destination,
-                [Endpoint(destination, support.GraphicsQueue, ResourceContentState.Undefined)]);
+            GraphBufferId destinationId = edit.RegisterExternalBuffer(destination);
             _ = edit.AddCopyPass<CopyState, byte>(
                 "invalid read direction",
-                PassQueueSelection.Exact(support.GraphicsQueue),
+                PassQueueSelection.OnQueue(support.GraphicsQueue),
                 new CopyState(sourceId, destinationId, 64),
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition access, ref CopyState state) =>

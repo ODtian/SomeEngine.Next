@@ -1,3 +1,6 @@
+__exported import vsm_types;
+__exported import vsm_addressing;
+
 #ifndef VSM_PREFILTER_COMMON_SLANG
 #define VSM_PREFILTER_COMMON_SLANG
 
@@ -34,6 +37,7 @@ bool ResolveVirtualShadowFilterPage(StructuredBuffer<VirtualShadowMapParameters>
     uint index = pageReferences[atlasPage];
     if (index >= entryCount) return false;
     viewIndex = VirtualShadowViewFromPageTableIndex(views, viewCount, index);
+    if (viewIndex >= viewCount) return false;
     view = views[viewIndex];
     uint mip;
     uint entry = pageTable[index];

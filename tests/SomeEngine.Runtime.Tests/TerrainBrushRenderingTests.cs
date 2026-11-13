@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using DefaultGame;
 using SomeEngine.Job;
 using SomeEngine.Resources;
@@ -20,7 +20,7 @@ public sealed class TerrainBrushRenderingTests(SceneContentFixture content)
         TerrainEdit edit = default;
         var application = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
             {
@@ -57,7 +57,7 @@ public sealed class TerrainBrushRenderingTests(SceneContentFixture content)
         TerrainEdit edit = default;
         var application = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
             {

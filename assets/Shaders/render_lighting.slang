@@ -27,13 +27,13 @@ struct ClusteredLightGridParameters
     uint TileCountY;
     float4 ZParams;
     uint DepthSliceCount;
-    uint MaxLightsPerCluster;
+    uint MaxLightsPerCell;
     uint DirectionalCount;
     uint NonDirectionalCount;
     uint ScreenWidth;
     uint ScreenHeight;
     uint CellCountPerView;
-    uint GroupsPerLight;
+    uint Padding;
 };
 
 uint ClusteredLightDepthSlice(

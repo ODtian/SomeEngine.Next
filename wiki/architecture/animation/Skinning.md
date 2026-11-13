@@ -93,7 +93,7 @@ inline 材质直接把该类型作为 `VertexEvaluate` 与 `RasterVertexEvaluate
 不同播放速率和逆绑定矩阵。缓存与 inline 通过同一公开应用入口渲染。
 
 `ApplicationScene.FrameMeasured` 接收完成后的 CPU 与 GPU 整帧时间；阶段类别由
-`ClusterPipelineSystem.DeformationTimeGroup`、`DeformationEvaluationTimeGroup` 和
+`ClusterGeometryPipeline.DeformationTimeGroup`、`DeformationEvaluationTimeGroup` 和
 `RasterTimeGroup` 给出。边界与采集方法见 [GPU Timing](../render-graph/GPU-Timing.md)。
 
 应用图像示例位于

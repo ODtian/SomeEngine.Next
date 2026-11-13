@@ -1,8 +1,8 @@
 #ifndef VERTEX_CONSUMER_CACHE_SLANG
 #define VERTEX_CONSUMER_CACHE_SLANG
 
-#include "vertex_evaluate_interfaces.slang"
-#include "wave_aggregation.slang"
+__exported import vertex_evaluate_interfaces;
+__exported import wave_aggregation;
 
 // Reuse the complete user-defined vertex in coherent cluster waves. The renderer
 // never enumerates its fields; the material evaluator owns cross-lane transport.

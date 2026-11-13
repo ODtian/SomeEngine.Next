@@ -1,4 +1,4 @@
-#include "cluster_structures.slang"
+__exported import cluster_structures;
 
 StructuredBuffer<DrawRequest> RequestBuffer;
 ByteAddressBuffer PageHeap;

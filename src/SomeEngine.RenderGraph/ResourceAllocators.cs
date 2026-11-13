@@ -81,7 +81,7 @@ internal sealed class PersistentResourceAllocator : IDisposable
             {
                 if (!next.Buffers.Contains(id)) continue;
                 GraphBuffer buffer = next.Buffers.GetMutable(id);
-                if (buffer.Ownership != RenderGraphResourceOwnership.GraphOwned ||
+                if (buffer.Source != RenderGraphResourceSource.GraphCreated ||
                     buffer.Lifetime != RenderGraphResourceLifetime.Persistent ||
                     buffer.PersistentResource is not null)
                     continue;
@@ -115,7 +115,7 @@ internal sealed class PersistentResourceAllocator : IDisposable
             {
                 if (!next.Textures.Contains(id)) continue;
                 GraphTexture texture = next.Textures.GetMutable(id);
-                if (texture.Ownership != RenderGraphResourceOwnership.GraphOwned ||
+                if (texture.Source != RenderGraphResourceSource.GraphCreated ||
                     texture.Lifetime != RenderGraphResourceLifetime.Persistent ||
                     texture.PersistentResource is not null)
                     continue;
@@ -640,7 +640,7 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
         return compacted;
     }
 
-    internal void UpdateLifetime(GraphIdentity identity, int[] begin, int[] end, Queue firstQueue, Queue lastQueue)
+    internal void UpdateLifetime(GraphIdentity identity, long[] begin, long[] end, Queue firstQueue, Queue lastQueue)
     {
         if (!_allocations.TryGetValue(identity, out TransientAllocation? allocation)) return;
         TransientAllocationRequest old = allocation.Request;
@@ -941,16 +941,6 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
     private const BufferUsages UploadReadUsages = BufferUsages.Constant | BufferUsages.ShaderRead |
         BufferUsages.Vertex | BufferUsages.Index;
 
-    internal sealed class UploadPage
-    {
-        internal required Buffer Buffer;
-        internal required MappedBuffer Mapping;
-        internal required ulong CommittedBytes;
-        internal required BufferBoundaryState[] BoundaryStates;
-        internal GraphBufferId GraphBuffer;
-        internal ulong Used;
-    }
-
     private void ResetUploads()
     {
         foreach (var value in _bufferUploads.Values) value.Page.Used = 0;
@@ -1030,7 +1020,7 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
         foreach (UploadPage page in _uploadPages)
         {
             if (page.Buffer.Info.Usages != pageUsages) continue;
-            offset = AlignUp(page.Used, alignment);
+            offset = AlignUp(checked((ulong)page.Used), alignment);
             if (offset <= page.Buffer.Info.Size && size <= page.Buffer.Info.Size - offset)
             {
                 target = page;
@@ -1077,7 +1067,7 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
             }
             offset = 0;
         }
-        target.Used = checked(offset + size);
+        target.Used = checked((long)(offset + size));
         return (target, new BufferRange(offset, size));
     }
 
@@ -1085,9 +1075,9 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
     {
         if (_cleanupRequired) throw new InvalidOperationException("Transient storage cleanup must finish before execution.");
         foreach (UploadPage page in _uploadPages)
-            if (page.Used != 0) page.Mapping.Flush(new BufferRange(0, page.Used));
+            if (page.Used != 0) page.Mapping.Flush(new BufferRange(0, checked((ulong)page.Used)));
         foreach (var value in _bufferUploads.Values)
-            if (value.Page.Used != 0) value.Page.Mapping.Flush(new BufferRange(0, value.Page.Used));
+            if (value.Page.Used != 0) value.Page.Mapping.Flush(new BufferRange(0, checked((ulong)value.Page.Used)));
     }
 
     internal UploadPage ReserveBufferData(GraphIdentity id, in BufferDesc description)
@@ -1121,7 +1111,7 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
                 throw;
             }
         }
-        stored.Page.Used = description.Size;
+        stored.Page.Used = checked((long)description.Size);
         return stored.Page;
     }
 
@@ -1160,7 +1150,7 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
 }
 
 internal readonly record struct TransientAllocationRequest(GraphIdentity Identity, MemoryRequirements Requirements,
-    MemoryType MemoryType, ResourceNodePlacement NodePlacement, int[] Begin, int[] End, Queue FirstQueue, Queue LastQueue);
+    MemoryType MemoryType, ResourceNodePlacement NodePlacement, long[] Begin, long[] End, Queue FirstQueue, Queue LastQueue);
 
 internal sealed class TransientAllocation
 {
@@ -1282,7 +1272,7 @@ internal sealed class TransientHeapPage
         }
     }
 
-    internal static bool Before(int[] end, int[] begin)
+    internal static bool Before(long[] end, long[] begin)
     {
         if (end.Length != begin.Length) return false;
         for (int lane = 0; lane < end.Length; lane++) if (end[lane] > begin[lane]) return false;

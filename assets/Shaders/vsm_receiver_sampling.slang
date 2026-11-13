@@ -3,9 +3,9 @@
 
 #include "vsm_material.slang"
 #include "vsm_soft_sampling.slang"
-#include "cluster_view.slang"
-#include "render_lighting.slang"
-#include "surface_receiver.slang"
+__exported import cluster_view;
+__exported import render_lighting;
+__exported import surface_receiver;
 
 struct VirtualShadowProjectionReceiver
 {
@@ -74,13 +74,10 @@ float CalculateVirtualShadowScreenRayStart(uint3 pixel, VirtualShadowProjectionR
 }
 
 #if !defined(VSM_PROJECT_DIRECTIONAL_LIGHTS) || VSM_PROJECT_DIRECTIONAL_LIGHTS
-float SampleVirtualShadowDirectionalReceiver(uint3 pixel, uint light, GPULight source,
-    VirtualShadowProjectionReceiver receiver, uint2 screenSize, ClusterViewUniforms view,
-    Texture2DArray<float> depthImage)
+float SampleVirtualShadowDirectionalViewReceiver(uint3 pixel, uint firstView, uint levels,
+    uint firstPersonView, GPULight source, VirtualShadowProjectionReceiver receiver,
+    uint2 screenSize, ClusterViewUniforms view, Texture2DArray<float> depthImage)
 {
-    if (!receiver.Valid || light >= VirtualShadowSampling.DirectionalLightCount) return 1.0;
-    uint firstView = light * VirtualShadowSampling.DirectionalClipmapLevels;
-    uint levels = min(VirtualShadowSampling.DirectionalClipmapLevels, VirtualShadowSampling.ViewCount - firstView);
     SurfaceReceiver surface = (SurfaceReceiver)0;
     surface.Flags = receiver.Flags;
     surface.Depth = 0.0;
@@ -93,9 +90,6 @@ float SampleVirtualShadowDirectionalReceiver(uint3 pixel, uint light, GPULight s
     float rayStartDistance = CalculateVirtualShadowScreenRayStart(pixel, receiver, shadowPosition, -source.Direction,
         screenSize, view, depthImage);
     bool firstPerson = (receiver.Flags & SURFACE_RECEIVER_FIRST_PERSON) != 0u;
-    uint firstPersonView = VirtualShadowSampling.FirstPersonViewOffset < VirtualShadowSampling.ViewCount
-        ? VirtualShadowSampling.FirstPersonViewOffset + light * VirtualShadowViews[VirtualShadowSampling.FirstPersonViewOffset].ClipmapLevelCount
-        : 0xffffffffu;
     if (VirtualShadowSampling.DirectionalRays.RayCount != 0u)
     {
         VirtualShadowPrefilterResult distant = SampleDirectionalVirtualShadowPrefiltered(
@@ -116,6 +110,20 @@ float SampleVirtualShadowDirectionalReceiver(uint3 pixel, uint light, GPULight s
         firstPerson, firstPersonView, rayStartDistance);
     return result.Visibility;
 }
+
+float SampleVirtualShadowDirectionalReceiver(uint3 pixel, uint light, GPULight source,
+    VirtualShadowProjectionReceiver receiver, uint2 screenSize, ClusterViewUniforms view,
+    Texture2DArray<float> depthImage)
+{
+    if (!receiver.Valid || light >= VirtualShadowSampling.DirectionalLightCount) return 1.0;
+    uint firstView = light * VirtualShadowSampling.DirectionalClipmapLevels;
+    uint levels = min(VirtualShadowSampling.DirectionalClipmapLevels, VirtualShadowSampling.ViewCount - firstView);
+    uint firstPersonView = VirtualShadowSampling.FirstPersonViewOffset < VirtualShadowSampling.ViewCount
+        ? VirtualShadowSampling.FirstPersonViewOffset + light * VirtualShadowViews[VirtualShadowSampling.FirstPersonViewOffset].ClipmapLevelCount
+        : 0xffffffffu;
+    return SampleVirtualShadowDirectionalViewReceiver(pixel, firstView, levels, firstPersonView,
+        source, receiver, screenSize, view, depthImage);
+}
 #endif
 
 #if !defined(VSM_PROJECT_DIRECTIONAL_LIGHTS) || !VSM_PROJECT_DIRECTIONAL_LIGHTS
@@ -130,7 +138,7 @@ uint VirtualShadowLocalLightIndex(uint sourceLight)
     return 0xffffffffu;
 }
 
-float SampleVirtualShadowLocalReceiver(uint3 pixel, uint light, GPULight source,
+float SampleVirtualShadowLocalViewReceiver(uint3 pixel, uint firstView, bool spot, GPULight source,
     VirtualShadowProjectionReceiver receiver, uint2 screenSize, ClusterViewUniforms cameraView,
     Texture2DArray<float> depthImage)
 {
@@ -138,11 +146,8 @@ float SampleVirtualShadowLocalReceiver(uint3 pixel, uint light, GPULight source,
     float distanceSquared = dot(towardLight, towardLight);
     if (source.Range <= 0.0 || distanceSquared >= source.Range * source.Range)
         return 1.0;
-    uint points = VirtualShadowSampling.PointLightCount;
-    if (light >= points && dot(source.Direction, source.Direction) > 1e-8 && source.OuterConeCos > 0.0 &&
+    if (spot && dot(source.Direction, source.Direction) > 1e-8 && source.OuterConeCos > 0.0 &&
         dot(-towardLight * rsqrt(max(distanceSquared, 1e-8)), source.Direction) <= source.OuterConeCos) return 1.0;
-    uint firstView = light < points ? VirtualShadowSampling.PointViewOffset + light * 6u :
-        VirtualShadowSampling.SpotViewOffset + light - points;
     VirtualShadowMapParameters view = VirtualShadowViews[firstView];
     SurfaceReceiver surface = (SurfaceReceiver)0;
     surface.Flags = receiver.Flags;
@@ -164,6 +169,17 @@ float SampleVirtualShadowLocalReceiver(uint3 pixel, uint light, GPULight source,
         VirtualShadowDynamicResolutionBias[0], VirtualShadowSampling.BlockerSampleCount,
         VirtualShadowSampling.FilterSampleCount, VirtualShadowSampling.MaxFilterRadiusTexels,
         pixel.xy, VirtualShadowSampling.FrameIndex, rayStartDistance).Visibility;
+}
+
+float SampleVirtualShadowLocalReceiver(uint3 pixel, uint light, GPULight source,
+    VirtualShadowProjectionReceiver receiver, uint2 screenSize, ClusterViewUniforms cameraView,
+    Texture2DArray<float> depthImage)
+{
+    uint points = VirtualShadowSampling.PointLightCount;
+    uint firstView = light < points ? VirtualShadowSampling.PointViewOffset + light * 6u :
+        VirtualShadowSampling.SpotViewOffset + light - points;
+    return SampleVirtualShadowLocalViewReceiver(pixel, firstView, light >= points, source,
+        receiver, screenSize, cameraView, depthImage);
 }
 
 

@@ -86,7 +86,7 @@ public readonly struct GraphParameterResourceBinding
     }
 
     internal static GraphParameterResourceBinding BeginBlock(
-        VariableLayoutReflection layout, ReadOnlySpan<byte> ordinaryData)
+        VariableLayoutReflection layout, scoped ReadOnlySpan<byte> ordinaryData)
     {
         DevelopmentCheck.Require(layout != VariableLayoutReflection.Null, "The parameter layout cannot be null.");
         return new(ResourceBindingType.None, default, default, null, default,

@@ -1,4 +1,4 @@
-using SomeEngine.ECS.Queries;
+﻿using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Lighting;
@@ -31,7 +31,7 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
     }
 
     public void OnCreate(ref RenderFrameSystemContext context) =>
-        _viewQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>());
+        _viewQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>().Optional<RenderViewTarget>(QueryAccess.Read));
 
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
@@ -41,7 +41,7 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
         context.World.ExecuteQuery(
             _viewQuery,
             ref collector,
-            static (QueryCursor cursor, ref ViewCollector collector) => collector.Collect(cursor));
+            static (QueryCursor rows, ref ViewCollector collector) => collector.Collect(rows));
         if (_collector.Count == 0 || _collector.Count > _views.Length)
         {
             throw new InvalidOperationException(
@@ -72,10 +72,11 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
 
         internal int Count => _values.Count;
 
-        internal void Collect(QueryCursor cursor)
+        internal void Collect(QueryCursor rows)
         {
-            foreach (QueryRow row in cursor.Rows)
+            foreach (QueryRow row in rows.Rows)
             {
+                if (row.TryRead<RenderViewTarget>(out var target) && target.Kind != ViewTargetKind.Screen) continue;
                 if (_values.Count == _values.Capacity)
                 {
                     throw new InvalidOperationException(

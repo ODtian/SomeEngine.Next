@@ -2,6 +2,9 @@ namespace SomeEngine.Graphics;
 
 internal static class Timeouts
 {
+    internal static int GetMilliseconds(TimeSpan timeout) =>
+        timeout == Timeout.InfiniteTimeSpan ? Timeout.Infinite : (int)timeout.TotalMilliseconds;
+
     internal static int ToMilliseconds(TimeSpan timeout, string parameterName)
     {
         if (timeout == Timeout.InfiniteTimeSpan)

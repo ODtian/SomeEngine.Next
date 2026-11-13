@@ -1,4 +1,4 @@
-using SomeEngine.Resources;
+﻿using SomeEngine.Resources;
 using SomeEngine.Runtime;
 #if SOMEENGINE_DEVELOPMENT
 using DefaultGame.Content;
@@ -26,15 +26,21 @@ public static class SampleApplication
                 Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../..")));
             return 0;
         }
+        if (args is ["reimport-scene", var projectRoot])
+        {
+            await ImportedSceneBuild.ReimportAsync(projectRoot,
+                Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../..")));
+            return 0;
+        }
         if (args is ["prepare-materials"] || AssetCommands.Matches(args))
         {
             AssetProject project = AssetProjects.Create(ProjectPaths.Root,
                 [ProjectPaths.EngineShaders],
                 SampleAssetCapabilities.AddAssetCapabilities(new ServiceCollection()),
-                SampleAssetCapabilities.BuildVersion);
+                SampleAssetCapabilities.BuildVersion, shaderTargets: [SlangShaderSharp.SlangCompileTarget.Dxil]);
             if (args is ["prepare-materials"])
             {
-                await SampleMaterials.BuildAsync(project, CancellationToken.None);
+                await SampleMaterials.BuildAsync(project, Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../..")), CancellationToken.None);
                 return 0;
             }
             return await AssetCommands.RunAsync(project, args, Console.Out);
@@ -48,7 +54,7 @@ public static class SampleApplication
             example.SetGrid(32, new(2, 2));
             var scene = new ApplicationScene(ProjectPaths.Root)
             {
-                Options = RuntimeStartupOptions.Parse(args),
+                Options = ApplicationOptions.Parse(args),
                 UpdateFrame = frame =>
                 {
                     if (frame.Index == 0)
@@ -63,7 +69,7 @@ public static class SampleApplication
             return await Application.RunAsync(args, application: scene);
         }
 #endif
-        RuntimeStartupOptions startupOptions = RuntimeStartupOptions.Parse(args);
+        ApplicationOptions startupOptions = ApplicationOptions.Parse(args);
         string? clusterEffect = args.FirstOrDefault(static value => value.StartsWith("--cluster-effect=", StringComparison.Ordinal))
             ?["--cluster-effect=".Length..] ?? (args.Contains("--cluster-oit", StringComparer.Ordinal) ? "glass" : null);
         ClusterBlendAssets? clusterAssets = clusterEffect is null ? null
@@ -82,10 +88,17 @@ public static class SampleApplication
             {
                 ["Effect"] = clusterScene.Effect,
                 ["Workload"] = clusterScene.Workload,
-                ["Method"] = "Cluster",
-                ["Candidates"] = startupOptions.BlendIndex.ToString(),
+                ["Method"] = "Layers",
             },
         };
+        if (clusterScene is not null)
+        {
+            Func<ApplicationRendering, IEnumerable<IApplicationFrameFeature>> measure = platform.Application.CreateFrameFeatures!;
+            platform.Application.CreateFrameFeatures = rendering =>
+            {
+                return [clusterScene.CreateLayerFeature(rendering.Layers!), .. measure(rendering)];
+            };
+        }
         return await Application.RunAsync<SampleSceneMaterials>(args, static (material, seconds) =>
         {
             float roughness = 0.5f + MathF.Sin(seconds) * 0.2f;

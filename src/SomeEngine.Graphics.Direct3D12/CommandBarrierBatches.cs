@@ -15,7 +15,8 @@ internal sealed unsafe partial class D3D12Backend
         if (barriers.IsEmpty)
             return;
 
-        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12CommandContext command = ((D3D12CommandContext)context);
+        command.BeginPublicCall();
         if (!command.EnhancedBarriers || !TryResolveBatchCounts(
                 barriers,
                 out int bufferCount,
@@ -48,7 +49,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         int resourceCount = checked(barriers.BufferBarriers.Length + barriers.TextureBarriers.Length +
             barriers.QueueAcquires.Length + barriers.QueueReleases.Length);
-        command.PrepareCaptures(resourceCount, 0, resourceCount);
+
         command.PrepareSwapchainUses(textureCount);
         GlobalBarrier[]? rentedGlobals = null;
         NativeBufferBarrier[]? rentedBuffers = null;
@@ -144,7 +145,6 @@ internal sealed unsafe partial class D3D12Backend
         foreach (ref readonly BufferBarrier barrier in barriers)
         {
             D3D12Buffer buffer = RequireBuffer(barrier.Buffer);
-            command.Capture(buffer);
             if (BufferBarrierIsImplicit(barrier)) continue;
             ResolveBarrierSyncs(
                 barrier.SyncBefore,
@@ -187,7 +187,7 @@ internal sealed unsafe partial class D3D12Backend
 
             D3D12TextureResource texture = RequireTexture(barrier.Texture);
             _ = ExpandBarrierAspects(texture.Info, barrier.Range, aspects);
-            command.Capture(texture);
+            command.RecordSwapchainImage(texture);
             ResolveBarrierSyncs(
                 barrier.SyncBefore,
                 barrier.SyncAfter,
@@ -227,7 +227,7 @@ internal sealed unsafe partial class D3D12Backend
         ref int count)
     {
         D3D12TextureResource texture = RequireTexture(barrier.Texture);
-        command.Capture(texture);
+        command.RecordSwapchainImage(texture);
         ResolveBarrierSyncs(
             barrier.SyncBefore,
             barrier.SyncAfter,
@@ -284,20 +284,13 @@ internal sealed unsafe partial class D3D12Backend
         {
             if (barrier.Resource is Buffer publicBuffer)
             {
-                command.Capture(RequireBuffer(publicBuffer));
                 continue;
             }
 
             D3D12TextureResource texture = RequireTexture((Texture)barrier.Resource);
-            TextureSubresourceRange range = barrier.TextureRange ??
-                throw new ArgumentException(
-                    "A Texture acquire requires a subresource range.",
-                    nameof(barriers));
-            TextureLayout layout = barrier.Layout ??
-                throw new ArgumentException(
-                    "A Texture acquire requires a layout.",
-                    nameof(barriers));
-            command.Capture(texture);
+            TextureSubresourceRange range = barrier.TextureRange!.Value;
+            TextureLayout layout = barrier.Layout!.Value;
+            command.RecordSwapchainImage(texture);
             textureCount = AppendEnhancedTextureBarriers(
                 command,
                 texture,
@@ -325,20 +318,13 @@ internal sealed unsafe partial class D3D12Backend
         {
             if (barrier.Resource is Buffer publicBuffer)
             {
-                command.Capture(RequireBuffer(publicBuffer));
                 continue;
             }
 
             D3D12TextureResource texture = RequireTexture((Texture)barrier.Resource);
-            TextureSubresourceRange range = barrier.TextureRange ??
-                throw new ArgumentException(
-                    "A Texture release requires a subresource range.",
-                    nameof(barriers));
-            TextureLayout layout = barrier.Layout ??
-                throw new ArgumentException(
-                    "A Texture release requires a layout.",
-                    nameof(barriers));
-            command.Capture(texture);
+            TextureSubresourceRange range = barrier.TextureRange!.Value;
+            TextureLayout layout = barrier.Layout!.Value;
+            command.RecordSwapchainImage(texture);
             textureCount = AppendEnhancedTextureBarriers(
                 command,
                 texture,
@@ -395,7 +381,7 @@ internal sealed unsafe partial class D3D12Backend
         }
         if (groupCount == 0) return;
         D3D12CommandListFastCalls.Barrier(
-            command.List,
+            command, command.List,
             checked((uint)groupCount),
             groups);
     }
@@ -450,7 +436,6 @@ internal sealed unsafe partial class D3D12Backend
         if (range.Aspects == TextureAspects.Color &&
             !FormatMappings.IsDepthStencil(texture.Info.Format))
         {
-            ValidateTextureBarrierRange(texture.Info, range);
             destination[destinationIndex++] = new NativeTextureBarrier(
                 syncBefore,
                 syncAfter,
@@ -487,25 +472,11 @@ internal sealed unsafe partial class D3D12Backend
         return destinationIndex;
     }
 
-    private static void ValidateTextureBarrierRange(
-        in TextureInfo info,
-        in TextureSubresourceRange range)
-    {
-        if (range.MipLevelCount == 0 ||
-            range.FirstMipLevel >= info.MipLevelCount ||
-            range.MipLevelCount > info.MipLevelCount - range.FirstMipLevel ||
-            range.ArrayLayerCount == 0 ||
-            range.FirstArrayLayer >= info.ArrayLayerCount ||
-            range.ArrayLayerCount > info.ArrayLayerCount - range.FirstArrayLayer)
-        {
-            throw new ArgumentOutOfRangeException(nameof(range));
-        }
-    }
-
     private void EncodeBarrierBatchIndividually(
         CommandContext context,
         in BarrierBatch barriers)
     {
+        ((D3D12CommandContext)context).BeginPublicCall();
         foreach (ref readonly MemoryBarrier barrier in barriers.MemoryBarriers)
             Barrier(context, barrier);
         foreach (ref readonly QueueAcquire barrier in barriers.QueueAcquires)

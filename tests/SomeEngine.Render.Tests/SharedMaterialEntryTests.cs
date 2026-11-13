@@ -19,7 +19,7 @@ public sealed class SharedMaterialEntryTests(RenderTestDevice graphics) : IClass
     public async Task SharedStandardMaterialFeedsBothPipelineEntriesAfterExtraction()
     {
         await using var content = await SharedMaterialContent.CreateAsync();
-        Shader shader = await ShaderAsset.GetAsync(content.Assets, content.Shader, content.Shaders, content.GlobalSession, content.Settings);
+        Shader shader = await content.Shaders.GetAsync(content.Assets, content.Shader);
         StandardMaterial material = await content.Material.CreateAsync<StandardMaterial>(content.Assets,
             new Dictionary<AssetId<ShaderAsset>, Shader> { [content.Shader] = shader },
             new Dictionary<AssetId<TextureAsset>, Texture>());
@@ -50,7 +50,7 @@ public sealed class SharedMaterialEntryTests(RenderTestDevice graphics) : IClass
         await using var content = await SharedMaterialContent.CreateAsync();
         using var output = new StringWriter();
         Assert.Equal(0, await AssetCommands.RunAsync(content.Project, ["build", content.ShaderPath], output));
-        Shader shader = await ShaderAsset.GetAsync(content.Assets, content.Shader, content.Shaders, content.GlobalSession, content.Settings);
+        Shader shader = await content.Shaders.GetAsync(content.Assets, content.Shader);
         StandardMaterial material = await content.Material.CreateAsync<StandardMaterial>(content.Assets,
             new Dictionary<AssetId<ShaderAsset>, Shader> { [content.Shader] = shader },
             new Dictionary<AssetId<TextureAsset>, Texture>());
@@ -72,7 +72,7 @@ public sealed class SharedMaterialEntryTests(RenderTestDevice graphics) : IClass
         extraction.Extract(game);
         graphics.Apply(extraction, render);
 
-        Assert.Same(material.Shader, await ShaderAsset.GetAsync(content.Assets, content.Shader, content.Shaders, content.GlobalSession, content.Settings));
+        Assert.Same(material.Shader, await content.Shaders.GetAsync(content.Assets, content.Shader));
         Assert.Equal(new float[] { .75f, 1 }, ExecuteEntries((StandardMaterial)render.ReadMaterial(material.MaterialId)));
     }
 
@@ -94,8 +94,8 @@ public sealed class SharedMaterialEntryTests(RenderTestDevice graphics) : IClass
         using BufferUav firstView = backend.CreateBufferUav(device, new(firstResult, BufferRange.Whole, StructureStride: 4));
         using BufferUav secondView = backend.CreateBufferUav(device, new(secondResult, BufferRange.Whole, StructureStride: 4));
         using Buffer readback = backend.CreateBuffer(device, new(8, BufferUsages.CopyDestination), MemoryType.Readback);
-        using CommandContext context = backend.CreateCommandContext(device, new(QueueType.Graphics, 0, InitialSlotCount: 1));
-        backend.Begin(context, new CommandRecordingDesc(16, 4, 16));
+        using CommandContext context = backend.CreateCommandContext(device, new(QueueType.Graphics, 0, 1));
+        backend.Begin(context, new CommandRecordingDesc(16, 4));
         foreach (Buffer result in new[] { firstResult, secondResult })
             backend.Barrier(context, new BufferBarrier(result, PipelineSync.None, PipelineSync.ComputeShading,
                 ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
@@ -166,8 +166,8 @@ internal sealed class SharedMaterialContent : IAsyncDisposable
     private AssetLoader? _assets;
     private IGlobalSession _slang = null!;
     private SessionDesc _settings;
-    public AssetLoader Assets => _assets ??= new(Project.CreateStorage());
-    public WeakValues<AssetResourceKey<ShaderAsset>, Shader> Shaders { get; } = new();
+    public AssetLoader Assets => _assets ??= EngineShaderContent.OpenFiles(Project.RootPath, Project.Manifest);
+    public ShaderLibrary Shaders { get; private set; } = null!;
     public IGlobalSession GlobalSession => _slang;
     public SessionDesc Settings => _settings;
     public MaterialAsset Material { get; } = new() { Name = "Shared business material" };
@@ -182,21 +182,26 @@ internal sealed class SharedMaterialContent : IAsyncDisposable
         {
             result.Project = new AssetProject(result._directory, []);
             IGlobalSession slang = SlangShaderImporter.GlobalSession;
-            SessionDesc settings = SlangShaderImporter.CreateSessionDescription(result.ShaderPath, SlangShaderImporter.CreateDefaultTargets(slang));
+            SessionDesc settings = SlangShaderImporter.CreateSessionDescription(result.ShaderPath, SlangShaderImporter.CreateTargets(slang, [SlangShaderSharp.SlangCompileTarget.Dxil, SlangShaderSharp.SlangCompileTarget.Spirv]));
             using var asset = new ShaderAsset { Name = "Shared Standard" };
-            using ShaderSourceBlock inputs = StandardMaterialInputs.Create();
+            DirectoryInfo directory = new(AppContext.BaseDirectory);
+            while (!File.Exists(Path.Combine(directory.FullName, "SomeEngine.slnx"))) directory = directory.Parent!;
+            string root = directory.FullName;
+            EngineShaderContent.SetContentDirectory(result.Project, root);
+            using var inputs = new ShaderSourceBlock
+            {
+                Dependencies = [new(EngineShaderContent.GetShaderId(root, "standard_material.shader"))],
+            };
+            result.Shaders = new ShaderLibrary(slang, settings);
+            using var sharedFiles = new SomeEngine.Tests.EngineShaderFiles();
+            await result.Shaders.GetAsync(sharedFiles.Files, inputs.Dependencies[0]);
             using var first = new FirstMaterialEntriesBlock { SourceNames = ["first_material.slang"] };
             using var second = new SecondMaterialEntriesBlock { SourceNames = ["second_material.slang"] };
-            slang.CreateSession(settings, out ISession session);
-            for (int index = 0; index < inputs.SourceNames.Count; index++)
-                session.LoadModuleFromIRBlob(Path.GetFileNameWithoutExtension(inputs.SourceNames[index]), inputs.SourceNames[index],
-                    Slang.CreateBlob((await inputs.ReadBytesAsync(ShaderInputBlock.SerializedSourceKey(index))).Span), out _);
-            first.SetSerializedSource(0, Serialize(session, "first_material", "FirstShade", "FirstResult", "values.Roughness"));
-            second.SetSerializedSource(0, Serialize(session, "second_material", "SecondShade", "SecondResult", "values.Roughness + values.BaseColorTint.x"));
+            await SetEntryAsync(result.Shaders, first, "first_material", "FirstShade", "FirstResult", "values.Roughness");
+            await SetEntryAsync(result.Shaders, second, "second_material", "SecondShade", "SecondResult", "values.Roughness + values.BaseColorTint.x");
             asset.SetBlock(inputs);
             asset.SetBlock(first);
             asset.SetBlock(second);
-            asset.SelectInputs<ShaderSourceBlock>();
             asset.SelectInputs<FirstMaterialEntriesBlock>();
             asset.SelectInputs<SecondMaterialEntriesBlock>();
             result.Project.RegisterAsset(await asset.SaveAsync(result.ShaderPath));
@@ -210,23 +215,26 @@ internal sealed class SharedMaterialContent : IAsyncDisposable
         catch { await result.DisposeAsync(); throw; }
     }
 
-    private static byte[] Serialize(ISession session, string sourceName, string entryName, string resultName, string value)
+    private static async Task SetEntryAsync(ShaderLibrary shaders, ShaderInputBlock inputs, string sourceName, string entryName, string resultName, string value)
     {
-        IModule source = session.LoadModuleFromSource(sourceName, sourceName + ".slang", Slang.CreateBlob(System.Text.Encoding.UTF8.GetBytes($$"""
+        Shader shader = await shaders.CreateAsync(sourceName, sourceName + ".slang", $$"""
             import standard_material;
             struct {{resultName}}Data { RWStructuredBuffer<float> Value; };
             ParameterBlock<{{resultName}}Data> {{resultName}};
             [shader("compute")]
             [numthreads(1, 1, 1)]
             void {{entryName}}(uniform StandardScalars values) { {{resultName}}.Value[0] = {{value}}; }
-            """)), out ISlangBlob? diagnostics)!;
-        Assert.True(source is not null, diagnostics?.AsString);
-        Assert.True(source!.Serialize(out ISlangBlob serialized).Succeeded);
-        return serialized.Buffer.ToArray();
+            """);
+        int index = shader.SlangSourceUnitCount - 1;
+        inputs.SourceNames = [shader.GetSlangSourceUnitName(index) + ".slang"];
+        Assert.True(shader.GetSlangSourceUnit(index).Serialize(out ISlangBlob serialized).Succeeded);
+        inputs.SetSerializedSource(0, serialized.Buffer);
+
     }
 
     public async ValueTask DisposeAsync()
     {
+        Shaders?.Dispose();
         Material.Dispose();
         try { if (_assets is not null) await _assets.DisposeAsync(); }
         finally { Directory.Delete(_directory, recursive: true); }

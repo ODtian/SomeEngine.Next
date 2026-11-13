@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
@@ -19,6 +19,26 @@ namespace SomeEngine.Render.Tests;
 public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClassFixture<RenderTestDevice>
 {
     private readonly TestAssets assets = new();
+    [Fact]
+    public void ReplacingTheSourceWorldCreatesNewRenderEntities()
+    {
+        using World first = new();
+        using World second = new();
+        using RenderWorld render = new();
+        using var extraction = new RenderExtractionSystems(render, new CustomExtractionSystem());
+        Entity firstSource = first.CreateEntity(new CustomExtractValue(1));
+        Entity secondSource = second.CreateEntity(new CustomExtractValue(2));
+        ExtractAndApply(extraction, first, render);
+        Entity previous = extraction.RequireMirror(firstSource);
+
+        extraction.ReplaceSource();
+        ExtractAndApply(extraction, second, render);
+        Entity current = extraction.RequireMirror(secondSource);
+
+        Assert.False(render.IsAlive(previous));
+        Assert.Equal(2, render.Read<CustomRenderValue>(current).Value);
+    }
+
     [Fact]
     public void SharedMaterialRemainsUntilBothGeometryExtractorsReleaseTheirEntities()
     {

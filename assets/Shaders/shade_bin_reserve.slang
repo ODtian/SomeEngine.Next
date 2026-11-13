@@ -1,5 +1,5 @@
 #include "shade_bin_common.slang"
-#include "resource_effects.slang"
+__exported import resource_effects;
 
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> BinCounts;

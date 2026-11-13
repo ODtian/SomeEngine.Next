@@ -17,12 +17,8 @@ internal sealed unsafe partial class D3D12Backend
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12Buffer buffer = RequireBuffer(desc.Buffer);
-        RequireSameDevice(nativeDevice, buffer, nameof(desc));
-        ValidateBufferView(buffer, desc.Range, BufferUsages.Constant, null, 0);
-        BufferRange range = desc.Range.Resolve(buffer.Info.Size);
-        if ((range.Offset & 255) != 0 || (range.Size & 255) != 0 || range.Size > 65_536)
-            throw new ArgumentException("A CBV range must be 256-byte aligned and at most 64 KiB.", nameof(desc));
-        DescriptorLease descriptor = nativeDevice
+
+        DescriptorAllocation descriptor = nativeDevice
             .GetResourceDescriptors(
                 nativeDevice.ResolveResourceHomeNodeIndex(buffer.Info.CreationNodeMask))
             .Allocate();
@@ -46,14 +42,8 @@ internal sealed unsafe partial class D3D12Backend
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12Buffer buffer = RequireBuffer(desc.Buffer);
-        RequireSameDevice(nativeDevice, buffer, nameof(desc));
-        ValidateBufferView(
-            buffer,
-            desc.Range,
-            BufferUsages.ShaderRead,
-            desc.Format,
-            desc.StructureStride);
-        DescriptorLease descriptor = nativeDevice
+
+        DescriptorAllocation descriptor = nativeDevice
             .GetResourceDescriptors(
                 nativeDevice.ResolveResourceHomeNodeIndex(buffer.Info.CreationNodeMask))
             .Allocate();
@@ -77,15 +67,9 @@ internal sealed unsafe partial class D3D12Backend
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12Buffer buffer = RequireBuffer(desc.Buffer);
-        RequireSameDevice(nativeDevice, buffer, nameof(desc));
-        ValidateBufferView(
-            buffer,
-            desc.Range,
-            BufferUsages.ShaderWrite,
-            desc.Format,
-            desc.StructureStride);
+
         D3D12Buffer? counter = ResolveUavCounter(nativeDevice, desc);
-        DescriptorLease descriptor = nativeDevice
+        DescriptorAllocation descriptor = nativeDevice
             .GetResourceDescriptors(
                 nativeDevice.ResolveResourceHomeNodeIndex(buffer.Info.CreationNodeMask))
             .Allocate();
@@ -109,14 +93,8 @@ internal sealed unsafe partial class D3D12Backend
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12TextureResource texture = RequireTexture(desc.Texture);
-        RequireSameDevice(nativeDevice, texture.Owner, nameof(desc));
-        ValidateTextureView(
-            texture,
-            desc.Range,
-            desc.Format,
-            desc.Dimension,
-            TextureViewKind.ShaderResource);
-        DescriptorLease descriptor = nativeDevice
+
+        DescriptorAllocation descriptor = nativeDevice
             .GetResourceDescriptors(
                 nativeDevice.ResolveResourceHomeNodeIndex(texture.Info.CreationNodeMask))
             .Allocate();
@@ -140,14 +118,8 @@ internal sealed unsafe partial class D3D12Backend
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12TextureResource texture = RequireTexture(desc.Texture);
-        RequireSameDevice(nativeDevice, texture.Owner, nameof(desc));
-        ValidateTextureView(
-            texture,
-            desc.Range,
-            desc.Format,
-            desc.Dimension,
-            TextureViewKind.UnorderedAccess);
-        DescriptorLease descriptor = nativeDevice
+
+        DescriptorAllocation descriptor = nativeDevice
             .GetResourceDescriptors(
                 nativeDevice.ResolveResourceHomeNodeIndex(texture.Info.CreationNodeMask))
             .Allocate();
@@ -173,14 +145,8 @@ internal sealed unsafe partial class D3D12Backend
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12TextureResource texture = RequireTexture(desc.Texture);
-        RequireSameDevice(nativeDevice, texture.Owner, nameof(desc));
-        ValidateTextureView(
-            texture,
-            desc.Range,
-            desc.Format,
-            desc.Dimension,
-            TextureViewKind.ColorAttachment);
-        DescriptorLease descriptor = nativeDevice
+
+        DescriptorAllocation descriptor = nativeDevice
             .GetRenderTargetDescriptors(
                 nativeDevice.ResolveResourceHomeNodeIndex(texture.Info.CreationNodeMask))
             .Allocate();
@@ -206,14 +172,8 @@ internal sealed unsafe partial class D3D12Backend
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12TextureResource texture = RequireTexture(desc.Texture);
-        RequireSameDevice(nativeDevice, texture.Owner, nameof(desc));
-        ValidateTextureView(
-            texture,
-            desc.Range,
-            desc.Format,
-            desc.Dimension,
-            TextureViewKind.DepthStencil);
-        DescriptorLease descriptor = nativeDevice
+
+        DescriptorAllocation descriptor = nativeDevice
             .GetDepthStencilDescriptors(
                 nativeDevice.ResolveResourceHomeNodeIndex(texture.Info.CreationNodeMask))
             .Allocate();
@@ -236,8 +196,8 @@ internal sealed unsafe partial class D3D12Backend
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
-        ValidateSampler(desc);
-        DescriptorLease descriptor = nativeDevice.SamplerDescriptors.Allocate();
+
+        DescriptorAllocation descriptor = nativeDevice.SamplerDescriptors.Allocate();
         D3D12Sampler? result = null;
         try
         {
@@ -261,7 +221,7 @@ internal sealed unsafe partial class D3D12Backend
         DepthStencil,
     }
 
-    private static void ReleaseFailedView(GraphicsObject? view, DescriptorLease descriptor)
+    private static void ReleaseFailedView(GraphicsObject? view, DescriptorAllocation descriptor)
     {
         if (view is null)
             descriptor.Release();
@@ -269,319 +229,8 @@ internal sealed unsafe partial class D3D12Backend
             view.Dispose();
     }
 
-    private static void ValidateBufferView(
-        D3D12Buffer buffer,
-        in BufferRange requestedRange,
-        BufferUsages requiredUsage,
-        Format? elementFormat,
-        uint structureStride)
-    {
-        buffer.ThrowIfDisposed();
-        if ((buffer.Info.Usages & requiredUsage) == 0)
-            throw new ArgumentException($"The Buffer was not created for {requiredUsage} views.");
-        if (elementFormat.HasValue && structureStride != 0)
-            throw new ArgumentException("A Buffer view cannot be both typed and structured.");
-
-        BufferRange range = requestedRange.Resolve(buffer.Info.Size);
-        uint elementSize;
-        if (elementFormat is Format typed)
-        {
-            if (FormatMappings.IsDepthStencil(typed) ||
-                FormatMappings.IsBlockCompressed(typed) ||
-                FormatMappings.IsSrgb(typed))
-            {
-                throw new ArgumentException("The format is not a D3D12 typed Buffer format.");
-            }
-            FormatSupport support = buffer.Device.Capabilities.GetFormatSupport(typed);
-            FormatFeatures requiredFeatures = FormatFeatures.Buffer |
-                (requiredUsage == BufferUsages.ShaderWrite
-                    ? FormatFeatures.Storage | FormatFeatures.StorageStore
-                    : FormatFeatures.ShaderLoad);
-            RequireFormatFeatures(support, requiredFeatures, "typed Buffer view");
-            elementSize = FormatMappings.BytesPerElement(typed);
-        }
-        else if (structureStride != 0)
-        {
-            if ((structureStride & 3) != 0 || structureStride > 2_048)
-            {
-                throw new ArgumentOutOfRangeException(
-                    nameof(structureStride),
-                    "A structured Buffer stride must be a multiple of four and at most 2048 bytes.");
-            }
-            elementSize = structureStride;
-        }
-        else
-        {
-            elementSize = 4;
-        }
-
-        if (range.Offset % elementSize != 0 || range.Size % elementSize != 0)
-        {
-            throw new ArgumentException(
-                $"The Buffer view range is not element-aligned: " +
-                $"buffer='{buffer.Label}', offset={range.Offset}, size={range.Size}, " +
-                $"elementSize={elementSize}.");
-        }
-        if (requiredUsage != BufferUsages.Constant && elementFormat is null && structureStride == 0 && (range.Offset & 15) != 0)
-            throw new ArgumentException("A raw Buffer view offset must be 16-byte aligned.", nameof(requestedRange));
-        if (range.Size / elementSize > uint.MaxValue)
-            throw new ArgumentOutOfRangeException(nameof(requestedRange), "The Buffer view has too many elements.");
-    }
-
-    private D3D12Buffer? ResolveUavCounter(
-        D3D12Device device,
-        in BufferUavDesc desc)
-    {
-        if (desc.CounterBuffer is null)
-        {
-            if (desc.CounterOffset != 0)
-                throw new ArgumentException("A null UAV counter Buffer requires CounterOffset=0.", nameof(desc));
-            return null;
-        }
-        if (desc.Format.HasValue || desc.StructureStride == 0)
-            throw new ArgumentException("Only a structured UAV may name a counter Buffer.", nameof(desc));
-
-        D3D12Buffer counter = RequireBuffer(desc.CounterBuffer);
-        if (!ReferenceEquals(counter.Device, device))
-            throw new ArgumentException("The UAV counter Buffer belongs to another Device.", nameof(desc));
-        counter.ThrowIfDisposed();
-        if ((counter.Info.Usages & BufferUsages.ShaderWrite) == 0)
-            throw new ArgumentException("The UAV counter Buffer requires ShaderWrite usage.", nameof(desc));
-        if ((desc.CounterOffset & 4_095) != 0 ||
-            desc.CounterOffset > counter.Info.Size ||
-            sizeof(uint) > counter.Info.Size - desc.CounterOffset)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(desc),
-                "The UAV counter offset must be 4 KiB aligned and contain four bytes.");
-        }
-        return counter;
-    }
-
-    private static void ValidateTextureView(
-        D3D12TextureResource texture,
-        in TextureSubresourceRange range,
-        Format format,
-        TextureViewDimension dimension,
-        TextureViewKind kind)
-    {
-        texture.Owner.ThrowIfDisposed();
-        TextureInfo info = texture.Info;
-        ValidateTextureViewUsageAndFormat(info, format, kind);
-        ValidateTextureViewMipAndAspects(info, range, kind);
-        ValidateTextureViewDimensionAndLayers(info, range, dimension, kind);
-        ValidateTextureViewFormatSupport(texture, info, format, kind);
-    }
-
-    private static void ValidateTextureViewUsageAndFormat(
-        in TextureInfo info,
-        Format format,
-        TextureViewKind kind)
-    {
-        if ((info.Usages & TextureUsages.SamplerFeedback) != 0)
-        {
-            throw new ArgumentException(
-                "Sampler-feedback Textures require CreateSamplerFeedbackUav and cannot be used with ordinary Texture views.");
-        }
-        TextureUsages requiredUsage = kind switch
-        {
-            TextureViewKind.ShaderResource => TextureUsages.Sampled,
-            TextureViewKind.UnorderedAccess => TextureUsages.Storage,
-            TextureViewKind.ColorAttachment => TextureUsages.ColorAttachment,
-            TextureViewKind.DepthStencil => TextureUsages.DepthStencilAttachment,
-            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
-        };
-        if ((info.Usages & requiredUsage) == 0)
-            throw new ArgumentException($"The Texture was not created for {requiredUsage} views.");
-
-        bool declared = format == info.Format;
-        foreach (Format permitted in info.PermittedViewFormats)
-            declared |= permitted == format;
-        if (!declared)
-            throw new ArgumentException("The view format was not declared when the Texture was created.");
-
-        bool depthStencil = FormatMappings.IsDepthStencil(format);
-        if (kind == TextureViewKind.DepthStencil)
-        {
-            if (!depthStencil)
-                throw new ArgumentException("A DSV requires a depth/stencil format.");
-        }
-        else if (kind is TextureViewKind.UnorderedAccess or TextureViewKind.ColorAttachment)
-        {
-            if (depthStencil || FormatMappings.IsBlockCompressed(format))
-                throw new ArgumentException("The format is incompatible with this writable view.");
-            if (kind == TextureViewKind.UnorderedAccess && FormatMappings.IsSrgb(format))
-                throw new ArgumentException("D3D12 does not support sRGB UAV formats.");
-        }
-    }
-
-    private static void ValidateTextureViewMipAndAspects(
-        in TextureInfo info,
-        in TextureSubresourceRange range,
-        TextureViewKind kind)
-    {
-        if (range.MipLevelCount == 0 ||
-            range.FirstMipLevel >= info.MipLevelCount ||
-            range.MipLevelCount > info.MipLevelCount - range.FirstMipLevel)
-            throw new ArgumentOutOfRangeException(nameof(range), "The Texture view mip range is invalid.");
-        if (kind != TextureViewKind.ShaderResource && range.MipLevelCount != 1)
-            throw new ArgumentException("A writable or attachment view selects exactly one mip level.");
-
-        if (kind == TextureViewKind.DepthStencil)
-        {
-            TextureAspects expected = FormatMappings.PlaneCount(info.Format) == 1
-                ? TextureAspects.Depth
-                : TextureAspects.Depth | TextureAspects.Stencil;
-            TextureAspects planeExpected = FormatMappings.PlaneCount(info.Format) == 1
-                ? TextureAspects.Plane0
-                : TextureAspects.Plane0 | TextureAspects.Plane1;
-            if (range.Aspects != expected && range.Aspects != planeExpected)
-                throw new ArgumentException("A DSV selects the complete depth/stencil format.");
-        }
-        else
-        {
-            _ = FormatMappings.PlaneIndex(info.Format, range.Aspects);
-        }
-    }
-
-    private static void ValidateTextureViewDimensionAndLayers(
-        in TextureInfo info,
-        in TextureSubresourceRange range,
-        TextureViewDimension dimension,
-        TextureViewKind kind)
-    {
-        if (!IsCompatibleTextureViewDimension(info, dimension))
-            throw new ArgumentException("The view dimension is incompatible with the Texture.");
-        if (kind == TextureViewKind.UnorderedAccess && info.SampleCount != 1)
-            throw new NotSupportedException("Direct3D 12 does not support multisampled UAVs.");
-        if (kind == TextureViewKind.DepthStencil && info.Dimension == TextureDimension.Texture3D)
-            throw new NotSupportedException("Direct3D 12 does not support 3D depth/stencil views.");
-
-        ValidateTextureViewLayerRange(info, range, kind);
-        ValidateTextureViewLayerShape(info, range, dimension, kind);
-    }
-
-    private static bool IsCompatibleTextureViewDimension(
-        in TextureInfo info,
-        TextureViewDimension dimension) => info.Dimension switch
-        {
-            TextureDimension.Texture1D => dimension is
-                TextureViewDimension.Texture1D or TextureViewDimension.Texture1DArray,
-            TextureDimension.Texture2D when info.SampleCount == 1 => dimension is
-                TextureViewDimension.Texture2D or
-                TextureViewDimension.Texture2DArray or
-                TextureViewDimension.Cube or
-                TextureViewDimension.CubeArray,
-            TextureDimension.Texture2D => dimension is
-                TextureViewDimension.Texture2DMultisampled or
-                TextureViewDimension.Texture2DMultisampledArray,
-            TextureDimension.Texture3D => dimension == TextureViewDimension.Texture3D,
-            _ => false,
-        };
-
-    private static void ValidateTextureViewLayerRange(
-        in TextureInfo info,
-        in TextureSubresourceRange range,
-        TextureViewKind kind)
-    {
-        uint layerLimit = info.Dimension == TextureDimension.Texture3D &&
-            kind is TextureViewKind.UnorderedAccess or TextureViewKind.ColorAttachment
-                ? Math.Max(1u, info.Depth >> checked((int)range.FirstMipLevel))
-                : info.ArrayLayerCount;
-        if (range.ArrayLayerCount == 0 ||
-            range.FirstArrayLayer >= layerLimit ||
-            range.ArrayLayerCount > layerLimit - range.FirstArrayLayer)
-            throw new ArgumentOutOfRangeException(nameof(range), "The Texture view layer range is invalid.");
-    }
-
-    private static void ValidateTextureViewLayerShape(
-        in TextureInfo info,
-        in TextureSubresourceRange range,
-        TextureViewDimension dimension,
-        TextureViewKind kind)
-    {
-        bool arrayView = dimension is
-            TextureViewDimension.Texture1DArray or
-            TextureViewDimension.Texture2DArray or
-            TextureViewDimension.Texture2DMultisampledArray or
-            TextureViewDimension.Cube or
-            TextureViewDimension.CubeArray;
-        if (!arrayView && dimension != TextureViewDimension.Texture3D &&
-            (info.ArrayLayerCount != 1 || range.FirstArrayLayer != 0 || range.ArrayLayerCount != 1))
-            throw new ArgumentException("A non-array view requires a single-layer Texture.");
-        if (dimension == TextureViewDimension.Texture3D && kind == TextureViewKind.ShaderResource &&
-            (range.FirstArrayLayer != 0 || range.ArrayLayerCount != 1))
-            throw new ArgumentException("A 3D SRV covers the mip's complete depth.");
-        if (dimension == TextureViewDimension.Cube &&
-            (range.FirstArrayLayer % 6 != 0 || range.ArrayLayerCount != 6))
-            throw new ArgumentException("A Cube view selects exactly six aligned faces.");
-        if (dimension == TextureViewDimension.CubeArray &&
-            (range.FirstArrayLayer % 6 != 0 || range.ArrayLayerCount % 6 != 0))
-            throw new ArgumentException("A CubeArray view selects complete aligned cubes.");
-        if (info.SampleCount != 1 &&
-            (range.FirstMipLevel != 0 || range.MipLevelCount != 1))
-            throw new ArgumentException("A multisampled Texture view selects its only mip level.");
-    }
-
-    private static void ValidateTextureViewFormatSupport(
-        D3D12TextureResource texture,
-        in TextureInfo info,
-        Format format,
-        TextureViewKind kind)
-    {
-        FormatSupport formatSupport = texture.Owner.Device.Capabilities.GetFormatSupport(format);
-        FormatFeatures requiredFormatFeatures = kind switch
-        {
-            TextureViewKind.ShaderResource => FormatFeatures.ShaderLoad |
-                (info.SampleCount > 1 ? FormatFeatures.MultisampleLoad : FormatFeatures.None),
-            TextureViewKind.UnorderedAccess =>
-                FormatFeatures.Storage | FormatFeatures.StorageStore,
-            TextureViewKind.ColorAttachment => FormatFeatures.ColorAttachment |
-                (info.SampleCount > 1
-                    ? FormatFeatures.MultisampleColorAttachment
-                    : FormatFeatures.None),
-            TextureViewKind.DepthStencil => FormatFeatures.DepthStencilAttachment,
-            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
-        };
-        RequireFormatFeatures(formatSupport, requiredFormatFeatures, "Texture view");
-        if (!formatSupport.SupportsSampleCount(info.SampleCount))
-        {
-            throw new NotSupportedException(
-                $"Format {format} does not support {info.SampleCount}x samples for this view.");
-        }
-    }
-
-    private static void RequireFormatFeatures(
-        in FormatSupport support,
-        FormatFeatures required,
-        string operation)
-    {
-        if ((support.Features & required) != required)
-        {
-            throw new NotSupportedException(
-                $"Format {support.Format} does not provide the features required by {operation}: " +
-                $"{required}.");
-        }
-    }
-
-    private static void ValidateSampler(in SomeEngine.Graphics.SamplerDesc desc)
-    {
-        if (!Enum.IsDefined(desc.MinFilter) ||
-            !Enum.IsDefined(desc.MagFilter) ||
-            !Enum.IsDefined(desc.MipFilter) ||
-            !Enum.IsDefined(desc.AddressU) ||
-            !Enum.IsDefined(desc.AddressV) ||
-            !Enum.IsDefined(desc.AddressW) ||
-            desc.Comparison is CompareOperation comparison && !Enum.IsDefined(comparison))
-            throw new ArgumentOutOfRangeException(nameof(desc), "The Sampler contains an unknown enum value.");
-        if (desc.MaximumAnisotropy is < 1 or > 16)
-            throw new ArgumentOutOfRangeException(nameof(desc), "Sampler anisotropy must be in [1, 16].");
-        if (!float.IsFinite(desc.MipLodBias) ||
-            !float.IsFinite(desc.MinimumLod) ||
-            !float.IsFinite(desc.MaximumLod) ||
-            desc.MinimumLod > desc.MaximumLod)
-            throw new ArgumentException("The Sampler LOD range and bias must be finite and ordered.", nameof(desc));
-    }
+    private D3D12Buffer? ResolveUavCounter(D3D12Device device, in BufferUavDesc desc) =>
+        desc.CounterBuffer is null ? null : (D3D12Buffer)desc.CounterBuffer;
 
     private static void WriteBufferCbv(
         D3D12Device device,
@@ -589,7 +238,7 @@ internal sealed unsafe partial class D3D12Backend
         in BufferCbvDesc desc,
         CpuDescriptorHandle destination)
     {
-        BufferRange range = desc.Range.Resolve(buffer.Info.Size);
+        BufferRange range = desc.Range.Expand(buffer.Info.Size);
         ConstantBufferViewDesc native = new()
         {
             BufferLocation = ResourceTrace.GetGPUVirtualAddress(buffer.Native) + range.Offset,
@@ -604,7 +253,7 @@ internal sealed unsafe partial class D3D12Backend
         in BufferSrvDesc desc,
         CpuDescriptorHandle destination)
     {
-        BufferRange range = desc.Range.Resolve(buffer.Info.Size);
+        BufferRange range = desc.Range.Expand(buffer.Info.Size);
         GetBufferViewShape(
             range,
             desc.Format,
@@ -637,7 +286,7 @@ internal sealed unsafe partial class D3D12Backend
         in BufferUavDesc desc,
         CpuDescriptorHandle destination)
     {
-        BufferRange range = desc.Range.Resolve(buffer.Info.Size);
+        BufferRange range = desc.Range.Expand(buffer.Info.Size);
         GetBufferViewShape(
             range,
             desc.Format,
@@ -794,7 +443,7 @@ internal sealed unsafe partial class D3D12Backend
                 };
                 break;
             default:
-                throw new ArgumentOutOfRangeException(nameof(desc));
+                break;
         }
         DeviceResourceTrace.CreateShaderResourceView(
                 device.Native, texture.Native, &native, destination);
@@ -863,9 +512,9 @@ internal sealed unsafe partial class D3D12Backend
                 break;
             case TextureViewDimension.Texture2DMultisampled:
             case TextureViewDimension.Texture2DMultisampledArray:
-                throw new NotSupportedException("Direct3D 12 does not support multisampled UAVs.");
+                break;
             default:
-                throw new ArgumentOutOfRangeException(nameof(desc));
+                break;
         }
         DeviceResourceTrace.CreateUnorderedAccessView(device.Native, texture.Native, null, &native, destination);
     }
@@ -933,7 +582,7 @@ internal sealed unsafe partial class D3D12Backend
                 };
                 break;
             default:
-                throw new ArgumentOutOfRangeException(nameof(desc));
+                break;
         }
         DeviceResourceTrace.CreateRenderTargetView(device.Native, texture.Native, &native, destination);
     }
@@ -993,9 +642,9 @@ internal sealed unsafe partial class D3D12Backend
                 };
                 break;
             case TextureViewDimension.Texture3D:
-                throw new NotSupportedException("Direct3D 12 does not support 3D depth/stencil views.");
+                break;
             default:
-                throw new ArgumentOutOfRangeException(nameof(desc));
+                break;
         }
         DeviceResourceTrace.CreateDepthStencilView(device.Native, texture.Native, &native, destination);
     }
@@ -1037,7 +686,7 @@ internal sealed unsafe partial class D3D12Backend
         TextureViewDimension.Cube => SrvDimension.Texturecube,
         TextureViewDimension.CubeArray => SrvDimension.Texturecubearray,
         TextureViewDimension.Texture3D => SrvDimension.Texture3D,
-        _ => throw new ArgumentOutOfRangeException(nameof(dimension)),
+        _ => default,
     };
 
     private static UavDimension ToUavDimension(TextureViewDimension dimension) => dimension switch
@@ -1050,7 +699,7 @@ internal sealed unsafe partial class D3D12Backend
         TextureViewDimension.Texture3D => UavDimension.Texture3D,
         TextureViewDimension.Texture2DMultisampled => UavDimension.Texture2Dms,
         TextureViewDimension.Texture2DMultisampledArray => UavDimension.Texture2Dmsarray,
-        _ => throw new ArgumentOutOfRangeException(nameof(dimension)),
+        _ => default,
     };
 
     private static RtvDimension ToRtvDimension(TextureViewDimension dimension) => dimension switch
@@ -1063,7 +712,7 @@ internal sealed unsafe partial class D3D12Backend
         TextureViewDimension.Texture2DMultisampled => RtvDimension.Texture2Dms,
         TextureViewDimension.Texture2DMultisampledArray => RtvDimension.Texture2Dmsarray,
         TextureViewDimension.Texture3D => RtvDimension.Texture3D,
-        _ => throw new ArgumentOutOfRangeException(nameof(dimension)),
+        _ => default,
     };
 
     private static DsvDimension ToDsvDimension(TextureViewDimension dimension) => dimension switch
@@ -1075,9 +724,7 @@ internal sealed unsafe partial class D3D12Backend
             TextureViewDimension.CubeArray => DsvDimension.Texture2Darray,
         TextureViewDimension.Texture2DMultisampled => DsvDimension.Texture2Dms,
         TextureViewDimension.Texture2DMultisampledArray => DsvDimension.Texture2Dmsarray,
-        TextureViewDimension.Texture3D =>
-            throw new NotSupportedException("Direct3D 12 does not support 3D depth/stencil views."),
-        _ => throw new ArgumentOutOfRangeException(nameof(dimension)),
+        _ => default,
     };
 
     private static Filter ToFilter(in SomeEngine.Graphics.SamplerDesc desc)
@@ -1120,7 +767,7 @@ internal sealed unsafe partial class D3D12Backend
                 Filter.ComparisonMinMagLinearMipPoint,
             (FilterType.Linear, FilterType.Linear, FilterType.Linear, true) =>
                 Filter.ComparisonMinMagMipLinear,
-            _ => throw new ArgumentOutOfRangeException(nameof(desc)),
+            _ => default,
         };
     }
 
@@ -1131,7 +778,7 @@ internal sealed unsafe partial class D3D12Backend
         AddressType.ClampToEdge => TextureAddressMode.Clamp,
         AddressType.ClampToBorder => TextureAddressMode.Border,
         AddressType.MirrorOnce => TextureAddressMode.MirrorOnce,
-        _ => throw new ArgumentOutOfRangeException(nameof(address)),
+        _ => default,
     };
 
     private static ComparisonFunc ToComparison(CompareOperation comparison) => comparison switch
@@ -1144,6 +791,6 @@ internal sealed unsafe partial class D3D12Backend
         CompareOperation.NotEqual => ComparisonFunc.NotEqual,
         CompareOperation.GreaterOrEqual => ComparisonFunc.GreaterEqual,
         CompareOperation.Always => ComparisonFunc.Always,
-        _ => throw new ArgumentOutOfRangeException(nameof(comparison)),
+        _ => default,
     };
 }

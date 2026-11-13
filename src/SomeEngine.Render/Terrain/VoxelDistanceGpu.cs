@@ -115,6 +115,11 @@ internal sealed class VoxelDistanceGpuRequest<TDistance>(long sequence, JobHandl
 {
     private readonly float[] _accuracy = new float[2];
 
+    internal override void Prepare(RenderTerrainData data)
+    {
+        foreach (TerrainFieldPage page in source.Pages.Values) data.PreparePage(page);
+        foreach (VoxelPageWrite output in outputs) data.PreparePage(output.Page);
+    }
     internal override GraphPassId Record(RenderTerrainData data, ref RenderGraphFrame frame,
         ref TerrainFrameCommands extension)
     {

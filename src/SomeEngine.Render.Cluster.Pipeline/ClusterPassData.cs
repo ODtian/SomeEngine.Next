@@ -14,7 +14,7 @@ internal struct ClusterTraversalSeedUniforms
     internal uint MaxNodes;
     internal uint ArgsOffset;
     internal uint UseInstanceGroups;
-    internal uint InvocationCountIndex;
+    internal uint DispatchCountIndex;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
@@ -62,7 +62,7 @@ internal readonly record struct ClusterIndirectDispatchParameters(
             parameters.Layout,
             new BufferRegion(
                 arguments,
-                new BufferRange(parameters.Offset, ClusterIndirectAbi.DispatchBytes)),
+                new BufferRange(parameters.Offset, ClusterIndirectLayout.DispatchBytes)),
             1);
     }
 }
@@ -78,7 +78,7 @@ internal static class ClusterRasterArguments
     internal const ulong HiZPairsOffset = 68;
 
     internal static ulong HiZPairOffset(int mip) =>
-        HiZPairsOffset + checked((ulong)mip * ClusterIndirectAbi.DispatchBytes);
+        HiZPairsOffset + checked((ulong)mip * ClusterIndirectLayout.DispatchBytes);
 }
 
 internal readonly record struct ClusterFullscreenParameters(
@@ -557,36 +557,36 @@ internal struct ClusterFrameMetricsReadbackParameters
         in ClusterFrameMetricsReadbackParameters parameters)
     {
         Copy(ref commands, parameters.DrawArgs, 0,
-            parameters.Destination, ClusterPipelineSystem.DrawArgsReadbackOffset, 16);
+            parameters.Destination, ClusterGraphInstaller.DrawArgsReadbackOffset, 16);
         Copy(ref commands, parameters.Phase2DrawArgs, 0,
-            parameters.Destination, ClusterPipelineSystem.Phase2DrawArgsReadbackOffset, 16);
+            parameters.Destination, ClusterGraphInstaller.Phase2DrawArgsReadbackOffset, 16);
         Copy(ref commands, parameters.RasterReserve, 2 * sizeof(uint),
-            parameters.Destination, ClusterPipelineSystem.RasterReserveReadbackOffset,
+            parameters.Destination, ClusterGraphInstaller.RasterReserveReadbackOffset,
             2 * sizeof(uint));
         Copy(ref commands, parameters.ShadeCount, 0,
-            parameters.Destination, ClusterPipelineSystem.ShadeBinCountReadbackOffset,
+            parameters.Destination, ClusterGraphInstaller.ShadeBinCountReadbackOffset,
             sizeof(uint));
         Copy(ref commands, parameters.ShadeReserve, 0,
-            parameters.Destination, ClusterPipelineSystem.ShadeReserveReadbackOffset,
+            parameters.Destination, ClusterGraphInstaller.ShadeReserveReadbackOffset,
             sizeof(uint));
         Copy(ref commands, parameters.SoftwareDebug, 0,
-            parameters.Destination, ClusterPipelineSystem.SoftwareDebugReadbackOffset,
+            parameters.Destination, ClusterGraphInstaller.SoftwareDebugReadbackOffset,
             sizeof(uint));
         Copy(ref commands, parameters.PhaseOneTessellationCounters, 0,
-            parameters.Destination, ClusterPipelineSystem.PhaseOneTessellationCountersReadbackOffset,
+            parameters.Destination, ClusterGraphInstaller.PhaseOneTessellationCountersReadbackOffset,
             8 * sizeof(uint));
         Copy(ref commands, parameters.PhaseTwoTessellationCounters, 0,
-            parameters.Destination, ClusterPipelineSystem.PhaseTwoTessellationCountersReadbackOffset,
+            parameters.Destination, ClusterGraphInstaller.PhaseTwoTessellationCountersReadbackOffset,
             8 * sizeof(uint));
         Copy(ref commands, parameters.WorkStatus, 0,
-            parameters.Destination, ClusterPipelineSystem.WorkMetricsReadbackOffset,
-            ClusterPipelineSystem.WorkMetricsByteSize);
+            parameters.Destination, ClusterGraphInstaller.WorkMetricsReadbackOffset,
+            ClusterGraphInstaller.WorkMetricsByteSize);
         Buffer destination = commands.GetBuffer(parameters.Destination);
         Texture visibility = commands.GetTexture(parameters.Visibility);
         commands.CopyTextureToBuffer(new BufferTextureCopy(
             destination,
-            ClusterPipelineSystem.VisibilityProbeReadbackOffset,
-            ClusterPipelineSystem.VisibilityProbeRowPitch,
+            ClusterGraphInstaller.VisibilityProbeReadbackOffset,
+            ClusterGraphInstaller.VisibilityProbeRowPitch,
             1,
             visibility,
             0,
@@ -595,7 +595,7 @@ internal struct ClusterFrameMetricsReadbackParameters
             parameters.VisibilityProbeX,
             parameters.VisibilityProbeY,
             0,
-            Math.Min(ClusterPipelineSystem.VisibilityProbePixelCount, visibility.Info.Width - parameters.VisibilityProbeX),
+            Math.Min(ClusterGraphInstaller.VisibilityProbePixelCount, visibility.Info.Width - parameters.VisibilityProbeX),
             1,
             1));
     }
@@ -605,13 +605,13 @@ internal struct ClusterFrameMetricsReadbackParameters
         in ClusterFrameMetricsReadbackParameters parameters)
     {
         Copy(ref commands, parameters.CandidateCount, 0,
-            parameters.Destination, ClusterPipelineSystem.CandidateCountReadbackOffset, sizeof(uint));
+            parameters.Destination, ClusterGraphInstaller.CandidateCountReadbackOffset, sizeof(uint));
         Copy(ref commands, parameters.CandidateArgs, 0,
-            parameters.Destination, ClusterPipelineSystem.CandidateArgsReadbackOffset, 12);
+            parameters.Destination, ClusterGraphInstaller.CandidateArgsReadbackOffset, 12);
         Copy(ref commands, parameters.Phase2CandidateCount, 0,
-            parameters.Destination, ClusterPipelineSystem.Phase2CandidateCountReadbackOffset, sizeof(uint));
+            parameters.Destination, ClusterGraphInstaller.Phase2CandidateCountReadbackOffset, sizeof(uint));
         Copy(ref commands, parameters.Phase2CandidateArgs, 0,
-            parameters.Destination, ClusterPipelineSystem.Phase2CandidateArgsReadbackOffset, 12);
+            parameters.Destination, ClusterGraphInstaller.Phase2CandidateArgsReadbackOffset, 12);
     }
 
     private static void Copy(

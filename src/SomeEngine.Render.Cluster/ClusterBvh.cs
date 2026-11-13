@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
@@ -41,7 +41,7 @@ internal readonly record struct ClusterBvhPatch(
     uint Value,
     Memory<byte> Destination);
 internal readonly record struct ClusterBvhCheckpoint(int PatchCount);
-internal sealed record ClusterBvhPublication(
+internal sealed record ClusterBvhChanges(
     int PatchCount,
     Mesh[] RootMeshes,
     Mesh[] ChangedMeshes,
@@ -61,11 +61,11 @@ internal sealed class ClusterBvh
     private readonly List<ClusterBvhAllocation> _gpuRanges = [];
     private BufferRange[] _readRanges = [];
     private readonly List<ClusterBvhAllocation> _allocations = [];
-    private readonly List<ClusterBvhPatch> _pendingPatches = [];
+    private readonly List<ClusterBvhPatch> _nodePatches = [];
     private readonly FlatDictionary<Mesh, ClusterRootState> _roots = new();
     private readonly List<ClusterBvhLeafIndex> _pageIndexes = [];
     private readonly List<ClusterBvhLeafIndex> _nodeIndexes = [];
-    private readonly List<Mesh> _pendingRootMeshes = [];
+    private readonly List<Mesh> _rootUpdates = [];
     private uint _count;
     private uint _registeredPageCount;
     private int _publishedCount;
@@ -83,9 +83,9 @@ internal sealed class ClusterBvh
     public int RegisteredCount => _roots.Count;
     public int PublishedCount => _publishedCount;
     public ulong ByteLength => checked((ulong)_count * NodeBytes);
-    public bool HasPendingPublication
-        => _pendingPatches.Count != 0 ||
-           _pendingRootMeshes.Count != 0;
+    public bool HasChanges
+        => _nodePatches.Count != 0 ||
+           _rootUpdates.Count != 0;
 
     public bool IsRegistered(Mesh mesh)
         => _roots.ContainsKey(mesh);
@@ -221,7 +221,7 @@ internal sealed class ClusterBvh
         UpdateReadRanges();
         _registeredPageCount = checked(
             registration.FirstPage + checked((uint)registration.PageCount));
-        _pendingRootMeshes.Add(registration.Mesh);
+        _rootUpdates.Add(registration.Mesh);
         return registration.Root;
     }
 
@@ -242,7 +242,7 @@ internal sealed class ClusterBvh
         _roots.EnsureCapacity(checked(_roots.Count + 1));
         _pageIndexes.EnsureCapacity(checked(_pageIndexes.Count + 1));
         _nodeIndexes.EnsureCapacity(checked(_nodeIndexes.Count + 1));
-        _pendingRootMeshes.EnsureCapacity(checked(_pendingRootMeshes.Count + 1));
+        _rootUpdates.EnsureCapacity(checked(_rootUpdates.Count + 1));
     }
 
     internal void PatchPart(uint node, uint child, uint reference)
@@ -259,25 +259,25 @@ internal sealed class ClusterBvh
         int referenceOffset = checked(localNode * (int)NodeBytes + (int)wordOffset + (int)child * 16);
         if (BinaryPrimitives.ReadUInt32LittleEndian(mesh.Nodes.Span.Slice(referenceOffset, sizeof(uint))) == value) return;
         ulong offset = checked((ulong)mesh.FirstNode * NodeBytes + (uint)referenceOffset);
-        _pendingPatches.Add(new ClusterBvhPatch(offset, value, mesh.Nodes.Slice(referenceOffset, sizeof(uint))));
+        _nodePatches.Add(new ClusterBvhPatch(offset, value, mesh.Nodes.Slice(referenceOffset, sizeof(uint))));
     }
 
     public ClusterBvhCheckpoint CaptureChanges()
-        => new(_pendingPatches.Count);
+        => new(_nodePatches.Count);
 
     public void RestoreChanges(in ClusterBvhCheckpoint checkpoint)
     {
-        if (checkpoint.PatchCount > _pendingPatches.Count)
+        if (checkpoint.PatchCount > _nodePatches.Count)
             throw new InvalidOperationException("Cluster BVH checkpoint is ahead of pending metadata.");
-        _pendingPatches.RemoveRange(
+        _nodePatches.RemoveRange(
             checkpoint.PatchCount,
-            _pendingPatches.Count - checkpoint.PatchCount);
+            _nodePatches.Count - checkpoint.PatchCount);
     }
 
-    public ClusterBvhPublication PreparePublication()
+    public ClusterBvhChanges PrepareChanges()
     {
         var changedMeshes = new HashSet<uint>();
-        foreach (ClusterBvhPatch patch in _pendingPatches)
+        foreach (ClusterBvhPatch patch in _nodePatches)
         {
             if (patch.Destination.Length != sizeof(uint))
                 throw new InvalidOperationException($"Cluster BVH patch at {patch.Offset} has an invalid destination.");
@@ -289,34 +289,34 @@ internal sealed class ClusterBvh
             if (TryFindLeafIndexByNode(node, out ClusterBvhLeafIndex mesh))
                 changedMeshes.Add(mesh.FirstNode);
         }
-        foreach (Mesh mesh in _pendingRootMeshes)
+        foreach (Mesh mesh in _rootUpdates)
         {
             if (!_roots.TryGetValue(mesh, out ClusterRootState root) || root.Published)
             {
                 throw new InvalidOperationException("Pending Cluster root metadata is inconsistent.");
             }
         }
-        return new ClusterBvhPublication(
-            _pendingPatches.Count,
-            [.. _pendingRootMeshes],
+        return new ClusterBvhChanges(
+            _nodePatches.Count,
+            [.. _rootUpdates],
             _pageIndexes.Where(mesh => changedMeshes.Contains(mesh.FirstNode) ||
-                _pendingRootMeshes.Contains(mesh.Mesh)).Select(static mesh => mesh.Mesh).ToArray(),
+                _rootUpdates.Contains(mesh.Mesh)).Select(static mesh => mesh.Mesh).ToArray(),
             _storage.CaptureStagedUploads());
     }
 
-    public void CommitPublication(ClusterBvhPublication publication)
+    public void CommitChanges(ClusterBvhChanges geometryChanges)
     {
-        ArgumentNullException.ThrowIfNull(publication);
-        if (publication.PatchCount > _pendingPatches.Count ||
-            publication.RootMeshes.Length > _pendingRootMeshes.Count)
+        ArgumentNullException.ThrowIfNull(geometryChanges);
+        if (geometryChanges.PatchCount > _nodePatches.Count ||
+            geometryChanges.RootMeshes.Length > _rootUpdates.Count)
         {
-            throw new InvalidOperationException("The prepared Cluster BVH publication is ahead of pending state.");
+            throw new InvalidOperationException("The prepared Cluster BVH geometryChanges is ahead of pending state.");
         }
-        for (int index = 0; index < publication.RootMeshes.Length; index++)
+        for (int index = 0; index < geometryChanges.RootMeshes.Length; index++)
         {
-            Mesh mesh = publication.RootMeshes[index];
-            if (!ReferenceEquals(mesh, _pendingRootMeshes[index]))
-                throw new InvalidOperationException("The prepared Cluster BVH root publication is stale.");
+            Mesh mesh = geometryChanges.RootMeshes[index];
+            if (!ReferenceEquals(mesh, _rootUpdates[index]))
+                throw new InvalidOperationException("The prepared Cluster BVH root geometryChanges is stale.");
             ClusterRootState root = _roots[mesh];
             if (root.Published)
                 throw new InvalidOperationException("The prepared Cluster BVH root is already published.");
@@ -324,9 +324,9 @@ internal sealed class ClusterBvh
             _publishedCount = checked(_publishedCount + 1);
         }
 
-        _storage.CompleteStagedUploads(publication.Uploads);
-        _pendingPatches.RemoveRange(0, publication.PatchCount);
-        _pendingRootMeshes.RemoveRange(0, publication.RootMeshes.Length);
+        _storage.CompleteStagedUploads(geometryChanges.Uploads);
+        _nodePatches.RemoveRange(0, geometryChanges.PatchCount);
+        _rootUpdates.RemoveRange(0, geometryChanges.RootMeshes.Length);
     }
 
     internal ClusterBvhAllocation RemoveMesh(Mesh mesh)
@@ -336,11 +336,11 @@ internal sealed class ClusterBvh
         _roots.Remove(mesh);
         _pageIndexes.Remove(index);
         _nodeIndexes.Remove(index);
-        _pendingRootMeshes.Remove(mesh);
+        _rootUpdates.Remove(mesh);
         if (root.Published) _publishedCount--;
         ulong offset = checked((ulong)index.FirstNode * NodeBytes);
         uint length = checked(index.NodeCount * NodeBytes);
-        _pendingPatches.RemoveAll(patch => patch.Offset >= offset && patch.Offset < offset + length);
+        _nodePatches.RemoveAll(patch => patch.Offset >= offset && patch.Offset < offset + length);
         _storage.DiscardStagedRange(offset, checked((int)length));
         UpdateReadRanges();
         return new(offset, length);
@@ -404,14 +404,14 @@ internal sealed class ClusterBvh
             }
         }
         _allocations.Clear();
-        _pendingPatches.Clear();
+        _nodePatches.Clear();
         _roots.Clear();
         _pageIndexes.Clear();
         _nodeIndexes.Clear();
         _gpuRanges.Clear();
         _readRanges = [];
         _ranges.Reset();
-        _pendingRootMeshes.Clear();
+        _rootUpdates.Clear();
         _count = 0;
         HierarchyLevels = 1;
         _registeredPageCount = 0;

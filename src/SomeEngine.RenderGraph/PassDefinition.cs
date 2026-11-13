@@ -29,13 +29,15 @@ public ref partial struct PassDefinition
     {
         get
         {
-            _frame!.EnsureLease(_frameIdentity);
+            _frame!.EnsureFrameActive(_frameIdentity);
             return _frame;
         }
     }
 
     /// <summary>Returns the stable graph identity of this pass.</summary>
     public GraphPassId Id => new(_pass);
+
+    public Pipeline? Pipeline => _frame is null ? _edit.GetPassPipeline(_pass) : Frame.GetPassPipeline(_pass);
 
     public void SetPipeline(Pipeline pipeline)
     {
@@ -46,7 +48,7 @@ public ref partial struct PassDefinition
 
     public void SetParameterBlock(
         VariableLayoutReflection layout,
-        ReadOnlySpan<byte> ordinaryData = default)
+        scoped ReadOnlySpan<byte> ordinaryData = default)
     {
         DevelopmentCheck.Require(layout != VariableLayoutReflection.Null, "The parameter layout cannot be null.");
         if (_frame is null) _edit.SetPassParameterBlock(_pass, layout, ordinaryData);
@@ -122,7 +124,7 @@ public ref partial struct PassDefinition
     }
 
     /// <summary>Starts the next reflected parameter block in this pass's binding stream.</summary>
-    public void BindParameterBlock(VariableLayoutReflection layout, ReadOnlySpan<byte> ordinaryData = default) =>
+    public void BindParameterBlock(VariableLayoutReflection layout, scoped ReadOnlySpan<byte> ordinaryData = default) =>
         Bind(GraphParameterResourceBinding.BeginBlock(layout, ordinaryData));
 
     public GraphBufferAccessId Bind(
@@ -514,7 +516,7 @@ public ref partial struct PassDefinition
     }
 
     public void ColorAttachment(
-        uint slot,
+        uint index,
         GraphColorAttachmentViewId view,
         LoadType load,
         StoreType store,
@@ -522,12 +524,12 @@ public ref partial struct PassDefinition
         in Vector4 clearValue,
         GraphColorAttachmentViewId resolveView = default,
         ResolveType resolveType = ResolveType.Average) =>
-        AddColorAttachment(-1, slot, view, load, store, coverage,
+        AddColorAttachment(-1, index, view, load, store, coverage,
             clearValue, resolveView, resolveType);
 
     public void ColorAttachment(
         PassRenderingRegionId region,
-        uint slot,
+        uint index,
         GraphColorAttachmentViewId view,
         LoadType load,
         StoreType store,
@@ -535,7 +537,7 @@ public ref partial struct PassDefinition
         in Vector4 clearValue,
         GraphColorAttachmentViewId resolveView = default,
         ResolveType resolveType = ResolveType.Average) =>
-        AddColorAttachment(ResolveRegion(region), slot, view, load, store, coverage,
+        AddColorAttachment(ResolveRegion(region), index, view, load, store, coverage,
             clearValue, resolveView, resolveType);
 
     public void DepthStencilAttachment(
@@ -722,7 +724,7 @@ public ref partial struct PassDefinition
 
     private void AddColorAttachment(
         int region,
-        uint slot,
+        uint index,
         GraphColorAttachmentViewId viewId,
         LoadType load,
         StoreType store,
@@ -743,7 +745,7 @@ public ref partial struct PassDefinition
         }
 
         PublishColorAttachment(new GraphColorAttachment(
-            slot, viewId.Value, load, store, coverage, clearValue,
+            index, viewId.Value, load, store, coverage, clearValue,
             resolveView.Value, resolveType, region));
 
         GraphAccessMode mode = load == LoadType.Load
@@ -943,7 +945,7 @@ public ref partial struct PassDefinition
     {
         if (region.Pass != _pass)
             throw new ArgumentException("The rendering region belongs to another pass.", nameof(region));
-        return region.Value.Slot;
+        return region.Value.Index;
     }
 
     private PassRenderingRegionId AddRenderingRegion(
@@ -963,7 +965,7 @@ public ref partial struct PassDefinition
         return new PassRenderingRegionId(new GraphIdentity(
             Frame.Identity,
             region,
-            checked((uint)_pass.Slot + 1)), _pass);
+            checked((uint)_pass.Index + 1)), _pass);
     }
 
     private void PublishColorAttachment(in GraphColorAttachment attachment)

@@ -1,9 +1,11 @@
-#ifndef MATERIAL_INTERFACES_SLANG
+﻿#ifndef MATERIAL_INTERFACES_SLANG
 #define MATERIAL_INTERFACES_SLANG
 
-#include "domain_interfaces.slang"
-#include "visibility_evaluate.slang"
-#include "surface_receiver.slang"
+__exported import domain_interfaces;
+__exported import visibility_evaluate;
+__exported import surface_receiver;
+__exported import surface_output_interfaces;
+__exported import vertex_evaluate_interfaces;
 
 [__AttributeUsage(_AttributeTargets.Struct)]
 struct MaterialScalarsAttribute
@@ -35,29 +37,32 @@ struct SurfacePixelInput
 
 interface ISurfaceEvaluate<TSurface, TTriangle>
 {
-    void evaluateSurface(
+    void evaluateSurface<TOutput : ISurfaceOutput>(
         SurfacePixelInput input,
         TSurface surface,
         float3 bary,
         TTriangle triangle,
-        RWTexture2DArray<float4> outputColor);
+        TOutput output);
 
-    void evaluateDebug(
+    void evaluateDebug<TOutput : ISurfaceOutput>(
         uint debugMode,
         SurfacePixelInput input,
         TSurface surface,
         float3 bary,
         TTriangle triangle,
-        RWTexture2DArray<float4> outputColor);
+        TOutput output);
 };
 
-interface ITransparentSurfaceEvaluate<TSurface, TTriangle>
+interface IMaterial
 {
-    float4 evaluateTransparency(uint debugMode, SurfacePixelInput input,
-        TSurface surface, float3 bary, TTriangle triangle);
+    associatedtype Vertex : IVertexEvaluate;
+    associatedtype Domain : IDomainEvaluate<Vertex.Vertex>;
+    associatedtype Visibility;
 
-    void markShadowPages(SurfacePixelInput input,
-        TSurface surface, float3 bary, TTriangle triangle);
+    void evaluateSurface<TOutput : ISurfaceOutput>(SurfacePixelInput input,
+        Domain.Surface surface, float3 bary, Domain.TriangleData triangle, TOutput output);
+    void evaluateDebug<TOutput : ISurfaceOutput>(uint debugMode, SurfacePixelInput input,
+        Domain.Surface surface, float3 bary, Domain.TriangleData triangle, TOutput output);
 };
 
 static const uint MATERIAL_SCALAR_HEADER_BYTES = 16;

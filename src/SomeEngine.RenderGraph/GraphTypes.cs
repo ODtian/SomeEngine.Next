@@ -58,6 +58,12 @@ public enum FrameSubmissionMode : byte
     RecordAhead,
 }
 
+public enum FrameSectionPosition : byte
+{
+    Start,
+    End,
+}
+
 [Flags]
 public enum RenderGraphDebugOptions : uint
 {
@@ -97,37 +103,36 @@ public readonly record struct RenderGraphFrameOptions(
 
 public readonly struct PassQueueSelection : IEquatable<PassQueueSelection>
 {
-    private PassQueueSelection(Queue? queue, QueueType type, bool exact, bool anyCompatible = false)
+    private PassQueueSelection(Queue? queue, QueueType type, bool anyCompatible = false)
     {
         Queue = queue;
         Type = type;
-        IsExact = exact;
         AllowsAnyType = anyCompatible;
     }
 
-    public bool IsExact { get; }
+    public bool UsesQueue => Queue is not null;
     public Queue? Queue { get; }
     public QueueType Type { get; }
     public bool AllowsAnyType { get; }
 
     public bool Equals(PassQueueSelection other) =>
-        IsExact == other.IsExact && AllowsAnyType == other.AllowsAnyType &&
+        AllowsAnyType == other.AllowsAnyType &&
         Type == other.Type && ReferenceEquals(Queue, other.Queue);
     public override bool Equals(object? other) => other is PassQueueSelection value && Equals(value);
-    public override int GetHashCode() => HashCode.Combine(IsExact, AllowsAnyType, Type, Queue);
+    public override int GetHashCode() => HashCode.Combine(UsesQueue, AllowsAnyType, Type, Queue);
     public static bool operator ==(PassQueueSelection left, PassQueueSelection right) => left.Equals(right);
     public static bool operator !=(PassQueueSelection left, PassQueueSelection right) => !left.Equals(right);
 
-    public static PassQueueSelection Exact(Queue queue)
+    public static PassQueueSelection OnQueue(Queue queue)
     {
         ArgumentNullException.ThrowIfNull(queue);
-        return new PassQueueSelection(queue, queue.Type, true);
+        return new PassQueueSelection(queue, queue.Type);
     }
 
     public static PassQueueSelection AnyOfType(QueueType type)
     {
         if (!Enum.IsDefined(type)) throw new ArgumentOutOfRangeException(nameof(type));
-        return new PassQueueSelection(null, type, false);
+        return new PassQueueSelection(null, type);
     }
 
     /// <summary>
@@ -135,7 +140,7 @@ public readonly struct PassQueueSelection : IEquatable<PassQueueSelection>
     /// fewer transfers from predecessor queues before comparing available time.
     /// Compatible pass chains also prefer the queues requested by their consumers.
     /// </summary>
-    public static PassQueueSelection AnyCompatible() => new(null, default, false, true);
+    public static PassQueueSelection AnyCompatible() => new(null, default, true);
 }
 
 public record struct BufferBoundaryState(
@@ -203,10 +208,10 @@ public readonly record struct RenderGraphDesc(
     ulong MaximumHeapBytes = ulong.MaxValue,
     string? Label = null);
 
-public enum RenderGraphResourceOwnership : byte
+public enum RenderGraphResourceSource : byte
 {
-    GraphOwned,
-    CallerOwned,
+    GraphCreated,
+    Registered,
 }
 
 public enum RenderGraphResourceLifetime : byte

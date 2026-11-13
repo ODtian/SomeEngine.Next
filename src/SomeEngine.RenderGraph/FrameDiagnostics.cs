@@ -1,6 +1,6 @@
 namespace SomeEngine.RenderGraph;
 
-internal sealed partial class FrameExecutor
+internal sealed partial class FrameRecording
 {
     private void PublishDiagnostics()
     {
@@ -36,7 +36,7 @@ internal sealed partial class FrameExecutor
         {
             FrameBuffer buffer = _buffers[index];
             if (buffer.LastPass >= 0 &&
-                buffer.Ownership == RenderGraphResourceOwnership.GraphOwned &&
+                buffer.Source == RenderGraphResourceSource.GraphCreated &&
                 buffer.Lifetime == RenderGraphResourceLifetime.PerFrame)
             {
                 resourceBytes = checked(resourceBytes + buffer.Requirements.Size);
@@ -44,7 +44,7 @@ internal sealed partial class FrameExecutor
             buffers[index] = new RenderGraphBufferDiagnostic(
                 new GraphBufferId(buffer.Identity),
                 buffer.Description.Label,
-                buffer.Ownership,
+                buffer.Source,
                 buffer.Lifetime,
                 buffer.Description.Size,
                 buffer.Placement.Offset,
@@ -58,7 +58,7 @@ internal sealed partial class FrameExecutor
         {
             FrameTexture texture = _textures[index];
             if (texture.LastPass >= 0 &&
-                texture.Ownership == RenderGraphResourceOwnership.GraphOwned &&
+                texture.Source == RenderGraphResourceSource.GraphCreated &&
                 texture.Lifetime == RenderGraphResourceLifetime.PerFrame)
             {
                 resourceBytes = checked(resourceBytes + texture.Requirements.Size);
@@ -66,7 +66,7 @@ internal sealed partial class FrameExecutor
             textures[index] = new RenderGraphTextureDiagnostic(
                 new GraphTextureId(texture.Identity),
                 texture.Label,
-                texture.Ownership,
+                texture.Source,
                 texture.Lifetime,
                 texture.Width,
                 texture.Height,
@@ -118,8 +118,8 @@ internal sealed partial class FrameExecutor
                 AddDependency(predecessor, consumer, RenderGraphDependencyKind.Value);
             foreach (int predecessor in _predecessors[consumer])
                 AddDependency(predecessor, consumer, RenderGraphDependencyKind.Execution);
-            foreach (int predecessor in _physicalPredecessors[consumer])
-                AddDependency(predecessor, consumer, RenderGraphDependencyKind.Physical);
+            foreach (int predecessor in _queuePredecessors[consumer])
+                AddDependency(predecessor, consumer, RenderGraphDependencyKind.QueueOrder);
         }
 
         var barriers = new List<RenderGraphBarrierDiagnostic>();
@@ -154,12 +154,14 @@ internal sealed partial class FrameExecutor
             barriers.Count,
             _queuePasses.Count,
             resourceBytes,
-            _frame.Slot.TransientResources!.OccupiedBytes,
-            _frame.Slot.TransientResources.CapacityBytes,
+            _frame.Resources.TransientResources!.OccupiedBytes,
+            _frame.Resources.TransientResources.CapacityBytes,
             _frame.Graph.HeapByteBudget.CommittedBytes)
         {
-            AnalysisReused = _reuseAnalysis,
-            AnalyzedPassCount = _analyzedPasses.Count(index => _passes[index].Identity.IsValid),
+            AnalysisReused = Connections.Reused,
+            PersistentScheduleReused = _frame.Graph.Schedule.Reused,
+            FrameSectionPassCount = _frame.DynamicPasses.Count(pass => !pass.SectionBoundary),
+            AnalyzedPassCount = Connections.AnalyzedPasses.Count(index => _passes[index].Identity.IsValid),
             RebuiltRowCount = _rebuiltRowCount,
         };
         var view = new RenderGraphDiagnosticsView(

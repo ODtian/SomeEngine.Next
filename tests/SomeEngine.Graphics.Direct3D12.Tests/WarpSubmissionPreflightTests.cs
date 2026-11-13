@@ -46,7 +46,7 @@ public sealed class WarpSubmissionPreflightTests
     [Fact]
     public void RepeatedSubmissionsWithCompletionWaitsComplete()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Queue queue = backend.GetQueue(device, QueueType.Copy);
         Queue completionQueue = backend.GetQueue(device, QueueType.Compute);

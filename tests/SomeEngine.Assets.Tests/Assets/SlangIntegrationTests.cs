@@ -109,11 +109,11 @@ public sealed class SlangIntegrationTests
         await definition.SaveSourceAsync(definitionPath);
         using ShaderAsset first = SlangShaderImporter.CompileDefinition(
             definition,
-            definitionPath);
+            definitionPath, [SlangShaderSharp.SlangCompileTarget.Dxil, SlangShaderSharp.SlangCompileTarget.Spirv]);
         using ShaderAsset reopened = await ShaderAsset.OpenSourceAsync(definitionPath);
         using ShaderAsset second = SlangShaderImporter.CompileDefinition(
             reopened,
-            definitionPath);
+            definitionPath, [SlangShaderSharp.SlangCompileTarget.Dxil, SlangShaderSharp.SlangCompileTarget.Spirv]);
         Shader firstShader = await ShaderTestCompilation.CreateAsync(first);
         Shader secondShader = await ShaderTestCompilation.CreateAsync(second);
 

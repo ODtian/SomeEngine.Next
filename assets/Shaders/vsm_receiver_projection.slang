@@ -1,3 +1,6 @@
+__exported import vsm_types;
+__exported import vsm_addressing;
+
 #ifndef VSM_RECEIVER_PROJECTION_SLANG
 #define VSM_RECEIVER_PROJECTION_SLANG
 

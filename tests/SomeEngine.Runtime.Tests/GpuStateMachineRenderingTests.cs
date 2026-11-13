@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using SomeEngine.Animation;
 using SomeEngine.Animation.Pose;
 using SomeEngine.Core.ECS.Components;
@@ -45,7 +45,7 @@ public sealed partial class SkinningRenderingTests
         var binding = new SkinBinding([Matrix4x4.Identity, Matrix4x4.CreateTranslation(0, -1, 0)], [0, 1]);
         Entity[] targets = new Entity[2], animations = new Entity[2];
         var repeat = new GpuPoseExamples.RepeatLastInput(targets);
-        var reads = new List<GpuPoseReadback>();
+        var reads = new List<GpuPoseReadbackResult>();
         bool completed = false;
         var application = new ApplicationScene(content.Project.RootPath)
         {
@@ -144,7 +144,7 @@ public sealed partial class SkinningRenderingTests
         Assert.Equal(.25f, reads[5].SampleTime);
         for (int character = 0; character < 2; character++)
         {
-            GpuPoseReadback before = reads[4 + character], repeated = reads[6 + character];
+            GpuPoseReadbackResult before = reads[4 + character], repeated = reads[6 + character];
             Assert.Equal(before.Starts, repeated.Starts);
             Assert.Equal(before.InputNumber, repeated.InputNumber);
             Assert.Equal(before.CalculationTime, repeated.CalculationTime);

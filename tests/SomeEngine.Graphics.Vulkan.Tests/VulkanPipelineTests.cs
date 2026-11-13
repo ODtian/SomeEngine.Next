@@ -243,13 +243,13 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
         using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
         using DescriptorTable textures = backend.CreateDescriptorTable(
             device,
-            [new DescriptorSlotDesc(
+            [new DescriptorEntryDesc(
                 ResourceBindingType.TextureSrv,
                 Format.R32Float,
                 TextureDimension: TextureViewDimension.Texture2D)]);
         using DescriptorTable samplers = backend.CreateDescriptorTable(
             device,
-            [new DescriptorSlotDesc(ResourceBindingType.Sampler)]);
+            [new DescriptorEntryDesc(ResourceBindingType.Sampler)]);
         using Sampler sampler = backend.CreateSampler(
             device,
             new SamplerDesc(
@@ -435,7 +435,7 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
                 StructureStride: sizeof(uint)));
         using DescriptorTable table = backend.CreateDescriptorTable(
             device,
-            [new DescriptorSlotDesc(
+            [new DescriptorEntryDesc(
                 ResourceBindingType.BufferSrv,
                 StructureStride: sizeof(uint))]);
         uint descriptorIndex = backend.GetDescriptorIndex(table, 0).Value;

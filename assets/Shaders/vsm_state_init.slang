@@ -1,11 +1,11 @@
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
-#include "resource_effects.slang"
+__exported import resource_effects;
 
 struct VirtualShadowStateInitUniforms
 {
     uint PageTableEntryCount;
-    uint MaxPhysicalPages;
+    uint MaxPages;
     uint RequestFlagEntryCount;
     uint Pad0;
     uint Pad1;
@@ -16,7 +16,7 @@ ConstantBuffer<VirtualShadowStateInitUniforms> StateInit;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> ShadowPageTable;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint> PhysicalPageOwners;
+RWStructuredBuffer<uint> PageAssignments;
 #include "vsm_page_lists.slang"
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<VirtualShadowPageMetadata> PageMetadata;
@@ -67,15 +67,15 @@ void InitializeVirtualShadowState(uint3 group : SV_GroupID, uint lane : SV_Group
     {
         RequestedPageCount[0] = 0u;
         for (uint list = 0u; list < VSM_PAGE_LIST_COUNT; list++)
-            ShadowPageLists[ShadowPageListCountIndex(list, StateInit.MaxPhysicalPages)] =
-                list == VSM_PAGE_LIST_REQUESTED ? StateInit.MaxPhysicalPages : 0u;
+            ShadowPageLists[ShadowPageListCountIndex(list, StateInit.MaxPages)] =
+                list == VSM_PAGE_LIST_REQUESTED ? StateInit.MaxPages : 0u;
     }
-    if (index < StateInit.MaxPhysicalPages)
+    if (index < StateInit.MaxPages)
     {
-        PhysicalPageOwners[index] = VSM_UNOWNED_PAGE;
+        PageAssignments[index] = VSM_UNOWNED_PAGE;
         PageMetadata[index] = (VirtualShadowPageMetadata)0;
         for (uint list = 0u; list < VSM_PAGE_LIST_COUNT; list++)
-            ShadowPageLists[ShadowPageListStart(list, StateInit.MaxPhysicalPages) + index] =
+            ShadowPageLists[ShadowPageListStart(list, StateInit.MaxPages) + index] =
                 list == VSM_PAGE_LIST_REQUESTED ? index : VSM_UNOWNED_PAGE;
     }
 }

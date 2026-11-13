@@ -1,24 +1,14 @@
 namespace SomeEngine.Graphics.Vulkan;
-
 internal sealed unsafe partial class VulkanBackend
 {
-    internal CommandContext CreateCommandContext(
-        RhiDevice device,
-        in CommandContextDesc desc)
+    internal CommandContext CreateCommandContext(RhiDevice device, in CommandContextDesc desc)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
-        if (desc.InitialSlotCount == 0)
-            throw new ArgumentOutOfRangeException(nameof(desc), "InitialSlotCount must be positive.");
-        if (desc.Bundle)
-        {
-            throw new NotSupportedException(
-                "This Vulkan Device does not report secondary command-buffer bundle support.");
-        }
         VulkanQueue queue = nativeDevice.GetQueue(desc.QueueType, desc.QueueIndex);
         var context = new VulkanCommandContext(nativeDevice, queue, desc);
         try
         {
-            context.PrepareSlots(desc.InitialSlotCount);
+            context.PrepareBuffers(desc.InitialBufferCount);
             nativeDevice.RegisterChild(context);
             return context;
         }
@@ -29,24 +19,14 @@ internal sealed unsafe partial class VulkanBackend
         }
     }
 
-    internal void Begin(CommandContext context, in CommandRecordingDesc desc = default) =>
-        RequireCommandContext(context, nameof(context)).Begin(desc);
-
-    internal RecordedCommands End(CommandContext context) =>
-        RequireCommandContext(context, nameof(context)).EndCommands();
-
-    internal RecordedBundle EndBundle(CommandContext context) =>
-        throw new NotSupportedException(
-            "This Vulkan Device does not report secondary command-buffer bundle support.");
-
-    internal void Discard(CommandContext context) =>
-        RequireCommandContext(context, nameof(context)).Discard();
-
+    internal void Begin(CommandContext context, in CommandRecordingDesc desc = default) => ((VulkanCommandContext)context).Begin(desc);
+    internal RecordedCommands End(CommandContext context) => ((VulkanCommandContext)context).EndCommands();
+    internal RecordedBundle EndBundle(CommandContext context) => default!;
+    internal void Discard(CommandContext context) => ((VulkanCommandContext)context).Discard();
     internal QueueCompletion Submit(RhiQueue queue, in QueueSubmitDesc desc)
     {
         VulkanQueue nativeQueue = RequireQueue(queue, nameof(queue));
         VulkanDevice device = (VulkanDevice)nativeQueue.Device;
-
         int completionWaitCount = desc.CompletionWaits.Length;
         int imageCount = desc.SwapchainImages.Length;
         int timelineWaitCount = desc.TimelineWaits.Length;
@@ -55,50 +35,40 @@ internal sealed unsafe partial class VulkanBackend
         int signalCount = checked(imageCount + timelineSignalCount + 1);
         int commandCount = desc.Commands.Length;
         int timelineCount = checked(timelineWaitCount + timelineSignalCount);
-        int referencedImageCapacity = CountReferencedSwapchainUses(
-            nativeQueue,
-            desc.Commands);
+        int referencedImageCapacity = CountReferencedSwapchainUses(nativeQueue, desc.Commands);
         VulkanQueueWork work = nativeQueue.TakeWork();
         int claimed = 0;
         int claimedImages = 0;
         int retainedTimelineCount = 0;
         try
         {
-            work.EnsureCapacity(
-                commandCount,
-                imageCount,
-                referencedImageCapacity,
-                timelineCount,
-                waitCount,
-                signalCount);
-
-            PrepareCompletionWaits(
-                nativeQueue,
-                desc.CompletionWaits,
-                work.NativeWaits.AsSpan(0, completionWaitCount));
-            work.ReferencedImageCount = CollectReferencedSwapchainUses(
-                nativeQueue,
-                desc.Commands,
-                work.ReferencedImages);
+            work.EnsureCapacity(commandCount, imageCount, referencedImageCapacity, timelineCount, waitCount, signalCount);
+            PrepareCompletionWaits(nativeQueue, desc.CompletionWaits, work.NativeWaits.AsSpan(0, completionWaitCount));
+            work.ReferencedImageCount = CollectReferencedSwapchainUses(nativeQueue, desc.Commands, work.ReferencedImages);
             ValidateSwapchainImageSet(
                 nativeQueue,
                 desc.SwapchainImages,
                 work.ReferencedImages.AsSpan(0, work.ReferencedImageCount),
-                work.ImageMatches.AsSpan(0, work.ReferencedImageCount));
+                work.ImageMatches.AsSpan(0, work.ReferencedImageCount)
+            );
             ClaimCommands(
                 nativeQueue,
                 desc.Commands,
                 work.NativeCommands.AsSpan(0, commandCount),
-                work.CommandLeases.AsSpan(0, commandCount),
-                work.CommandSequences.AsSpan(0, commandCount), ref claimed);
+                work.CommandData.AsSpan(0, commandCount),
+                work.CommandSequences.AsSpan(0, commandCount),
+                ref claimed
+            );
             work.CommandCount = claimed;
             ClaimSwapchainImages(
                 nativeQueue,
                 desc.SwapchainImages,
                 work.NativeWaits.AsSpan(completionWaitCount, imageCount),
                 work.NativeSignals.AsSpan(0, imageCount),
-                work.ImageLeases.AsSpan(0, imageCount),
-                work.ImageSequences.AsSpan(0, imageCount), ref claimedImages);
+                work.Images.AsSpan(0, imageCount),
+                work.ImageSequences.AsSpan(0, imageCount),
+                ref claimedImages
+            );
             work.ImageCount = claimedImages;
             retainedTimelineCount = PrepareTimelineSemaphores(
                 nativeQueue,
@@ -106,10 +76,10 @@ internal sealed unsafe partial class VulkanBackend
                 desc.TimelineSignals,
                 work.NativeWaits.AsSpan(completionWaitCount + imageCount, timelineWaitCount),
                 work.NativeSignals.AsSpan(imageCount, timelineSignalCount),
-                work.RetainedTimelines.AsSpan(0, timelineCount));
+                work.RetainedTimelines.AsSpan(0, timelineCount)
+            );
             work.TimelineCount = retainedTimelineCount;
-
-            return SubmitPrepared(
+            return SubmitBatch(
                 nativeQueue,
                 device,
                 ref work,
@@ -119,22 +89,17 @@ internal sealed unsafe partial class VulkanBackend
                 waitCount,
                 signalCount,
                 imageCount,
-                timelineSignalCount);
+                timelineSignalCount
+            );
         }
         catch
         {
-            RestorePreparedSubmission(
-                nativeQueue,
-                device,
-                work,
-                claimed,
-                claimedImages,
-                retainedTimelineCount);
+            RestoreSubmission(nativeQueue, device, work, claimed, claimedImages, retainedTimelineCount);
             throw;
         }
     }
 
-    private QueueCompletion SubmitPrepared(
+    private QueueCompletion SubmitBatch(
         VulkanQueue queue,
         VulkanDevice device,
         ref VulkanQueueWork work,
@@ -144,7 +109,8 @@ internal sealed unsafe partial class VulkanBackend
         int waitCount,
         int signalCount,
         int imageCount,
-        int timelineSignalCount)
+        int timelineSignalCount
+    )
     {
         lock (queue.Gate)
         {
@@ -159,12 +125,7 @@ internal sealed unsafe partial class VulkanBackend
                 StageMask = PipelineStageFlags2.AllCommandsBit,
                 DeviceIndex = 0,
             };
-            Result result = QueueSubmitNative(
-                queue,
-                work,
-                commandCount,
-                waitCount,
-                signalCount);
+            Result result = QueueSubmitNative(queue, work, commandCount, waitCount, signalCount);
             switch (result)
             {
                 case Result.Success:
@@ -177,40 +138,28 @@ internal sealed unsafe partial class VulkanBackend
                 case Result.ErrorDeviceLost:
                     throw device.PublishDeviceLoss(result, "vkQueueSubmit2");
                 default:
-                    throw device.PublishInternalDeviceLoss(
-                        $"vkQueueSubmit2 returned uncertain failure {result}.");
+                    throw device.PublishInternalDeviceLoss($"vkQueueSubmit2 returned uncertain failure {result}.");
             }
 
             try
             {
-                CommitSubmittedWork(
-                    queue,
-                    work,
-                    completionValue,
-                    claimedCommandCount,
-                    claimedImageCount);
+                CommitSubmittedWork(queue, work, completionValue, claimedCommandCount, claimedImageCount);
             }
             catch
             {
                 work.MarkDeviceLostNoThrow();
                 queue.AppendAcceptedNoThrow(work);
-                work = null!;
-                throw device.PublishInternalDeviceLoss(
-                    "Submission state commit failed after native acceptance.");
+                work = null !;
+                throw device.PublishInternalDeviceLoss("Submission state commit failed after native acceptance.");
             }
 
             queue.AppendAcceptedNoThrow(work);
-            work = null!;
+            work = null !;
             return new QueueCompletion(queue, completionValue);
         }
     }
 
-    private Result QueueSubmitNative(
-        VulkanQueue queue,
-        VulkanQueueWork work,
-        int commandCount,
-        int waitCount,
-        int signalCount)
+    private Result QueueSubmitNative(VulkanQueue queue, VulkanQueueWork work, int commandCount, int waitCount, int signalCount)
     {
         fixed (SemaphoreSubmitInfo* waitPointer = work.NativeWaits)
         fixed (SemaphoreSubmitInfo* signalPointer = work.NativeSignals)
@@ -231,26 +180,21 @@ internal sealed unsafe partial class VulkanBackend
         }
     }
 
-    private static void CommitSubmittedWork(
-        VulkanQueue queue,
-        VulkanQueueWork work,
-        ulong completionValue,
-        int commandCount,
-        int imageCount)
+    private static void CommitSubmittedWork(VulkanQueue queue, VulkanQueueWork work, ulong completionValue, int commandCount, int imageCount)
     {
-        for (int index = 0; index < commandCount; index++)
-            work.CommandLeases[index].MarkSubmitted(work.CommandSequences[index]);
+        queue.MarkSubmitted(completionValue);
         for (int index = 0; index < imageCount; index++)
-            work.ImageLeases[index].MarkSubmission(queue, completionValue);
+            work.Images[index].MarkSubmission(queue, completionValue);
     }
 
-    private static void RestorePreparedSubmission(
+    private static void RestoreSubmission(
         VulkanQueue queue,
         VulkanDevice device,
         VulkanQueueWork? work,
         int commandCount,
         int imageCount,
-        int timelineCount)
+        int timelineCount
+    )
     {
         if (work is null || work.NativeAccepted)
             return;
@@ -264,78 +208,71 @@ internal sealed unsafe partial class VulkanBackend
             queue.ReturnWork(work);
             return;
         }
+
         for (int index = 0; index < commandCount; index++)
-            work.CommandLeases[index].RestoreExecutable(work.CommandSequences[index]);
+            work.CommandData[index].RestoreExecutable(work.CommandSequences[index]);
         for (int index = 0; index < imageCount; index++)
-            work.ImageLeases[index].Restore(work.ImageSequences[index]);
+            work.Images[index].Restore(work.ImageSequences[index]);
         for (int index = timelineCount - 1; index >= 0; index--)
             work.RetainedTimelines[index].ReleaseNative();
         queue.ReturnWork(work);
     }
 
-    private void PrepareCompletionWaits(
-        VulkanQueue queue,
-        ReadOnlySpan<QueueCompletion> source,
-        Span<SemaphoreSubmitInfo> destination)
+    private void PrepareCompletionWaits(VulkanQueue queue, ReadOnlySpan<QueueCompletion> source, Span<SemaphoreSubmitInfo> destination)
     {
         for (int index = 0; index < source.Length; index++)
         {
             QueueCompletion wait = source[index];
-            VulkanQueue waitQueue = RequireQueue(wait.Queue, nameof(source));
-            if (!ReferenceEquals(waitQueue.Device, queue.Device))
-                throw new ArgumentException("A Queue completion wait must belong to the same Device.", nameof(source));
+            VulkanQueue waitQueue = RequireQueue(wait.QueueReference, nameof(source));
             destination[index] = new SemaphoreSubmitInfo
             {
                 SType = StructureType.SemaphoreSubmitInfo,
                 Semaphore = waitQueue.CompletionSemaphore,
-                Value = wait.Value,
+                Value = wait.SubmittedValue,
                 StageMask = PipelineStageFlags2.AllCommandsBit,
                 DeviceIndex = 0,
             };
         }
     }
 
-    private static int CountReferencedSwapchainUses(
-        VulkanQueue queue,
-        ReadOnlySpan<RecordedCommands> commands)
+    private static int CountReferencedSwapchainUses(VulkanQueue queue, ReadOnlySpan<RecordedCommands> commands)
     {
         int count = 0;
         foreach (ref readonly RecordedCommands recorded in commands)
         {
-            VulkanRecordedCommandsLease lease = RequireRecordedLease(queue, recorded);
-            count = checked(count + lease.GetSwapchainUseCount(recorded.Sequence));
+            VulkanCommandRecording handle = GetRecordedData(queue, recorded);
+            count = checked(count + handle.GetSwapchainUseCount(recorded.Sequence));
         }
+
         return count;
     }
 
-    private static int CollectReferencedSwapchainUses(
-        VulkanQueue queue,
-        ReadOnlySpan<RecordedCommands> commands,
-        Span<VulkanSwapchainUse> destination)
+    private static int CollectReferencedSwapchainUses(VulkanQueue queue, ReadOnlySpan<RecordedCommands> commands, Span<VulkanSwapchainUse> destination)
     {
         int count = 0;
         foreach (ref readonly RecordedCommands recorded in commands)
         {
-            VulkanRecordedCommandsLease lease = RequireRecordedLease(queue, recorded);
-            int commandUseCount = lease.GetSwapchainUseCount(recorded.Sequence);
+            VulkanCommandRecording handle = GetRecordedData(queue, recorded);
+            int commandUseCount = handle.GetSwapchainUseCount(recorded.Sequence);
             for (int useIndex = 0; useIndex < commandUseCount; useIndex++)
             {
-                VulkanSwapchainUse use = lease.GetSwapchainUse(recorded.Sequence, useIndex);
+                VulkanSwapchainUse use = handle.GetSwapchainUse(recorded.Sequence, useIndex);
                 bool duplicate = false;
                 for (int existingIndex = 0; existingIndex < count; existingIndex++)
                 {
                     ref readonly VulkanSwapchainUse existing = ref destination[existingIndex];
-                    if (ReferenceEquals(existing.Lease, use.Lease) &&
-                        existing.Sequence == use.Sequence)
+                    if (ReferenceEquals(existing.Handle, use.Handle) && existing.Sequence == use.Sequence)
                     {
                         duplicate = true;
                         break;
                     }
                 }
+
                 if (!duplicate)
                     destination[count++] = use;
             }
         }
+
         return count;
     }
 
@@ -343,87 +280,59 @@ internal sealed unsafe partial class VulkanBackend
         VulkanQueue queue,
         ReadOnlySpan<SwapchainImage> supplied,
         ReadOnlySpan<VulkanSwapchainUse> referenced,
-        Span<bool> matched)
+        Span<bool> matched
+    )
     {
-        if (supplied.Length != referenced.Length)
-        {
-            throw new ArgumentException(
-                "SwapchainImages must exactly match the images used by RecordedCommands.",
-                nameof(supplied));
-        }
         matched.Clear();
         for (int suppliedIndex = 0; suppliedIndex < supplied.Length; suppliedIndex++)
         {
             SwapchainImage image = supplied[suppliedIndex];
-            if (image.Lease is not VulkanSwapchainImageLease lease ||
-                !ReferenceEquals(lease.Swapchain.Device, queue.Device))
-            {
-                throw new ArgumentException(
-                    "A supplied SwapchainImage belongs to a different Vulkan Device.",
-                    nameof(supplied));
-            }
-
+            VulkanSwapchainImageUse handle = (VulkanSwapchainImageUse)(image.ImageUse!);
             int match = -1;
             for (int referencedIndex = 0; referencedIndex < referenced.Length; referencedIndex++)
             {
                 if (matched[referencedIndex])
                     continue;
                 ref readonly VulkanSwapchainUse expected = ref referenced[referencedIndex];
-                if (ReferenceEquals(expected.Lease, lease) &&
-                    expected.Sequence == image.Sequence &&
-                    expected.Generation == lease.Swapchain.Info.Generation)
+                if (ReferenceEquals(expected.Handle, handle) && expected.Sequence == image.Sequence && expected.Generation == handle.Swapchain.Info.Generation)
                 {
                     match = referencedIndex;
                     break;
                 }
             }
-            if (match < 0)
-            {
-                throw new ArgumentException(
-                    "A supplied SwapchainImage was not referenced by RecordedCommands or is stale.",
-                    nameof(supplied));
-            }
+
             matched[match] = true;
         }
     }
 
-    private static VulkanRecordedCommandsLease RequireRecordedLease(
-        VulkanQueue queue,
-        in RecordedCommands recorded)
+    private static VulkanCommandRecording GetRecordedData(VulkanQueue queue, in RecordedCommands recorded)
     {
-        if (recorded.Lease is not VulkanRecordedCommandsLease lease ||
-            !ReferenceEquals(lease.Queue, queue))
-        {
-            throw new ArgumentException(
-                "RecordedCommands belong to another Vulkan Queue.",
-                nameof(recorded));
-        }
-        return lease;
+        VulkanCommandRecording handle = (VulkanCommandRecording)(recorded.Data);
+        return handle;
     }
 
     private static void ClaimCommands(
         VulkanQueue queue,
         ReadOnlySpan<RecordedCommands> source,
         Span<CommandBufferSubmitInfo> commands,
-        Span<VulkanRecordedCommandsLease> leases,
-        Span<ulong> sequences, ref int claimed)
+        Span<VulkanCommandRecording> leases,
+        Span<ulong> sequences,
+        ref int claimed
+    )
     {
         for (int index = 0; index < source.Length; index++)
         {
             RecordedCommands recorded = source[index];
-            if (recorded.Lease is not VulkanRecordedCommandsLease lease ||
-                !ReferenceEquals(lease.Queue, queue))
-                throw new ArgumentException("RecordedCommands belong to another Vulkan Queue.", nameof(source));
+            VulkanCommandRecording handle = (VulkanCommandRecording)(recorded.Data);
             ulong sequence = recorded.Sequence;
-            if (!lease.TryBeginSubmit(sequence))
-                throw new InvalidOperationException("RecordedCommands are not executable.");
-            leases[index] = lease;
+            handle.TryBeginSubmit(sequence);
+            leases[index] = handle;
             sequences[index] = sequence;
             claimed++;
             commands[index] = new CommandBufferSubmitInfo
             {
                 SType = StructureType.CommandBufferSubmitInfo,
-                CommandBuffer = lease.GetNative(sequence),
+                CommandBuffer = handle.GetNative(sequence),
                 DeviceMask = 0,
             };
         }
@@ -434,28 +343,28 @@ internal sealed unsafe partial class VulkanBackend
         ReadOnlySpan<SwapchainImage> source,
         Span<SemaphoreSubmitInfo> waits,
         Span<SemaphoreSubmitInfo> signals,
-        Span<VulkanSwapchainImageLease> leases,
-        Span<ulong> sequences, ref int claimed)
+        Span<VulkanSwapchainImageUse> leases,
+        Span<ulong> sequences,
+        ref int claimed
+    )
     {
         for (int index = 0; index < source.Length; index++)
         {
             SwapchainImage image = source[index];
-            if (image.Lease is not VulkanSwapchainImageLease lease ||
-                !lease.ClaimSubmit(image.Sequence, queue))
-                throw new InvalidOperationException("A SwapchainImage is stale or already submitted.");
-            leases[index] = lease;
+            VulkanSwapchainImageUse handle = (VulkanSwapchainImageUse)(image.ImageUse!);
+            leases[index] = handle;
             sequences[index] = image.Sequence;
             claimed++;
             waits[index] = new SemaphoreSubmitInfo
             {
                 SType = StructureType.SemaphoreSubmitInfo,
-                Semaphore = lease.AcquireSemaphore,
+                Semaphore = handle.AcquireSemaphore,
                 StageMask = PipelineStageFlags2.AllCommandsBit,
             };
             signals[index] = new SemaphoreSubmitInfo
             {
                 SType = StructureType.SemaphoreSubmitInfo,
-                Semaphore = lease.RenderComplete,
+                Semaphore = handle.RenderComplete,
                 StageMask = PipelineStageFlags2.AllCommandsBit,
             };
         }
@@ -467,18 +376,15 @@ internal sealed unsafe partial class VulkanBackend
         ReadOnlySpan<TimelineSignal> timelineSignals,
         Span<SemaphoreSubmitInfo> waits,
         Span<SemaphoreSubmitInfo> signals,
-        Span<IVulkanRetained> retained)
+        Span<IVulkanRetained> retained
+    )
     {
         int retainedCount = 0;
         try
         {
             for (int index = 0; index < timelineWaits.Length; index++)
             {
-                VulkanExternalTimeline timeline = RequireExternalTimeline(
-                    timelineWaits[index].Timeline,
-                    nameof(timelineWaits));
-                if (!ReferenceEquals(timeline.Device, queue.Device))
-                    throw new ArgumentException("Timeline waits must belong to the submitted Device.", nameof(timelineWaits));
+                VulkanExternalTimeline timeline = RequireExternalTimeline(timelineWaits[index].Timeline, nameof(timelineWaits));
                 timeline.RetainNative();
                 retained[retainedCount++] = timeline;
                 waits[index] = new SemaphoreSubmitInfo
@@ -489,13 +395,10 @@ internal sealed unsafe partial class VulkanBackend
                     StageMask = PipelineStageFlags2.AllCommandsBit,
                 };
             }
+
             for (int index = 0; index < timelineSignals.Length; index++)
             {
-                VulkanExternalTimeline timeline = RequireExternalTimeline(
-                    timelineSignals[index].Timeline,
-                    nameof(timelineSignals));
-                if (!ReferenceEquals(timeline.Device, queue.Device))
-                    throw new ArgumentException("Timeline signals must belong to the submitted Device.", nameof(timelineSignals));
+                VulkanExternalTimeline timeline = RequireExternalTimeline(timelineSignals[index].Timeline, nameof(timelineSignals));
                 timeline.RetainNative();
                 retained[retainedCount++] = timeline;
                 signals[index] = new SemaphoreSubmitInfo
@@ -506,6 +409,7 @@ internal sealed unsafe partial class VulkanBackend
                     StageMask = PipelineStageFlags2.AllCommandsBit,
                 };
             }
+
             return retainedCount;
         }
         catch
@@ -518,16 +422,14 @@ internal sealed unsafe partial class VulkanBackend
 
     internal bool IsComplete(in QueueCompletion completion)
     {
-        VulkanQueue queue = RequireQueue(completion.Queue, nameof(completion));
-        return queue.GetCompletedValue() >= completion.Value;
+        VulkanQueue queue = RequireQueue(completion.QueueReference, nameof(completion));
+        return queue.GetCompletedValue() >= completion.SubmittedValue;
     }
 
     internal WaitStatus WaitCpu(in QueueCompletion completion, TimeSpan timeout)
     {
-        VulkanQueue queue = RequireQueue(completion.Queue, nameof(completion));
-        if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
-            throw new ArgumentOutOfRangeException(nameof(timeout));
-        ulong value = completion.Value;
+        VulkanQueue queue = RequireQueue(completion.QueueReference, nameof(completion));
+        ulong value = completion.SubmittedValue;
         VkSemaphore semaphore = queue.CompletionSemaphore;
         SemaphoreWaitInfo wait = new()
         {
@@ -536,15 +438,9 @@ internal sealed unsafe partial class VulkanBackend
             PSemaphores = &semaphore,
             PValues = &value,
         };
-        ulong nanoseconds = timeout == Timeout.InfiniteTimeSpan
-            ? ulong.MaxValue
-            : checked((ulong)timeout.Ticks * 100);
+        ulong nanoseconds = timeout == Timeout.InfiniteTimeSpan ? ulong.MaxValue : checked((ulong)timeout.Ticks * 100);
         VulkanDevice device = (VulkanDevice)queue.Device;
-        Result result =
-            Api.WaitSemaphores(
-            device.Native,
-            &wait,
-            nanoseconds);
+        Result result = Api.WaitSemaphores(device.Native, &wait, nanoseconds);
         if (result == Result.Timeout)
             return WaitStatus.Timeout;
         device.ThrowIfDeviceCallFailed(result, "vkWaitSemaphores");
@@ -552,135 +448,85 @@ internal sealed unsafe partial class VulkanBackend
         return WaitStatus.Completed;
     }
 
-    private VulkanCommandContext RequireCommandContext(
-        CommandContext context,
-        string parameterName)
-    {
-        ArgumentNullException.ThrowIfNull(context, parameterName);
-        if (context is not VulkanCommandContext native ||
-            native.Device is not VulkanDevice device ||
-            !ReferenceEquals(device.Backend, this))
-            throw new ArgumentException("The CommandContext belongs to a different graphics backend.", parameterName);
-        native.ThrowIfDisposed();
-        device.ThrowIfUnavailable();
-        return native;
-    }
-
-    private VulkanQueue RequireQueue(RhiQueue queue, string parameterName)
-    {
-        ArgumentNullException.ThrowIfNull(queue, parameterName);
-        if (queue is not VulkanQueue native ||
-            native.Device is not VulkanDevice device ||
-            !ReferenceEquals(device.Backend, this))
-            throw new ArgumentException("The Queue belongs to a different graphics backend.", parameterName);
-        device.ThrowIfUnavailable();
-        return native;
-    }
-
+    private VulkanQueue RequireQueue(RhiQueue queue, string parameterName) => (VulkanQueue)queue;
     private sealed partial class VulkanCommandContext : CommandContext
     {
         private readonly object _gate = new();
         private readonly VulkanDevice _device;
         private readonly VulkanQueue _queue;
-        private readonly Stack<VulkanCommandSlot> _freeSlots = [];
-        private readonly HashSet<VulkanCommandSlot> _slots = [];
-        private VulkanCommandSlot? _recording;
+        private readonly Stack<VulkanCommandBuffer> _freeBuffers = [];
+        private readonly HashSet<VulkanCommandBuffer> _buffers = [];
+        private VulkanCommandBuffer? _recording;
         private ulong _nextSequence;
         private bool _released;
         private int _unregistered;
-
-        internal VulkanCommandContext(
-            VulkanDevice device,
-            VulkanQueue queue,
-            in CommandContextDesc desc)
-            : base(device, desc.QueueType, desc.QueueIndex, desc.Bundle, desc.Label)
+        internal VulkanCommandContext(VulkanDevice device, VulkanQueue queue, in CommandContextDesc desc) : base(device, desc.QueueType, desc.QueueIndex, desc.Bundle, desc.Label)
         {
             _device = device;
             _queue = queue;
         }
 
-        internal VkCommandBuffer NativeRecording => _recording?.Native
-            ?? throw new InvalidOperationException("The CommandContext is not recording.");
-        internal VulkanDescriptorArena RecordingDescriptorArena =>
-            _recording?.DescriptorArena
-            ?? throw new InvalidOperationException("The CommandContext is not recording.");
+        internal VkCommandBuffer NativeRecording => _recording!.Native;
+        internal VulkanDescriptorArena RecordingDescriptorArena => _recording!.DescriptorArena;
 
-        internal void PrepareSlots(uint count)
+        internal void PrepareBuffers(uint count)
         {
             for (uint index = 0; index < count; index++)
-                _freeSlots.Push(CreateSlot());
+                _freeBuffers.Push(CreateCommandBuffer());
         }
 
         internal void Begin(in CommandRecordingDesc desc)
         {
             lock (_gate)
             {
-                ThrowIfDisposed();
-                if (_released)
-                    throw new ObjectDisposedException(nameof(VulkanCommandContext));
-                if (_recording is not null)
-                    throw new InvalidOperationException("The CommandContext is already recording.");
-                VulkanCommandSlot slot = _freeSlots.Count != 0
-                    ? _freeSlots.Pop()
-                    : CreateSlot();
-                _device.ThrowIfDeviceCallFailed(
-                    _device.Backend.Api.ResetCommandPool(
-                        _device.Native,
-                        slot.Pool,
-                        CommandPoolResetFlags.None),
-                    "vkResetCommandPool");
-                slot.ResetCaptures(desc.InitialCapturedResourceCapacity);
+                VulkanCommandBuffer entry = _freeBuffers.Count != 0 ? _freeBuffers.Pop() : CreateCommandBuffer();
+                _device.ThrowIfDeviceCallFailed(_device.Backend.Api.ResetCommandPool(_device.Native, entry.Pool, CommandPoolResetFlags.None), "vkResetCommandPool");
                 ResetRecordingState();
                 CommandBufferBeginInfo begin = new()
                 {
                     SType = StructureType.CommandBufferBeginInfo,
                     Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
                 };
-                _device.ThrowIfDeviceCallFailed(
-                    _device.Backend.Api.BeginCommandBuffer(slot.Native, &begin),
-                    "vkBeginCommandBuffer");
-                _recording = slot;
+                _device.ThrowIfDeviceCallFailed(_device.Backend.Api.BeginCommandBuffer(entry.Native, &begin), "vkBeginCommandBuffer");
+                _recording = entry;
             }
         }
 
         internal RecordedCommands EndCommands()
         {
-            VulkanCommandSlot slot;
+            VulkanCommandBuffer entry;
             ulong sequence;
             lock (_gate)
             {
-                slot = _recording
-                    ?? throw new InvalidOperationException("The CommandContext is not recording.");
+                entry = _recording!;
                 FinalizeOptionalScopes();
-                _device.ThrowIfDeviceCallFailed(
-                    _device.Backend.Api.EndCommandBuffer(slot.Native),
-                    "vkEndCommandBuffer");
+                _device.ThrowIfDeviceCallFailed(_device.Backend.Api.EndCommandBuffer(entry.Native), "vkEndCommandBuffer");
                 _recording = null;
                 sequence = checked(++_nextSequence);
             }
-            VulkanRecordedCommandsLease lease = slot.Lease;
-            lease.ActivateCommands(sequence);
-            slot.AttachLease(lease, sequence);
-            return new RecordedCommands(lease, sequence);
+
+            VulkanCommandRecording handle = entry.Handle;
+            handle.ActivateCommands(sequence);
+            entry.AttachUse(handle, sequence);
+            return new RecordedCommands(handle, sequence);
         }
 
         internal void Discard()
         {
-            VulkanCommandSlot slot;
+            VulkanCommandBuffer entry;
             lock (_gate)
             {
-                slot = _recording
-                    ?? throw new InvalidOperationException("The CommandContext is not recording.");
+                entry = _recording!;
                 _recording = null;
                 ResetRecordingState();
             }
-            ReturnSlot(slot);
+
+            ReturnCommandBuffer(entry);
         }
 
-        internal void Capture(IVulkanRetained value)
+        internal void RecordSwapchainUse(IVulkanRetained value)
         {
-            VulkanCommandSlot slot = _recording
-                ?? throw new InvalidOperationException("The CommandContext is not recording.");
+            VulkanCommandBuffer entry = _recording!;
             VulkanTexture? texture = value switch
             {
                 VulkanTexture direct => direct,
@@ -690,58 +536,54 @@ internal sealed unsafe partial class VulkanBackend
             VulkanSwapchainUse? swapchainUse = null;
             if (texture?.SwapchainState is VulkanImageState imageState)
             {
-                if (!imageState.TryGetCurrentUse(out VulkanSwapchainUse use))
-                {
-                    throw new InvalidOperationException(
-                        "A Vulkan swapchain texture is not currently acquired.");
-                }
+                imageState.TryGetCurrentUse(out VulkanSwapchainUse use);
                 swapchainUse = use;
             }
-            slot.Capture(value);
+
             if (swapchainUse is VulkanSwapchainUse captured)
-                slot.AddSwapchainUse(captured);
+                entry.AddSwapchainUse(captured);
         }
 
-        internal void ReturnSlot(VulkanCommandSlot slot)
+        internal void RetainDescriptorData(IVulkanRetained data) => _recording!.RetainDescriptorData(data);
+        internal void ReturnCommandBuffer(VulkanCommandBuffer entry)
         {
             bool destroy;
             bool unregister;
             lock (_gate)
             {
-                if (!_slots.Contains(slot))
+                if (!_buffers.Contains(entry))
                     return;
-                slot.DetachLease();
+                entry.DetachUse();
                 if (_released)
                 {
-                    destroy = _slots.Remove(slot);
+                    destroy = _buffers.Remove(entry);
                 }
                 else
                 {
-                    slot.ReleaseCaptures();
-                    _freeSlots.Push(slot);
+                    entry.ResetAfterCompletion();
+                    _freeBuffers.Push(entry);
                     destroy = false;
                 }
-                unregister = _released && _slots.Count == 0;
+
+                unregister = _released && _buffers.Count == 0;
             }
+
             if (destroy)
-                DestroySlotNative(slot);
+                DestroyCommandBuffer(entry);
             if (unregister)
                 UnregisterOnce();
         }
 
         internal override void Release(bool fromParent)
         {
-            ReleaseSlots(
-                abandonAll: fromParent ||
-                    _device.IsDisposed ||
-                    _device.Status != DeviceStatus.Active);
+            ReleaseCommandBuffers(abandonAll: fromParent || _device.IsDisposed || _device.Status != DeviceStatus.Active);
         }
 
         internal void ReleaseFromDeviceNoThrow()
         {
             try
             {
-                ReleaseSlots(abandonAll: true);
+                ReleaseCommandBuffers(abandonAll: true);
             }
             catch (Exception exception)
             {
@@ -749,9 +591,9 @@ internal sealed unsafe partial class VulkanBackend
             }
         }
 
-        private void ReleaseSlots(bool abandonAll)
+        private void ReleaseCommandBuffers(bool abandonAll)
         {
-            VulkanCommandSlot[] destroy;
+            VulkanCommandBuffer[] destroy;
             bool unregister;
             lock (_gate)
             {
@@ -761,42 +603,47 @@ internal sealed unsafe partial class VulkanBackend
                 ResetRecordingState();
                 if (abandonAll)
                 {
-                    destroy = _slots.ToArray();
-                    _slots.Clear();
+                    destroy = _buffers.ToArray();
+                    _buffers.Clear();
                 }
                 else
                 {
-                    var detached = new List<VulkanCommandSlot>(_freeSlots.Count + 1);
-                    while (_freeSlots.TryPop(out VulkanCommandSlot? free))
+                    var detached = new List<VulkanCommandBuffer>(_freeBuffers.Count + 1);
+                    while (_freeBuffers.TryPop(out VulkanCommandBuffer? free))
                     {
-                        if (_slots.Remove(free))
+                        if (_buffers.Remove(free))
                             detached.Add(free);
                     }
-                    if (_recording is not null && _slots.Remove(_recording))
+
+                    if (_recording is not null && _buffers.Remove(_recording))
                         detached.Add(_recording);
                     destroy = detached.ToArray();
                 }
+
                 _recording = null;
-                _freeSlots.Clear();
-                unregister = _slots.Count == 0;
+                _freeBuffers.Clear();
+                unregister = _buffers.Count == 0;
             }
+
             if (abandonAll)
             {
-                foreach (VulkanCommandSlot slot in destroy)
-                    slot.DiscardExecutableFromDeviceNoThrow();
+                foreach (VulkanCommandBuffer entry in destroy)
+                    entry.DiscardExecutableFromDeviceNoThrow();
             }
+
             Exception? failure = null;
-            foreach (VulkanCommandSlot slot in destroy)
+            foreach (VulkanCommandBuffer entry in destroy)
             {
                 try
                 {
-                    DestroySlotNative(slot);
+                    DestroyCommandBuffer(entry);
                 }
                 catch (Exception exception)
                 {
                     failure ??= exception;
                 }
             }
+
             if (unregister)
                 UnregisterOnce();
             if (failure is not null)
@@ -807,12 +654,12 @@ internal sealed unsafe partial class VulkanBackend
         {
             lock (_gate)
             {
-                foreach (VulkanCommandSlot slot in _slots)
-                    slot.MarkDeviceLostNoThrow();
+                foreach (VulkanCommandBuffer entry in _buffers)
+                    entry.MarkDeviceLostNoThrow();
             }
         }
 
-        private VulkanCommandSlot CreateSlot()
+        private VulkanCommandBuffer CreateCommandBuffer()
         {
             CommandPoolCreateInfo poolInfo = new()
             {
@@ -821,9 +668,7 @@ internal sealed unsafe partial class VulkanBackend
                 QueueFamilyIndex = _queue.FamilyIndex,
             };
             CommandPool pool = default;
-            _device.ThrowIfDeviceCallFailed(
-                _device.Backend.Api.CreateCommandPool(_device.Native, &poolInfo, null, &pool),
-                "vkCreateCommandPool");
+            _device.ThrowIfDeviceCallFailed(_device.Backend.Api.CreateCommandPool(_device.Native, &poolInfo, null, &pool), "vkCreateCommandPool");
             try
             {
                 CommandBufferAllocateInfo allocateInfo = new()
@@ -834,16 +679,11 @@ internal sealed unsafe partial class VulkanBackend
                     CommandBufferCount = 1,
                 };
                 VkCommandBuffer commandBuffer = default;
-                _device.ThrowIfDeviceCallFailed(
-                    _device.Backend.Api.AllocateCommandBuffers(
-                        _device.Native,
-                        &allocateInfo,
-                        &commandBuffer),
-                    "vkAllocateCommandBuffers");
-                var slot = new VulkanCommandSlot(_device, pool, commandBuffer);
-                slot.InitializeLease(new VulkanRecordedCommandsLease(this, slot, _queue));
-                _slots.Add(slot);
-                return slot;
+                _device.ThrowIfDeviceCallFailed(_device.Backend.Api.AllocateCommandBuffers(_device.Native, &allocateInfo, &commandBuffer), "vkAllocateCommandBuffers");
+                var entry = new VulkanCommandBuffer(_device, pool, commandBuffer);
+                entry.InitializeData(new VulkanCommandRecording(this, entry, _queue));
+                _buffers.Add(entry);
+                return entry;
             }
             catch
             {
@@ -852,12 +692,12 @@ internal sealed unsafe partial class VulkanBackend
             }
         }
 
-        private void DestroySlotNative(VulkanCommandSlot slot)
+        private void DestroyCommandBuffer(VulkanCommandBuffer entry)
         {
-            slot.ReleaseCaptures();
-            slot.DescriptorArena.Release();
+            entry.ResetAfterCompletion();
+            entry.DescriptorArena.Release();
             if (_device.Native.Handle != 0)
-                _device.Backend.Api.DestroyCommandPool(_device.Native, slot.Pool, null);
+                _device.Backend.Api.DestroyCommandPool(_device.Native, entry.Pool, null);
         }
 
         private void UnregisterOnce()
@@ -867,42 +707,32 @@ internal sealed unsafe partial class VulkanBackend
         }
     }
 
-    private sealed partial class VulkanCommandSlot(
-        VulkanDevice device,
-        CommandPool pool,
-        VkCommandBuffer native)
+    private sealed partial class VulkanCommandBuffer(VulkanDevice device, CommandPool pool, VkCommandBuffer native)
     {
-        private readonly HashSet<IVulkanRetained> _captures = [];
+        private readonly HashSet<IVulkanRetained> _descriptorData = [];
         private VulkanSwapchainUse[] _swapchainUses = [];
         private int _swapchainUseCount;
-        private VulkanRecordedCommandsLease? _activeLease;
+        private VulkanCommandRecording? _activeUse;
         private ulong _activeSequence;
-
         internal CommandPool Pool { get; } = pool;
         internal VkCommandBuffer Native { get; } = native;
         internal VulkanDescriptorArena DescriptorArena { get; } = new(device);
-        internal VulkanRecordedCommandsLease Lease { get; private set; } = null!;
+        internal VulkanCommandRecording Handle { get; private set; } = null !;
 
-        internal void InitializeLease(VulkanRecordedCommandsLease lease)
+        internal void InitializeData(VulkanCommandRecording handle)
         {
-            if (Lease is not null)
-                throw new InvalidOperationException("A Vulkan command slot already has a reusable lease.");
-            Lease = lease;
+            Handle = handle;
         }
 
-        internal void AttachLease(VulkanRecordedCommandsLease lease, ulong sequence)
+        internal void AttachUse(VulkanCommandRecording handle, ulong sequence)
         {
-            if (_activeLease is not null)
-                throw new InvalidOperationException("A Vulkan command slot already has an active payload.");
-            if (!ReferenceEquals(lease, Lease))
-                throw new ArgumentException("The recorded-command lease belongs to another slot.", nameof(lease));
-            _activeLease = lease;
+            _activeUse = handle;
             _activeSequence = sequence;
         }
 
-        internal void DetachLease()
+        internal void DetachUse()
         {
-            _activeLease = null;
+            _activeUse = null;
             _activeSequence = 0;
         }
 
@@ -910,7 +740,7 @@ internal sealed unsafe partial class VulkanBackend
         {
             try
             {
-                _activeLease?.MarkDeviceLost(_activeSequence);
+                _activeUse?.MarkDeviceLost(_activeSequence);
             }
             catch
             {
@@ -921,18 +751,11 @@ internal sealed unsafe partial class VulkanBackend
         {
             try
             {
-                Lease.DiscardExecutableFromDeviceNoThrow();
+                Handle.DiscardExecutableFromDeviceNoThrow();
             }
             catch
             {
             }
-        }
-
-        internal void ResetCaptures(uint capacity)
-        {
-            if (_captures.Count != 0 || _swapchainUseCount != 0)
-                throw new InvalidOperationException("A Vulkan command slot still retains native dependencies.");
-            _captures.EnsureCapacity(checked((int)capacity));
         }
 
         internal void AddSwapchainUse(in VulkanSwapchainUse use)
@@ -940,19 +763,18 @@ internal sealed unsafe partial class VulkanBackend
             for (int index = 0; index < _swapchainUseCount; index++)
             {
                 ref readonly VulkanSwapchainUse existing = ref _swapchainUses[index];
-                if (ReferenceEquals(existing.Lease, use.Lease) &&
-                    existing.Sequence == use.Sequence)
+                if (ReferenceEquals(existing.Handle, use.Handle) && existing.Sequence == use.Sequence)
                 {
                     return;
                 }
             }
+
             if (_swapchainUses.Length == _swapchainUseCount)
             {
-                int capacity = _swapchainUses.Length == 0
-                    ? 4
-                    : checked(_swapchainUses.Length * 2);
+                int capacity = _swapchainUses.Length == 0 ? 4 : checked(_swapchainUses.Length * 2);
                 Array.Resize(ref _swapchainUses, capacity);
             }
+
             _swapchainUses[_swapchainUseCount++] = use;
         }
 
@@ -960,99 +782,45 @@ internal sealed unsafe partial class VulkanBackend
 
         internal void CopySwapchainUses(Span<VulkanSwapchainUse> destination)
         {
-            if (destination.Length < _swapchainUseCount)
-                throw new ArgumentException("The swapchain-use destination is too small.", nameof(destination));
             _swapchainUses.AsSpan(0, _swapchainUseCount).CopyTo(destination);
         }
 
         internal VulkanSwapchainUse GetSwapchainUse(int index)
         {
-            if ((uint)index >= (uint)_swapchainUseCount)
-                throw new ArgumentOutOfRangeException(nameof(index));
             return _swapchainUses[index];
         }
 
-        internal void CaptureSparseBindings(IVulkanRetained value)
+        internal void RetainDescriptorData(IVulkanRetained data)
         {
-            switch (value)
-            {
-                case VulkanDescriptorGeneration descriptors:
-                    descriptors.CaptureSparseBindings(this);
-                    return;
-                case VulkanBindlessGeneration descriptors:
-                    descriptors.CaptureSparseBindings(this);
-                    return;
-                case VulkanBindlessSnapshot descriptors:
-                    descriptors.CaptureSparseBindings(this);
-                    return;
-            }
-            VulkanSparseState? state = value switch
-            {
-                VulkanBuffer buffer => buffer.SparseState,
-                VulkanTexture texture => texture.SparseState,
-                BufferCbv view => ((VulkanBuffer)view.Resource).SparseState,
-                BufferSrv view => ((VulkanBuffer)view.Resource).SparseState,
-                BufferUav view => ((VulkanBuffer)view.Resource).SparseState,
-                IVulkanTextureView view => view.Texture.SparseState,
-                _ => null,
-            };
-            if (state is not null)
-            {
-                VulkanSparseBindings bindings = state.CaptureBindings();
-                try { Capture(bindings); }
-                finally { bindings.ReleaseNative(); }
-            }
-            if (value is BufferUav { Description.CounterBuffer: VulkanBuffer counter })
-                CaptureSparseBindings(counter);
+            if (_descriptorData.Add(data))
+                data.RetainNative();
         }
 
-        internal void Capture(IVulkanRetained value)
+        internal void ResetAfterCompletion()
         {
-            CaptureSparseBindings(value);
-            if (!_captures.Add(value))
-                return;
-            try
-            {
-                value.RetainNative();
-            }
-            catch
-            {
-                _captures.Remove(value);
-                throw;
-            }
-        }
-
-        internal void ReleaseCaptures()
-        {
-            foreach (IVulkanRetained value in _captures)
+            foreach (IVulkanRetained value in _descriptorData)
                 value.ReleaseNative();
-            _captures.Clear();
+            _descriptorData.Clear();
             DescriptorArena.ResetAfterCompletion();
             Array.Clear(_swapchainUses, 0, _swapchainUseCount);
             _swapchainUseCount = 0;
         }
     }
 
-    private sealed class VulkanRecordedCommandsLease : RecordedCommandsLease
+    private sealed class VulkanCommandRecording : RecordedCommandsData
     {
         private readonly VulkanCommandContext _context;
-        private readonly VulkanCommandSlot _slot;
+        private readonly VulkanCommandBuffer _commandBuffer;
         private int _returned = 1;
-
-        internal VulkanRecordedCommandsLease(
-            VulkanCommandContext context,
-            VulkanCommandSlot slot,
-            VulkanQueue queue)
-            : base(context.Device, queue)
+        internal VulkanCommandRecording(VulkanCommandContext context, VulkanCommandBuffer entry, VulkanQueue queue) : base(context.Device, queue)
         {
             _context = context;
-            _slot = slot;
+            _commandBuffer = entry;
         }
 
         internal void ActivateCommands(ulong sequence)
         {
-            if (Interlocked.CompareExchange(ref _returned, 0, 1) != 1)
-                throw new InvalidOperationException("The Vulkan command slot is already active.");
+            _ = Interlocked.CompareExchange(ref _returned, 0, 1) != 1;
             try
             {
                 Activate(sequence);
@@ -1066,56 +834,45 @@ internal sealed unsafe partial class VulkanBackend
 
         internal VkCommandBuffer GetNative(ulong sequence)
         {
-            EnsureSequence(sequence);
-            return _slot.Native;
+            return _commandBuffer.Native;
         }
 
         internal int GetSwapchainUseCount(ulong sequence)
         {
-            EnsureSequence(sequence);
-            return _slot.SwapchainUseCount;
+            return _commandBuffer.SwapchainUseCount;
         }
 
-        internal void CopySwapchainUses(
-            ulong sequence,
-            Span<VulkanSwapchainUse> destination)
+        internal void CopySwapchainUses(ulong sequence, Span<VulkanSwapchainUse> destination)
         {
-            EnsureSequence(sequence);
-            _slot.CopySwapchainUses(destination);
+            _commandBuffer.CopySwapchainUses(destination);
         }
 
         internal VulkanSwapchainUse GetSwapchainUse(ulong sequence, int index)
         {
-            EnsureSequence(sequence);
-            return _slot.GetSwapchainUse(index);
+            return _commandBuffer.GetSwapchainUse(index);
         }
 
-        internal void DiscardExecutableFromDeviceNoThrow() =>
-            _ = TryDiscardExecutableFromDevice(out _);
-
+        internal void DiscardExecutableFromDeviceNoThrow() => _ = TryDiscardExecutableFromDevice(out _);
         internal void Retire(ulong sequence)
         {
-            MarkCompleted(sequence);
-            ReturnSlot(sequence);
+            ReturnCommandBuffer(sequence);
         }
 
-        protected override void DiscardUnsubmitted(ulong sequence) => ReturnSlot(sequence);
-
-        private void ReturnSlot(ulong sequence)
+        protected override void DiscardUnsubmitted(ulong sequence) => ReturnCommandBuffer(sequence);
+        private void ReturnCommandBuffer(ulong sequence)
         {
-            EnsureSequence(sequence);
             if (Interlocked.Exchange(ref _returned, 1) == 0)
-                _context.ReturnSlot(_slot);
+                _context.ReturnCommandBuffer(_commandBuffer);
         }
     }
 
     private sealed class VulkanQueueWork
     {
         internal ulong CompletionValue;
-        internal VulkanRecordedCommandsLease[] CommandLeases = [];
+        internal VulkanCommandRecording[] CommandData = [];
         internal ulong[] CommandSequences = [];
         internal int CommandCount;
-        internal VulkanSwapchainImageLease[] ImageLeases = [];
+        internal VulkanSwapchainImageUse[] Images = [];
         internal ulong[] ImageSequences = [];
         internal int ImageCount;
         internal VulkanSwapchainUse[] ReferencedImages = [];
@@ -1128,18 +885,18 @@ internal sealed unsafe partial class VulkanBackend
         internal CommandBufferSubmitInfo[] NativeCommands = [];
         internal VulkanQueueWork? Next;
         internal bool NativeAccepted;
-
         internal void EnsureCapacity(
             int commandCount,
             int imageCount,
             int referencedImageCount,
             int timelineCount,
             int waitCount,
-            int signalCount)
+            int signalCount
+        )
         {
-            EnsureArray(ref CommandLeases, commandCount);
+            EnsureArray(ref CommandData, commandCount);
             EnsureArray(ref CommandSequences, commandCount);
-            EnsureArray(ref ImageLeases, imageCount);
+            EnsureArray(ref Images, imageCount);
             EnsureArray(ref ImageSequences, imageCount);
             EnsureArray(ref ReferencedImages, referencedImageCount);
             EnsureArray(ref ImageMatches, referencedImageCount);
@@ -1156,13 +913,14 @@ internal sealed unsafe partial class VulkanBackend
             {
                 try
                 {
-                    CommandLeases[index].Retire(CommandSequences[index]);
+                    CommandData[index].Retire(CommandSequences[index]);
                 }
                 catch
                 {
                     success = false;
                 }
             }
+
             for (int index = TimelineCount - 1; index >= 0; index--)
             {
                 try
@@ -1174,6 +932,7 @@ internal sealed unsafe partial class VulkanBackend
                     success = false;
                 }
             }
+
             return success;
         }
 
@@ -1183,14 +942,15 @@ internal sealed unsafe partial class VulkanBackend
             {
                 try
                 {
-                    CommandLeases[index].MarkDeviceLost(CommandSequences[index]);
+                    CommandData[index].MarkDeviceLost(CommandSequences[index]);
                 }
                 catch
                 {
                 }
             }
+
             for (int index = 0; index < ImageCount; index++)
-                ImageLeases[index].Invalidate(deviceLost: true);
+                Images[index].Invalidate(deviceLost: true);
         }
 
         internal void ReleaseLostReferencesNoThrow()
@@ -1209,8 +969,8 @@ internal sealed unsafe partial class VulkanBackend
 
         internal void ClearReferences()
         {
-            Array.Clear(CommandLeases, 0, CommandCount);
-            Array.Clear(ImageLeases, 0, ImageCount);
+            Array.Clear(CommandData, 0, CommandCount);
+            Array.Clear(Images, 0, ImageCount);
             Array.Clear(ReferencedImages, 0, ReferencedImageCount);
             Array.Clear(RetainedTimelines, 0, TimelineCount);
             CommandCount = 0;
@@ -1239,7 +999,6 @@ internal sealed unsafe partial class VulkanBackend
         private VulkanQueueWork? _activeHead;
         private VulkanQueueWork? _activeTail;
         private VulkanQueueWork? _freeHead;
-
         internal VulkanQueueWork TakeWork()
         {
             lock (_gate)
@@ -1252,6 +1011,7 @@ internal sealed unsafe partial class VulkanBackend
                     return work;
                 }
             }
+
             return new VulkanQueueWork();
         }
 
@@ -1277,11 +1037,7 @@ internal sealed unsafe partial class VulkanBackend
         internal ulong GetCompletedValue()
         {
             ulong completed = 0;
-            Result result =
-                _device.Backend.Api.GetSemaphoreCounterValue(
-                _device.Native,
-                _completion,
-                &completed);
+            Result result = _device.Backend.Api.GetSemaphoreCounterValue(_device.Native, _completion, &completed);
             _device.ThrowIfDeviceCallFailed(result, "vkGetSemaphoreCounterValue");
             return completed;
         }
@@ -1304,6 +1060,7 @@ internal sealed unsafe partial class VulkanBackend
                 _activeHead = null;
                 _activeTail = null;
             }
+
             RetireDetached(retired);
         }
 
@@ -1311,9 +1068,7 @@ internal sealed unsafe partial class VulkanBackend
         {
             lock (_gate)
             {
-                for (VulkanQueueWork? work = _activeHead;
-                     work is not null;
-                     work = work.Next)
+                for (VulkanQueueWork? work = _activeHead; work is not null; work = work.Next)
                 {
                     work.MarkDeviceLostNoThrow();
                 }
@@ -1326,12 +1081,12 @@ internal sealed unsafe partial class VulkanBackend
             {
                 VulkanQueueWork? retiredHead = _activeHead;
                 VulkanQueueWork? retiredTail = null;
-                while (_activeHead is VulkanQueueWork work &&
-                       work.CompletionValue <= completed)
+                while (_activeHead is VulkanQueueWork work && work.CompletionValue <= completed)
                 {
                     retiredTail = work;
                     _activeHead = work.Next;
                 }
+
                 if (retiredTail is null)
                     return null;
                 retiredTail.Next = null;
@@ -1350,9 +1105,9 @@ internal sealed unsafe partial class VulkanBackend
                 if (!work.RetireNoThrow())
                 {
                     work.MarkDeviceLostNoThrow();
-                    _ = _device.PublishInternalDeviceLoss(
-                        "Vulkan completion retirement failed after native completion.");
+                    _ = _device.PublishInternalDeviceLoss("Vulkan completion retirement failed after native completion.");
                 }
+
                 ReturnWork(work);
             }
         }
@@ -1367,6 +1122,7 @@ internal sealed unsafe partial class VulkanBackend
                 _activeTail = null;
                 _freeHead = null;
             }
+
             while (active is VulkanQueueWork work)
             {
                 active = work.Next;

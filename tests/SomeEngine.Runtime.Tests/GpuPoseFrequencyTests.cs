@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using SomeEngine.Animation;
 using SomeEngine.Animation.Pose;
 using SomeEngine.ECS;
@@ -31,8 +31,8 @@ public sealed partial class SkinningRenderingTests
         using SkeletonInstance parent = storage.CreateInstance(parentDefinition), child = storage.CreateInstance(childDefinition, parent);
         Entity target = default, animation = default, parentTarget = default, childTarget = default;
         var signals = new FrequencySignals(body);
-        var reads = new List<GpuPoseReadback>();
-        var parentReads = new List<GpuPoseReadback>();
+        var reads = new List<GpuPoseReadbackResult>();
+        var parentReads = new List<GpuPoseReadbackResult>();
         SceneImage? actual = null, expected = null;
         var application = new ApplicationScene(content.Project.RootPath)
         {
@@ -80,7 +80,7 @@ public sealed partial class SkinningRenderingTests
         for (int frame = 0; frame < 8; frame++)
         {
             float time = (frame + 1) * .25f;
-            GpuPoseReadback result = reads[frame];
+            GpuPoseReadbackResult result = reads[frame];
             var endpoints = Endpoints(frame);
             Assert.Equal(endpoints.Before, result.Presentation.PreviousTime);
             Assert.Equal(endpoints.After, result.Presentation.CurrentTime);

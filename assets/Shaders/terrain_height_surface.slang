@@ -1,4 +1,4 @@
-#include "terrain_height_input.slang"
+__exported import terrain_height_input;
 
 float SampleTerrainSurface(float3 position)
 {

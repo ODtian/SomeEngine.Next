@@ -81,7 +81,7 @@ public sealed class SlangComLifetimeTests : IDisposable
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         Assert.ThrowsAny<OperationCanceledException>(() => SlangShaderImporter.CompileDefinition(definition,
-            Path.Combine(_directory, "selected.shader"), cancellation.Token));
+            Path.Combine(_directory, "selected.shader"), [SlangShaderSharp.SlangCompileTarget.Dxil, SlangShaderSharp.SlangCompileTarget.Spirv], cancellation.Token));
         using var result = ShaderTestCompilation.Compile(definition, path);
         Assert.Equal(definition.Id, result.Id);
         Assert.False((await result.GetBlock<ShaderBlock>().ReadBytesAsync(ShaderBlock.TargetCodeKey(ShaderTestCompilation.CreateSessionDescription(), 0))).IsEmpty);

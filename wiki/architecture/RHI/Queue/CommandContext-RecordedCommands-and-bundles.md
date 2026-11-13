@@ -7,15 +7,19 @@ recording lifecycle is:
 idle -> Begin -> recording -> End/EndBundle or Discard -> reusable idle
 ```
 
-`CommandRecordingDesc` supplies initial capacities for resource descriptors, sampler descriptors and
-captured resources. These are preparation hints, not logical limits.
+`CommandRecordingDesc` supplies initial descriptor capacities and an explicit `Repeatable` choice.
+The renderer selects reusable batches. Only repeatable recordings retain command argument data in
+their command context; the native-call wrappers receive that context explicitly. Replaying command
+data passes the native target directly, so replay has no global table or thread-local mode.
 
-`End` returns a value-type `RecordedCommands` handle with a sequence-protected payload. Its states
-cover executable, submitting, submitted, completed, discarded, Device Lost and caller-disposed
-outcomes. Copies share the same terminal sequence. Disposing an unsubmitted handle discards its
-native payload; disposing after acceptance does not release GPU dependencies early.
+`End` returns a sealed `RecordedCommands` object. Its status is Executable, Submitted, or Discarded,
+and each transition uses `Interlocked.CompareExchange`. Dispose and Submit are externally
+synchronized. ValidationLayer reports concurrent or repeated use; Device loss belongs to Device.
+Disposing executable commands discards their native recording. Accepted GPU work retains its
+native command storage until the queue finishes. The public status remains Submitted after GPU
+completion, while `QueueCompletion` supplies completion information.
 
-Bundles are caller-disposed Device children and may contain only the command inventory permitted by
-the backend. `ExecuteBundle` captures the bundle and its native dependencies.
+Bundles are caller-disposed Device children and use the command inventory supported by the backend.
+Their native command storage follows the same Device deferred release boundary as other resources.
 ^rhi-que-004
 

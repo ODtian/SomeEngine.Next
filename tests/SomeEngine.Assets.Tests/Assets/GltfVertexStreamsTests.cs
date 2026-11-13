@@ -393,7 +393,7 @@ public sealed class GltfVertexStreamsTests
         Assert.Equal(.5f, shape.Bounds.Center.Y);
         Assert.Equal(.5f, shape.Bounds.Radius);
         ClusterGeometryBlock geometry = result.Asset.GetBlock<ClusterGeometryBlock>();
-        var rendered = await geometry.CreateAsync(shape, result.Asset.GetBlock<ClusterVertexAttributesBlock>(), "compressed bounds");
+        var rendered = await result.Asset.GetBlock<ClusterMeshBlock>().CreateAsync(shape, "compressed bounds");
         Assert.Equal(shape.Bounds, rendered.Bounds);
         Assert.Contains(geometry.Clusters.SelectMany(cluster => Enumerable.Range(0, cluster.Vertices.Length).Select(cluster.DecodePosition)),
             position => Vector3.Distance(position, new(10,0,0)) < .001f);
@@ -443,15 +443,13 @@ public sealed class GltfVertexStreamsTests
         file.Document["scene"] = 0;
         await using ImportResult result = await ImportAsync(file.WriteFile(file.CreateTriangle()), true, true);
         Assert.Null(result.Asset.GetBlock<MeshBlock>().Bounds);
-        var mesh = await result.Asset.GetBlock<ClusterGeometryBlock>().CreateAsync(result.Asset.GetBlock<MeshBlock>(),
-            result.Asset.GetBlock<ClusterVertexAttributesBlock>(), "optional bounds");
+        var mesh = await result.Asset.GetBlock<ClusterMeshBlock>().CreateAsync(result.Asset.GetBlock<MeshBlock>(), "optional bounds");
         Assert.Equal(1, mesh.PageCount);
         string meshPath = Path.Combine(file.Directory, "optional.mesh.asset");
         await result.Asset.SaveAsync(meshPath);
         using MeshAsset reopenedMesh = await MeshAsset.OpenAsync(meshPath);
         Assert.Null(reopenedMesh.GetBlock<MeshBlock>().Bounds);
-        var reopenedGeometry = await reopenedMesh.GetBlock<ClusterGeometryBlock>().CreateAsync(reopenedMesh.GetBlock<MeshBlock>(),
-            await reopenedMesh.GetBlockAsync<ClusterVertexAttributesBlock>(), "reopened optional bounds");
+        var reopenedGeometry = await reopenedMesh.GetBlock<ClusterMeshBlock>().CreateAsync(reopenedMesh.GetBlock<MeshBlock>(), "reopened optional bounds");
         Assert.Equal(1, reopenedGeometry.PageCount);
         WorldAsset scene = await result.Imports.GetAssetAsync<SharpGLTF.Schema2.Scene, WorldAsset>(result.Model.LogicalScenes[0]);
         string scenePath = Path.Combine(file.Directory, "optional.scene.asset");
@@ -489,10 +487,8 @@ public sealed class GltfVertexStreamsTests
                         output.SetBlock(new MeshBlock { Regions = [new() { Name = "surface" }] });
                         return ValueTask.CompletedTask;
                     });
-                context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(Guid.NewGuid(), [ClusterGeometryBlock.BlockTypeId],
+                context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(Guid.NewGuid(), [ClusterGeometryBlock.BlockTypeId, ClusterVertexAttributesBlock.BlockTypeId, ClusterMeshBlock.BlockTypeId],
                     (source, imports, output, token) => new ClusterGeometryImporter().ImportAsync(source, new(), imports, output, token));
-                context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(Guid.NewGuid(), [ClusterVertexAttributesBlock.BlockTypeId],
-                    (source, imports, output, token) => new ClusterVertexAttributesImporter().ImportAsync(source, new(), imports, output, token));
             }
             else
             {

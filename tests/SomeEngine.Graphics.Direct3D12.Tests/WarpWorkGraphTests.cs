@@ -224,7 +224,6 @@ public sealed class WarpWorkGraphTests(D3D12TestCompiler shaderCompiler)
             new CommandContextDesc(QueueType.Compute, 0, 1));
 
         backend.Begin(context, new CommandRecordingDesc(
-            InitialCapturedResourceCapacity: 16,
             InitialResourceDescriptorCapacity: 32,
             InitialSamplerDescriptorCapacity: 8));
         backend.Barrier(context, new BufferBarrier(
@@ -394,7 +393,7 @@ public sealed class WarpWorkGraphTests(D3D12TestCompiler shaderCompiler)
             [new("computeMain", SlangStage.Compute)]);
         EntryPointReflection graphEntry = graphShader.GetEntryPoint(0);
 
-        using IGraphicsBackend backend = CreateBackend();
+        using ValidationLayer backend = CreateValidatedBackend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline graph = backend.CreateWorkGraphPipeline(
             device,

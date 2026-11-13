@@ -43,7 +43,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
             data.GetBindingRangeLeafVariable(samplerRanges[0]), state);
         StaticSamplerBinding secondStatic = new(
             data.GetBindingRangeLeafVariable(samplerRanges[1]), state);
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline first = backend.CreateComputePipeline(device,
             new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
@@ -70,7 +70,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
         using CommandContext context = backend.CreateCommandContext(device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
 
-        backend.Begin(context, new CommandRecordingDesc(8, 0, 8));
+        backend.Begin(context, new CommandRecordingDesc(8, 0));
         backend.SetPipeline(context, first);
         backend.SetPersistentParameterBindings(context, persistent);
         backend.SetPipeline(context, sameRoot);
@@ -111,7 +111,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
             FilterType.Nearest, FilterType.Nearest, FilterType.Nearest,
             AddressType.ClampToEdge, AddressType.ClampToEdge, AddressType.ClampToEdge);
 
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
@@ -147,19 +147,19 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
             device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
 
-        backend.Begin(context, new CommandRecordingDesc(8, 0, 8));
+        backend.Begin(context, new CommandRecordingDesc(8, 0));
         backend.SetPipeline(context, pipeline);
         backend.SetTransientParameterBindings(
             context,
             new ParameterBlockBindings(layout, runtime, []));
         backend.Discard(context);
 
-        backend.Begin(context, new CommandRecordingDesc(8, 0, 8));
+        backend.Begin(context, new CommandRecordingDesc(8, 0));
         backend.SetPipeline(context, pipeline);
         backend.SetPersistentParameterBindings(context, validPersistent);
         backend.Discard(context);
 
-        backend.Begin(context, new CommandRecordingDesc(8, 0, 8));
+        backend.Begin(context, new CommandRecordingDesc(8, 0));
         backend.SetPipeline(context, pipeline);
         Assert.Throws<ArgumentException>(() => backend.SetTransientParameterBindings(
             context, new ParameterBlockBindings(layout, reflected, [])));
@@ -203,7 +203,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
         SamplerDesc sampler = new(FilterType.Nearest, FilterType.Nearest, FilterType.Nearest,
             AddressType.ClampToEdge, AddressType.ClampToEdge, AddressType.ClampToEdge);
 
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(device,
             new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
@@ -243,7 +243,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
 
         using CommandContext context = backend.CreateCommandContext(device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(8, 0, 8));
+        backend.Begin(context, new CommandRecordingDesc(8, 0));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.None,
             PipelineSync.ComputeShading, ResourceAccess.NoAccess,
             ResourceAccess.UnorderedAccess));
@@ -293,7 +293,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
             "sm_6_0");
         VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
             ?? VariableLayoutReflection.Null;
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         GraphicsException failure = Assert.Throws<GraphicsException>(() =>
@@ -352,7 +352,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
         Assert.Equal(
             Slang.UnboundedSize,
             unchecked((nuint)reflected.GetBindingRangeBindingCount(samplerRange)));
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         SamplerDesc sampler = new(
             FilterType.Nearest, FilterType.Nearest, FilterType.Nearest,
@@ -395,7 +395,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
             "sm_6_0");
         VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
             ?? VariableLayoutReflection.Null;
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         SamplerDesc sampler = new(
             FilterType.Nearest, FilterType.Nearest, FilterType.Nearest,
@@ -444,7 +444,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
             "sm_6_0");
         VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
             ?? VariableLayoutReflection.Null;
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         SamplerDesc sampler = new(
             FilterType.Nearest, FilterType.Nearest, FilterType.Nearest,
@@ -511,7 +511,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
         var direct = D3D12GraphicsBackend.Create(new D3D12BackendOptions(validation));
         var backend = new ValidationLayer(
             direct,
-            new ValidationOptions(new ThrowingValidationMessageSink()));
+            new ValidationOptions(new ThrowingValidationReporter()));
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         Assert.Null(Record.Exception(backend.Dispose));
@@ -572,7 +572,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
             new CommandContextDesc(QueueType.Copy, 0, 1));
 
         validated.Begin(context);
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+        ArgumentException exception = Assert.Throws<ArgumentException>(() =>
             validated.CopyBuffer(
                 context,
                 new BufferCopy(foreignSource, 0, destination, 0, 64)));
@@ -604,7 +604,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
             new CommandContextDesc(QueueType.Copy, 0, 1));
 
         backend.Begin(context);
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+        ArgumentException exception = Assert.Throws<ArgumentException>(() =>
             backend.CopyBuffer(context, new BufferCopy(second, 0, first, 0, 64)));
         backend.Discard(context);
 
@@ -1404,7 +1404,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
             new ComputePipelineDesc(otherShader.SlangCode, otherShader.Reflection, otherShader.GetEntryPoint(0), otherShader.GetEntryCode(0)));
 
         byte[] wrongOrdinaryData = new byte[checked(validOrdinaryData.Length + 1)];
-        Assert.Throws<InvalidOperationException>(() => CreateAndDisposeBindings(
+        Assert.Throws<ArgumentException>(() => CreateAndDisposeBindings(
             backend,
             device,
             bindingPipeline,
@@ -1413,7 +1413,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
             wrongOrdinaryData));
 
         ResourceBinding[] missingResource = validResources[..^1];
-        Assert.Throws<InvalidOperationException>(() => CreateAndDisposeBindings(
+        Assert.Throws<ArgumentException>(() => CreateAndDisposeBindings(
             backend,
             device,
             bindingPipeline,
@@ -1429,7 +1429,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
         Assert.True(textureOrdinal >= 0 && bufferOrdinal >= 0);
         (wrongType[textureOrdinal], wrongType[bufferOrdinal]) =
             (wrongType[bufferOrdinal], wrongType[textureOrdinal]);
-        Assert.Throws<InvalidOperationException>(() => CreateAndDisposeBindings(
+        Assert.Throws<ArgumentException>(() => CreateAndDisposeBindings(
             backend,
             device,
             bindingPipeline,
@@ -1445,18 +1445,18 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
         using CommandContext context = backend.CreateCommandContext(
             device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(8, 2, 8));
+        backend.Begin(context, new CommandRecordingDesc(8, 2));
         backend.SetPipeline(context, otherPipeline);
-        Assert.Throws<InvalidOperationException>(() => SetTransientBindings(
+        Assert.Throws<ArgumentException>(() => SetTransientBindings(
             backend,
             context,
             layout,
             validResources,
             validOrdinaryData));
-        Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<ArgumentException>(() =>
             backend.SetPersistentParameterBindings(context, persistent));
         backend.SetPipeline(context, bindingPipeline);
-        Assert.Throws<InvalidOperationException>(() => SetTransientBindings(
+        Assert.Throws<ArgumentException>(() => SetTransientBindings(
             backend, context, layout, wrongType, validOrdinaryData));
         SetTransientBindings(
             backend,
@@ -1537,7 +1537,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
         var backend = D3D12GraphicsBackend.Create(new D3D12BackendOptions(validation));
         return new ValidationLayer(
             backend,
-            new ValidationOptions(new DelegateValidationMessageSink(messages.Add)));
+            new ValidationOptions(new DelegateValidationReporter(messages.Add)));
     }
 
     private static ResourceBinding[] CreateNullBindings(
@@ -1711,7 +1711,7 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
     }
 
-    private sealed class ThrowingValidationMessageSink : IValidationMessageSink
+    private sealed class ThrowingValidationReporter : IValidationReporter
     {
         public void Report(in ValidationMessage message) =>
             throw new InvalidOperationException("The diagnostic consumer failed.");

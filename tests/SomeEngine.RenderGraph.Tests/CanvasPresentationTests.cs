@@ -42,14 +42,17 @@ public sealed partial class CanvasCompositionTests
 
     private static void CheckPresentation(IGraphicsBackend backend, Device device, bool worldSpace)
     {
-        using var renderDevice = new RenderDevice(backend, device);
+        using var pipelines = new global::SomeEngine.Render.RenderPipelines(backend, device);
         using var graph = new RenderGraph(backend, device, [backend.GetQueue(device, QueueType.Graphics)]);
+        using var renderDevice = new RenderDevice(graph, pipelines);
         using var world = new RenderWorld();
-        using SurfaceMaterial surfaces = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
-        using GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
-        using ImageMaterial images = ImageMaterial.Create(device.Capabilities.CompileTarget);
-        using Texture blue = SolidTexture([0, 0, 255, 255]);
-        using var renderer = new CanvasRenderer(backend, device, graph, world, surfaces,
+        using var shaderLibrary = new SomeEngine.Resources.ShaderLibrary(device.Capabilities.CompileTarget);
+        using var shaderFiles = new SomeEngine.Tests.EngineShaderFiles();
+        SurfaceMaterial surfaces = SurfaceMaterial.Create(shaderLibrary, shaderFiles.Files);
+        GlyphsMaterial glyphs = GlyphsMaterial.Create(shaderLibrary, shaderFiles.Files);
+        ImageMaterial images = ImageMaterial.Create(shaderLibrary, shaderFiles.Files);
+        Texture blue = SolidTexture([0, 0, 255, 255]);
+        using var renderer = new CanvasRenderer(backend, device, pipelines, graph, world, surfaces,
             Format.R8G8B8A8UNorm, glyphs, images, renderDevice);
         Entity atlas = world.CreateEntity(new RenderGlyphAtlas(
             new[] { new GlyphPagePixels(4, 4, Enumerable.Repeat((byte)255, 16).ToArray()) },
@@ -116,9 +119,9 @@ public sealed partial class CanvasCompositionTests
             {
                 renderer.UpdateFrame(ref frame);
                 var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
-                int count = frame.Execute(completions);
-                renderDevice.TrackSubmission(completions.AsSpan(0, count));
-                renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+                ulong identity = frame.FrameIdentity;
+                frame.Execute();
+                Assert.Equal(WaitStatus.Completed, graph.WaitForFrame(identity, TimeSpan.FromSeconds(10)));
             }
             finally { frame.Dispose(); }
             using MappedBuffer pixels = backend.Map(readback, MapType.Read, BufferRange.Whole);

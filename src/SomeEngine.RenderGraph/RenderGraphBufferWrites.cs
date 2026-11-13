@@ -5,8 +5,7 @@ public sealed class RenderGraphBufferWrites : IDisposable
 {
     private readonly RenderGraphNextFrame _next;
     private readonly FrameBufferTransfers _transfers;
-    private readonly ThreadLocal<List<FrameBufferTransfers.BufferUpload>> _writes =
-        new(static () => [], trackAllValues: true);
+    private readonly List<BufferWriter> _writers = [];
     private bool _closed;
 
     internal RenderGraphBufferWrites(RenderGraphNextFrame next, FrameBufferTransfers transfers)
@@ -15,26 +14,24 @@ public sealed class RenderGraphBufferWrites : IDisposable
         _transfers = transfers;
     }
 
-    /// <summary>Returns a mapped range; parallel callers may write disjoint ranges.</summary>
-    public Span<byte> GetWriteSpan(GraphBufferId buffer, ulong offset, int length)
+    /// <summary>Creates a writer for one thread's buffer ranges.</summary>
+    public BufferWriter CreateWriter()
     {
         _next.EnsureOpen();
         DevelopmentCheck.Require(!_closed, "The buffer writes must be open for writing.");
-        _next.Graph.ValidateBufferUpload(buffer, offset, length);
-        FrameBufferTransfers.BufferUpload write = _transfers.ReserveUpload(buffer, offset, length);
-        _writes.Value!.Add(write);
-        return FrameBufferTransfers.GetUploadSpan(write);
+        var writer = new BufferWriter(this);
+        lock (_writers) _writers.Add(writer);
+        return writer;
     }
-
-    public void WriteBuffer(GraphBufferId buffer, ulong offset, scoped ReadOnlySpan<byte> data) =>
-        data.CopyTo(GetWriteSpan(buffer, offset, data.Length));
 
     /// <summary>Commits the ranges after all writers have finished.</summary>
     public void Commit()
     {
         _next.EnsureOpen();
         DevelopmentCheck.Require(!_closed, "The buffer writes must be open when committed.");
-        _transfers.AddUploads(_writes.Values.SelectMany(writes => writes));
+        var writes = new List<FrameBufferTransfers.BufferUpload>();
+        foreach (BufferWriter writer in _writers) writes.AddRange(writer.Writes);
+        _transfers.AddUploads(writes);
         Dispose();
     }
 
@@ -43,6 +40,28 @@ public sealed class RenderGraphBufferWrites : IDisposable
     {
         if (_closed) return;
         _closed = true;
-        _writes.Dispose();
+        _writers.Clear();
+    }
+
+    public sealed class BufferWriter
+    {
+        private readonly RenderGraphBufferWrites _group;
+        internal readonly List<FrameBufferTransfers.BufferUpload> Writes = [];
+
+        internal BufferWriter(RenderGraphBufferWrites group) => _group = group;
+
+        /// <summary>Returns a mapped range belonging to this writer.</summary>
+        public Span<byte> GetWriteSpan(GraphBufferId buffer, ulong offset, int length)
+        {
+            _group._next.EnsureOpen();
+            DevelopmentCheck.Require(!_group._closed, "The buffer writes must be open for writing.");
+            _group._next.Graph.ValidateBufferUpload(buffer, offset, length);
+            FrameBufferTransfers.BufferUpload write = _group._transfers.ReserveUpload(buffer, offset, length);
+            Writes.Add(write);
+            return FrameBufferTransfers.GetUploadSpan(write);
+        }
+
+        public void WriteBuffer(GraphBufferId buffer, ulong offset, scoped ReadOnlySpan<byte> data) =>
+            data.CopyTo(GetWriteSpan(buffer, offset, data.Length));
     }
 }

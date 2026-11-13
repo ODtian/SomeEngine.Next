@@ -1,48 +1,59 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 28,
-  "input_hash": "b70f6b3ee41ac2479443284c6a14867ae71f535fe43306a7133c9fa158952be3",
+  "importer_version": 36,
+  "input_hash": "77f87764b2ab258dddd6ab45869e1ab73037424dae56712d6376ca4ea9d5ceeb",
   "inputs": [
     {
-      "relative_path": "assets/Shaders/cluster_raster_target_view.slang",
-      "content_hash": "b8b96b957ef049225dff845e2a272cc8e11b15435d9bb987f73d032b1d66a01e"
-    },
-    {
-      "relative_path": "assets/Shaders/cluster_view.slang",
-      "content_hash": "7407665c428aa7c4008237ee119dca991b4389594cc8724442c2dedf50ec954f"
-    },
-    {
-      "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
-    },
-    {
-      "relative_path": "assets/Shaders/vsm_raster_work_common.slang",
-      "content_hash": "efe7b377e4f9599a46a946ad2c830ef1cee4ea6a8abfa26c0d8408c1b4ba0dc8"
-    },
-    {
       "relative_path": "assets/Shaders/vsm_sampling.slang",
-      "content_hash": "3436134d8cc5fdaad6fbb862f1e15ca6c7bec3e15fbaff54a4937e7ab0250c46"
+      "content_hash": "94b4da4ac08573558a5c38363d2c7032355e1edd4883443a6aa1e72b55880c5d"
     },
     {
       "relative_path": "assets/Shaders/vsm_view_compact.shader",
-      "content_hash": "cd49e2ca696fa2d94f63235f9992f7f283a262704c15287b2b487cd64d2a615e"
+      "content_hash": "33db2f5d41dd058a58d6fbe859db8e6f5c50e8b6c319092e3a26ccf4a7806527"
     },
     {
       "relative_path": "assets/Shaders/vsm_view_compact.slang",
-      "content_hash": "07783eeb393f6d34c999f63af3059b26f2249c9c5e4b7c4e27af4e76531b6347"
+      "content_hash": "bfac4b1a75bbb3a82a499ea781c1135a28d94a6643cc40a90e508873e76374c6"
     }
   ],
   "reported_inputs": [],
+  "asset_inputs": [
+    "bd0f7bd6-ef0a-4683-91f1-24aa48439200",
+    "bf2e8b09-821f-49f3-ac34-c534942b1e75",
+    "33ffe502-d4c3-47e4-bf6b-203578e09844",
+    "928f32a6-22ab-401e-9c48-a2a9c9d00eda",
+    "53bc559c-25c3-4d8f-aace-89503831a49b",
+    "289d5d93-babf-4329-8e23-c47b465a620b",
+    "5468582d-af2a-4bc7-a38a-33a3e848f2bd",
+    "f583307c-e0ea-4605-babd-f3983abdcdae",
+    "f9a612f3-d369-4e1f-9f4f-6b27accbda8c",
+    "34267efa-d4fd-4cad-a79e-c55ca9a8c646",
+    "21b2035e-e34d-48f0-bdec-86db0fce6993",
+    "788338a0-efdd-4b26-96b1-ac638e7503e2"
+  ],
   "outputs": [
     {
       "asset_guid": "5610ce5e-dcec-5518-affa-7a9efe3ce939",
       "sub_asset_key": "",
-      "input_hash": "b70f6b3ee41ac2479443284c6a14867ae71f535fe43306a7133c9fa158952be3",
+      "input_hash": "77f87764b2ab258dddd6ab45869e1ab73037424dae56712d6376ca4ea9d5ceeb",
       "dependencies": [],
       "asset_path": "vsm_view_compact.shader.asset",
-      "version": "dc65cbe4-4981-7190-eb47-76f24c0a93cb",
-      "content_hash": "E47400F515F71AE56EE904EF9612AFD6C1CEB869EE10517B34975A86B18DDA04",
-      "asset_dependencies": []
+      "version": "5e000e2c-abc6-f51a-4fbd-bc0b0c62fd66",
+      "content_hash": "49DAD0DC575E2723D624BB0204DE6AF4FA5A7F4143361B42F4532EC32CE3F3CE",
+      "asset_dependencies": [
+        "21b2035e-e34d-48f0-bdec-86db0fce6993",
+        "289d5d93-babf-4329-8e23-c47b465a620b",
+        "33ffe502-d4c3-47e4-bf6b-203578e09844",
+        "34267efa-d4fd-4cad-a79e-c55ca9a8c646",
+        "53bc559c-25c3-4d8f-aace-89503831a49b",
+        "5468582d-af2a-4bc7-a38a-33a3e848f2bd",
+        "788338a0-efdd-4b26-96b1-ac638e7503e2",
+        "928f32a6-22ab-401e-9c48-a2a9c9d00eda",
+        "bd0f7bd6-ef0a-4683-91f1-24aa48439200",
+        "bf2e8b09-821f-49f3-ac34-c534942b1e75",
+        "f583307c-e0ea-4605-babd-f3983abdcdae",
+        "f9a612f3-d369-4e1f-9f4f-6b27accbda8c"
+      ]
     }
   ]
 }

@@ -1,10 +1,10 @@
 #ifndef CLUSTER_COMMON_SLANG
 #define CLUSTER_COMMON_SLANG
 
-#include "common.slang"
-#include "cluster_structures.slang"
+__exported import common;
+__exported import cluster_structures;
 #include "cluster_instance_properties.slang"
-#include "visbuffer_encoding.slang"
+__exported import visbuffer_encoding;
 
 // ── Page Heap helpers ──
 // These require a `ByteAddressBuffer PageHeap` to be declared in the calling shader.

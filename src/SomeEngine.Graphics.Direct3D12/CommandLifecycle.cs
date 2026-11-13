@@ -12,14 +12,12 @@ internal sealed unsafe partial class D3D12Backend
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandLifecycle);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
-        if (desc.InitialSlotCount == 0)
-            throw new ArgumentOutOfRangeException(nameof(desc), "InitialSlotCount must be nonzero.");
 
         D3D12Queue queue = nativeDevice.GetQueue(desc.QueueType, desc.QueueIndex);
         D3D12CommandContext result = new(nativeDevice, queue, desc);
         try
         {
-            result.PrepareSlots(desc.InitialSlotCount);
+            result.PrepareBuffers(desc.InitialBufferCount);
             nativeDevice.RegisterChild(result);
             return result;
         }
@@ -32,23 +30,27 @@ internal sealed unsafe partial class D3D12Backend
 
     public void Begin(CommandContext context, in CommandRecordingDesc desc = default)
     {
+        ((D3D12CommandContext)context).BeginPublicCall();
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandLifecycle);
-        RequireCommandContext(context, nameof(context)).Begin(desc);
+        ((D3D12CommandContext)context).Begin(desc);
     }
     public RecordedCommands End(CommandContext context)
     {
+        ((D3D12CommandContext)context).BeginPublicCall();
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandLifecycle);
-        return RequireCommandContext(context, nameof(context)).EndCommands();
+        return ((D3D12CommandContext)context).EndCommands();
     }
     public RecordedBundle EndBundle(CommandContext context)
     {
+        ((D3D12CommandContext)context).BeginPublicCall();
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
-        return RequireCommandContext(context, nameof(context)).EndBundle();
+        return ((D3D12CommandContext)context).EndBundle();
     }
     public void Discard(CommandContext context)
     {
+        ((D3D12CommandContext)context).BeginPublicCall();
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandLifecycle);
-        RequireCommandContext(context, nameof(context)).Discard();
+        ((D3D12CommandContext)context).Discard();
     }
     public QueueCompletion Submit(Queue queue, in QueueSubmitDesc desc)
     {
@@ -65,7 +67,7 @@ internal sealed unsafe partial class D3D12Backend
         int imageCount = desc.SwapchainImages.Length;
         int timelineSignalCount = desc.TimelineSignals.Length;
         int timelineCount = checked(timelineWaitCount + timelineSignalCount);
-        D3D12PendingSubmission submission = nativeQueue.AcquireSubmission(
+        D3D12QueueSubmission submission = nativeQueue.AcquireSubmission(
             commandCount,
             completionWaitCount,
             timelineCount,
@@ -178,14 +180,14 @@ internal sealed unsafe partial class D3D12Backend
 
     private void PrepareSubmissionWaits(
         in QueueSubmitDesc desc,
-        D3D12PendingSubmission submission)
+        D3D12QueueSubmission submission)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiSubmitPrepareSubmissionWaits);
         for (int index = 0; index < desc.CompletionWaits.Length; index++)
         {
             QueueCompletion wait = desc.CompletionWaits[index];
-            submission.CompletionWaitQueues[index] = RequireQueue(wait.Queue, nameof(desc));
-            submission.CompletionWaitValues[index] = wait.Value;
+            submission.CompletionWaitQueues[index] = RequireQueue(wait.QueueReference, nameof(desc));
+            submission.CompletionWaitValues[index] = wait.SubmittedValue;
             submission.CompletionWaitCount = index + 1;
         }
 
@@ -210,7 +212,7 @@ internal sealed unsafe partial class D3D12Backend
     private static void ClaimCommandPayloads(
         D3D12Queue queue,
         ReadOnlySpan<RecordedCommands> commands,
-        D3D12PendingSubmission submission)
+        D3D12QueueSubmission submission)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiSubmitClaimCommandPayloads);
         int requiredSwapchainUseCapacity = 0;
@@ -218,18 +220,8 @@ internal sealed unsafe partial class D3D12Backend
         {
             RecordedCommands command = commands[index];
             ulong sequence = command.Sequence;
-            if (command.Lease is not D3D12RecordedCommandsLease payload ||
-                !ReferenceEquals(payload.Queue, queue))
-            {
-                throw new ArgumentException(
-                    "Every RecordedCommands payload must target the submitted Queue.",
-                    nameof(commands));
-            }
-            if (!payload.TryBeginSubmit(sequence))
-            {
-                throw new InvalidOperationException(
-                    "A RecordedCommands payload has no submission right.");
-            }
+            D3D12CommandRecording payload = (D3D12CommandRecording)(command.Data);
+            payload.TryBeginSubmit(sequence);
 
             submission.Payloads[index] = payload;
             submission.PayloadSequences[index] = sequence;
@@ -242,7 +234,7 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static void CollectReferencedSwapchainImages(
-        D3D12PendingSubmission submission)
+        D3D12QueueSubmission submission)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiSubmitCollectReferencedSwapchainImages);
         for (int index = 0; index < submission.PayloadCount; index++)
@@ -258,39 +250,17 @@ internal sealed unsafe partial class D3D12Backend
     private static void ValidateSwapchainImages(
         D3D12Queue queue,
         ReadOnlySpan<SwapchainImage> images,
-        D3D12PendingSubmission submission)
+        D3D12QueueSubmission submission)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiSubmitValidateSwapchainImages);
-        if (submission.ReferencedImageCount != images.Length)
-        {
-            throw new ArgumentException(
-                "SwapchainImages must exactly match the images referenced by Commands.",
-                nameof(images));
-        }
 
         for (int index = 0; index < images.Length; index++)
         {
             SwapchainImage image = images[index];
-            D3D12SwapchainImageLease nativeImage = image.Lease as D3D12SwapchainImageLease ??
-                throw new ArgumentException(
-                    "Every SwapchainImage must belong to this D3D12 backend.",
-                    nameof(images));
-            RequireUniqueSwapchainImage(submission.Images, index, nativeImage);
+            D3D12SwapchainImageUse nativeImage = (D3D12SwapchainImageUse)(image.ImageUse!);
             int useIndex = FindReferencedImage(submission, nativeImage);
-            if (useIndex < 0 ||
-                submission.ReferencedImageUses[useIndex].Sequence != image.Sequence)
-            {
-                throw new ArgumentException(
-                    "SwapchainImages does not match the exact acquisition referenced by Commands.",
-                    nameof(images));
-            }
 
             D3D12SubmittedSwapchainUse use = submission.ReferencedImageUses[useIndex];
-            nativeImage.NativeSwapchain.ValidateSubmission(
-                queue,
-                nativeImage,
-                image.Sequence,
-                use.PresentReady);
             submission.Images[index] = nativeImage;
             submission.ImageSequences[index] = image.Sequence;
             submission.ImageUses[index] = use;
@@ -298,25 +268,9 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    private static void RequireUniqueSwapchainImage(
-        D3D12SwapchainImageLease[] images,
-        int count,
-        D3D12SwapchainImageLease candidate)
-    {
-        for (int index = 0; index < count; index++)
-        {
-            if (ReferenceEquals(images[index], candidate))
-            {
-                throw new ArgumentException(
-                    "SwapchainImages contains a duplicate image.",
-                    nameof(images));
-            }
-        }
-    }
-
     private static int FindReferencedImage(
-        D3D12PendingSubmission submission,
-        D3D12SwapchainImageLease image)
+        D3D12QueueSubmission submission,
+        D3D12SwapchainImageUse image)
     {
         for (int index = 0; index < submission.ReferencedImageCount; index++)
         {
@@ -328,26 +282,22 @@ internal sealed unsafe partial class D3D12Backend
 
     private static int ClaimSwapchainImages(
         D3D12Queue queue,
-        D3D12PendingSubmission submission)
+        D3D12QueueSubmission submission)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiSubmitClaimSwapchainImages);
         int claimed = 0;
         for (int index = 0; index < submission.ImageCount; index++)
         {
-            if (!submission.Images[index].TryBeginSubmit(
+            submission.Images[index].TryBeginSubmit(
                     submission.ImageSequences[index],
                     queue,
-                    submission.ImageUses[index].PresentReady))
-            {
-                throw new InvalidOperationException(
-                    "A SwapchainImage has no submission right.");
-            }
+                    submission.ImageUses[index].PresentReady);
             claimed++;
         }
         return claimed;
     }
 
-    private static int RetainSubmissionTimelines(D3D12PendingSubmission submission)
+    private static int RetainSubmissionTimelines(D3D12QueueSubmission submission)
     {
         int retained = 0;
         for (int index = 0; index < submission.TimelineCount; index++)
@@ -362,7 +312,7 @@ internal sealed unsafe partial class D3D12Backend
         D3D12Queue queue,
         int timelineWaitCount,
         int timelineSignalCount,
-        D3D12PendingSubmission submission,
+        D3D12QueueSubmission submission,
         ref bool accepted)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiSubmitExecuteSubmissionUnderGate);
@@ -378,24 +328,20 @@ internal sealed unsafe partial class D3D12Backend
 
         QueueCompletion completion = queue.SignalCompletionUnderGate();
         accepted = true;
-        for (int index = 0; index < submission.PayloadCount; index++)
-        {
-            submission.Payloads[index].MarkSubmitted(submission.PayloadSequences[index]);
-        }
         for (int index = 0; index < submission.ImageCount; index++)
         {
             submission.Images[index].CommitSubmission(
                 submission.ImageSequences[index],
                 queue,
-                completion.Value);
+                completion.SubmittedValue);
         }
-        queue.RegisterSubmissionUnderGate(completion.Value, submission);
+        queue.RegisterSubmissionUnderGate(completion.SubmittedValue, submission);
         return completion;
     }
 
     private static void ExecuteCompletionWaits(
         D3D12Queue queue,
-        D3D12PendingSubmission submission,
+        D3D12QueueSubmission submission,
         ref bool accepted)
     {
         for (int index = 0; index < submission.CompletionWaitCount; index++)
@@ -409,7 +355,7 @@ internal sealed unsafe partial class D3D12Backend
     private static void ExecuteTimelineWaits(
         D3D12Queue queue,
         int count,
-        D3D12PendingSubmission submission,
+        D3D12QueueSubmission submission,
         ref bool accepted)
     {
         for (int index = 0; index < count; index++)
@@ -427,7 +373,7 @@ internal sealed unsafe partial class D3D12Backend
 
     private static void ExecuteCommandLists(
         D3D12Queue queue,
-        D3D12PendingSubmission submission,
+        D3D12QueueSubmission submission,
         ref bool accepted)
     {
         if (submission.PayloadCount == 0)
@@ -446,7 +392,7 @@ internal sealed unsafe partial class D3D12Backend
         D3D12Queue queue,
         int firstSignal,
         int count,
-        D3D12PendingSubmission submission,
+        D3D12QueueSubmission submission,
         ref bool accepted)
     {
         for (int index = 0; index < count; index++)
@@ -471,8 +417,8 @@ internal sealed unsafe partial class D3D12Backend
         private readonly uint _nodeMask;
         private readonly bool _enhancedBarriers;
         private readonly object _gate = new();
-        private readonly List<D3D12CommandSlot> _slots = [];
-        private D3D12CommandSlot? _recording;
+        private readonly List<D3D12CommandBuffer> _buffers = [];
+        private D3D12CommandBuffer? _recording;
         private ID3D12GraphicsCommandList10* _activeList;
         private ulong _nextSequence = 1;
 
@@ -492,7 +438,7 @@ internal sealed unsafe partial class D3D12Backend
             _queue = queue;
             _nodeMask = queue.NodeMask;
             _enhancedBarriers = device.EnhancedBarriers;
-            _nativeCommandListBorrowLease = new D3D12NativeCommandListBorrowLease(this);
+            _nativeCommandListHandle = new D3D12NativeCommandListHandle(this);
         }
 
         internal D3D12Device NativeDevice => _device;
@@ -509,208 +455,106 @@ internal sealed unsafe partial class D3D12Backend
             [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
             get => _activeList;
         }
-        internal D3D12CommandSlot Recording
+        internal D3D12CommandBuffer Recording
         {
             [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
             get => _recording!;
         }
 
+        internal void RecordBoundSwapchainImage(in ResourceBinding binding)
+        {
+            if (binding.Value is TextureSrv srv) Recording.RecordSwapchainUse(RequireD3D12.Texture(srv.Resource));
+            else if (binding.Value is TextureUav uav) Recording.RecordSwapchainUse(RequireD3D12.Texture(uav.Resource));
+        }
+
+        internal void RecordSwapchainImage(D3D12TextureResource texture) => Recording.RecordSwapchainUse(texture);
+
         internal void AddTransient(IUnknown* value) =>
             Recording.AddTransient(value);
 
-        internal void Capture(D3D12Buffer value)
-        {
-            RequireSameDevice(value, nameof(value));
-            RequireResourceVisible(value.Info.VisibleNodeMask, nameof(value));
-            Recording.Capture(value.NativeLifetime, value.SparseState);
-        }
-
-        internal void Capture(D3D12TextureResource value)
-        {
-            RequireSameDevice(value.Owner, nameof(value));
-            RequireResourceVisible(value.Info.VisibleNodeMask, nameof(value));
-            Recording.CaptureTexture(value);
-        }
-
-        internal void Capture(GraphicsObject owner, NativeLease resource)
-        {
-            if (owner is DeviceResource deviceResource)
-                RequireSameDevice(deviceResource, nameof(owner));
-            Recording.Capture(resource);
-        }
-
-        private void CaptureDescriptor(GraphicsObject value, DescriptorLease descriptor)
-        {
-            var (primary, secondary) = GetResourceReferences(value);
-            if (primary.Lifetime is not null)
-                RequireResourceVisible(primary.VisibleNodeMask, nameof(value));
-            if (secondary.Lifetime is not null)
-                RequireResourceVisible(secondary.VisibleNodeMask, nameof(value));
-            Recording.Capture(primary);
-            Recording.Capture(secondary);
-            Recording.Capture(descriptor);
-        }
-
-        internal void Capture(BufferCbv value)
-        {
-            RequireSameDevice(value, nameof(value));
-            INativeDescriptor descriptor = (INativeDescriptor)value;
-            CaptureDescriptor(value, descriptor.NativeDescriptor);
-        }
-
-        internal void Capture(BufferSrv value)
-        {
-            RequireSameDevice(value, nameof(value));
-            INativeDescriptor descriptor = (INativeDescriptor)value;
-            CaptureDescriptor(value, descriptor.NativeDescriptor);
-        }
-
-        internal void Capture(BufferUav value)
-        {
-            RequireSameDevice(value, nameof(value));
-            INativeDescriptor descriptor = (INativeDescriptor)value;
-            CaptureDescriptor(value, descriptor.NativeDescriptor);
-        }
-
-        internal void Capture(TextureSrv value)
-        {
-            RequireSameDevice(value, nameof(value));
-            INativeDescriptor descriptor = (INativeDescriptor)value;
-            CaptureDescriptor(value, descriptor.NativeDescriptor);
-        }
-
-        internal void Capture(TextureUav value)
-        {
-            RequireSameDevice(value, nameof(value));
-            INativeDescriptor descriptor = (INativeDescriptor)value;
-            CaptureDescriptor(value, descriptor.NativeDescriptor);
-        }
-
-        internal CpuDescriptorHandle Capture(ColorAttachmentView value)
+        internal CpuDescriptorHandle GetAttachmentDescriptor(ColorAttachmentView value)
         {
             D3D12TextureResource resource = RequireAttachment(value);
-            return Capture(value, resource);
+            return GetAttachmentDescriptor(value, resource);
         }
 
         internal D3D12TextureResource RequireAttachment(ColorAttachmentView value)
         {
-            D3D12ColorAttachmentView native = value as D3D12ColorAttachmentView ??
-                throw new ArgumentException(
-                    "The ColorAttachmentView was not created by the Direct3D 12 backend.",
-                    nameof(value));
-            RequireSameDevice(native, nameof(value));
+            D3D12ColorAttachmentView native = (D3D12ColorAttachmentView)(value);
             D3D12TextureResource resource = native.NativeResource;
-            resource.Owner.ThrowIfDisposed();
-            RequireResourceVisible(resource.Info.VisibleNodeMask, nameof(value));
             return resource;
         }
 
-        internal CpuDescriptorHandle Capture(
+        internal CpuDescriptorHandle GetAttachmentDescriptor(
             ColorAttachmentView value,
             D3D12TextureResource resource)
         {
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            CaptureDescriptor(value, descriptor.NativeDescriptor);
+            Recording.RecordSwapchainUse(resource);
             return descriptor.NativeDescriptor.Cpu;
         }
 
-        internal CpuDescriptorHandle Capture(DepthStencilView value)
+        internal CpuDescriptorHandle GetAttachmentDescriptor(DepthStencilView value)
         {
             D3D12TextureResource resource = RequireAttachment(value);
-            return Capture(value, resource);
+            return GetAttachmentDescriptor(value, resource);
         }
 
         internal D3D12TextureResource RequireAttachment(DepthStencilView value)
         {
-            D3D12DepthStencilView native = value as D3D12DepthStencilView ??
-                throw new ArgumentException(
-                    "The DepthStencilView was not created by the Direct3D 12 backend.",
-                    nameof(value));
-            RequireSameDevice(native, nameof(value));
+            D3D12DepthStencilView native = (D3D12DepthStencilView)(value);
             D3D12TextureResource resource = native.NativeResource;
-            resource.Owner.ThrowIfDisposed();
-            RequireResourceVisible(resource.Info.VisibleNodeMask, nameof(value));
             return resource;
         }
 
-        internal CpuDescriptorHandle Capture(
+        internal CpuDescriptorHandle GetAttachmentDescriptor(
             DepthStencilView value,
             D3D12TextureResource resource)
         {
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            CaptureDescriptor(value, descriptor.NativeDescriptor);
+            Recording.RecordSwapchainUse(resource);
             return descriptor.NativeDescriptor.Cpu;
         }
 
-        internal void CaptureBundle(D3D12RecordedBundle value)
+        internal void PrepareBuffers(uint count)
         {
-            RequireSameDevice(value, nameof(value));
-            Recording.CaptureBundle(value);
-        }
-
-        private void RequireSameDevice(DeviceResource value, string parameterName)
-        {
-            if (!ReferenceEquals(value.Device, _device))
-            {
-                throw new ArgumentException(
-                    "The graphics object belongs to another Device.",
-                    parameterName);
-            }
-        }
-
-        internal void RequireResourceVisible(uint visibleNodeMask, string parameterName)
-        {
-            if ((visibleNodeMask & NativeNodeMask) == 0)
-            {
-                throw new ArgumentException(
-                    "The resource is not visible from the CommandContext linked-adapter node.",
-                    parameterName);
-            }
-        }
-
-        internal void PrepareSlots(uint count)
-        {
-            _slots.EnsureCapacity(checked(_slots.Count + checked((int)count)));
+            _buffers.EnsureCapacity(checked(_buffers.Count + checked((int)count)));
             for (uint index = 0; index < count; index++)
-                _slots.Add(new D3D12CommandSlot(_device, this));
+                _buffers.Add(new D3D12CommandBuffer(_device, this));
         }
 
         internal void Begin(in CommandRecordingDesc description)
         {
-            ThrowIfDisposed();
             _device.ThrowIfUnavailable();
-            if (_recording is not null)
-                throw new InvalidOperationException("The CommandContext is already recording.");
 
             _repeatCommands = null;
 
-            D3D12CommandSlot? slot = null;
-            foreach (D3D12CommandSlot candidate in _slots)
+            D3D12CommandBuffer? entry = null;
+            foreach (D3D12CommandBuffer candidate in _buffers)
             {
                 if (candidate.TryClaim())
                 {
-                    slot = candidate;
+                    entry = candidate;
                     break;
                 }
             }
-            if (slot is null)
+            if (entry is null)
             {
-                _slots.EnsureCapacity(checked(_slots.Count + 1));
-                slot = new D3D12CommandSlot(_device, this);
-                _slots.Add(slot);
-                if (!slot.TryClaim())
-                    throw new InvalidOperationException("A new command slot could not be claimed.");
+                _buffers.EnsureCapacity(checked(_buffers.Count + 1));
+                entry = new D3D12CommandBuffer(_device, this);
+                _buffers.Add(entry);
+                entry.TryClaim();
             }
 
             try
             {
-                slot.Reset(description);
-                _recording = slot;
-                _activeList = slot.List;
+                entry.Reset(description);
+                _recording = entry;
+                _activeList = entry.List;
             }
             catch
             {
-                slot.CompleteUse();
+                entry.CompleteUse();
                 throw;
             }
         }
@@ -718,62 +562,60 @@ internal sealed unsafe partial class D3D12Backend
         internal RecordedCommands EndCommands()
         {
             _device.ThrowIfUnavailable();
-            RequireRenderingClosed();
-            D3D12CommandSlot slot = Recording;
+            D3D12CommandBuffer entry = Recording;
             ulong sequence = AllocateSequence();
-            slot.FinishCommandData();
-            return FinishClosedCommands(slot, sequence);
+            entry.FinishCommandData();
+            return FinishClosedCommands(entry, sequence);
         }
 
         private RecordedCommands FinishClosedCommands(
-            D3D12CommandSlot slot,
+            D3D12CommandBuffer entry,
             ulong sequence)
         {
-            D3D12RecordedCommandsLease lease;
+            D3D12CommandRecording handle;
             try
             {
-                lease = slot.ActivateCommands(sequence);
+                handle = entry.ActivateCommands(sequence);
             }
             catch
             {
                 _recording = null;
                 _activeList = null;
-                slot.ReleaseEncodingReferences();
+                entry.ReleaseEncodingReferences();
                 ResetEncodingState();
-                slot.CompleteUse();
+                entry.CompleteUse();
                 throw;
             }
             _recording = null;
             _activeList = null;
-            slot.ReleaseEncodingReferences();
+            entry.ReleaseEncodingReferences();
             ResetEncodingState();
-            _repeatCommands = slot;
-            return new RecordedCommands(lease, sequence);
+            _repeatCommands = entry;
+            return new RecordedCommands(handle, sequence);
         }
 
         internal D3D12RecordedBundle EndBundle()
         {
             _device.ThrowIfUnavailable();
-            RequireRenderingClosed();
-            D3D12CommandSlot slot = Recording;
-            slot.FinishCommandData();
+            D3D12CommandBuffer entry = Recording;
+            entry.FinishCommandData();
             D3D12RecordedBundle bundle;
             try
             {
-                bundle = new D3D12RecordedBundle(_device, slot, Label);
+                bundle = new D3D12RecordedBundle(_device, entry, Label);
             }
             catch
             {
                 _recording = null;
                 _activeList = null;
-                slot.ReleaseEncodingReferences();
+                entry.ReleaseEncodingReferences();
                 ResetEncodingState();
-                slot.CompleteUse();
+                entry.CompleteUse();
                 throw;
             }
             _recording = null;
             _activeList = null;
-            slot.ReleaseEncodingReferences();
+            entry.ReleaseEncodingReferences();
             ResetEncodingState();
             try
             {
@@ -790,21 +632,20 @@ internal sealed unsafe partial class D3D12Backend
         internal void Discard()
         {
             _device.ThrowIfUnavailable();
-            RequireRenderingClosed();
-            D3D12CommandSlot slot = Recording;
-            slot.AbortCommandData();
+            D3D12CommandBuffer entry = Recording;
+            entry.AbortCommandData();
             _recording = null;
             _activeList = null;
-            slot.ReleaseEncodingReferences();
+            entry.ReleaseEncodingReferences();
             ResetEncodingState();
-            slot.CompleteUse();
+            entry.CompleteUse();
         }
 
-        internal void ReleaseSlot(D3D12CommandSlot slot) => slot.CompleteUse();
+        internal void ReleaseCommandBuffer(D3D12CommandBuffer entry) => entry.CompleteUse();
 
         internal void MarkDeviceLost()
         {
-            D3D12CommandSlot? recording;
+            D3D12CommandBuffer? recording;
             lock (_gate)
             {
                 recording = _recording;
@@ -823,20 +664,20 @@ internal sealed unsafe partial class D3D12Backend
             }
             for (int index = 0; ; index++)
             {
-                D3D12CommandSlot slot;
+                D3D12CommandBuffer entry;
                 lock (_gate)
                 {
-                    if (index >= _slots.Count)
+                    if (index >= _buffers.Count)
                         break;
-                    slot = _slots[index];
+                    entry = _buffers[index];
                 }
-                slot.MarkDeviceLost();
+                entry.MarkDeviceLost();
             }
         }
 
         internal override void Release(bool fromParent)
         {
-            D3D12CommandSlot? recording;
+            D3D12CommandBuffer? recording;
             bool discardExecutable;
             lock (_gate)
             {
@@ -858,48 +699,43 @@ internal sealed unsafe partial class D3D12Backend
             }
             for (int index = 0; ; index++)
             {
-                D3D12CommandSlot slot;
+                D3D12CommandBuffer entry;
                 lock (_gate)
                 {
-                    if (index >= _slots.Count)
+                    if (index >= _buffers.Count)
                         break;
-                    slot = _slots[index];
+                    entry = _buffers[index];
                 }
                 if (discardExecutable)
-                    slot.DiscardExecutableFromDevice();
-                slot.ReleaseOwner();
+                    entry.DiscardExecutableFromDevice();
+                entry.ReleaseContextReference();
             }
             lock (_gate)
-                _slots.Clear();
+                _buffers.Clear();
             _device.UnregisterChild(this);
         }
 
         private ulong AllocateSequence()
         {
-            if (_nextSequence == ulong.MaxValue)
-                throw new InvalidOperationException("The CommandContext sequence domain is exhausted.");
+            
             return _nextSequence++;
         }
     }
 
-    private sealed partial class D3D12CommandSlot
+    private sealed partial class D3D12CommandBuffer
     {
         private readonly D3D12CommandContext _context;
-        private readonly D3D12RecordedCommandsLease _commands;
+        private readonly D3D12CommandRecording _commands;
         private readonly List<nint> _transientObjects = [];
         private int _transientObjectCapacity;
-        private readonly CommandCaptures _captures = new();
-        private readonly HashSet<D3D12RecordedBundle> _capturedBundles =
-            new(ReferenceEqualityComparer.Instance);
-        private int _capturedBundleCapacity;
         private DescriptorGeneration? _descriptorGeneration;
         private int _references = 1;
         private int _busy;
 
-        internal D3D12CommandSlot(D3D12Device device, D3D12CommandContext context)
+        internal D3D12CommandBuffer(D3D12Device device, D3D12CommandContext context)
         {
             _context = context;
-            _commands = new D3D12RecordedCommandsLease(context, this, context.NativeQueue);
+            _commands = new D3D12CommandRecording(context, this, context.NativeQueue);
             _nativeRecording = CreateCachedCommands();
             _cachedCommands[0] = _nativeRecording;
         }
@@ -915,20 +751,11 @@ internal sealed unsafe partial class D3D12Backend
                 DescriptorPublisher publisher = _context.NativeDevice
                     .GetDescriptorPublisher(_context.NativeQueue.NodeIndex);
                 current = publisher.CaptureCurrent();
-                try
-                {
-                    current.CaptureResources(this);
-                }
-                catch
-                {
-                    current.Release();
-                    throw;
-                }
                 _descriptorGeneration = current;
                 return current;
             }
         }
-        internal D3D12RecordedCommandsLease ActivateCommands(ulong sequence)
+        internal D3D12CommandRecording ActivateCommands(ulong sequence)
         {
             _context.NativeDevice.ActivateCommandPayload(_commands, sequence);
             return _commands;
@@ -944,21 +771,12 @@ internal sealed unsafe partial class D3D12Backend
 
         internal void Reset(in CommandRecordingDesc description)
         {
-            if (_context.QueueType == QueueType.Copy &&
-                (description.InitialResourceDescriptorCapacity != 0 ||
-                 description.InitialSamplerDescriptorCapacity != 0))
-            {
-                throw new ArgumentException(
-                    "A copy CommandContext cannot reserve shader-visible descriptors.",
-                    nameof(description));
-            }
 
-            PrepareInitialCaptureCapacity(description.InitialCapturedResourceCapacity);
             ResetOrdinaryDataArena();
             ResetTemporaryAttachmentDescriptors();
             if (_context.QueueType != QueueType.Copy)
                 ResetDescriptorArenaState(description);
-            BeginCommandData();
+            BeginCommandData(description.Repeatable);
         }
 
         internal void CompleteUse()
@@ -984,50 +802,9 @@ internal sealed unsafe partial class D3D12Backend
         internal void AddTransient(IUnknown* value) =>
             _transientObjects.Add((nint)value);
 
-        internal void Capture(
-            NativeLease resource,
-            D3D12SparseState? sparseState = null) =>
-            _captures.Capture(resource, sparseState);
-
-        internal void Capture(in ResourceReferences references)
-        {
-            if (references.Lifetime is null)
-                return;
-            Capture(references.Lifetime, references.SparseState);
-            if (references.Texture is not null)
-                CaptureSwapchainUse(references.Texture);
-        }
-
-        internal void CaptureTexture(D3D12TextureResource texture)
-        {
-            Capture(texture.NativeLifetime, texture.SparseState);
-            CaptureSwapchainUse(texture);
-        }
-
-        internal void Capture(
-            DescriptorLease descriptor,
-            NativeLease? resource = null) =>
-            _captures.Capture(descriptor, resource);
-
-        internal void CaptureBundle(D3D12RecordedBundle bundle)
-        {
-            if (_capturedBundles.Add(bundle))
-            {
-                try
-                {
-                    bundle.RetainExecution();
-                }
-                catch
-                {
-                    _capturedBundles.Remove(bundle);
-                    throw;
-                }
-            }
-        }
-
         internal void ReleaseEncodingReferences() => ClearRecordedRayTables();
 
-        internal void ReleaseOwner() => ReleaseReference();
+        internal void ReleaseContextReference() => ReleaseReference();
 
         private void ReleaseReference()
         {
@@ -1047,10 +824,6 @@ internal sealed unsafe partial class D3D12Backend
                     _ = ResourceTrace.Release(((IUnknown*)value));
             }
             _transientObjects.Clear();
-            _captures.ReleaseAll();
-            foreach (D3D12RecordedBundle bundle in _capturedBundles)
-                bundle.ReleaseExecution();
-            _capturedBundles.Clear();
             ClearSwapchainUses();
             ClearRecordedRayTables();
             ReleaseBindingTransients();
@@ -1059,211 +832,45 @@ internal sealed unsafe partial class D3D12Backend
 
     }
 
-    private sealed class CommandCaptures
-    {
-        private readonly HashSet<NativeLease> _resources =
-            new(ReferenceEqualityComparer.Instance);
-        private readonly HashSet<DescriptorLease> _descriptors =
-            new(ReferenceEqualityComparer.Instance);
-        private readonly HashSet<SparseMappingGeneration> _sparseGenerations =
-            new(ReferenceEqualityComparer.Instance);
-        internal int SparseCount => _sparseGenerations.Count;
-
-        internal void AppendReferences(List<object> destination)
-        {
-            foreach (NativeLease resource in _resources)
-                destination.Add(resource);
-            foreach (DescriptorLease descriptor in _descriptors)
-                destination.Add(descriptor);
-        }
-
-        private int _resourceCapacity;
-        private int _descriptorCapacity;
-        private int _sparseGenerationCapacity;
-
-        internal void PrepareCapacity(
-            int resourceCount,
-            int descriptorCount,
-            int sparseGenerationCount)
-        {
-            int resourcesRequired = checked(_resources.Count + resourceCount);
-            if (resourcesRequired > _resourceCapacity)
-                _resourceCapacity = _resources.EnsureCapacity(resourcesRequired);
-            int descriptorsRequired = checked(_descriptors.Count + descriptorCount);
-            if (descriptorsRequired > _descriptorCapacity)
-                _descriptorCapacity = _descriptors.EnsureCapacity(descriptorsRequired);
-            int sparseRequired = checked(
-                _sparseGenerations.Count + sparseGenerationCount);
-            if (sparseRequired > _sparseGenerationCapacity)
-            {
-                _sparseGenerationCapacity =
-                    _sparseGenerations.EnsureCapacity(sparseRequired);
-            }
-        }
-
-        internal void Capture(
-            NativeLease resource,
-            D3D12SparseState? sparseState)
-        {
-            SparseMappingGeneration? generation = sparseState?.CaptureCurrent();
-            bool addedResource = false;
-            bool addedGeneration = false;
-            bool generationConsumed = false;
-            try
-            {
-                if (_resources.Add(resource))
-                {
-                    try
-                    {
-                        resource.Retain();
-                    }
-                    catch
-                    {
-                        _resources.Remove(resource);
-                        throw;
-                    }
-                    addedResource = true;
-                }
-                if (generation is not null)
-                {
-                    if (_sparseGenerations.Add(generation))
-                    {
-                        addedGeneration = true;
-                        generationConsumed = true;
-                    }
-                    else
-                    {
-                        generation.Release();
-                        generationConsumed = true;
-                    }
-                }
-            }
-            catch
-            {
-                if (addedGeneration)
-                {
-                    _sparseGenerations.Remove(generation!);
-                    generation!.Release();
-                }
-                else if (generation is not null && !generationConsumed)
-                {
-                    generation.Release();
-                }
-                if (addedResource)
-                {
-                    _resources.Remove(resource);
-                    resource.Release();
-                }
-                throw;
-            }
-        }
-
-        internal void Capture(
-            DescriptorLease descriptor,
-            NativeLease? resource)
-        {
-            bool addedDescriptor = false;
-            bool addedResource = false;
-            try
-            {
-                if (_descriptors.Add(descriptor))
-                {
-                    try
-                    {
-                        descriptor.Retain();
-                    }
-                    catch
-                    {
-                        _descriptors.Remove(descriptor);
-                        throw;
-                    }
-                    addedDescriptor = true;
-                }
-                if (resource is not null && _resources.Add(resource))
-                {
-                    try
-                    {
-                        resource.Retain();
-                    }
-                    catch
-                    {
-                        _resources.Remove(resource);
-                        throw;
-                    }
-                    addedResource = true;
-                }
-            }
-            catch
-            {
-                if (addedResource)
-                {
-                    _resources.Remove(resource!);
-                    resource!.Release();
-                }
-                if (addedDescriptor)
-                {
-                    _descriptors.Remove(descriptor);
-                    descriptor.Release();
-                }
-                throw;
-            }
-        }
-
-        internal void ReleaseAll()
-        {
-            foreach (DescriptorLease descriptor in _descriptors)
-                descriptor.Release();
-            _descriptors.Clear();
-            foreach (NativeLease resource in _resources)
-                resource.Release();
-            _resources.Clear();
-            foreach (SparseMappingGeneration generation in _sparseGenerations)
-                generation.Release();
-            _sparseGenerations.Clear();
-        }
-    }
-
-    private sealed partial class D3D12RecordedCommandsLease : RecordedCommandsLease
+    private sealed partial class D3D12CommandRecording : RecordedCommandsData
     {
         private readonly D3D12CommandContext _context;
-        private readonly D3D12CommandSlot _slot;
-        internal D3D12RecordedCommandsLease? DeviceNext;
-        internal D3D12RecordedCommandsLease? DevicePrevious;
-        internal D3D12RecordedCommandsLease? DeviceLossWorkNext;
+        private readonly D3D12CommandBuffer _commandBuffer;
+        internal D3D12CommandRecording? DeviceNext;
+        internal D3D12CommandRecording? DevicePrevious;
+        internal D3D12CommandRecording? DeviceLossWorkNext;
         internal bool DeviceRegistered;
 
-        internal D3D12RecordedCommandsLease(
+        internal D3D12CommandRecording(
             D3D12CommandContext context,
-            D3D12CommandSlot slot,
+            D3D12CommandBuffer entry,
             D3D12Queue queue)
             : base(context.Device, queue)
         {
             _context = context;
-            _slot = slot;
+            _commandBuffer = entry;
         }
 
         internal void ActivateCommands(ulong sequence) => Activate(sequence);
 
-        internal void CancelCommandsActivation(ulong sequence) => CancelActivation(sequence);
-
         internal ID3D12GraphicsCommandList10* GetNativeList(ulong sequence)
         {
-            EnsureSequence(sequence);
-            return _slot.List;
+
+            return _commandBuffer.List;
         }
 
-        protected override void DiscardUnsubmitted(ulong sequence) => ReleaseSlot(sequence);
+        protected override void DiscardUnsubmitted(ulong sequence) => ReleaseCommandBuffer(sequence);
 
         internal void Retire(ulong sequence)
         {
-            MarkCompleted(sequence);
-            ReleaseSlot(sequence);
+
+            ReleaseCommandBuffer(sequence);
         }
 
         internal void MarkDeviceLostAndAbandon(ulong sequence)
         {
             MarkDeviceLost(sequence);
-            ReleaseSlot(sequence);
+            ReleaseCommandBuffer(sequence);
         }
 
         internal void MarkDeviceLostRetained(ulong sequence) => MarkDeviceLost(sequence);
@@ -1271,47 +878,47 @@ internal sealed unsafe partial class D3D12Backend
         internal void MarkDeviceLostFromDevice()
         {
             if (TryMarkDeviceLostFromDevice(out ulong sequence, out bool abandon) && abandon)
-                ReleaseSlot(sequence);
+                ReleaseCommandBuffer(sequence);
         }
 
         internal void DiscardExecutableFromDevice()
         {
             if (TryDiscardExecutableFromDevice(out ulong sequence))
-                ReleaseSlot(sequence);
+                ReleaseCommandBuffer(sequence);
         }
 
-        private void ReleaseSlot(ulong sequence)
+        private void ReleaseCommandBuffer(ulong sequence)
         {
-            EnsureSequence(sequence);
+
             _context.NativeDevice.UnregisterCommandPayload(this);
-            _context.ReleaseSlot(_slot);
+            _context.ReleaseCommandBuffer(_commandBuffer);
         }
     }
 
     private sealed partial class D3D12RecordedBundle : RecordedBundle
     {
         private readonly D3D12Device _device;
-        private D3D12CommandSlot? _slot;
+        private D3D12CommandBuffer? _commandBuffer;
         private int _references = 1;
 
         internal D3D12RecordedBundle(
             D3D12Device device,
-            D3D12CommandSlot slot,
+            D3D12CommandBuffer entry,
             string? label)
             : base(device, label)
         {
             _device = device;
-            _slot = slot;
+            _commandBuffer = entry;
         }
 
         internal ID3D12GraphicsCommandList10* NativeList
         {
             get
             {
-                D3D12CommandSlot? slot = _slot;
-                return slot is null
-                    ? throw new ObjectDisposedException(nameof(D3D12RecordedBundle))
-                    : slot.List;
+                D3D12CommandBuffer? entry = _commandBuffer;
+                return entry is null
+                    ? default!
+                    : entry.List;
             }
         }
 
@@ -1328,7 +935,7 @@ internal sealed unsafe partial class D3D12Backend
                     return;
                 current = exchanged;
             }
-            throw new ObjectDisposedException(nameof(D3D12RecordedBundle));
+            return;
         }
 
         internal void ReleaseExecution() => ReleaseReference();
@@ -1343,25 +950,25 @@ internal sealed unsafe partial class D3D12Backend
         {
             if (Interlocked.Decrement(ref _references) != 0)
                 return;
-            D3D12CommandSlot? slot = Interlocked.Exchange(ref _slot, null);
-            slot?.CompleteUse();
+            D3D12CommandBuffer? entry = Interlocked.Exchange(ref _commandBuffer, null);
+            entry?.CompleteUse();
         }
     }
 
     private sealed partial class D3D12Queue
     {
-        private readonly List<D3D12PendingSubmission> _pendingSubmissions = [];
-        private readonly List<D3D12PendingSubmission> _untrustedSubmissions = [];
-        private readonly List<D3D12PendingSubmission> _freeSubmissions = [];
+        private readonly List<D3D12QueueSubmission> _submissionQueue = [];
+        private readonly List<D3D12QueueSubmission> _untrustedSubmissions = [];
+        private readonly List<D3D12QueueSubmission> _freeSubmissions = [];
         private int _submissionCount;
 
-        internal D3D12PendingSubmission AcquireSubmission(
+        internal D3D12QueueSubmission AcquireSubmission(
             int payloadCapacity,
             int completionWaitCapacity,
             int timelineCapacity,
             int imageCapacity)
         {
-            D3D12PendingSubmission submission;
+            D3D12QueueSubmission submission;
             using (Gate.EnterScope())
             {
                 if (_freeSubmissions.Count != 0)
@@ -1373,10 +980,10 @@ internal sealed unsafe partial class D3D12Backend
                 else
                 {
                     int newSubmissionCount = checked(_submissionCount + 1);
-                    _pendingSubmissions.EnsureCapacity(newSubmissionCount);
+                    _submissionQueue.EnsureCapacity(newSubmissionCount);
                     _untrustedSubmissions.EnsureCapacity(newSubmissionCount);
                     _freeSubmissions.EnsureCapacity(newSubmissionCount);
-                    submission = new D3D12PendingSubmission();
+                    submission = new D3D12QueueSubmission();
                     _submissionCount = newSubmissionCount;
                 }
             }
@@ -1399,7 +1006,7 @@ internal sealed unsafe partial class D3D12Backend
 
         internal void RegisterSubmissionUnderGate(
             ulong completion,
-            D3D12PendingSubmission submission)
+            D3D12QueueSubmission submission)
         {
             submission.Completion = completion;
             submission.ReleaseScratchReferences();
@@ -1410,11 +1017,11 @@ internal sealed unsafe partial class D3D12Backend
             }
             else
             {
-                _pendingSubmissions.Add(submission);
+                _submissionQueue.Add(submission);
             }
         }
 
-        internal void RegisterUntrustedSubmission(D3D12PendingSubmission submission)
+        internal void RegisterUntrustedSubmission(D3D12QueueSubmission submission)
         {
             using (Gate.EnterScope())
             {
@@ -1432,7 +1039,7 @@ internal sealed unsafe partial class D3D12Backend
             }
         }
 
-        internal void ReturnSubmission(D3D12PendingSubmission submission)
+        internal void ReturnSubmission(D3D12QueueSubmission submission)
         {
             submission.ResetForReuse();
             using (Gate.EnterScope())
@@ -1448,22 +1055,21 @@ internal sealed unsafe partial class D3D12Backend
                 throw PublishDeviceLoss(
                     _device,
                     DxgiErrorDeviceRemoved,
-                    "D3D12 reported the device-removal completion sentinel.",
-                    DxgiErrorDeviceRemoved);
+                    "D3D12 reported the device-removal completion sentinel.");
             }
 
             int removeCount = 0;
-            foreach (D3D12PendingSubmission pending in _pendingSubmissions)
+            foreach (D3D12QueueSubmission submission in _submissionQueue)
             {
-                if (pending.Completion > completed)
+                if (submission.Completion > completed)
                     break;
-                pending.Retire();
-                pending.ResetForReuse();
-                _freeSubmissions.Add(pending);
+                submission.Retire();
+                submission.ResetForReuse();
+                _freeSubmissions.Add(submission);
                 removeCount++;
             }
             if (removeCount != 0)
-                _pendingSubmissions.RemoveRange(0, removeCount);
+                _submissionQueue.RemoveRange(0, removeCount);
         }
 
         private void DrainOrAbandonPayloads()
@@ -1474,9 +1080,9 @@ internal sealed unsafe partial class D3D12Backend
                 ulong target;
                 using (Gate.EnterScope())
                 {
-                    ulong submissionTarget = _pendingSubmissions.Count == 0
+                    ulong submissionTarget = _submissionQueue.Count == 0
                         ? 0
-                        : _pendingSubmissions[^1].Completion;
+                        : _submissionQueue[^1].Completion;
                     target = Math.Max(
                         Math.Max(
                             submissionTarget,
@@ -1503,7 +1109,7 @@ internal sealed unsafe partial class D3D12Backend
             using (Gate.EnterScope())
             {
                 if (!CanAbandonNativePayloadsUnderGate &&
-                    (_pendingSubmissions.Count != 0 ||
+                    (_submissionQueue.Count != 0 ||
                      _untrustedSubmissions.Count != 0 ||
                      GetPresentationRetirementTargetUnderGate() != 0 ||
                      HasUntrustedPresentationRetirementsUnderGate ||
@@ -1513,18 +1119,18 @@ internal sealed unsafe partial class D3D12Backend
                     throw completionFailure ?? new InvalidOperationException(
                         "D3D12 native payloads are retained because completion was not verified and device loss was not confirmed.");
                 }
-                foreach (D3D12PendingSubmission pending in _pendingSubmissions)
+                foreach (D3D12QueueSubmission submission in _submissionQueue)
                 {
-                    pending.Abandon();
-                    pending.ResetForReuse();
-                    _freeSubmissions.Add(pending);
+                    submission.Abandon();
+                    submission.ResetForReuse();
+                    _freeSubmissions.Add(submission);
                 }
-                _pendingSubmissions.Clear();
-                foreach (D3D12PendingSubmission pending in _untrustedSubmissions)
+                _submissionQueue.Clear();
+                foreach (D3D12QueueSubmission submission in _untrustedSubmissions)
                 {
-                    pending.Abandon();
-                    pending.ResetForReuse();
-                    _freeSubmissions.Add(pending);
+                    submission.Abandon();
+                    submission.ResetForReuse();
+                    _freeSubmissions.Add(submission);
                 }
                 _untrustedSubmissions.Clear();
                 AbandonPresentationRetirementsUnderGate();
@@ -1533,18 +1139,18 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    private sealed class D3D12PendingSubmission
+    private sealed class D3D12QueueSubmission
     {
-        internal D3D12RecordedCommandsLease[] Payloads { get; private set; } = [];
+        internal D3D12CommandRecording[] Payloads { get; private set; } = [];
         internal ulong[] PayloadSequences { get; private set; } = [];
         internal D3D12Queue[] CompletionWaitQueues { get; private set; } = [];
         internal ulong[] CompletionWaitValues { get; private set; } = [];
         internal D3D12ExternalTimeline[] Timelines { get; private set; } = [];
         internal ulong[] TimelineValues { get; private set; } = [];
-        internal D3D12SwapchainImageLease[] Images { get; private set; } = [];
+        internal D3D12SwapchainImageUse[] Images { get; private set; } = [];
         internal ulong[] ImageSequences { get; private set; } = [];
         internal D3D12SubmittedSwapchainUse[] ImageUses { get; private set; } = [];
-        internal D3D12SwapchainImageLease[] ReferencedImages { get; private set; } = [];
+        internal D3D12SwapchainImageUse[] ReferencedImages { get; private set; } = [];
         internal D3D12SubmittedSwapchainUse[] ReferencedImageUses { get; private set; } = [];
         internal nint[] NativeLists { get; private set; } = [];
 
@@ -1639,19 +1245,8 @@ internal sealed unsafe partial class D3D12Backend
     {
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         internal static D3D12CommandContext CommandContext(CommandContext value)
-        {
-            D3D12CommandContext result = value as D3D12CommandContext ??
-                throw new ArgumentException(
-                    "The CommandContext was not created by the Direct3D 12 backend.",
-                    nameof(value));
-            result.BeginPublicCall();
-            return result;
-        }
+=>(D3D12CommandContext)value;
 
-        internal static D3D12RecordedBundle Bundle(RecordedBundle value) =>
-            value as D3D12RecordedBundle ??
-            throw new ArgumentException(
-                "The RecordedBundle was not created by the Direct3D 12 backend.",
-                nameof(value));
+        internal static D3D12RecordedBundle Bundle(RecordedBundle value) =>(D3D12RecordedBundle)value;
     }
 }

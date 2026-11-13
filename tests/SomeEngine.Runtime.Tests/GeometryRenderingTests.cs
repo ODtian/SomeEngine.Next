@@ -1,5 +1,9 @@
 using System.Numerics;
 using SomeEngine.ECS.Entities;
+using SomeEngine.Render;
+using SomeEngine.Render.Cluster.Pipeline;
+using SomeEngine.Core.Math;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Runtime.Tests;
 
@@ -8,6 +12,99 @@ namespace SomeEngine.Runtime.Tests;
 [Collection("Rendering content")]
 public sealed class GeometryRenderingTests(RenderingContentFixture content)
 {
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task ProjectedDecalOrderMatchesTheSameUnlitSurface(string backend)
+    {
+        SceneImage? layered = null, reference = null;
+        var red = new StandardMaterial { BaseColorTint = new(1, 0, 0, .5f) };
+        var green = new StandardMaterial { BaseColorTint = new(0, 1, 0, .5f) };
+        await SceneImages.RunAsync(backend, new SceneScript(content.Spheres, 8,
+        [
+            new(0, edit =>
+            {
+                foreach (Entity entity in edit.MeshEntities)
+                    ((UnlitMaterial)edit.GetMaterial(entity)).BaseColorTint = new(0, 0, 1, 1);
+                var material = (UnlitMaterial)edit.GetMaterial(edit.MeshEntities[0]);
+                red.Shader = green.Shader = material.Shader;
+                red.AlbedoMap = green.AlbedoMap = material.AlbedoMap;
+                TransformQvvs volume = new(new Vector3(0, 0, 7), Quaternion.Identity) { Stretch = new(4, 4, 4) };
+                edit.AddMaterialDecal(green, volume, 2);
+                edit.AddMaterialDecal(red, volume, 1);
+            }),
+            new(7, edit => edit.CaptureImage(image => layered = image)),
+        ]), "--no-mesh-shaders", "--hardware-raster", "--no-taa", "--no-vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(content.Spheres, 8,
+        [
+            new(0, edit =>
+            {
+                foreach (Entity entity in edit.MeshEntities)
+                    ((UnlitMaterial)edit.GetMaterial(entity)).BaseColorTint = new(.25f, .5f, .25f, 1);
+            }),
+            new(7, edit => edit.CaptureImage(image => reference = image)),
+        ]), "--no-mesh-shaders", "--hardware-raster", "--no-taa", "--no-vsm");
+        SceneImages.AssertEqualRegion(reference!, layered!, 20, 29, 6, 6);
+        SceneImages.AssertEqualRegion(reference!, layered!, 39, 29, 6, 6);
+    }
+
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task RasterBatchOverflowPreservesTheSameFrameImageForAllMaterials(string backend)
+    {
+        const uint batchCapacity = 1;
+        var captured = new List<SceneLinearImage>();
+        await SceneImages.RunAsync(backend, new SceneScript(content.Spheres, 8,
+            Enumerable.Range(0, 8).Select(frame => new SceneAction(frame,
+                edit => edit.CaptureLinearImage(captured.Add))))
+        {
+            RasterBatchCapacity = batchCapacity,
+            RasterEdgePixels = 512,
+        }, "--no-mesh-shaders", "--no-taa", "--no-vsm");
+        SceneLinearImage[] overflow = captured.Where(image =>
+            (image.Frame.Quality!.Geometry.Work.Overflow & RenderGeometryWorkFlags.RasterBatches) != 0).ToArray();
+        Assert.NotEmpty(overflow);
+        SceneLinearImage source = overflow[0];
+        ClusterFrameMetrics metrics = source.Frame.Quality!.Geometry;
+        Assert.Equal((ulong)source.Frame.SubmittedFrame + 1u, metrics.FrameIndex);
+        Assert.Equal((uint?)batchCapacity, source.Frame.RasterBatchCapacity);
+        Assert.True((metrics.Work.Overflow & RenderGeometryWorkFlags.RasterBatches) != 0);
+        Assert.True(metrics.Work.Complete);
+        Assert.True(metrics.Work.HardwareRasterBatches + metrics.Work.SoftwareRasterBatches > 0);
+        SceneLinearImage? reference = null;
+        await SceneImages.RunAsync(backend, new SceneScript(content.Spheres, source.Frame.Frame + 1,
+            [new(source.Frame.Frame, edit => edit.CaptureLinearImage(image => reference = image))])
+        {
+            RasterEdgePixels = 512,
+        }, "--no-mesh-shaders", "--no-taa", "--no-vsm");
+        ClusterFrameMetrics referenceMetrics = reference!.Frame.Quality!.Geometry;
+        Assert.Equal((ulong)reference.Frame.SubmittedFrame + 1u, referenceMetrics.FrameIndex);
+        Assert.Equal(RenderGeometryWorkFlags.None, referenceMetrics.Work.Overflow & RenderGeometryWorkFlags.RasterBatches);
+        Assert.True(referenceMetrics.Work.Complete);
+        SceneImages.AssertLinearEqual(reference, source, .001f);
+    }
+
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task NonAtomicVisibilityMatchesHardwareRasterForMultipleMaterials(string backend)
+    {
+        SceneImage? software = null, hardware = null;
+        await SceneImages.RunAsync(backend, new SceneScript(content.Spheres, 8,
+        [new(7, edit => edit.CaptureImage(image => software = image))])
+        {
+            VisibilityMode = ClusterVisibilityMode.NonAtomic,
+            RasterEdgePixels = 512,
+        }, "--no-mesh-shaders", "--no-taa", "--no-vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(content.Spheres, 8,
+        [new(7, edit => edit.CaptureImage(image => hardware = image))])
+        {
+            VisibilityMode = ClusterVisibilityMode.HardwareOnly,
+        }, "--no-mesh-shaders", "--no-taa", "--no-vsm");
+        SceneImages.AssertEqual(hardware!, software!, 1);
+    }
+
     [SceneTheory]
     [InlineData("d3d12")]
     [InlineData("vulkan")]
@@ -108,13 +205,13 @@ public sealed class GeometryRenderingTests(RenderingContentFixture content)
     {
         var images = new List<SceneImage>();
         SceneImage? full = null;
-        await SceneImages.RunAsync(backend, new SceneScript(content.Streaming, 16,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Streaming, 16,
         [
             new(3, edit => edit.CaptureImage(images.Add)),
             new(7, edit => edit.CaptureImage(images.Add)),
             new(15, edit => edit.CaptureImage(images.Add)),
         ]) { GeometryMemoryBytes = 262144, RasterEdgePixels = rasterEdgePixels }, "--no-taa", "--no-vsm");
-        await SceneImages.RunAsync(backend, new SceneScript(content.Streaming, 16,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Streaming, 16,
             [new(15, edit => edit.CaptureImage(image => full = image))]) { RasterEdgePixels = rasterEdgePixels }, "--no-taa", "--no-vsm");
         Assert.Equal(3, images.Count);
         // Radius-two sphere at z=6 covers this whole 8x8 region at both coarse and full detail.

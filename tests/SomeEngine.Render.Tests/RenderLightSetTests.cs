@@ -6,7 +6,7 @@ using SomeEngine.Render.Systems;
 
 namespace SomeEngine.Render.Tests;
 
-public sealed class RenderLightSetTests(RenderTestDevice graphics) : IClassFixture<RenderTestDevice>
+public sealed class RenderLightSetTests
 {
     [Fact]
     public void LightValuesCookiesAndMembershipChangeWithoutUnrelatedWorldChangesAdvancingTheSet()
@@ -63,25 +63,9 @@ public sealed class RenderLightSetTests(RenderTestDevice graphics) : IClassFixtu
             Update();
             Assert.Equal(revision, values.Revision);
 
-            void Update()
-            {
-                Assert.True(graphics.Coordinator.TryBeginPrepare(out var scope));
-                using (scope)
-                {
-                    systems.Update(scope);
-                    scope.Commit();
-                }
-            }
+            void Update() => systems.Update();
         }
-        finally
-        {
-            Assert.True(graphics.Coordinator.TryBeginPrepare(out var scope));
-            using (scope)
-            {
-                systems.Shutdown(scope);
-                scope.Commit();
-            }
-        }
+        finally { systems.Shutdown(); }
     }
 
     private readonly record struct UnrelatedValue(int Value) : IComponent;

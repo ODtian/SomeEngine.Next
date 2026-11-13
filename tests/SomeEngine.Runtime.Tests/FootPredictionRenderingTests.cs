@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Text.Json;
 using SomeEngine.Animation;
 using SomeEngine.Animation.Pose;
@@ -47,7 +47,7 @@ public sealed partial class SkinningRenderingTests
         SkeletonInstance[] characters = [flat, slope, steps, switched];
         Entity[] targets = new Entity[4], actors = new Entity[4], animations = new Entity[4];
         var trajectories = new FootMovementTrajectory[4];
-        var reads = Enumerable.Range(0, 4).Select(_ => new List<GpuPoseReadback>()).ToArray();
+        var reads = Enumerable.Range(0, 4).Select(_ => new List<GpuPoseReadbackResult>()).ToArray();
         var actorMatrices = Enumerable.Range(0, 4).Select(_ => new List<Matrix4x4>()).ToArray();
         var observed = Enumerable.Range(0, 4).Select(_ => new List<FootFrame>()).ToArray();
         var metrics = new List<ClusterFrameMetrics>();

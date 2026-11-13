@@ -1,4 +1,4 @@
-using System.Buffers;
+﻿using System.Buffers;
 using System.Runtime.CompilerServices;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
@@ -126,7 +126,7 @@ public readonly record struct RenderInstanceBatchGroup<TGroupKey>(
 
 /// <summary>
 /// Current-plan physical address for one entity contribution. It is not an entity identity or a
-/// persistent slot: rebuilding the plan may change both Batch and Row.
+/// persistent index: rebuilding the plan may change both Batch and Row.
 /// </summary>
 public readonly struct RenderInstanceBatchAddress<TGroupKey>
     where TGroupKey : notnull
@@ -203,7 +203,7 @@ public sealed class RenderInstanceBatches<TGroupKey>
 /// <summary>
 /// Pipeline-owned composition root over the engine-wide instance-storage system. It performs one
 /// query packetization, parallel count/fill, stable worker-local grouping, exact-layout allocation,
-/// and disjoint direct-to-SoA writes. It never creates a batch Entity or writes a slot back to ECS.
+/// and disjoint direct-to-SoA writes. It never creates a batch Entity or writes a index back to ECS.
 /// </summary>
 public sealed class RenderInstanceBatchBuilder<TGroupKey>
     where TGroupKey : notnull
@@ -212,7 +212,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
     private const RenderInstanceChanges KnownChanges =
         RenderInstanceChanges.Values | RenderInstanceChanges.Structure;
 
-    private readonly StableGrouping<TGroupKey> _grouping;
+    private readonly OrderedGrouping<TGroupKey> _grouping;
     private readonly int _rowsPerPacket;
     private readonly JobScheduleOptions _jobOptions;
     private EntityTableChanges? _entityTables;
@@ -225,7 +225,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(groupingPartitions);
         ArgumentOutOfRangeException.ThrowIfNegative(rowsPerPacket);
-        _grouping = new StableGrouping<TGroupKey>(groupingPartitions);
+        _grouping = new OrderedGrouping<TGroupKey>(groupingPartitions);
         _rowsPerPacket = rowsPerPacket;
         _jobOptions = jobOptions;
     }
@@ -260,7 +260,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         {
             _entityTables ??= context.World.ObserveEntityTables();
             EntityTableChangeBatch membership = _entityTables.Read();
-            var snapshot = new UpdateSnapshot<TComposer>(
+            var snapshot = new InstanceUpdateValues<TComposer>(
                 this,
                 context,
                 composer,
@@ -270,8 +270,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 query,
                 context.LastSystemVersion,
                 ref snapshot,
-                static (scoped QueryCursor cursor, ref UpdateSnapshot<TComposer> state) =>
-                    state.Update(cursor));
+                static (scoped QueryCursor byteOffset, ref InstanceUpdateValues<TComposer> state) =>
+                    state.Update(byteOffset));
             _entityTables.Accept(membership);
             return snapshot.Changed;
         }
@@ -305,23 +305,23 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         }
     }
 
-    private struct UpdateSnapshot<TComposer>
+    private struct InstanceUpdateValues<TComposer>
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
-        private readonly RenderInstanceBatchBuilder<TGroupKey> _owner;
+        private readonly RenderInstanceBatchBuilder<TGroupKey> _composition;
         private readonly RenderPrepareSystemContext _context;
         private readonly TComposer _composer;
         private readonly EntityTableChangeBatch _membership;
         private readonly RenderInstanceChanges _forcedChanges;
 
-        internal UpdateSnapshot(
-            RenderInstanceBatchBuilder<TGroupKey> owner,
+        internal InstanceUpdateValues(
+            RenderInstanceBatchBuilder<TGroupKey> composition,
             RenderPrepareSystemContext context,
             TComposer composer,
             EntityTableChangeBatch membership,
             RenderInstanceChanges forcedChanges)
         {
-            _owner = owner;
+            _composition = composition;
             _context = context;
             _composer = composer;
             _membership = membership;
@@ -331,23 +331,23 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
 
         internal bool Changed { get; private set; }
 
-        internal void Update(scoped QueryCursor cursor)
+        internal void Update(scoped QueryCursor byteOffset)
         {
             ReadOnlyQueryPacketPlan packets =
-                ReadOnlyQueryPacketJobs.CreatePlan(cursor, _owner._rowsPerPacket);
+                ReadOnlyQueryPacketJobs.CreatePlan(byteOffset, _composition._rowsPerPacket);
             try
             {
-                RenderInstanceBatches<TGroupKey>? current = _owner.Current;
+                RenderInstanceBatches<TGroupKey>? current = _composition.Current;
                 if (current is null)
                 {
-                    _owner.Rebuild(_context, ref packets, in _composer);
+                    _composition.Rebuild(_context, ref packets, in _composer);
                     Changed = true;
                     return;
                 }
 
                 RenderInstanceChanges forcedChanges = _forcedChanges;
                 foreach (Entity entity in _membership.Entities)
-                    if (cursor.TryGetRow(entity, out _))
+                    if (byteOffset.TryGetRow(entity, out _))
                     {
                         forcedChanges |= RenderInstanceChanges.Structure;
                         break;
@@ -364,11 +364,11 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 if ((changes & RenderInstanceChanges.Structure) != 0
                     || (!singleGroup && !ValidateCurrent(ref packets, current)))
                 {
-                    _owner.Rebuild(_context, ref packets, in _composer);
+                    _composition.Rebuild(_context, ref packets, in _composer);
                 }
                 else if (current.GroupCount != 0)
                 {
-                    _owner.Rewrite(_context, ref packets, current, in _composer,
+                    _composition.Rewrite(_context, ref packets, current, in _composer,
                         _forcedChanges != RenderInstanceChanges.None);
                 }
                 Changed = true;
@@ -395,7 +395,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 {
                     JobResourceAccess access = JobResourceAccess.Write(result, 0, 1);
                     JobResourceAccess[] accesses = [access];
-                    _ = packets.ExecuteParallel(in job, accesses, _owner._jobOptions);
+                    _ = packets.ExecuteParallel(in job, accesses, _composition._jobOptions);
                 }
                 return (RenderInstanceChanges)result[0];
             }
@@ -428,7 +428,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                         JobResourceAccess.Read(current.Addresses),
                         JobResourceAccess.Write(mismatch, 0, 1),
                     ];
-                    _ = packets.ExecuteParallel(in job, accesses, _owner._jobOptions);
+                    _ = packets.ExecuteParallel(in job, accesses, _composition._jobOptions);
                 }
                 return mismatch[0] == 0;
             }
@@ -456,7 +456,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         int[] counts = ArrayPool<int>.Shared.Rent(Math.Max(1, entityCount));
         int[] offsets = ArrayPool<int>.Shared.Rent(checked(entityCount + 1));
         TGroupKey[]? keys = null;
-        StableGroupPlacement[]? placements = null;
+        GroupRow[]? placements = null;
         int[]? groupCounts = null;
         int[]? groupStarts = null;
         int addressCount = 0;
@@ -519,7 +519,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 }
             }
 
-            placements = ArrayPool<StableGroupPlacement>.Shared.Rent(
+            placements = ArrayPool<GroupRow>.Shared.Rent(
                 Math.Max(1, addressCount));
             groupCounts = ArrayPool<int>.Shared.Rent(Math.Max(1, addressCount));
             groupStarts = ArrayPool<int>.Shared.Rent(Math.Max(1, addressCount));
@@ -554,7 +554,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
             if (groupCounts is not null)
                 ArrayPool<int>.Shared.Return(groupCounts);
             if (placements is not null)
-                ArrayPool<StableGroupPlacement>.Shared.Return(placements);
+                ArrayPool<GroupRow>.Shared.Return(placements);
             if (keys is not null)
                 Return(keys, addressCount);
             ArrayPool<int>.Shared.Return(offsets);
@@ -653,7 +653,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         int entityCount,
         int[] offsets,
         TGroupKey[] keys,
-        StableGroupPlacement[] placements,
+        GroupRow[] placements,
         int[] groupCounts,
         int groupCount,
         int addressCount)
@@ -743,7 +743,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 new RenderInstanceBatchAddress<TGroupKey>[addressCount];
             for (int address = 0; address < addressCount; address++)
             {
-                StableGroupPlacement placement = placements[address];
+                GroupRow placement = placements[address];
                 persistentAddresses[address] = new RenderInstanceBatchAddress<TGroupKey>(
                     keys[address],
                     published[placement.Group],
@@ -1055,7 +1055,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         TComposer composer,
         int[] offsets,
         TGroupKey[] keys,
-        StableGroupPlacement[] placements,
+        GroupRow[] placements,
         RenderInstanceWriteSlice[] destinations) : IReadOnlyQueryPacketJob
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
@@ -1073,7 +1073,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 {
                     int address = start + group;
                     TGroupKey key = keys[address];
-                    StableGroupPlacement placement = placements[address];
+                    GroupRow placement = placements[address];
                     local.Write(
                         in key,
                         group,

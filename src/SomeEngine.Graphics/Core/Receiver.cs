@@ -34,5 +34,6 @@ public partial interface IGraphicsBackend : IDisposable
 
 internal interface INativeValidationControl
 {
+    bool CanEnableNativeValidation { get; }
     void EnableNativeValidation();
 }

@@ -1,3 +1,7 @@
+using System.Collections.Frozen;
+using SomeEngine.Assets;
+using SomeEngine.Assets.Importers;
+using SomeEngine.Render;
 using System.Collections.Immutable;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -7,7 +11,6 @@ using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Assets;
 using SomeEngine.Render.Cluster;
-using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
@@ -17,9 +20,25 @@ using SomeEngine.Resources.Geometry;
 namespace SomeEngine.Render.Features.Skinning;
 
 /// <summary>Produces per-instance LBS bounds from shared influence boxes and model-space bones.</summary>
-public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
-    ISystem<RenderPrepareSystemContext>, ISystem<RenderFrameSystemContext>, IRenderGraphFrameExecutionObserver
+public sealed class SkinBoundsFeature : IRenderBoundsSource, IDisposable,
+    ISystem<RenderPrepareSystemContext>, ISystem<RenderFrameSystemContext>
 {
+    private static readonly System.Collections.Frozen.FrozenDictionary<string, Resource> ResourceNames =
+        new Dictionary<string, Resource>
+        {
+            ["SkinBoundsControls"] = Resource.Controls,
+            ["SkinBoundsWork"] = Resource.Work,
+            ["SkinBoundsBoxes"] = Resource.Boxes,
+            ["SkinCurrentBounds"] = Resource.Current,
+            ["SkinPreviousBounds"] = Resource.Previous,
+            ["SkinCurrentBones"] = Resource.CurrentBones,
+            ["SkinPreviousBones"] = Resource.PreviousBones,
+            ["SkinJointIndices"] = Resource.Joints,
+            ["SkinInverseBind"] = Resource.InverseBind,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+
+    private readonly RenderPipelines _renderPipelines;
     private const BufferUsages BoundsUsages = BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly LinkedComputePipeline _pipeline;
@@ -29,7 +48,6 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
     private readonly Dictionary<Entity, MeshBounds> _instances = [];
     private readonly Dictionary<GeometryKey, GeometryBounds> _geometry = [];
     private readonly List<Entity> _removed = [];
-    private readonly List<Control> _controls = [];
     private MeshBounds[] _order = [];
     private RenderWorld _world = null!;
     private QueryHandle _query;
@@ -44,12 +62,18 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
     public GraphPassId CompletePass { get; }
     public ulong Revision { get; private set; }
 
-    public SkinBoundsFeature(IGraphicsBackend backend, Device device, global::SomeEngine.RenderGraph.RenderGraph graph,
-        SkinningFeature skinning)
-    {
+    public SkinBoundsFeature(
+        IGraphicsBackend backend,
+        Device device,
+        RenderPipelines pipelines,
+        global::SomeEngine.RenderGraph.RenderGraph graph,
+        SkinningFeature skinning,
+        ShaderLibrary shaders,
+        AssetLoader files)    {
+
+        _renderPipelines = pipelines;
         _graph = graph;
-        _pipeline = LinkedComputePipeline.Create(backend, device, SkinBoundsShaders.Get(device.Capabilities.CompileTarget),
-            "TransformSkinBounds", "Transform skin influence bounds");
+        _pipeline = LinkedComputePipeline.Create(_renderPipelines, shaders.GetAsync(files, EngineShaderAssets.SkinBounds).AsTask().GetAwaiter().GetResult(), "TransformSkinBounds", "Transform skin influence bounds");
         RenderGraphEdit edit = graph.BeginEdit();
         try
         {
@@ -68,13 +92,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
                 static (ref PassDefinition _, ref DispatchArguments _) => { },
                 static (ref ComputePassCommandScope commands, in DispatchArguments data) => commands.Dispatch(data));
             PassDefinition pass = edit.GetPass(_boundsPass);
-            Resource[] resources = ShaderResourceLayout.Resolve<Resource>(_pipeline.ParameterLayout, static (name, _) => name switch
-            {
-                "SkinBoundsControls" => Resource.Controls, "SkinBoundsWork" => Resource.Work, "SkinBoundsBoxes" => Resource.Boxes,
-                "SkinCurrentBounds" => Resource.Current, "SkinPreviousBounds" => Resource.Previous,
-                "SkinCurrentBones" => Resource.CurrentBones, "SkinPreviousBones" => Resource.PreviousBones,
-                "SkinJointIndices" => Resource.Joints, "SkinInverseBind" => Resource.InverseBind, _ => null,
-            });
+            Resource[] resources = ShaderResourceLayout.Resolve<Resource>(_pipeline.ParameterLayout, static (name, _) => ResourceNames.TryGetValue(name, out Resource resource) ? resource : null);
             foreach (Resource resource in resources)
             {
                 switch (resource)
@@ -102,6 +120,16 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
             edit.Commit();
         }
         finally { edit.Dispose(); }
+    }
+
+    public void ReplaceShader(Shader previous, Shader next)
+    {
+        if (!_pipeline.ReplaceShader(_renderPipelines, previous, next)) return;
+        using RenderGraphEdit edit = _graph.BeginEdit();
+        PassDefinition pass = edit.GetPass(_boundsPass);
+        pass.SetPipeline(_pipeline.Pipeline);
+        pass.SetParameterBlock(_pipeline.ParameterLayout);
+        edit.Commit();
     }
 
     public void OnCreate(ref RenderPrepareSystemContext context)
@@ -237,33 +265,37 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
 
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
-        _controls.Clear();
+        var controls = new List<Control>(_order.Length);
         bool changed = false;
         foreach (MeshBounds instance in _order)
         {
             bool update = instance.Input != instance.AcceptedInput;
             changed |= update;
-            _controls.Add(new(instance.Binding.JointOffset, instance.Binding.InverseBindOffset, instance.First, update ? 1u : 0u));
+            controls.Add(new(instance.Binding.JointOffset, instance.Binding.InverseBindOffset, instance.First, update ? 1u : 0u));
         }
-        if (_controls.Count == 0) _controls.Add(default);
+        if (controls.Count == 0) controls.Add(default);
         RenderGraphFrame frame = context.Graph;
         frame.SetBufferInput(CurrentBounds, new(_current, BufferRange.Whole));
         frame.SetBufferInput(PreviousBounds, new(_previous, BufferRange.Whole));
         frame.SetBufferInput(_boxesInput, new(_definitions, _boxRange));
         frame.SetBufferInput(_workInput, new(_definitions, _workRange));
-        frame.SetBufferInput(_controlsInput, frame.Upload<Control>(CollectionsMarshal.AsSpan(_controls), BufferUsages.ShaderRead));
+        frame.SetBufferInput(_controlsInput, frame.Upload<Control>(CollectionsMarshal.AsSpan(controls), BufferUsages.ShaderRead));
         if (_uploadRequired) frame.SetBufferInput(_uploadInput, frame.Upload(_definitionBytes, BufferUsages.CopySource));
         frame.SetPassEnabled(_uploadPass, _uploadRequired);
         frame.SetPassEnabled(_boundsPass, changed);
         frame.SetPassData(_boundsPass, _dispatch);
-        frame.ObserveExecution(this);
+        frame.ObserveExecution(new BoundsSubmission(this, _uploadRequired, changed, _order));
     }
 
-    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+    private sealed class BoundsSubmission(SkinBoundsFeature feature, bool upload, bool changed, MeshBounds[] instances)
+        : IRenderGraphFrameExecutionObserver
     {
-        if (result.TryGetPassCompletion(_uploadPass, out _)) _uploadRequired = false;
-        if (result.TryGetPassCompletion(_boundsPass, out _))
-            foreach (MeshBounds instance in _order) instance.AcceptedInput = instance.Input;
+        public void OnFrameSubmitted(in RenderGraphSubmission submission)
+        {
+            if (upload) feature._uploadRequired = false;
+            if (changed)
+                foreach (MeshBounds instance in instances) instance.AcceptedInput = instance.Input;
+        }
     }
 
     private static GeometryBounds BuildGeometry(Mesh mesh, ClusterSkinBounds data)

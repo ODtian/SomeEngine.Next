@@ -185,12 +185,12 @@ internal struct FrameBuffer
     internal GraphBuffer? Definition;
     internal BufferDesc Description;
     internal MemoryType MemoryType;
-    internal RenderGraphResourceOwnership Ownership;
+    internal RenderGraphResourceSource Source;
     internal RenderGraphResourceLifetime Lifetime;
     internal MemoryRequirements Requirements;
     internal Buffer? Resource;
     internal BufferBoundaryState[]? EntryBoundaryStates;
-    internal FrameTransientResourceAllocator.UploadPage? UploadData;
+    internal UploadPage? UploadData;
     internal BufferContents[]? Contents;
     internal BufferSyncInput Synchronization;
     internal int FirstPass;
@@ -215,7 +215,7 @@ internal struct FrameTexture
     internal Format[]? PermittedViewFormats;
     internal string? Label;
     internal ResourceNodePlacement NodePlacement;
-    internal RenderGraphResourceOwnership Ownership;
+    internal RenderGraphResourceSource Source;
     internal RenderGraphResourceLifetime Lifetime;
     internal MemoryRequirements Requirements;
     internal Texture? Resource;
@@ -320,6 +320,8 @@ internal struct FramePass
     internal FramePassCallbackStore? FrameCallbacks;
     internal int FrameCallbackIndex;
     internal GraphIdentity Region;
+    internal FrameSectionPosition SectionPosition;
+    internal bool SectionBoundary;
 }
 
 internal struct FrameResourceAccess

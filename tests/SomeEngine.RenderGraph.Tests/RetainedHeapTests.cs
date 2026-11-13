@@ -19,8 +19,7 @@ public sealed class RetainedHeapTests
         {
             GraphBufferId later = edit.CreateBuffer(new(64, BufferUsages.CopySource | BufferUsages.CopyDestination));
             GraphBufferId earlier = edit.CreateBuffer(new(64, BufferUsages.CopySource | BufferUsages.CopyDestination));
-            GraphBufferId destination = edit.RegisterExternalBuffer(result,
-                [new(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId destination = edit.RegisterExternalBuffer(result);
             GraphPassId earlierWrite = Initialize(edit, earlier, 0x11111111);
             earlierRead = Copy(edit, earlier, destination, 0);
             GraphPassId laterWrite = Initialize(edit, later, 0x77777777);
@@ -85,7 +84,7 @@ public sealed class RetainedHeapTests
                 uint value = 0x12345678u + iteration * 2 + (uint)index;
                 GraphBufferSlice source = frame.Upload<uint>(value, BufferUsages.CopySource);
                 GraphBufferId destination = frame.CreateBuffer(new BufferDesc(4, BufferUsages.CopyDestination), MemoryType.Readback);
-                GraphPassId pass = frame.AddCopyPass("copy retained host data", PassQueueSelection.Exact(support.GraphicsQueue),
+                GraphPassId pass = frame.AddCopyPass("copy retained host data", PassQueueSelection.OnQueue(support.GraphicsQueue),
                     (Source: source, Destination: destination, Index: index, Outputs: outputs),
                     new PassOptions(Culling: PassCullingMode.NeverCull),
                     static (ref PassDefinition definition, ref (GraphBufferSlice Source, GraphBufferId Destination, int Index, Buffer[] Outputs) data) =>
@@ -127,11 +126,10 @@ public sealed class RetainedHeapTests
         GraphPassId leftRead, rightWrite;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            GraphBufferId result = edit.RegisterExternalBuffer(readback,
-                [new BufferBoundaryState(new(0, 8), readback.InitialSync, readback.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId result = edit.RegisterExternalBuffer(readback);
             left = edit.CreateTransientBuffer(new BufferDesc(4, BufferUsages.CopySource | BufferUsages.CopyDestination, "first alias"));
             right = edit.CreateTransientBuffer(new BufferDesc(4, BufferUsages.CopySource | BufferUsages.CopyDestination, "second alias"));
-            edit.AddCopyFramePass("occupy graphics queue", PassQueueSelection.Exact(support.GraphicsQueue), (byte)0,
+            edit.AddCopyFramePass("occupy graphics queue", PassQueueSelection.OnQueue(support.GraphicsQueue), (byte)0,
                 new PassOptions(Culling: PassCullingMode.NeverCull, EstimatedExecutionCost: 1000),
                 static (ref PassDefinition _, ref byte _) => { }, static (ref CopyPassCommandScope _, in byte _) => { });
             AddClear(edit, support.CopyQueue, left, 0x12345678);
@@ -176,10 +174,8 @@ public sealed class RetainedHeapTests
         GraphPassId firstReader, secondReader, overwrite;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            GraphBufferId firstResult = edit.RegisterExternalBuffer(first,
-                [new(new(0, 8), first.InitialSync, first.InitialAccess, ResourceContentState.Undefined)]);
-            GraphBufferId secondResult = edit.RegisterExternalBuffer(second,
-                [new(new(0, 4), second.InitialSync, second.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId firstResult = edit.RegisterExternalBuffer(first);
+            GraphBufferId secondResult = edit.RegisterExternalBuffer(second);
             GraphBufferId source = edit.CreateBuffer(new BufferDesc(4,
                 BufferUsages.CopySource | BufferUsages.CopyDestination));
             AddClear(edit, support.CopyQueue, source, 0x12345678);
@@ -214,14 +210,14 @@ public sealed class RetainedHeapTests
     }
 
     private static GraphPassId AddClear(RenderGraphEdit edit, Queue queue, GraphBufferId buffer, uint value) =>
-        edit.AddCopyFramePass("initialize alias", PassQueueSelection.Exact(queue), (Buffer: buffer, Value: value), default,
+        edit.AddCopyFramePass("initialize alias", PassQueueSelection.OnQueue(queue), (Buffer: buffer, Value: value), default,
             static (ref PassDefinition pass, ref (GraphBufferId Buffer, uint Value) data) =>
                 pass.Write(data.Buffer, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete),
             static (ref CopyPassCommandScope commands, in (GraphBufferId Buffer, uint Value) data) =>
                 commands.ClearBuffer(commands.GetBuffer(data.Buffer), BufferRange.Whole, data.Value));
 
     private static GraphPassId AddRead(RenderGraphEdit edit, Queue queue, GraphBufferId source, GraphBufferId destination, ulong offset, uint cost) =>
-        edit.AddCopyFramePass("read alias", PassQueueSelection.Exact(queue), (Source: source, Destination: destination, Offset: offset),
+        edit.AddCopyFramePass("read alias", PassQueueSelection.OnQueue(queue), (Source: source, Destination: destination, Offset: offset),
             new PassOptions(EstimatedExecutionCost: cost),
             static (ref PassDefinition pass, ref (GraphBufferId Source, GraphBufferId Destination, ulong Offset) data) =>
             {

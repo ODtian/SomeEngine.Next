@@ -48,88 +48,88 @@ internal sealed record VulkanExtendedFeatureSupport(
 
     internal static unsafe VulkanExtendedFeatureSupport Query(
         Vk vk,
-        VkPhysicalDevice physicalDevice,
+        VkPhysicalDevice adapterDevice,
         IReadOnlySet<string> extensions)
     {
         PhysicalDeviceConditionalRenderingFeaturesEXT conditional = QueryFeature<PhysicalDeviceConditionalRenderingFeaturesEXT>(
-            vk, physicalDevice, extensions.Contains("VK_EXT_conditional_rendering"),
+            vk, adapterDevice, extensions.Contains("VK_EXT_conditional_rendering"),
             StructureType.PhysicalDeviceConditionalRenderingFeaturesExt);
         PhysicalDeviceTransformFeedbackFeaturesEXT transform = QueryFeature<PhysicalDeviceTransformFeedbackFeaturesEXT>(
-            vk, physicalDevice, extensions.Contains("VK_EXT_transform_feedback"),
+            vk, adapterDevice, extensions.Contains("VK_EXT_transform_feedback"),
             StructureType.PhysicalDeviceTransformFeedbackFeaturesExt);
         PhysicalDeviceTransformFeedbackPropertiesEXT transformProperties =
             QueryProperty<PhysicalDeviceTransformFeedbackPropertiesEXT>(
                 vk,
-                physicalDevice,
+                adapterDevice,
                 extensions.Contains("VK_EXT_transform_feedback"),
                 StructureType.PhysicalDeviceTransformFeedbackPropertiesExt);
         PhysicalDeviceVertexAttributeDivisorFeaturesEXT divisor =
             QueryFeature<PhysicalDeviceVertexAttributeDivisorFeaturesEXT>(
                 vk,
-                physicalDevice,
+                adapterDevice,
                 extensions.Contains(VertexAttributeDivisorExtensionName),
                 StructureType.PhysicalDeviceVertexAttributeDivisorFeaturesExt);
         PhysicalDeviceVertexAttributeDivisorPropertiesEXT divisorProperties =
             QueryProperty<PhysicalDeviceVertexAttributeDivisorPropertiesEXT>(
                 vk,
-                physicalDevice,
+                adapterDevice,
                 extensions.Contains(VertexAttributeDivisorExtensionName),
                 StructureType.PhysicalDeviceVertexAttributeDivisorPropertiesExt);
         PhysicalDeviceCustomBorderColorFeaturesEXT customBorder =
             QueryFeature<PhysicalDeviceCustomBorderColorFeaturesEXT>(
                 vk,
-                physicalDevice,
+                adapterDevice,
                 extensions.Contains(CustomBorderColorExtensionName),
                 StructureType.PhysicalDeviceCustomBorderColorFeaturesExt);
         PhysicalDeviceDeviceGeneratedCommandsFeaturesEXT generatedCommands =
             QueryFeature<PhysicalDeviceDeviceGeneratedCommandsFeaturesEXT>(
                 vk,
-                physicalDevice,
+                adapterDevice,
                 extensions.Contains(DeviceGeneratedCommandsExtensionName),
                 StructureType.PhysicalDeviceDeviceGeneratedCommandsFeaturesExt);
         PhysicalDeviceDeviceGeneratedCommandsPropertiesEXT generatedProperties =
             QueryProperty<PhysicalDeviceDeviceGeneratedCommandsPropertiesEXT>(
                 vk,
-                physicalDevice,
+                adapterDevice,
                 extensions.Contains(DeviceGeneratedCommandsExtensionName),
                 StructureType.PhysicalDeviceDeviceGeneratedCommandsPropertiesExt);
         PhysicalDeviceRobustness2FeaturesEXT robustness2 =
             QueryFeature<PhysicalDeviceRobustness2FeaturesEXT>(
                 vk,
-                physicalDevice,
+                adapterDevice,
                 extensions.Contains(Robustness2ExtensionName),
                 StructureType.PhysicalDeviceRobustness2FeaturesExt);
         PhysicalDeviceExtendedDynamicStateFeaturesEXT dynamic = QueryFeature<PhysicalDeviceExtendedDynamicStateFeaturesEXT>(
-            vk, physicalDevice, extensions.Contains("VK_EXT_extended_dynamic_state"),
+            vk, adapterDevice, extensions.Contains("VK_EXT_extended_dynamic_state"),
             StructureType.PhysicalDeviceExtendedDynamicStateFeaturesExt);
         PhysicalDeviceExtendedDynamicState2FeaturesEXT dynamic2 = QueryFeature<PhysicalDeviceExtendedDynamicState2FeaturesEXT>(
-            vk, physicalDevice, extensions.Contains("VK_EXT_extended_dynamic_state2"),
+            vk, adapterDevice, extensions.Contains("VK_EXT_extended_dynamic_state2"),
             StructureType.PhysicalDeviceExtendedDynamicState2FeaturesExt);
         PhysicalDeviceMeshShaderFeaturesEXT mesh = QueryFeature<PhysicalDeviceMeshShaderFeaturesEXT>(
-            vk, physicalDevice, extensions.Contains("VK_EXT_mesh_shader"),
+            vk, adapterDevice, extensions.Contains("VK_EXT_mesh_shader"),
             StructureType.PhysicalDeviceMeshShaderFeaturesExt);
         PhysicalDeviceFragmentShadingRateFeaturesKHR shadingRate = QueryFeature<PhysicalDeviceFragmentShadingRateFeaturesKHR>(
-            vk, physicalDevice, extensions.Contains("VK_KHR_fragment_shading_rate"),
+            vk, adapterDevice, extensions.Contains("VK_KHR_fragment_shading_rate"),
             StructureType.PhysicalDeviceFragmentShadingRateFeaturesKhr);
         PhysicalDeviceAccelerationStructureFeaturesKHR acceleration = QueryFeature<PhysicalDeviceAccelerationStructureFeaturesKHR>(
-            vk, physicalDevice, extensions.Contains("VK_KHR_acceleration_structure"),
+            vk, adapterDevice, extensions.Contains("VK_KHR_acceleration_structure"),
             StructureType.PhysicalDeviceAccelerationStructureFeaturesKhr);
         PhysicalDeviceAccelerationStructurePropertiesKHR accelerationProperties =
             QueryProperty<PhysicalDeviceAccelerationStructurePropertiesKHR>(
                 vk,
-                physicalDevice,
+                adapterDevice,
                 extensions.Contains("VK_KHR_acceleration_structure"),
                 StructureType.PhysicalDeviceAccelerationStructurePropertiesKhr);
         PhysicalDeviceRayTracingPipelineFeaturesKHR rayTracing = QueryFeature<PhysicalDeviceRayTracingPipelineFeaturesKHR>(
-            vk, physicalDevice, extensions.Contains("VK_KHR_ray_tracing_pipeline"),
+            vk, adapterDevice, extensions.Contains("VK_KHR_ray_tracing_pipeline"),
             StructureType.PhysicalDeviceRayTracingPipelineFeaturesKhr);
         PhysicalDeviceRayQueryFeaturesKHR rayQuery = QueryFeature<PhysicalDeviceRayQueryFeaturesKHR>(
-            vk, physicalDevice, extensions.Contains("VK_KHR_ray_query"),
+            vk, adapterDevice, extensions.Contains("VK_KHR_ray_query"),
             StructureType.PhysicalDeviceRayQueryFeaturesKhr);
         PhysicalDeviceShaderImageAtomicInt64FeaturesEXT imageInt64 =
             QueryFeature<PhysicalDeviceShaderImageAtomicInt64FeaturesEXT>(
                 vk,
-                physicalDevice,
+                adapterDevice,
                 extensions.Contains(ShaderImageAtomicInt64ExtensionName),
                 StructureType.PhysicalDeviceShaderImageAtomicInt64FeaturesExt);
         return new VulkanExtendedFeatureSupport(
@@ -170,7 +170,7 @@ internal sealed record VulkanExtendedFeatureSupport(
 
     private static unsafe T QueryFeature<T>(
         Vk vk,
-        VkPhysicalDevice physicalDevice,
+        VkPhysicalDevice adapterDevice,
         bool available,
         StructureType structureType)
         where T : unmanaged
@@ -184,13 +184,13 @@ internal sealed record VulkanExtendedFeatureSupport(
             SType = StructureType.PhysicalDeviceFeatures2,
             PNext = Unsafe.AsPointer(ref feature),
         };
-        vk.GetPhysicalDeviceFeatures2(physicalDevice, &root);
+        vk.GetPhysicalDeviceFeatures2(adapterDevice, &root);
         return feature;
     }
 
     private static unsafe T QueryProperty<T>(
         Vk vk,
-        VkPhysicalDevice physicalDevice,
+        VkPhysicalDevice adapterDevice,
         bool available,
         StructureType structureType)
         where T : unmanaged
@@ -204,7 +204,7 @@ internal sealed record VulkanExtendedFeatureSupport(
             SType = StructureType.PhysicalDeviceProperties2,
             PNext = Unsafe.AsPointer(ref property),
         };
-        vk.GetPhysicalDeviceProperties2(physicalDevice, &root);
+        vk.GetPhysicalDeviceProperties2(adapterDevice, &root);
         return property;
     }
 }

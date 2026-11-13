@@ -1,5 +1,5 @@
-#include "cluster_view.slang"
-#include "cluster_page_requests.slang"
+__exported import cluster_view;
+__exported import cluster_page_requests;
 
 StructuredBuffer<ClusterViewUniforms> Views;
 RWByteAddressBuffer PageFaultBuffer;

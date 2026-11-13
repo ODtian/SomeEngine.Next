@@ -1,3 +1,4 @@
+using SomeEngine.Resources;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SlangShaderSharp;
@@ -17,8 +18,10 @@ using Texture = SomeEngine.Resources.Texture;
 namespace SomeEngine.Elements.Render;
 
 /// <summary>Maintains one persistent raster pass per extracted screen or world canvas.</summary>
-public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObserver
+public sealed class CanvasRenderer : IDisposable
 {
+
+    private readonly RenderPipelines _renderPipelines;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly RenderWorld _world;
     private readonly SurfaceDrawing _surfaces;
@@ -36,26 +39,49 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
     private uint _lastVersion;
     private bool _disposed;
 
-    public CanvasRenderer(IGraphicsBackend backend, Device device,
-        global::SomeEngine.RenderGraph.RenderGraph graph, RenderWorld world,
-        SurfaceMaterial material, Format outputFormat)
-        : this(backend, device, graph, world, material, outputFormat, null, null, null) { }
+    public CanvasRenderer(
+        IGraphicsBackend backend,
+        Device device,
+        RenderPipelines pipelines,
+        global::SomeEngine.RenderGraph.RenderGraph graph,
+        RenderWorld world,
+        SurfaceMaterial material,
+        Format outputFormat)        : this(backend, device, pipelines, graph, world, material, outputFormat, null, null, null) { }
 
-    public CanvasRenderer(IGraphicsBackend backend, Device device,
-        global::SomeEngine.RenderGraph.RenderGraph graph, RenderWorld world,
-        SurfaceMaterial material, Format outputFormat, GlyphsMaterial? glyphs)
-        : this(backend, device, graph, world, material, outputFormat, glyphs, null, null) { }
+    public CanvasRenderer(
+        IGraphicsBackend backend,
+        Device device,
+        RenderPipelines pipelines,
+        global::SomeEngine.RenderGraph.RenderGraph graph,
+        RenderWorld world,
+        SurfaceMaterial material,
+        Format outputFormat,
+        GlyphsMaterial? glyphs)        : this(backend, device, pipelines, graph, world, material, outputFormat, glyphs, null, null) { }
 
-    public CanvasRenderer(IGraphicsBackend backend, Device device,
-        global::SomeEngine.RenderGraph.RenderGraph graph, RenderWorld world,
-        SurfaceMaterial material, Format outputFormat, ImageMaterial? images, RenderDevice? renderDevice)
-        : this(backend, device, graph, world, material, outputFormat, null, images, renderDevice) { }
+    public CanvasRenderer(
+        IGraphicsBackend backend,
+        Device device,
+        RenderPipelines pipelines,
+        global::SomeEngine.RenderGraph.RenderGraph graph,
+        RenderWorld world,
+        SurfaceMaterial material,
+        Format outputFormat,
+        ImageMaterial? images,
+        RenderDevice? renderDevice)        : this(backend, device, pipelines, graph, world, material, outputFormat, null, images, renderDevice) { }
 
-    public CanvasRenderer(IGraphicsBackend backend, Device device,
-        global::SomeEngine.RenderGraph.RenderGraph graph, RenderWorld world,
-        SurfaceMaterial material, Format outputFormat, GlyphsMaterial? glyphs,
-        ImageMaterial? images, RenderDevice? renderDevice)
-    {
+    public CanvasRenderer(
+        IGraphicsBackend backend,
+        Device device,
+        RenderPipelines pipelines,
+        global::SomeEngine.RenderGraph.RenderGraph graph,
+        RenderWorld world,
+        SurfaceMaterial material,
+        Format outputFormat,
+        GlyphsMaterial? glyphs,
+        ImageMaterial? images,
+        RenderDevice? renderDevice)    {
+
+        _renderPipelines = pipelines;
         DevelopmentCheck.Require(ReferenceEquals(graph.Device, device), "Canvas drawing uses the graph's device.");
         DevelopmentCheck.Require(images is null || renderDevice is not null && ReferenceEquals(renderDevice.Device, device),
             "Image drawing requires a RenderDevice for the graph's device.");
@@ -64,11 +90,11 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
         _backend = backend;
         _device = device;
         _renderDevice = renderDevice;
-        _surfaces = new SurfaceDrawing(backend, device, material, outputFormat);
+        _surfaces = new SurfaceDrawing(backend, device, pipelines, material, outputFormat);
         try
         {
-            if (images is not null) _images = new ImageDrawing(backend, device, images, outputFormat);
-            if (glyphs is not null) _glyphs = new GlyphDrawing(backend, device, glyphs, outputFormat);
+            if (images is not null) _images = new ImageDrawing(backend, device, pipelines, images, outputFormat);
+            if (glyphs is not null) _glyphs = new GlyphDrawing(backend, device, pipelines, glyphs, outputFormat);
             _query = world.Query(new QueryDefinitionBuilder().Read<RenderCanvas>()
                 .OptionalBuffer<SurfaceInstance>(QueryAccess.Read).OptionalBuffer<ImageInstance>(QueryAccess.Read)
                 .OptionalBuffer<GlyphInstance>(QueryAccess.Read).Optional<CanvasGlyphAtlas>(QueryAccess.Read));
@@ -80,6 +106,27 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
             _surfaces.Dispose();
             throw;
         }
+    }
+
+    public void ReplaceShader(Shader previous, Shader next)
+    {
+        bool changed = _surfaces.ReplaceShader(previous, next);
+        changed |= _images?.ReplaceShader(previous, next) == true;
+        changed |= _glyphs?.ReplaceShader(previous, next) == true;
+        if (!changed) return;
+        using RenderGraphEdit edit = _graph.BeginEdit();
+        foreach (CanvasBuffers buffers in _canvases.Values)
+        {
+            buffers.Data = buffers.Data with
+            {
+                SurfacePipeline = _surfaces.GetPipeline(buffers.Target),
+                ImagePipeline = _images?.GetPipeline(buffers.Target),
+                GlyphPipeline = _glyphs?.GetPipeline(buffers.Target),
+            };
+            PassDefinition pass = edit.GetPass(buffers.Pass);
+            pass.SetPipeline(buffers.Data.SurfacePipeline);
+        }
+        edit.Commit();
     }
 
     /// <summary>Reconciles screen canvas drawing with the supplied color target.</summary>
@@ -177,13 +224,22 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
             buffers.GlyphsChanged |= data.GlyphsChanged || buffers.HasGlyphs != data.HasGlyphs || buffers.Atlas != data.Atlas;
             buffers.HasGlyphs = data.HasGlyphs;
             buffers.Atlas = data.Atlas;
+            if (buffers.SurfacesChanged || buffers.ImagesChanged || buffers.GlyphsChanged) UpdateInstances(data.Entity, buffers);
         }
         var referencedAtlases = new HashSet<Entity>(_canvasData.Select(data => data.Atlas));
         foreach (Entity atlas in _atlases.Keys.ToArray())
             if (!referencedAtlases.Contains(atlas))
             {
-                _graph.RetireAfterSubmittedFrames(_atlases[atlas]);
+                _atlases[atlas].Dispose();
                 _atlases.Remove(atlas);
+            }
+        if (_glyphs is not null)
+            foreach (Entity entity in referencedAtlases)
+            {
+                if (entity == Entity.Null) continue;
+                if (!_atlases.TryGetValue(entity, out GlyphAtlasTextures? atlas))
+                    _atlases.Add(entity, atlas = new GlyphAtlasTextures(_backend, _device, _graph));
+                atlas.Reconcile(_world.Read<RenderGlyphAtlas>(entity));
             }
         _lastVersion = _world.CurrentTick;
     }
@@ -200,28 +256,28 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
     public void UpdateFrame(ref RenderGraphFrame frame)
     {
         DevelopmentCheck.Require(!_disposed, "Canvas drawing must be active.");
-        frame.ObserveExecution(this);
         var atlasFrames = new Dictionary<Entity, GlyphAtlasFrame>();
         if (_glyphs is not null)
             foreach (CanvasBuffers buffers in _canvases.Values)
             {
                 if (buffers.Atlas == Entity.Null || atlasFrames.ContainsKey(buffers.Atlas)) continue;
-                if (!_atlases.TryGetValue(buffers.Atlas, out GlyphAtlasTextures? atlas))
-                    _atlases.Add(buffers.Atlas, atlas = new GlyphAtlasTextures(_backend, _device, _graph));
+                GlyphAtlasTextures atlas = _atlases[buffers.Atlas];
                 atlasFrames.Add(buffers.Atlas, atlas.UpdateFrame(ref frame, _world.Read<RenderGlyphAtlas>(buffers.Atlas)));
             }
         Span<Vector4> canvas = stackalloc Vector4[16];
         foreach ((Entity entity, CanvasBuffers buffers) in _canvases)
         {
-            if (buffers.SurfacesChanged || buffers.ImagesChanged || buffers.GlyphsChanged) UpdateInstances(entity, buffers);
+            buffers.Surfaces!.Upload(ref frame);
+            buffers.Images?.Upload(ref frame);
+            buffers.Glyphs?.Upload(ref frame);
             frame.SetBufferInput(buffers.SurfaceInput, new GraphBufferSlice(
-                frame.Import(buffers.Surfaces!.Buffer, buffers.Surfaces.Boundaries), BufferRange.Whole));
+                buffers.Surfaces!.Buffer, BufferRange.Whole));
             if (_images is not null)
                 frame.SetBufferInput(buffers.ImageInput!, new GraphBufferSlice(
-                    frame.Import(buffers.Images!.Buffer, buffers.Images.Boundaries), BufferRange.Whole));
+                    buffers.Images!.Buffer, BufferRange.Whole));
             if (_glyphs is not null)
                 frame.SetBufferInput(buffers.GlyphInput!, new GraphBufferSlice(
-                    frame.Import(buffers.Glyphs!.Buffer, buffers.Glyphs.Boundaries), BufferRange.Whole));
+                    buffers.Glyphs!.Buffer, BufferRange.Whole));
             GlyphAtlasFrame glyphAtlas = _glyphs is not null && buffers.Atlas != Entity.Null
                 ? atlasFrames[buffers.Atlas] : new([], [], 0);
             foreach (GraphPassId upload in glyphAtlas.Uploads) frame.OrderAfter(buffers.Pass, upload);
@@ -274,23 +330,25 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
             "A canvas with glyphs requires a Glyphs material.");
         if (buffers.SurfacesChanged)
         {
-            InstanceBuffer replacement = _surfaces.CreateInstances(surfaces);
-            if (buffers.Surfaces is { } previous) _graph.RetireAfterSubmittedFrames(previous);
+            InstanceBuffer replacement = _surfaces.CreateInstances(_graph, surfaces, buffers.Surfaces);
+            ReplaceInstanceBuffer(buffers.Pass, buffers.Surfaces, replacement);
             buffers.Surfaces = replacement;
 
         }
         if (buffers.ImagesChanged && _images is not null)
         {
-            InstanceBuffer replacement = _images.CreateInstances(images);
-            if (buffers.Images is { } previous) _graph.RetireAfterSubmittedFrames(previous);
+            InstanceBuffer replacement = _images.CreateInstances(_graph, images, buffers.Images);
+            ReplaceInstanceBuffer(buffers.Pass, buffers.Images, replacement);
             buffers.Images = replacement;
 
             buffers.Textures = images.Select(value => value.Texture).ToArray();
+            foreach (Texture? texture in buffers.Textures)
+                if (texture is not null) _renderDevice!.PrepareTexture(texture);
         }
         if (buffers.GlyphsChanged && _glyphs is not null)
         {
-            InstanceBuffer replacement = _glyphs.CreateInstances(glyphs);
-            if (buffers.Glyphs is { } previous) _graph.RetireAfterSubmittedFrames(previous);
+            InstanceBuffer replacement = _glyphs.CreateInstances(_graph, glyphs, buffers.Glyphs);
+            ReplaceInstanceBuffer(buffers.Pass, buffers.Glyphs, replacement);
             buffers.Glyphs = replacement;
         }
         var draws = new List<CanvasDraw>(surfaces.Length + images.Length + glyphs.Length);
@@ -341,7 +399,7 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
         GraphBufferSrvId imageView = images is null ? default : edit.CreateBufferSrv(images, label: "Image instances");
         GraphBufferInput? glyphs = _glyphs is null ? null : edit.CreateBufferInput(BufferUsages.ShaderRead);
         GraphBufferSrvId glyphView = glyphs is null ? default : edit.CreateBufferSrv(glyphs, label: "Glyph instances");
-        GraphBufferId canvas = edit.DeclareExternalBuffer(new BufferDesc(256, BufferUsages.Constant,
+        GraphBufferId canvas = edit.CreateTransientBuffer(new BufferDesc(256, BufferUsages.Constant,
             "Canvas size and scale"), MemoryType.Upload);
         GraphBufferCbvId canvasView = edit.CreateBufferCbv(canvas);
         GraphColorAttachmentViewId targetView = edit.CreateColorAttachmentView(target.Color, label: "Canvas color");
@@ -357,29 +415,24 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
         return new CanvasBuffers(pass, surfaces, images, glyphs, target, data);
     }
 
-    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+    private void ReplaceInstanceBuffer(GraphPassId consumer, InstanceBuffer? previous, InstanceBuffer replacement)
     {
-        foreach (CanvasBuffers buffers in _canvases.Values)
+        if (ReferenceEquals(previous, replacement)) return;
+        using RenderGraphEdit edit = _graph.BeginEdit();
+        edit.OrderAfter(consumer, replacement.UploadPass);
+        if (previous is not null)
         {
-            if (buffers.Surfaces is { } surfaces) surfaces.Boundaries = ReadBoundaries(result, surfaces.Buffer, surfaces.Boundaries);
-            if (buffers.Images is { } images) images.Boundaries = ReadBoundaries(result, images.Buffer, images.Boundaries);
-            if (buffers.Glyphs is { } glyphs) glyphs.Boundaries = ReadBoundaries(result, glyphs.Buffer, glyphs.Boundaries);
+            edit.Remove(previous.UploadPass);
+            edit.Remove(previous.Buffer);
         }
-    }
-
-    private static BufferBoundaryState[] ReadBoundaries(RenderGraphFrameResult result, Buffer buffer, BufferBoundaryState[] before)
-    {
-        ReadOnlySpan<BufferBoundaryState> states = result.GetBufferStates(buffer);
-        if (states.IsEmpty) return before;
-        if (before.Length != states.Length) before = new BufferBoundaryState[states.Length];
-        states.CopyTo(before);
-        return before;
+        edit.Commit();
+        if (previous is not null) _graph.RetireAfterSubmittedFrames(previous);
     }
 
     public void Dispose()
     {
         if (_disposed) return;
-        if (_canvases.Count != 0)
+        if (_canvases.Count != 0 && !_graph.IsDisposed && !_graph.IsLost)
         {
             using RenderGraphEdit edit = _graph.BeginEdit();
             foreach (CanvasBuffers buffers in _canvases.Values) RemovePass(edit, buffers);
@@ -391,7 +444,7 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
         _graph.RetireAfterSubmittedFrames(_surfaces);
         if (_images is not null) _graph.RetireAfterSubmittedFrames(_images);
         if (_glyphs is not null) _graph.RetireAfterSubmittedFrames(_glyphs);
-        foreach (GlyphAtlasTextures atlas in _atlases.Values) _graph.RetireAfterSubmittedFrames(atlas);
+        foreach (GlyphAtlasTextures atlas in _atlases.Values) atlas.Dispose();
         _atlases.Clear();
         _disposed = true;
     }
@@ -406,6 +459,8 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
     private static void RemovePass(RenderGraphEdit edit, CanvasBuffers buffers)
     {
         edit.Remove(buffers.Pass);
+        foreach (InstanceBuffer? data in new[] { buffers.Surfaces, buffers.Images, buffers.Glyphs })
+            if (data is not null) { edit.Remove(data.UploadPass); edit.Remove(data.Buffer); }
         edit.Remove(buffers.Data.Surfaces);
         if (buffers.ImageInput is not null) edit.Remove(buffers.Data.Images);
         if (buffers.GlyphInput is not null) edit.Remove(buffers.Data.Glyphs);
@@ -427,7 +482,7 @@ internal sealed class CanvasBuffers(GraphPassId pass, GraphBufferInput surfaces,
     internal GraphBufferInput? ImageInput { get; } = images;
     internal GraphBufferInput? GlyphInput { get; } = glyphs;
     internal GraphBufferId CanvasBuffer => Data.CanvasBuffer;
-    internal CanvasPassData Data { get; } = data;
+    internal CanvasPassData Data { get; set; } = data;
     internal CanvasPassTarget Target { get; } = target;
     internal RenderCanvas Canvas { get; set; }
     internal InstanceBuffer? Surfaces { get; set; }

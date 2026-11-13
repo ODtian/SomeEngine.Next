@@ -46,11 +46,10 @@ public sealed class SceneTheoryDiscoverer : TheoryDiscoverer
                 [new(QueueType.Graphics), new(QueueType.Compute), new(QueueType.Copy)],
                 requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands,
                 optionalFeatures: DeviceFeatures.MeshShaders));
-            if (!device.Capabilities.SupportsBufferInt64Atomics || !device.Capabilities.SupportsImageInt64Atomics)
-                return new($"{name}: Cluster visibility requires 64-bit buffer and image atomics on {device.Adapter.Name}.", false);
             return new(null, backend.TryGetCapability(device, out MeshShaders? mesh) && mesh is not null);
         }
-        catch (Exception error) when (error is NotSupportedException or DllNotFoundException or EntryPointNotFoundException)
+        catch (Exception error) when (error is NotSupportedException or DllNotFoundException or EntryPointNotFoundException or
+            GraphicsException { Error: GraphicsError.UnsupportedDeviceFeatures })
         {
             return new($"{name}: {error.GetType().Name}: {error.Message}", false);
         }

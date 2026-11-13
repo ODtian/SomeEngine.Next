@@ -17,7 +17,7 @@ namespace SomeEngine.Assets.Schema;
 [BinaryFields(nameof(ImportTrace), nameof(SchemaVersion), nameof(InputVersions))]
 public sealed partial class ShaderBlock : AssetBlock
 {
-    public const uint Version = 12;
+    public const uint Version = 13;
 
     public partial ImportTrace? ImportTrace { get; set; }
     public partial uint SchemaVersion { get; set; }
@@ -99,13 +99,13 @@ public sealed partial class ShaderBlock : AssetBlock
         return result.ToImmutable();
     }
 
-    public async ValueTask<Shader> CreateAsync(
+    internal async ValueTask<Shader> CreateAsync(
         ShaderSourceBlock source,
-        IGlobalSession slang,
-        SessionDesc sessionDescription,
+        ShaderLibrary library,
         string name,
         ReadOnlyMemory<SpecializationArg> specializations = default,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ShaderInputSource[]? assetInputs = null, IReadOnlyList<Shader>? dependencies = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         if (!specializations.IsEmpty)
@@ -113,31 +113,25 @@ public sealed partial class ShaderBlock : AssetBlock
         using ShaderBlock copy = Duplicate();
         using ShaderSourceBlock inputs = source.Duplicate();
         copy.ValidateContent();
-        Shader shader = await ReadVariantAsync(copy, inputs, slang, sessionDescription, name, null, [],
-            cancellationToken).ConfigureAwait(false);
+        Shader shader = await ReadVariantAsync(copy, inputs, library, name, null, [],
+            cancellationToken, assetInputs, dependencies, null).ConfigureAwait(false);
         if (inputs.Specializations.Count == 0) return shader;
 
-        var savedSources = await inputs.ReadSavedSourcesAsync(cancellationToken).ConfigureAwait(false);
-        SessionDesc description = CopySessionDescription(sessionDescription);
-        var variants = new List<(string EntryPoint, string[] Arguments, Lazy<Shader> Shader)>(inputs.Specializations.Count);
+        var variants = new List<(string EntryPoint, string[] Arguments, Shader Shader)>(inputs.Specializations.Count);
         foreach (ShaderSpecialization specialization in inputs.Specializations)
         {
             string entryPoint = specialization.EntryPoint;
             string[] values = specialization.Arguments.ToArray();
-            var code = await ReadCodeAsync(copy, shader, description, name, entryPoint, values,
-                cancellationToken).ConfigureAwait(false);
-            variants.Add((entryPoint, values, new Lazy<Shader>(() =>
-                ShaderSourceBlock.RestoreSavedEntry(slang, description, name, entryPoint, values,
-                    savedSources.Names, savedSources.Sources).WithManagedCode(code.Targets, code.Entries, code.Usage),
-                LazyThreadSafetyMode.ExecutionAndPublication)));
+            Shader variant = await ReadVariantAsync(copy, inputs, library, name,
+                entryPoint, values, cancellationToken, assetInputs, dependencies, shader).ConfigureAwait(false);
+            variants.Add((entryPoint, values, variant));
         }
         return shader.WithSpecializations(variants);
     }
 
-    public async ValueTask<Shader> CreateAsync(
+    internal async ValueTask<Shader> CreateAsync(
         ShaderSourceBlock source,
-        IGlobalSession slang,
-        SessionDesc sessionDescription,
+        ShaderLibrary library,
         string name,
         string entryPoint,
         ReadOnlyMemory<SpecializationArg> specializations,
@@ -151,23 +145,23 @@ public sealed partial class ShaderBlock : AssetBlock
         if (!inputs.Specializations.Any(value =>
             value.EntryPoint == entryPoint && value.Arguments.SequenceEqual(arguments)))
             throw new InvalidDataException($"Shader '{name}' does not declare the requested entry specialization.");
-        return await ReadVariantAsync(copy, inputs, slang, sessionDescription, name, entryPoint, arguments,
-            cancellationToken).ConfigureAwait(false);
+        return await ReadVariantAsync(copy, inputs, library, name, entryPoint, arguments,
+            cancellationToken, null, null, null).ConfigureAwait(false);
     }
 
     private static async ValueTask<Shader> ReadVariantAsync(
         ShaderBlock copy,
         ShaderSourceBlock source,
-        IGlobalSession slang,
-        SessionDesc sessionDescription,
+        ShaderLibrary library,
         string name,
         string? entryPoint,
         string[] arguments,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, ShaderInputSource[]? assetInputs, IReadOnlyList<Shader>? dependencies, Shader? inputShader)
     {
-        Shader shader = await source.CreateUsingSavedCodeAsync(slang, sessionDescription, name,
-            arguments.Select(SpecializationArg.FromExpression).ToArray(), cancellationToken, entryPoint).ConfigureAwait(false);
-        var code = await ReadCodeAsync(copy, shader, sessionDescription, name, entryPoint, arguments,
+        Shader shader = await source.CreateUsingSavedCodeAsync(library, name,
+            arguments.Select(SpecializationArg.FromExpression).ToArray(), cancellationToken, entryPoint,
+            assetInputs, dependencies, inputShader).ConfigureAwait(false);
+        var code = await ReadCodeAsync(copy, shader, library.Settings, name, entryPoint, arguments,
             cancellationToken).ConfigureAwait(false);
         return shader.WithManagedCode(code.Targets, code.Entries, code.Usage);
     }
@@ -226,8 +220,29 @@ public sealed partial class ShaderBlock : AssetBlock
         return description;
     }
 
-    internal bool MatchesInputs(IEnumerable<ShaderInputVersion> inputs, SessionDesc description) =>
-        SchemaVersion == Version && InputVersions.SequenceEqual(inputs);
+    internal bool MatchesInputs(IEnumerable<ShaderInputVersion> inputs, SessionDesc description,
+        IList<ShaderSpecialization> specializations)
+    {
+        if (SchemaVersion != Version || !InputVersions.SequenceEqual(inputs)) return false;
+        // A compiled target saves its common entries and declared variants together.
+        ShaderSpecialization? specialization = specializations.FirstOrDefault();
+        string[] arguments = specialization?.Arguments.ToArray() ?? [];
+        IReadOnlyCollection<ulong> keys = ContentKeys;
+        for (int target = 0; target < description.Targets!.Length; target++)
+        {
+            if (!keys.Contains(EntryCodeKey(description, target, 0, arguments, specialization?.EntryPoint))
+                || !keys.Contains(EntryUsageKey(description, target, 0, arguments, specialization?.EntryPoint)))
+                return false;
+        }
+        return true;
+    }
+
+    internal static ShaderInputVersion[] CollectInputVersions(IEnumerable<ShaderInputVersion> inputs,
+        IEnumerable<ShaderInputVersion> dependencies) => inputs.Concat(dependencies)
+        .DistinctBy(static input => (input.AssetId, input.Input))
+        .OrderBy(static input => input.AssetId)
+        .ThenBy(static input => input.Input.BlockTypeId)
+        .ThenBy(static input => input.Input.SourceIndex).ToArray();
 
     internal ValueTask<Shader> ReadCodeAsync(Shader shader, SessionDesc description, CancellationToken cancellationToken) =>
         ReadManagedCodeAsync(shader, description, cancellationToken);
@@ -372,5 +387,5 @@ public sealed partial class ShaderBlock : AssetBlock
 }
 
 [BinarySerializable, BinaryValue]
-[BinaryFields(nameof(Input), nameof(DataVersion))]
-public readonly partial record struct ShaderInputVersion(ShaderInputLocation Input, Guid DataVersion);
+[BinaryFields(nameof(Input), nameof(DataVersion), nameof(AssetId))]
+public readonly partial record struct ShaderInputVersion(ShaderInputLocation Input, Guid DataVersion, Guid AssetId = default);

@@ -3,12 +3,11 @@ using System.Diagnostics;
 using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Direct3D12;
-
 /// <summary>Reports asynchronous Direct3D 12 Pipeline creation activity for one Device.</summary>
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable snapshots may be shared.</para>
 /// <para><b>Ownership:</b> Pure value; owns no RHI or native lifetime.</para>
-/// <para><b>After Dispose:</b> This type has no independent Dispose state; a captured snapshot remains readable.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; a captured data remains readable.</para>
 /// <para>Cache counters report lookups performed by asynchronous creation requests, not all cache
 /// operations performed by the Device.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -31,89 +30,64 @@ public readonly record struct D3D12PipelineCreationInfo(
     long ComputeCount,
     long MeshCount,
     long RayTracingCount,
-    long WorkGraphCount);
-
+    long WorkGraphCount
+);
 internal sealed unsafe partial class D3D12Backend
 {
-    public Task<Pipeline> CreateGraphicsPipelineAsync(
-        Device device,
-        in GraphicsPipelineDesc desc,
-        PipelineCache? cache = null)
+    public Task<Pipeline> CreateGraphicsPipelineAsync(Device device, in GraphicsPipelineDesc desc, PipelineCache? cache = null)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
-        GraphicsPipelineCreationRequest request =
-            GraphicsPipelineCreationRequest.Capture(nativeDevice, nativeCache, desc);
+        GraphicsPipelineCreationRequest request = GraphicsPipelineCreationRequest.CopyDescription(nativeDevice, nativeCache, desc);
         return EnqueuePipelineCreation(nativeDevice, request);
     }
 
-    public Task<Pipeline> CreateComputePipelineAsync(
-        Device device,
-        in ComputePipelineDesc desc,
-        PipelineCache? cache = null)
+    public Task<Pipeline> CreateComputePipelineAsync(Device device, in ComputePipelineDesc desc, PipelineCache? cache = null)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
-        ComputePipelineCreationRequest request =
-            ComputePipelineCreationRequest.Capture(nativeDevice, nativeCache, desc);
+        ComputePipelineCreationRequest request = ComputePipelineCreationRequest.CopyDescription(nativeDevice, nativeCache, desc);
         return EnqueuePipelineCreation(nativeDevice, request);
     }
 
-    public Task<Pipeline> CreateMeshPipelineAsync(
-        Device device,
-        in MeshPipelineDesc desc,
-        PipelineCache? cache = null)
+    public Task<Pipeline> CreateMeshPipelineAsync(Device device, in MeshPipelineDesc desc, PipelineCache? cache = null)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         _ = nativeDevice.RequireCapability<MeshShaders>(nameof(CreateMeshPipelineAsync));
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
-        MeshPipelineCreationRequest request =
-            MeshPipelineCreationRequest.Capture(nativeDevice, nativeCache, desc);
+        MeshPipelineCreationRequest request = MeshPipelineCreationRequest.CopyDescription(nativeDevice, nativeCache, desc);
         return EnqueuePipelineCreation(nativeDevice, request);
     }
 
-    public Task<Pipeline> CreateRayTracingPipelineAsync(
-        Device device,
-        in RayTracingPipelineDesc desc,
-        PipelineCache? cache = null)
+    public Task<Pipeline> CreateRayTracingPipelineAsync(Device device, in RayTracingPipelineDesc desc, PipelineCache? cache = null)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
-        RayTracing capability =
-            nativeDevice.RequireCapability<RayTracing>(nameof(CreateRayTracingPipelineAsync));
-        if (!capability.PipelineRayTracing)
-            throw new NotSupportedException("Pipeline ray tracing is unavailable.");
+        RayTracing capability = nativeDevice.RequireCapability<RayTracing>(nameof(CreateRayTracingPipelineAsync));
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
-        RayTracingPipelineCreationRequest request =
-            RayTracingPipelineCreationRequest.Capture(nativeDevice, nativeCache, desc);
+        RayTracingPipelineCreationRequest request = RayTracingPipelineCreationRequest.CopyDescription(nativeDevice, nativeCache, desc);
         return EnqueuePipelineCreation(nativeDevice, request);
     }
 
-    public Task<Pipeline> CreateWorkGraphPipelineAsync(
-        Device device,
-        in WorkGraphPipelineDesc desc,
-        PipelineCache? cache = null)
+    public Task<Pipeline> CreateWorkGraphPipelineAsync(Device device, in WorkGraphPipelineDesc desc, PipelineCache? cache = null)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         _ = nativeDevice.RequireCapability<WorkGraphs>(nameof(CreateWorkGraphPipelineAsync));
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
-        WorkGraphPipelineCreationRequest request =
-            WorkGraphPipelineCreationRequest.Capture(nativeDevice, nativeCache, desc);
+        WorkGraphPipelineCreationRequest request = WorkGraphPipelineCreationRequest.CopyDescription(nativeDevice, nativeCache, desc);
         return EnqueuePipelineCreation(nativeDevice, request);
     }
 
-    private static Task<Pipeline> EnqueuePipelineCreation(
-        D3D12Device device,
-        PipelineCreationRequest request)
+    private static Task<Pipeline> EnqueuePipelineCreation(D3D12Device device, PipelineCreationRequest request)
     {
         try
         {
@@ -126,32 +100,25 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    internal static D3D12PipelineCreationInfo GetPipelineCreationInfo(Device device) =>
-        device is D3D12Device native
-            ? native.PipelineCompiler.GetInfo()
-            : throw new ArgumentException(
-                "The Device was not created by the Direct3D 12 backend.",
-                nameof(device));
-
+    internal static D3D12PipelineCreationInfo GetPipelineCreationInfo(Device device) => ((D3D12Device)device).PipelineCompiler.GetInfo();
     private abstract class PipelineCreationRequest
     {
-        private readonly TaskCompletionSource<Pipeline> _completion = new(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<Pipeline> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private SlangShaderData? _slangCode;
         private readonly ShaderReflection _reflection;
         private ReadOnlySequence<byte>[]? _code;
-        private ISlangBlob?[]? _codeBlobs;
+        private ISlangBlob? []? _codeBlobs;
         private D3D12PipelineCache? _cache;
         private int _capturedStateReleased;
-
         protected PipelineCreationRequest(
             D3D12Device device,
             PipelineType type,
             SlangShaderData slangCode,
             ShaderReflection reflection,
             ReadOnlySequence<byte>[] code,
-            ISlangBlob?[] codeBlobs,
-            D3D12PipelineCache? cache)
+            ISlangBlob? [] codeBlobs,
+            D3D12PipelineCache? cache
+        )
         {
             Device = device;
             Type = type;
@@ -168,24 +135,15 @@ internal sealed unsafe partial class D3D12Backend
         internal PipelineType Type { get; }
         internal D3D12PipelineCache? Cache => Volatile.Read(ref _cache);
         internal Task<Pipeline> Task => _completion.Task;
-        protected SlangShaderData SlangCode => Volatile.Read(ref _slangCode)
-            ?? throw new ObjectDisposedException(nameof(PipelineCreationRequest));
+        protected SlangShaderData SlangCode => Volatile.Read(ref _slangCode)!;
         protected ShaderReflection Reflection => _reflection;
-        protected SlangShaderData CapturedSlangCode => Volatile.Read(ref _slangCode)
-            ?? throw new ObjectDisposedException(nameof(PipelineCreationRequest));
-        protected ReadOnlySequence<byte> GetCode(int index) =>
-            (Volatile.Read(ref _code) ??
-                throw new ObjectDisposedException(nameof(PipelineCreationRequest)))[index];
-        protected ISlangBlob? GetCodeBlob(int index) =>
-            (Volatile.Read(ref _codeBlobs) ??
-                throw new ObjectDisposedException(nameof(PipelineCreationRequest)))[index];
+        protected SlangShaderData CapturedSlangCode => Volatile.Read(ref _slangCode)!;
 
+        protected ReadOnlySequence<byte> GetCode(int index) => (Volatile.Read(ref _code)!)[index];
+        protected ISlangBlob? GetCodeBlob(int index) => (Volatile.Read(ref _codeBlobs)!)[index];
         internal abstract Pipeline Create();
-
         internal void Complete(Pipeline pipeline) => _completion.TrySetResult(pipeline);
-
         internal void Fail(Exception exception) => _completion.TrySetException(exception);
-
         internal void ReleaseCapturedState()
         {
             if (Interlocked.Exchange(ref _capturedStateReleased, 1) != 0)
@@ -196,14 +154,11 @@ internal sealed unsafe partial class D3D12Backend
             Interlocked.Exchange(ref _cache, null)?.ReleasePipelineCreationUse();
         }
 
-        protected static void ReleaseCaptureOnFailure(
-            D3D12PipelineCache? cache,
-            bool cacheRetained)
+        protected static void ReleaseCaptureOnFailure(D3D12PipelineCache? cache, bool cacheRetained)
         {
             if (cacheRetained)
                 cache!.ReleasePipelineCreationUse();
         }
-
     }
 
     private sealed class GraphicsPipelineCreationRequest : PipelineCreationRequest
@@ -230,14 +185,13 @@ internal sealed unsafe partial class D3D12Backend
         private readonly uint? _rasterizedStream;
         private readonly string? _label;
         private readonly StaticSamplerBinding[] _staticSamplers;
-
         private GraphicsPipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
             SlangShaderData slangCode,
             ShaderReflection reflection,
             ReadOnlySequence<byte>[] code,
-            ISlangBlob?[] codeBlobs,
+            ISlangBlob? [] codeBlobs,
             EntryPointReflection vertex,
             EntryPointReflection pixel,
             VertexBufferLayout[] vertexBuffers,
@@ -259,8 +213,8 @@ internal sealed unsafe partial class D3D12Backend
             uint[] streamOutputStrides,
             uint? rasterizedStream,
             string? label,
-            StaticSamplerBinding[] staticSamplers)
-            : base(device, PipelineType.Graphics, slangCode, reflection, code, codeBlobs, cache)
+            StaticSamplerBinding[] staticSamplers
+        ) : base(device, PipelineType.Graphics, slangCode, reflection, code, codeBlobs, cache)
         {
             _vertex = vertex;
             _pixel = pixel;
@@ -286,14 +240,11 @@ internal sealed unsafe partial class D3D12Backend
             _staticSamplers = staticSamplers;
         }
 
-        internal static GraphicsPipelineCreationRequest Capture(
-            D3D12Device device,
-            D3D12PipelineCache? cache,
-            in GraphicsPipelineDesc desc)
+        internal static GraphicsPipelineCreationRequest CopyDescription(D3D12Device device, D3D12PipelineCache? cache, in GraphicsPipelineDesc desc)
         {
             SlangShaderData retainedCode = desc.SlangCode;
             ReadOnlySequence<byte>[] code = [desc.VertexCode, desc.PixelCode];
-            ISlangBlob?[] codeBlobs = [desc.VertexCodeBlob, desc.PixelCodeBlob];
+            ISlangBlob? [] codeBlobs = [desc.VertexCodeBlob, desc.PixelCodeBlob];
             bool cacheRetained = false;
             try
             {
@@ -302,12 +253,8 @@ internal sealed unsafe partial class D3D12Backend
                 BlendAttachmentState[] blendAttachments = desc.Blend.Attachments.ToArray();
                 Format[] colorFormats = desc.Attachments.ColorFormats.ToArray();
                 bool hasStreamOutput = desc.HasStreamOutput;
-                StreamOutputElement[] streamOutputElements = hasStreamOutput
-                    ? desc.StreamOutput.Elements.ToArray()
-                    : [];
-                uint[] streamOutputStrides = hasStreamOutput
-                    ? desc.StreamOutput.BufferStrides.ToArray()
-                    : [];
+                StreamOutputElement[] streamOutputElements = hasStreamOutput ? desc.StreamOutput.Elements.ToArray() : [];
+                uint[] streamOutputStrides = hasStreamOutput ? desc.StreamOutput.BufferStrides.ToArray() : [];
                 StaticSamplerBinding[] staticSamplers = desc.StaticSamplers.ToArray();
                 cache?.RetainForPipelineCreation();
                 cacheRetained = cache is not null;
@@ -339,7 +286,8 @@ internal sealed unsafe partial class D3D12Backend
                     streamOutputStrides,
                     hasStreamOutput ? desc.StreamOutput.RasterizedStreamIndex : null,
                     desc.Label,
-                    staticSamplers);
+                    staticSamplers
+                );
                 return request;
             }
             catch
@@ -352,16 +300,10 @@ internal sealed unsafe partial class D3D12Backend
         internal override Pipeline Create()
         {
             BlendState blend = new(_blendAttachments, _independentBlend, _logicOperation);
-            AttachmentFormatSignature attachments = new(
-                _colorFormats,
-                _depthStencilFormat,
-                _sampleCount);
+            AttachmentFormatSignature attachments = new(_colorFormats, _depthStencilFormat, _sampleCount);
             if (_hasStreamOutput)
             {
-                StreamOutputState streamOutput = new(
-                    _streamOutputElements,
-                    _streamOutputStrides,
-                    _rasterizedStream);
+                StreamOutputState streamOutput = new(_streamOutputElements, _streamOutputStrides, _rasterizedStream);
                 GraphicsPipelineDesc desc = new(
                     SlangCode,
                     Reflection,
@@ -383,12 +325,9 @@ internal sealed unsafe partial class D3D12Backend
                     _label,
                     _staticSamplers,
                     GetCodeBlob(0),
-                    GetCodeBlob(1));
-                return Device.Backend.CreateGraphicsPipeline(
-                    Device,
-                    desc,
-                    Cache,
-                    CapturedSlangCode);
+                    GetCodeBlob(1)
+                );
+                return Device.Backend.CreateGraphicsPipeline(Device, desc, Cache, CapturedSlangCode);
             }
 
             GraphicsPipelineDesc ordinary = new(
@@ -411,12 +350,9 @@ internal sealed unsafe partial class D3D12Backend
                 _label,
                 _staticSamplers,
                 GetCodeBlob(0),
-                GetCodeBlob(1));
-            return Device.Backend.CreateGraphicsPipeline(
-                Device,
-                ordinary,
-                Cache,
-                CapturedSlangCode);
+                GetCodeBlob(1)
+            );
+            return Device.Backend.CreateGraphicsPipeline(Device, ordinary, Cache, CapturedSlangCode);
         }
     }
 
@@ -425,48 +361,35 @@ internal sealed unsafe partial class D3D12Backend
         private readonly EntryPointReflection _compute;
         private readonly string? _label;
         private readonly StaticSamplerBinding[] _staticSamplers;
-
         private ComputePipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
             SlangShaderData slangCode,
             ShaderReflection reflection,
             ReadOnlySequence<byte>[] code,
-            ISlangBlob?[] codeBlobs,
+            ISlangBlob? [] codeBlobs,
             EntryPointReflection compute,
             string? label,
-            StaticSamplerBinding[] staticSamplers)
-            : base(device, PipelineType.Compute, slangCode, reflection, code, codeBlobs, cache)
+            StaticSamplerBinding[] staticSamplers
+        ) : base(device, PipelineType.Compute, slangCode, reflection, code, codeBlobs, cache)
         {
             _compute = compute;
             _label = label;
             _staticSamplers = staticSamplers;
         }
 
-        internal static ComputePipelineCreationRequest Capture(
-            D3D12Device device,
-            D3D12PipelineCache? cache,
-            in ComputePipelineDesc desc)
+        internal static ComputePipelineCreationRequest CopyDescription(D3D12Device device, D3D12PipelineCache? cache, in ComputePipelineDesc desc)
         {
             SlangShaderData retainedCode = desc.SlangCode;
             ReadOnlySequence<byte>[] code = [desc.Code];
-            ISlangBlob?[] codeBlobs = [desc.CodeBlob];
+            ISlangBlob? [] codeBlobs = [desc.CodeBlob];
             bool cacheRetained = false;
             try
             {
                 StaticSamplerBinding[] staticSamplers = desc.StaticSamplers.ToArray();
                 cache?.RetainForPipelineCreation();
                 cacheRetained = cache is not null;
-                var request = new ComputePipelineCreationRequest(
-                    device,
-                    cache,
-                    retainedCode,
-                    desc.Reflection,
-                    code,
-                    codeBlobs,
-                    desc.Compute,
-                    desc.Label,
-                    staticSamplers);
+                var request = new ComputePipelineCreationRequest(device, cache, retainedCode, desc.Reflection, code, codeBlobs, desc.Compute, desc.Label, staticSamplers);
                 return request;
             }
             catch
@@ -478,19 +401,8 @@ internal sealed unsafe partial class D3D12Backend
 
         internal override Pipeline Create()
         {
-            ComputePipelineDesc desc = new(
-                SlangCode,
-                Reflection,
-                _compute,
-                GetCode(0),
-                _label,
-                _staticSamplers,
-                GetCodeBlob(0));
-            return Device.Backend.CreateComputePipeline(
-                Device,
-                desc,
-                Cache,
-                CapturedSlangCode);
+            ComputePipelineDesc desc = new(SlangCode, Reflection, _compute, GetCode(0), _label, _staticSamplers, GetCodeBlob(0));
+            return Device.Backend.CreateComputePipeline(Device, desc, Cache, CapturedSlangCode);
         }
     }
 
@@ -511,14 +423,13 @@ internal sealed unsafe partial class D3D12Backend
         private readonly DynamicStates _dynamicStates;
         private readonly string? _label;
         private readonly StaticSamplerBinding[] _staticSamplers;
-
         private MeshPipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
             SlangShaderData slangCode,
             ShaderReflection reflection,
             ReadOnlySequence<byte>[] code,
-            ISlangBlob?[] codeBlobs,
+            ISlangBlob? [] codeBlobs,
             EntryPointReflection mesh,
             EntryPointReflection amplification,
             EntryPointReflection pixel,
@@ -533,8 +444,8 @@ internal sealed unsafe partial class D3D12Backend
             uint sampleCount,
             DynamicStates dynamicStates,
             string? label,
-            StaticSamplerBinding[] staticSamplers)
-            : base(device, PipelineType.Mesh, slangCode, reflection, code, codeBlobs, cache)
+            StaticSamplerBinding[] staticSamplers
+        ) : base(device, PipelineType.Mesh, slangCode, reflection, code, codeBlobs, cache)
         {
             _mesh = mesh;
             _amplification = amplification;
@@ -553,16 +464,11 @@ internal sealed unsafe partial class D3D12Backend
             _staticSamplers = staticSamplers;
         }
 
-        internal static MeshPipelineCreationRequest Capture(
-            D3D12Device device,
-            D3D12PipelineCache? cache,
-            in MeshPipelineDesc desc)
+        internal static MeshPipelineCreationRequest CopyDescription(D3D12Device device, D3D12PipelineCache? cache, in MeshPipelineDesc desc)
         {
             SlangShaderData retainedCode = desc.SlangCode;
-            ReadOnlySequence<byte>[] code =
-                [desc.MeshCode, desc.AmplificationCode, desc.PixelCode];
-            ISlangBlob?[] codeBlobs =
-                [desc.MeshCodeBlob, desc.AmplificationCodeBlob, desc.PixelCodeBlob];
+            ReadOnlySequence<byte>[] code = [desc.MeshCode, desc.AmplificationCode, desc.PixelCode];
+            ISlangBlob? [] codeBlobs = [desc.MeshCodeBlob, desc.AmplificationCodeBlob, desc.PixelCodeBlob];
             bool cacheRetained = false;
             try
             {
@@ -592,7 +498,8 @@ internal sealed unsafe partial class D3D12Backend
                     desc.Attachments.SampleCount,
                     desc.DynamicStates,
                     desc.Label,
-                    staticSamplers);
+                    staticSamplers
+                );
                 return request;
             }
             catch
@@ -605,10 +512,7 @@ internal sealed unsafe partial class D3D12Backend
         internal override Pipeline Create()
         {
             BlendState blend = new(_blendAttachments, _independentBlend, _logicOperation);
-            AttachmentFormatSignature attachments = new(
-                _colorFormats,
-                _depthStencilFormat,
-                _sampleCount);
+            AttachmentFormatSignature attachments = new(_colorFormats, _depthStencilFormat, _sampleCount);
             MeshPipelineDesc desc = new(
                 SlangCode,
                 Reflection,
@@ -628,12 +532,9 @@ internal sealed unsafe partial class D3D12Backend
                 _staticSamplers,
                 GetCodeBlob(0),
                 GetCodeBlob(1),
-                GetCodeBlob(2));
-            return Device.Backend.CreateMeshPipeline(
-                Device,
-                desc,
-                Cache,
-                CapturedSlangCode);
+                GetCodeBlob(2)
+            );
+            return Device.Backend.CreateMeshPipeline(Device, desc, Cache, CapturedSlangCode);
         }
     }
 
@@ -650,14 +551,13 @@ internal sealed unsafe partial class D3D12Backend
         private readonly uint _nodeMask;
         private readonly string? _label;
         private readonly StaticSamplerBinding[] _staticSamplers;
-
         private RayTracingPipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
             SlangShaderData slangCode,
             ShaderReflection reflection,
             ReadOnlySequence<byte>[] code,
-            ISlangBlob?[] codeBlobs,
+            ISlangBlob? [] codeBlobs,
             EntryPointReflection[] rayGeneration,
             EntryPointReflection[] miss,
             EntryPointReflection[] callable,
@@ -668,8 +568,8 @@ internal sealed unsafe partial class D3D12Backend
             RayTracingPipelineOptions options,
             uint nodeMask,
             string? label,
-            StaticSamplerBinding[] staticSamplers)
-            : base(device, PipelineType.RayTracing, slangCode, reflection, code, codeBlobs, cache)
+            StaticSamplerBinding[] staticSamplers
+        ) : base(device, PipelineType.RayTracing, slangCode, reflection, code, codeBlobs, cache)
         {
             _rayGeneration = rayGeneration;
             _miss = miss;
@@ -684,14 +584,11 @@ internal sealed unsafe partial class D3D12Backend
             _staticSamplers = staticSamplers;
         }
 
-        internal static RayTracingPipelineCreationRequest Capture(
-            D3D12Device device,
-            D3D12PipelineCache? cache,
-            in RayTracingPipelineDesc desc)
+        internal static RayTracingPipelineCreationRequest CopyDescription(D3D12Device device, D3D12PipelineCache? cache, in RayTracingPipelineDesc desc)
         {
             SlangShaderData retainedCode = desc.SlangCode;
             ReadOnlySequence<byte>[] code = [desc.Code];
-            ISlangBlob?[] codeBlobs = [desc.CodeBlob];
+            ISlangBlob? [] codeBlobs = [desc.CodeBlob];
             bool cacheRetained = false;
             try
             {
@@ -719,7 +616,8 @@ internal sealed unsafe partial class D3D12Backend
                     desc.Options,
                     desc.NodeMask,
                     desc.Label,
-                    staticSamplers);
+                    staticSamplers
+                );
                 return request;
             }
             catch
@@ -745,12 +643,9 @@ internal sealed unsafe partial class D3D12Backend
                 _options,
                 _nodeMask,
                 _label,
-                _staticSamplers);
-            return Device.Backend.CreateRayTracingPipeline(
-                Device,
-                desc,
-                Cache,
-                CapturedSlangCode);
+                _staticSamplers
+            );
+            return Device.Backend.CreateRayTracingPipeline(Device, desc, Cache, CapturedSlangCode);
         }
     }
 
@@ -759,48 +654,35 @@ internal sealed unsafe partial class D3D12Backend
         private readonly uint _nodeMask;
         private readonly string? _label;
         private readonly StaticSamplerBinding[] _staticSamplers;
-
         private WorkGraphPipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
             SlangShaderData slangCode,
             ShaderReflection reflection,
             ReadOnlySequence<byte>[] code,
-            ISlangBlob?[] codeBlobs,
+            ISlangBlob? [] codeBlobs,
             uint nodeMask,
             string? label,
-            StaticSamplerBinding[] staticSamplers)
-            : base(device, PipelineType.WorkGraph, slangCode, reflection, code, codeBlobs, cache)
+            StaticSamplerBinding[] staticSamplers
+        ) : base(device, PipelineType.WorkGraph, slangCode, reflection, code, codeBlobs, cache)
         {
             _nodeMask = nodeMask;
             _label = label;
             _staticSamplers = staticSamplers;
         }
 
-        internal static WorkGraphPipelineCreationRequest Capture(
-            D3D12Device device,
-            D3D12PipelineCache? cache,
-            in WorkGraphPipelineDesc desc)
+        internal static WorkGraphPipelineCreationRequest CopyDescription(D3D12Device device, D3D12PipelineCache? cache, in WorkGraphPipelineDesc desc)
         {
             SlangShaderData retainedCode = desc.SlangCode;
             ReadOnlySequence<byte>[] code = [desc.Code];
-            ISlangBlob?[] codeBlobs = [desc.CodeBlob];
+            ISlangBlob? [] codeBlobs = [desc.CodeBlob];
             bool cacheRetained = false;
             try
             {
                 StaticSamplerBinding[] staticSamplers = desc.StaticSamplers.ToArray();
                 cache?.RetainForPipelineCreation();
                 cacheRetained = cache is not null;
-                var request = new WorkGraphPipelineCreationRequest(
-                    device,
-                    cache,
-                    retainedCode,
-                    desc.Reflection,
-                    code,
-                    codeBlobs,
-                    desc.NodeMask,
-                    desc.Label,
-                    staticSamplers);
+                var request = new WorkGraphPipelineCreationRequest(device, cache, retainedCode, desc.Reflection, code, codeBlobs, desc.NodeMask, desc.Label, staticSamplers);
                 return request;
             }
             catch
@@ -812,19 +694,8 @@ internal sealed unsafe partial class D3D12Backend
 
         internal override Pipeline Create()
         {
-            WorkGraphPipelineDesc desc = new(
-                SlangCode,
-                Reflection,
-                GetCode(0),
-                _nodeMask,
-                _label,
-                _staticSamplers,
-                GetCodeBlob(0));
-            return Device.Backend.CreateWorkGraphPipeline(
-                Device,
-                desc,
-                Cache,
-                CapturedSlangCode);
+            WorkGraphPipelineDesc desc = new(SlangCode, Reflection, GetCode(0), _nodeMask, _label, _staticSamplers, GetCodeBlob(0));
+            return Device.Backend.CreateWorkGraphPipeline(Device, desc, Cache, CapturedSlangCode);
         }
     }
 
@@ -832,15 +703,8 @@ internal sealed unsafe partial class D3D12Backend
     {
         private const int MaximumQueuedRequests = 256;
         private const int MaximumWorkerCount = 4;
-
-        [ThreadStatic]
-        private static D3D12PipelineCompiler? t_current;
-
-        [ThreadStatic]
-        private static D3D12PipelineCache? t_currentCache;
-
         private readonly object _gate = new();
-        private readonly Queue<PipelineCreationRequest> _pending = new(MaximumQueuedRequests);
+        private readonly Queue<PipelineCreationRequest> _submittedWork = new(MaximumQueuedRequests);
         private readonly Thread[] _workers;
         private Exception? _terminalException;
         private bool _stopping;
@@ -862,13 +726,9 @@ internal sealed unsafe partial class D3D12Backend
         private long _mesh;
         private long _rayTracing;
         private long _workGraph;
-
         internal D3D12PipelineCompiler(D3D12Device device)
         {
-            int workerCount = Math.Clamp(
-                (Environment.ProcessorCount + 3) / 4,
-                1,
-                MaximumWorkerCount);
+            int workerCount = Math.Clamp((Environment.ProcessorCount + 3) / 4, 1, MaximumWorkerCount);
             _workers = new Thread[workerCount];
             int started = 0;
             try
@@ -898,14 +758,13 @@ internal sealed unsafe partial class D3D12Backend
             {
                 if (_stopping)
                     throw CreateTerminalException();
-                if (_pending.Count == MaximumQueuedRequests)
+                if (_submittedWork.Count == MaximumQueuedRequests)
                 {
-                    throw new InvalidOperationException(
-                        "The Direct3D 12 Pipeline creation queue is full.");
+                    throw new GraphicsException(GraphicsError.NativeFailure, "The Direct3D 12 Pipeline creation queue is full.");
                 }
 
                 request.EnqueuedTimestamp = Stopwatch.GetTimestamp();
-                _pending.Enqueue(request);
+                _submittedWork.Enqueue(request);
                 Interlocked.Increment(ref _accepted);
                 IncrementTypeCount(request.Type);
                 int depth = ++_queueDepth;
@@ -933,29 +792,20 @@ internal sealed unsafe partial class D3D12Backend
             Volatile.Read(ref _compute),
             Volatile.Read(ref _mesh),
             Volatile.Read(ref _rayTracing),
-            Volatile.Read(ref _workGraph));
-
+            Volatile.Read(ref _workGraph)
+        );
         internal void MarkDeviceLost(GraphicsException exception) => StopAccepting(exception);
-
-        internal static bool AllowsDisposedCache(D3D12PipelineCache cache) =>
-            ReferenceEquals(t_currentCache, cache);
-
-        internal static void RecordCacheLookup(bool hit)
+        internal void RecordCacheLookup(bool hit)
         {
-            D3D12PipelineCompiler? current = t_current;
-            if (current is null)
-                return;
             if (hit)
-                Interlocked.Increment(ref current._cacheHits);
+                Interlocked.Increment(ref _cacheHits);
             else
-                Interlocked.Increment(ref current._cacheMisses);
+                Interlocked.Increment(ref _cacheMisses);
         }
 
         public void Dispose()
         {
-            StopAccepting(new ObjectDisposedException(
-                nameof(Device),
-                "The Device was disposed before queued Pipeline creation began."));
+            StopAccepting(new ObjectDisposedException(nameof(Device), "The Device was disposed before queued Pipeline creation began."));
             JoinWorkers(_workers.Length);
         }
 
@@ -969,14 +819,15 @@ internal sealed unsafe partial class D3D12Backend
         {
             lock (_gate)
             {
-                while (!_stopping && _pending.Count == 0)
+                while (!_stopping && _submittedWork.Count == 0)
                     Monitor.Wait(_gate);
-                if (_pending.Count == 0)
+                if (_submittedWork.Count == 0)
                 {
                     request = null;
                     return false;
                 }
-                request = _pending.Dequeue();
+
+                request = _submittedWork.Dequeue();
                 _queueDepth--;
                 return true;
             }
@@ -988,8 +839,6 @@ internal sealed unsafe partial class D3D12Backend
             TimeSpan queueWait = Stopwatch.GetElapsedTime(request.EnqueuedTimestamp, started);
             RecordQueueWait(queueWait.Ticks);
             Interlocked.Increment(ref _running);
-            t_current = this;
-            t_currentCache = request.Cache;
             try
             {
                 Pipeline pipeline = request.Create();
@@ -1005,8 +854,6 @@ internal sealed unsafe partial class D3D12Backend
             }
             finally
             {
-                t_currentCache = null;
-                t_current = null;
                 long creationTicks = Stopwatch.GetElapsedTime(started).Ticks;
                 Interlocked.Add(ref _totalCreationTicks, creationTicks);
                 UpdateMaximum(ref _maximumCreationTicks, creationTicks);
@@ -1016,24 +863,25 @@ internal sealed unsafe partial class D3D12Backend
 
         private void StopAccepting(Exception exception)
         {
-            PipelineCreationRequest? pending;
+            PipelineCreationRequest? requests;
             lock (_gate)
             {
                 if (_stopping)
                     return;
                 _stopping = true;
                 _terminalException = exception;
-                pending = DetachPendingUnderGate();
+                requests = DetachSubmissionsUnderGate();
                 Monitor.PulseAll(_gate);
             }
-            FailDetached(pending, exception);
+
+            FailDetached(requests, exception);
         }
 
-        private PipelineCreationRequest? DetachPendingUnderGate()
+        private PipelineCreationRequest? DetachSubmissionsUnderGate()
         {
             PipelineCreationRequest? head = null;
             PipelineCreationRequest? tail = null;
-            while (_pending.TryDequeue(out PipelineCreationRequest? request))
+            while (_submittedWork.TryDequeue(out PipelineCreationRequest? request))
             {
                 request.QueueNext = null;
                 if (tail is null)
@@ -1042,6 +890,7 @@ internal sealed unsafe partial class D3D12Backend
                     tail.QueueNext = request;
                 tail = request;
             }
+
             _queueDepth = 0;
             return head;
         }
@@ -1093,7 +942,7 @@ internal sealed unsafe partial class D3D12Backend
                     Interlocked.Increment(ref _workGraph);
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(type));
+                    return;
             }
         }
 
@@ -1101,12 +950,9 @@ internal sealed unsafe partial class D3D12Backend
         {
             GraphicsException graphics => graphics,
             ObjectDisposedException disposed => disposed,
-            Exception exception => new InvalidOperationException(
-                "The Direct3D 12 Pipeline creation queue is unavailable.",
-                exception),
+            Exception exception => new InvalidOperationException("The Direct3D 12 Pipeline creation queue is unavailable.", exception),
             _ => new ObjectDisposedException(nameof(D3D12PipelineCompiler)),
         };
-
         private void JoinWorkers(int count)
         {
             for (int index = 0; index < count; index++)
@@ -1145,7 +991,6 @@ internal sealed unsafe partial class D3D12Backend
     private sealed partial class D3D12Device
     {
         private readonly D3D12PipelineCompiler _pipelineCompiler;
-
         internal D3D12PipelineCompiler PipelineCompiler => _pipelineCompiler;
     }
 }

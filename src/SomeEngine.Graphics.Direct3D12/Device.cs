@@ -7,9 +7,9 @@ using NativeSamplerFeedbackTier = Silk.NET.Direct3D12.SamplerFeedbackTier;
 using NativeFeature = Silk.NET.Direct3D12.Feature;
 
 namespace SomeEngine.Graphics.Direct3D12;
-
 internal sealed unsafe partial class D3D12Backend
 {
+    internal static int GetLiveNativeObjectCount(Device device) => ((D3D12Device)device).LiveNativeObjects;
     private enum NativeOperationType : byte
     {
         Ordinary,
@@ -24,65 +24,51 @@ internal sealed unsafe partial class D3D12Backend
     private const int DxgiErrorDeviceHung = unchecked((int)0x887A0006);
     private const int DxgiErrorDeviceReset = unchecked((int)0x887A0007);
     private const int DxgiErrorDriverInternalError = unchecked((int)0x887A0020);
-
     public Queue GetQueue(Device device, QueueType type, uint index = 0)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         return RequireDevice(device, nameof(device)).GetQueue(type, index);
     }
-    public bool TryGetCapability<TCapability>(
-        Device device,
-        out TCapability? capability)
+
+    public bool TryGetCapability<TCapability>(Device device, out TCapability? capability)
         where TCapability : DeviceCapability
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         return RequireDevice(device, nameof(device)).TryGetCapability(out capability);
     }
+
     public void CollectCompleted(Device device)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiWaitAndCollect);
         RequireDevice(device, nameof(device)).CollectCompleted();
     }
-    private static bool IsDirectDeviceRemovalCode(long result) =>
-        result is DxgiErrorDeviceRemoved or
-            DxgiErrorDeviceHung or
-            DxgiErrorDeviceReset or
-            DxgiErrorDriverInternalError;
 
-    private static bool IsOutOfMemoryCode(long result) =>
-        result is EOutOfMemory or HResultNotEnoughMemory or DxgiErrorOutOfMemory;
-
-    private static bool IsDeviceRemovedReason(long result) =>
-        result == DxgiErrorInvalidCall || IsDirectDeviceRemovalCode(result);
-
+    private static bool IsDirectDeviceRemovalCode(long result) => result is DxgiErrorDeviceRemoved or DxgiErrorDeviceHung or DxgiErrorDeviceReset or DxgiErrorDriverInternalError;
+    private static bool IsOutOfMemoryCode(long result) => result is EOutOfMemory or HResultNotEnoughMemory or DxgiErrorOutOfMemory;
+    private static bool IsDeviceRemovedReason(long result) => result == DxgiErrorInvalidCall || IsDirectDeviceRemovalCode(result);
     private static GraphicsException PublishDeviceLoss(
         D3D12Device device,
         int nativeCode,
         string message,
         int? queriedReason = null,
-        string? nativeDiagnostic = null)
+        string? nativeDiagnostic = null
+    )
     {
+        queriedReason ??= device.Native is null ? null : DeviceQueryTrace.GetDeviceRemovedReason(device.Native);
+        nativeDiagnostic = AppendDebugMessages(device, nativeDiagnostic);
         D3D12DeviceLossReport? dred = device.CaptureDredReport();
-        string? diagnostic = queriedReason is int reason
-            ? FormatDeviceRemovalDiagnostic(reason)
-            : null;
+        string? diagnostic = queriedReason is int reason ? FormatDeviceRemovalDiagnostic(reason) : null;
         if (!string.IsNullOrWhiteSpace(nativeDiagnostic))
         {
-            diagnostic = diagnostic is null
-                ? nativeDiagnostic
-                : $"{diagnostic}{Environment.NewLine}{nativeDiagnostic}";
+            diagnostic = diagnostic is null ? nativeDiagnostic : $"{diagnostic}{Environment.NewLine}{nativeDiagnostic}";
         }
+
         if (dred is not null)
         {
-            diagnostic = diagnostic is null
-                ? dred.Text
-                : $"{diagnostic}{Environment.NewLine}{dred.Text}";
+            diagnostic = diagnostic is null ? dred.Text : $"{diagnostic}{Environment.NewLine}{dred.Text}";
         }
-        GraphicsException loss = new(
-            GraphicsError.DeviceLost,
-            message,
-            nativeCode,
-            diagnostic);
+
+        GraphicsException loss = new(GraphicsError.DeviceLost, message, nativeCode, diagnostic);
         device.ConfirmNativeDeviceLoss();
         return device.MarkLost(loss);
     }
@@ -98,18 +84,17 @@ internal sealed unsafe partial class D3D12Backend
             DxgiErrorDriverInternalError => "DXGI_ERROR_DRIVER_INTERNAL_ERROR",
             _ => "unknown device-removal reason",
         };
-        return $"ID3D12Device::GetDeviceRemovedReason returned {name} " +
-            $"(0x{unchecked((uint)reason):X8}).";
+        return $"ID3D12Device::GetDeviceRemovedReason returned {name} " + $"(0x{unchecked((uint)reason):X8}).";
     }
 
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     private static void ThrowIfFailed(
         D3D12Device? device,
         int result,
         NativeOperationType type,
         string operation,
-        string? diagnostic = null)
+        string? diagnostic = null
+    )
     {
         if (result >= 0)
             return;
@@ -117,108 +102,61 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     [System.Diagnostics.CodeAnalysis.DoesNotReturn]
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    private static void ThrowFailure(
-        D3D12Device? device,
-        int result,
-        NativeOperationType type,
-        string operation,
-        string? diagnostic)
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static void ThrowFailure(D3D12Device? device, int result, NativeOperationType type, string operation, string? diagnostic)
     {
-        diagnostic = AppendDebugMessages(device, diagnostic);
         if (device is not null && IsDirectDeviceRemovalCode(result))
         {
-            int? queriedReason = device.Native is null
-                ? null
-                : DeviceQueryTrace.GetDeviceRemovedReason(device.Native);
-            throw PublishDeviceLoss(
-                device,
-                result,
-                $"{operation} detected D3D12 device removal.",
-                queriedReason,
-                diagnostic);
+            int? queriedReason = device.Native is null ? null : DeviceQueryTrace.GetDeviceRemovedReason(device.Native);
+            throw PublishDeviceLoss(device, result, $"{operation} detected D3D12 device removal.", queriedReason, diagnostic);
         }
 
-        ThrowClassifiedFailure(result, type, operation, diagnostic);
+        ThrowClassifiedFailure(result, type, operation, AppendDebugMessages(device, diagnostic));
     }
 
     [System.Diagnostics.CodeAnalysis.DoesNotReturn]
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    private static void ThrowClassifiedFailure(
-        int result,
-        NativeOperationType type,
-        string operation,
-        string? diagnostic)
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static void ThrowClassifiedFailure(int result, NativeOperationType type, string operation, string? diagnostic)
     {
-        GraphicsError error = IsOutOfMemoryCode(result)
-            ? GraphicsError.OutOfMemory
-            : type == NativeOperationType.PipelineCreation
-                ? GraphicsError.PipelineCreation
-                : GraphicsError.NativeFailure;
-        throw new GraphicsException(
-            error,
-            $"{operation} failed with HRESULT 0x{unchecked((uint)result):X8}.",
-            result,
-            diagnostic);
+        GraphicsError error = IsOutOfMemoryCode(result) ? GraphicsError.OutOfMemory : type == NativeOperationType.PipelineCreation ? GraphicsError.PipelineCreation : GraphicsError.NativeFailure;
+        throw new GraphicsException(error, $"{operation} failed with HRESULT 0x{unchecked((uint)result):X8}.", result, diagnostic);
     }
 
     [System.Diagnostics.CodeAnalysis.DoesNotReturn]
-    private static void ThrowAfterDeviceRemovedReasonQuery(
-        D3D12Device device,
-        int nativeCode,
-        string operation)
+    private static void ThrowAfterDeviceRemovedReasonQuery(D3D12Device device, int nativeCode, string operation)
     {
-        int reason = device.Native is null
-            ? 0
-            : DeviceQueryTrace.GetDeviceRemovedReason(device.Native);
+        int reason = device.Native is null ? 0 : DeviceQueryTrace.GetDeviceRemovedReason(device.Native);
         if (IsDeviceRemovedReason(reason))
         {
-            throw PublishDeviceLoss(
-                device,
-                nativeCode,
-                $"{operation} reported D3D12 device removal.",
-                reason);
+            throw PublishDeviceLoss(device, nativeCode, $"{operation} reported D3D12 device removal.", reason);
         }
-        ThrowClassifiedFailure(
-            nativeCode,
-            NativeOperationType.Ordinary,
-            operation,
-            null);
+
+        ThrowClassifiedFailure(nativeCode, NativeOperationType.Ordinary, operation, null);
     }
 
     private sealed partial class D3D12Device : Device
     {
-        private static readonly InvalidOperationException CommandPayloadDetachFailure =
-            new("A command payload did not detach during Device teardown.");
-        private static readonly InvalidOperationException ChildDetachFailure =
-            new("A Device child did not detach during teardown.");
+        internal int LiveNativeObjects => _children.Count;
+        internal override IEnumerable<Queue> DeviceQueues => _queues.Values;
+
         private readonly D3D12Backend _backend;
         private readonly object _childrenGate = new();
         private readonly System.Threading.Lock _commandPayloadGate = new();
         private readonly GraphicsObjectRegistry _children;
-        private D3D12RecordedCommandsLease? _commandPayloadHead;
-        private D3D12RecordedCommandsLease? _drainingCommandPayload;
-        private D3D12RecordedCommandsLease? _retainedCommandPayloadHead;
+        private D3D12CommandRecording? _commandPayloadHead;
+        private D3D12CommandRecording? _drainingCommandPayload;
+        private D3D12CommandRecording? _retainedCommandPayloadHead;
         private readonly Dictionary<Type, DeviceCapability> _capabilities = [];
         private readonly Dictionary<(QueueType Type, uint Index), D3D12Queue> _queues = [];
-        private readonly DescriptorPublisher?[] _descriptorsByNode =
-            new DescriptorPublisher?[32];
-        private readonly DescriptorAllocator?[] _resourceDescriptorsByNode =
-            new DescriptorAllocator?[32];
-        private readonly DescriptorAllocator?[] _samplerDescriptorsByNode =
-            new DescriptorAllocator?[32];
-        private readonly DescriptorAllocator?[] _renderTargetDescriptorsByNode =
-            new DescriptorAllocator?[32];
-        private readonly DescriptorAllocator?[] _depthStencilDescriptorsByNode =
-            new DescriptorAllocator?[32];
-
+        private readonly DescriptorPublisher? [] _descriptorsByNode = new DescriptorPublisher? [32];
+        private readonly DescriptorAllocator? [] _resourceDescriptorsByNode = new DescriptorAllocator? [32];
+        private readonly DescriptorAllocator? [] _samplerDescriptorsByNode = new DescriptorAllocator? [32];
+        private readonly DescriptorAllocator? [] _renderTargetDescriptorsByNode = new DescriptorAllocator? [32];
+        private readonly DescriptorAllocator? [] _depthStencilDescriptorsByNode = new DescriptorAllocator? [32];
         private IDXGIAdapter4* _adapter;
         private ID3D12Device10* _native;
         private int _nativeDeviceLossConfirmed;
         private readonly uint[] _descriptorIncrements = new uint[4];
-
         private D3D12Device(
             D3D12Backend backend,
             IDXGIAdapter4* adapter,
@@ -226,26 +164,21 @@ internal sealed unsafe partial class D3D12Backend
             in AdapterInfo adapterInfo,
             in DeviceDesc description,
             in D3D12FeatureSupport features,
-            DeviceFeatures enabledFeatures)
-            : base(
-                adapterInfo,
-                CreateDeviceCapabilities(features),
-                description.EnabledNodeMask,
-                description.Label)
+            DeviceFeatures enabledFeatures
+        ) : base(adapterInfo, CreateDeviceCapabilities(features), description.EnabledNodeMask, description.Label)
         {
             _backend = backend;
             _children = new GraphicsObjectRegistry(_childrenGate);
             _adapter = adapter;
             _native = native;
             for (int type = 0; type < _descriptorIncrements.Length; type++)
-                _descriptorIncrements[type] = DeviceQueryTrace.GetDescriptorHandleIncrementSize(
-                    native, (DescriptorHeapType)type);
+                _descriptorIncrements[type] = DeviceQueryTrace.GetDescriptorHandleIncrementSize(native, (DescriptorHeapType)type);
             SetNativeName(native, description.Label ?? "SomeEngine D3D12 Device");
             _resourceAllocator = new D3D12ResourceAllocator(this);
             _pipelineCompiler = new D3D12PipelineCompiler(this);
             PrimaryNodeIndex = checked((uint)BitOperations.TrailingZeroCount(description.EnabledNodeMask));
             PrimaryNodeMask = 1u << checked((int)PrimaryNodeIndex);
-            BackendOwner = backend;
+            BackendReceiver = backend;
             try
             {
                 uint descriptorNodes = EnabledNodeMask;
@@ -253,37 +186,11 @@ internal sealed unsafe partial class D3D12Backend
                 {
                     uint nodeIndex = checked((uint)BitOperations.TrailingZeroCount(descriptorNodes));
                     uint nodeMask = 1u << checked((int)nodeIndex);
-                    _resourceDescriptorsByNode[nodeIndex] = new DescriptorAllocator(
-                        this,
-                        DescriptorHeapType.CbvSrvUav,
-                        4_096,
-                        shaderVisible: false,
-                        maximumHeapCount: int.MaxValue,
-                        nodeMask);
-                    _samplerDescriptorsByNode[nodeIndex] = new DescriptorAllocator(
-                        this,
-                        DescriptorHeapType.Sampler,
-                        1_024,
-                        shaderVisible: false,
-                        maximumHeapCount: int.MaxValue,
-                        nodeMask);
-                    _renderTargetDescriptorsByNode[nodeIndex] = new DescriptorAllocator(
-                        this,
-                        DescriptorHeapType.Rtv,
-                        512,
-                        shaderVisible: false,
-                        maximumHeapCount: int.MaxValue,
-                        nodeMask);
-                    _depthStencilDescriptorsByNode[nodeIndex] = new DescriptorAllocator(
-                        this,
-                        DescriptorHeapType.Dsv,
-                        512,
-                        shaderVisible: false,
-                        maximumHeapCount: int.MaxValue,
-                        nodeMask);
-                    _descriptorsByNode[nodeIndex] = new DescriptorPublisher(
-                        this,
-                        nodeMask: nodeMask);
+                    _resourceDescriptorsByNode[nodeIndex] = new DescriptorAllocator(this, DescriptorHeapType.CbvSrvUav, 4_096, shaderVisible: false, maximumHeapCount: int.MaxValue, nodeMask);
+                    _samplerDescriptorsByNode[nodeIndex] = new DescriptorAllocator(this, DescriptorHeapType.Sampler, 1_024, shaderVisible: false, maximumHeapCount: int.MaxValue, nodeMask);
+                    _renderTargetDescriptorsByNode[nodeIndex] = new DescriptorAllocator(this, DescriptorHeapType.Rtv, 512, shaderVisible: false, maximumHeapCount: int.MaxValue, nodeMask);
+                    _depthStencilDescriptorsByNode[nodeIndex] = new DescriptorAllocator(this, DescriptorHeapType.Dsv, 512, shaderVisible: false, maximumHeapCount: int.MaxValue, nodeMask);
+                    _descriptorsByNode[nodeIndex] = new DescriptorPublisher(this, nodeMask: nodeMask);
                     descriptorNodes &= ~nodeMask;
                 }
 
@@ -312,100 +219,46 @@ internal sealed unsafe partial class D3D12Backend
         internal uint PrimaryNodeMask { get; }
         internal bool EnhancedBarriers => FeatureSupport.EnhancedBarriers;
         internal D3D12FeatureSupport FeatureSupport { get; private init; }
-        internal DescriptorAllocator ResourceDescriptors =>
-            GetResourceDescriptors(PrimaryNodeIndex);
-        internal DescriptorAllocator SamplerDescriptors =>
-            GetSamplerDescriptors(PrimaryNodeIndex);
-        internal DescriptorAllocator RenderTargetDescriptors =>
-            GetRenderTargetDescriptors(PrimaryNodeIndex);
-        internal DescriptorAllocator DepthStencilDescriptors =>
-            GetDepthStencilDescriptors(PrimaryNodeIndex);
+        internal DescriptorAllocator ResourceDescriptors => GetResourceDescriptors(PrimaryNodeIndex);
+        internal DescriptorAllocator SamplerDescriptors => GetSamplerDescriptors(PrimaryNodeIndex);
+        internal DescriptorAllocator RenderTargetDescriptors => GetRenderTargetDescriptors(PrimaryNodeIndex);
+        internal DescriptorAllocator DepthStencilDescriptors => GetDepthStencilDescriptors(PrimaryNodeIndex);
         internal DescriptorPublisher Descriptors => GetDescriptorPublisher(PrimaryNodeIndex);
 
         internal DescriptorPublisher GetDescriptorPublisher(uint nodeIndex)
         {
             uint resolved = ResolveNodeIndex(nodeIndex, nameof(nodeIndex));
-            return _descriptorsByNode[resolved]
-                ?? throw new InvalidOperationException(
-                    "The enabled linked-adapter node has no descriptor publisher.");
+            return _descriptorsByNode[resolved]!;
         }
 
-        internal DescriptorAllocator GetResourceDescriptors(uint nodeIndex) =>
-            GetDescriptorAllocator(_resourceDescriptorsByNode, nodeIndex);
-
-        internal DescriptorAllocator GetSamplerDescriptors(uint nodeIndex) =>
-            GetDescriptorAllocator(_samplerDescriptorsByNode, nodeIndex);
-
-        internal DescriptorAllocator GetRenderTargetDescriptors(uint nodeIndex) =>
-            GetDescriptorAllocator(_renderTargetDescriptorsByNode, nodeIndex);
-
-        internal DescriptorAllocator GetDepthStencilDescriptors(uint nodeIndex) =>
-            GetDescriptorAllocator(_depthStencilDescriptorsByNode, nodeIndex);
-
-        private DescriptorAllocator GetDescriptorAllocator(
-            DescriptorAllocator?[] allocators,
-            uint nodeIndex)
+        internal DescriptorAllocator GetResourceDescriptors(uint nodeIndex) => GetDescriptorAllocator(_resourceDescriptorsByNode, nodeIndex);
+        internal DescriptorAllocator GetSamplerDescriptors(uint nodeIndex) => GetDescriptorAllocator(_samplerDescriptorsByNode, nodeIndex);
+        internal DescriptorAllocator GetRenderTargetDescriptors(uint nodeIndex) => GetDescriptorAllocator(_renderTargetDescriptorsByNode, nodeIndex);
+        internal DescriptorAllocator GetDepthStencilDescriptors(uint nodeIndex) => GetDescriptorAllocator(_depthStencilDescriptorsByNode, nodeIndex);
+        private DescriptorAllocator GetDescriptorAllocator(DescriptorAllocator? [] allocators, uint nodeIndex)
         {
             uint resolved = ResolveNodeIndex(nodeIndex, nameof(nodeIndex));
-            return allocators[resolved]
-                ?? throw new InvalidOperationException(
-                    "The enabled linked-adapter node has no descriptor allocator.");
+            return allocators[resolved]!;
         }
 
         internal uint ResolveNodeIndex(uint requestedNodeIndex, string parameterName)
         {
-            uint nodeIndex = requestedNodeIndex == uint.MaxValue
-                ? PrimaryNodeIndex
-                : requestedNodeIndex;
-            if (nodeIndex >= 32 ||
-                (EnabledNodeMask & (1u << checked((int)nodeIndex))) == 0)
-            {
-                throw new ArgumentOutOfRangeException(
-                    parameterName,
-                    "The node index must select one enabled linked-adapter node.");
-            }
+            uint nodeIndex = requestedNodeIndex == uint.MaxValue ? PrimaryNodeIndex : requestedNodeIndex;
             return nodeIndex;
         }
 
-        internal uint ResolveNodeMask(uint requestedNodeIndex, string parameterName) =>
-            1u << checked((int)ResolveNodeIndex(requestedNodeIndex, parameterName));
-
+        internal uint ResolveNodeMask(uint requestedNodeIndex, string parameterName) => 1u << checked((int)ResolveNodeIndex(requestedNodeIndex, parameterName));
         internal uint ResolveResourceHomeNodeIndex(uint creationNodeMask)
         {
             if (creationNodeMask == 0)
                 return PrimaryNodeIndex;
-            if (!BitOperations.IsPow2(creationNodeMask) ||
-                (creationNodeMask & ~EnabledNodeMask) != 0)
-            {
-                throw new InvalidOperationException(
-                    "The resource reports an invalid linked-adapter creation-node mask.");
-            }
             return checked((uint)BitOperations.TrailingZeroCount(creationNodeMask));
         }
 
-        internal (uint CreationMask, uint VisibleMask) ResolveResourcePlacement(
-            in ResourceNodePlacement placement,
-            string parameterName)
+        internal (uint CreationMask, uint VisibleMask) ResolveResourcePlacement(in ResourceNodePlacement placement, string parameterName)
         {
-            uint creation = placement.CreationNodeMask == 0
-                ? PrimaryNodeMask
-                : placement.CreationNodeMask;
-            if (!BitOperations.IsPow2(creation) || (creation & ~EnabledNodeMask) != 0)
-            {
-                throw new ArgumentOutOfRangeException(
-                    parameterName,
-                    "A resource creation node mask must contain exactly one enabled node.");
-            }
-
-            uint visible = placement.VisibleNodeMask == 0
-                ? creation
-                : placement.VisibleNodeMask;
-            if ((visible & ~EnabledNodeMask) != 0 || (visible & creation) != creation)
-            {
-                throw new ArgumentOutOfRangeException(
-                    parameterName,
-                    "A resource visibility mask must contain its creation node and only enabled nodes.");
-            }
+            uint creation = placement.CreationNodeMask == 0 ? PrimaryNodeMask : placement.CreationNodeMask;
+            uint visible = placement.VisibleNodeMask == 0 ? creation : placement.VisibleNodeMask;
             return (creation, visible);
         }
 
@@ -424,7 +277,7 @@ internal sealed unsafe partial class D3D12Backend
             ReleaseDescriptorAllocators(_resourceDescriptorsByNode);
         }
 
-        private static void ReleaseDescriptorAllocators(DescriptorAllocator?[] allocators)
+        private static void ReleaseDescriptorAllocators(DescriptorAllocator? [] allocators)
         {
             foreach (DescriptorAllocator? allocator in allocators)
                 allocator?.Dispose();
@@ -436,7 +289,8 @@ internal sealed unsafe partial class D3D12Backend
             IDXGIAdapter4* adapter,
             ID3D12Device10* native,
             in AdapterInfo adapterInfo,
-            in DeviceDesc description)
+            in DeviceDesc description
+        )
         {
             try
             {
@@ -451,40 +305,24 @@ internal sealed unsafe partial class D3D12Backend
                         break;
                     }
                 }
+
                 if (!hasGraphicsQueue)
                     usableFeatures &= ~DeviceFeatures.Presentation;
-
                 DeviceFeatures missing = description.RequiredFeatures & ~usableFeatures;
                 if (missing != DeviceFeatures.None)
                 {
-                    throw new GraphicsException(
-                        GraphicsError.NativeFailure,
-                        $"The selected adapter does not provide required Device features: {missing}.");
+                    throw new GraphicsException(GraphicsError.UnsupportedDeviceFeatures, $"The selected adapter does not provide required Device features: {missing}.");
                 }
 
-                DeviceFeatures requested =
-                    description.RequiredFeatures | description.OptionalFeatures;
+                DeviceFeatures requested = description.RequiredFeatures | description.OptionalFeatures;
                 DeviceFeatures enabled = requested & usableFeatures;
-
-                uint validNodeMask = features.NodeCount == 32
-                    ? uint.MaxValue
-                    : (1u << checked((int)features.NodeCount)) - 1u;
-                if (description.EnabledNodeMask == 0 ||
-                    (description.EnabledNodeMask & ~validNodeMask) != 0)
+                uint validNodeMask = features.NodeCount == 32 ? uint.MaxValue : (1u << checked((int)features.NodeCount)) - 1u;
+                if (description.EnabledNodeMask == 0 || (description.EnabledNodeMask & ~validNodeMask) != 0)
                 {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(description),
-                        "DeviceDesc.EnabledNodeMask selects a node that is not available.");
+                    throw new GraphicsException(GraphicsError.NativeFailure, "The adapter does not provide the requested linked-adapter nodes.");
                 }
 
-                D3D12Device device = new(
-                    backend,
-                    adapter,
-                    native,
-                    adapterInfo,
-                    description,
-                    features,
-                    enabled)
+                D3D12Device device = new(backend, adapter, native, adapterInfo, description, features, enabled)
                 {
                     FeatureSupport = features,
                 };
@@ -501,9 +339,7 @@ internal sealed unsafe partial class D3D12Backend
         internal D3D12Queue GetQueue(QueueType type, uint index)
         {
             ThrowIfUnavailable();
-            if (!_queues.TryGetValue((type, index), out D3D12Queue? queue))
-                throw new ArgumentOutOfRangeException(nameof(index));
-            return queue;
+            return _queues[(type, index)];
         }
 
         internal bool TryGetCapability<TCapability>(out TCapability? capability)
@@ -523,35 +359,26 @@ internal sealed unsafe partial class D3D12Backend
         internal TCapability RequireCapability<TCapability>(string operation)
             where TCapability : DeviceCapability
         {
-            ThrowIfUnavailable();
-            if (_capabilities.TryGetValue(typeof(TCapability), out DeviceCapability? value))
-                return (TCapability)value;
-            throw new NotSupportedException(
-                $"{operation} requires the unavailable {typeof(TCapability).Name} capability.");
+            return (TCapability)_capabilities[typeof(TCapability)];
         }
 
         internal GraphicsException MarkLost(GraphicsException exception)
         {
             if (!TryMarkLost(exception))
                 return Loss ?? exception;
-
             _pipelineCompiler.MarkDeviceLost(exception);
-
             foreach (D3D12Queue queue in _queues.Values)
                 queue.InvalidateNativeLock();
-
             GraphicsObject? lostChildren = null;
-            D3D12RecordedCommandsLease? lostPayloads = null;
+            D3D12CommandRecording? lostPayloads = null;
             lock (_childrenGate)
             {
-                lostChildren = _children.BuildWorkList(
-                    static child => child is D3D12Swapchain or D3D12CommandContext);
+                lostChildren = _children.BuildWorkList(static child => child is D3D12Swapchain or D3D12CommandContext);
             }
+
             lock (_commandPayloadGate)
             {
-                for (D3D12RecordedCommandsLease? payload = _commandPayloadHead;
-                     payload is not null;
-                     payload = payload.DeviceNext)
+                for (D3D12CommandRecording? payload = _commandPayloadHead; payload is not null; payload = payload.DeviceNext)
                 {
                     payload.DeviceLossWorkNext = lostPayloads;
                     lostPayloads = payload;
@@ -567,24 +394,21 @@ internal sealed unsafe partial class D3D12Backend
                 else
                     ((D3D12CommandContext)child).MarkDeviceLost();
             }
-            while (lostPayloads is D3D12RecordedCommandsLease payload)
+
+            while (lostPayloads is D3D12CommandRecording payload)
             {
                 lostPayloads = payload.DeviceLossWorkNext;
                 payload.DeviceLossWorkNext = null;
                 payload.MarkDeviceLostFromDevice();
             }
+
             return exception;
         }
 
-        internal bool NativeDeviceLossConfirmed =>
-            Volatile.Read(ref _nativeDeviceLossConfirmed) != 0;
+        internal bool NativeDeviceLossConfirmed => Volatile.Read(ref _nativeDeviceLossConfirmed) != 0;
 
-        internal void ConfirmNativeDeviceLoss() =>
-            Interlocked.Exchange(ref _nativeDeviceLossConfirmed, 1);
-
-        internal void ActivateCommandPayload(
-            D3D12RecordedCommandsLease payload,
-            ulong sequence)
+        internal void ConfirmNativeDeviceLoss() => Interlocked.Exchange(ref _nativeDeviceLossConfirmed, 1);
+        internal void ActivateCommandPayload(D3D12CommandRecording payload, ulong sequence)
         {
             payload.ActivateCommands(sequence);
             try
@@ -592,11 +416,6 @@ internal sealed unsafe partial class D3D12Backend
                 lock (_commandPayloadGate)
                 {
                     ThrowIfUnavailable();
-                    if (payload.DeviceRegistered)
-                    {
-                        throw new InvalidOperationException(
-                            "The command payload is already active.");
-                    }
                     payload.DeviceRegistered = true;
                     payload.DevicePrevious = null;
                     payload.DeviceNext = _commandPayloadHead;
@@ -607,12 +426,11 @@ internal sealed unsafe partial class D3D12Backend
             }
             catch
             {
-                payload.CancelCommandsActivation(sequence);
                 throw;
             }
         }
 
-        internal void UnregisterCommandPayload(D3D12RecordedCommandsLease payload)
+        internal void UnregisterCommandPayload(D3D12CommandRecording payload)
         {
             lock (_commandPayloadGate)
                 RemoveCommandPayloadUnderGate(payload);
@@ -642,6 +460,7 @@ internal sealed unsafe partial class D3D12Backend
             ThrowIfUnavailable();
             foreach (D3D12Queue queue in _queues.Values)
                 queue.CollectCompleted();
+            DeferredReleases.CollectCompleted();
         }
 
         internal override void Release(bool fromParent)
@@ -662,12 +481,15 @@ internal sealed unsafe partial class D3D12Backend
                     RecordReleaseFailure(exception);
                 }
             }
-            while (TakeCommandPayloadForDrain() is D3D12RecordedCommandsLease payload)
+
+            while (TakeCommandPayloadForDrain()is D3D12CommandRecording payload)
             {
                 payload.DiscardExecutableFromDevice();
                 if (CompleteCommandPayloadDrain(payload))
-                    RecordReleaseFailure(CommandPayloadDetachFailure);
+                    RecordReleaseFailure(new GraphicsException(GraphicsError.NativeFailure, "A command payload did not detach during Device teardown."));
             }
+
+            DeferredReleases.ReleaseAll();
             GraphicsObject? children = _children.CloseAndBuildDrainList();
             while (children is GraphicsObject child)
             {
@@ -675,7 +497,7 @@ internal sealed unsafe partial class D3D12Backend
                 child.RegistryDrainNext = null;
                 child.DisposeFromParent();
                 if (_children.CompleteDrain(child))
-                    RecordReleaseFailure(ChildDetachFailure);
+                    RecordReleaseFailure(new GraphicsException(GraphicsError.NativeFailure, "A Device child did not detach during teardown."));
             }
 
             // Child disposal can enqueue presentation and capability retirements.
@@ -692,17 +514,16 @@ internal sealed unsafe partial class D3D12Backend
                 }
             }
 
-            if (_retainedCommandPayloadHead is not null ||
-                _children.HasRetainedFailures ||
-                TeardownFailure is not null)
+            if (_retainedCommandPayloadHead is not null || _children.HasRetainedFailures || TeardownFailure is not null)
             {
                 return;
             }
+
             ReleaseNative();
             _backend.Unregister(this);
         }
 
-        private void RemoveCommandPayloadUnderGate(D3D12RecordedCommandsLease payload)
+        private void RemoveCommandPayloadUnderGate(D3D12CommandRecording payload)
         {
             if (!payload.DeviceRegistered)
                 return;
@@ -711,6 +532,7 @@ internal sealed unsafe partial class D3D12Backend
                 payload.DeviceRegistered = false;
                 return;
             }
+
             if (payload.DevicePrevious is null)
                 _commandPayloadHead = payload.DeviceNext;
             else
@@ -722,11 +544,11 @@ internal sealed unsafe partial class D3D12Backend
             payload.DeviceNext = null;
         }
 
-        private D3D12RecordedCommandsLease? TakeCommandPayloadForDrain()
+        private D3D12CommandRecording? TakeCommandPayloadForDrain()
         {
             lock (_commandPayloadGate)
             {
-                D3D12RecordedCommandsLease? payload = _commandPayloadHead;
+                D3D12CommandRecording? payload = _commandPayloadHead;
                 if (payload is null)
                     return null;
                 _commandPayloadHead = payload.DeviceNext;
@@ -739,7 +561,7 @@ internal sealed unsafe partial class D3D12Backend
             }
         }
 
-        private bool CompleteCommandPayloadDrain(D3D12RecordedCommandsLease payload)
+        private bool CompleteCommandPayloadDrain(D3D12CommandRecording payload)
         {
             lock (_commandPayloadGate)
             {
@@ -764,50 +586,35 @@ internal sealed unsafe partial class D3D12Backend
                     uint index = checked(firstIndex + offset);
                     CommandQueueDesc nativeDescription = new(
                         ToCommandListType(description.Type),
-                        description.Priority > 0.5f
-                            ? (int)CommandQueuePriority.High
-                            : (int)CommandQueuePriority.Normal,
+                        description.Priority > 0.5f ? (int)CommandQueuePriority.High : (int)CommandQueuePriority.Normal,
                         CommandQueueFlags.None,
-                        nodeMask);
-
+                        nodeMask
+                    );
                     ID3D12CommandQueue* nativeQueue = null;
                     Guid queueIid = ID3D12CommandQueue.Guid;
                     ThrowIfFailed(
                         this,
-                            DevicePipelineTrace.CreateCommandQueue(
-                        _native, &nativeDescription,
-                            &queueIid,
-                            (void**)&nativeQueue),
+                        DevicePipelineTrace.CreateCommandQueue(_native, &nativeDescription, &queueIid, (void**)&nativeQueue),
                         NativeOperationType.Ordinary,
-                        "ID3D12Device::CreateCommandQueue");
+                        "ID3D12Device::CreateCommandQueue"
+                    );
                     string queueName = $"{description.Type} Queue[{index}]";
                     SetNativeName(nativeQueue, queueName);
-
                     ID3D12Fence* fence = null;
                     Guid fenceIid = ID3D12Fence.Guid;
                     try
                     {
                         ThrowIfFailed(
                             this,
-                                DevicePipelineTrace.CreateFence(
-                            _native, 0,
-                                FenceFlags.None,
-                                &fenceIid,
-                                (void**)&fence),
+                            DevicePipelineTrace.CreateFence(_native, 0, FenceFlags.None, &fenceIid, (void**)&fence),
                             NativeOperationType.Ordinary,
-                            "ID3D12Device::CreateFence");
+                            "ID3D12Device::CreateFence"
+                        );
                         SetNativeName(fence, $"{queueName} Completion Fence");
-
                         _queues.Add(
                             (description.Type, index),
-                            new D3D12Queue(
-                                this,
-                                description.Type,
-                                index,
-                                description.Priority,
-                                nodeMask,
-                                nativeQueue,
-                                fence));
+                            new D3D12Queue(this, description.Type, index, description.Priority, nodeMask, nativeQueue, fence)
+                        );
                     }
                     catch
                     {
@@ -817,34 +624,30 @@ internal sealed unsafe partial class D3D12Backend
                         throw;
                     }
                 }
+
                 nextIndices[description.Type] = checked(firstIndex + description.Count);
             }
         }
 
-        private void CreateCapabilities(
-            in D3D12FeatureSupport features,
-            DeviceFeatures enabledFeatures)
+        private void CreateCapabilities(in D3D12FeatureSupport features, DeviceFeatures enabledFeatures)
         {
             AddSparseCapabilities(features, enabledFeatures);
             AddRayTracingCapability(features, enabledFeatures);
             AddMeshAndShadingCapabilities(features, enabledFeatures);
             AddDispatchCapabilities(features, enabledFeatures);
             AddPlatformCapabilities(features, enabledFeatures);
-            Add(new PipelineCreationSupport(
-                this,
-                PipelineCreationFeatures.PersistentCacheData));
+            Add(new PipelineCreationSupport(this, PipelineCreationFeatures.PersistentCacheData));
             Add(new D3D12NativeAccess(this));
             Add(new D3D12Diagnostics(
                 this,
                 _backend._debugLayerEnabled,
                 _backend._gpuBasedValidationEnabled,
                 _backend._synchronizedQueueValidationEnabled,
-                _backend._dredEnabled));
+                _backend._dredEnabled
+            ));
         }
 
-        private void AddSparseCapabilities(
-            in D3D12FeatureSupport features,
-            DeviceFeatures enabledFeatures)
+        private void AddSparseCapabilities(in D3D12FeatureSupport features, DeviceFeatures enabledFeatures)
         {
             if ((enabledFeatures & DeviceFeatures.SparseResources) != 0)
             {
@@ -855,40 +658,35 @@ internal sealed unsafe partial class D3D12Backend
                     bufferSupported: true,
                     features.SparseTexture2DFormats,
                     features.SparseTexture3DFormats,
-                    maximumMappingsPerCall: uint.MaxValue));
+                    maximumMappingsPerCall: uint.MaxValue
+                ));
             }
 
             if ((enabledFeatures & DeviceFeatures.SamplerFeedback) != 0)
             {
                 Add(new SamplerFeedback(
                     this,
-                    features.Options7.SamplerFeedbackTier == NativeSamplerFeedbackTier.Tier10
-                        ? SomeEngine.Graphics.SamplerFeedbackTier.Tier1_0
-                        : SomeEngine.Graphics.SamplerFeedbackTier.Tier0_9,
+                    features.Options7.SamplerFeedbackTier == NativeSamplerFeedbackTier.Tier10 ? SomeEngine.Graphics.SamplerFeedbackTier.Tier1_0 : SomeEngine.Graphics.SamplerFeedbackTier.Tier0_9,
                     features.SamplerFeedbackFormats,
                     4,
                     4,
-                    64 * 1024));
+                    64 * 1024
+                ));
             }
 
             if ((enabledFeatures & DeviceFeatures.Residency) != 0)
                 Add(new Residency(this, localMemory: true, nonLocalMemory: true));
         }
 
-        private void AddRayTracingCapability(
-            in D3D12FeatureSupport features,
-            DeviceFeatures enabledFeatures)
+        private void AddRayTracingCapability(in D3D12FeatureSupport features, DeviceFeatures enabledFeatures)
         {
             if ((enabledFeatures & DeviceFeatures.RayTracing) == 0)
                 return;
-
             InitializeRayDispatchSignature();
             bool tier11 = features.Options5.RaytracingTier >= NativeRayTracingTier.Tier11;
             Add(new RayTracing(
                 this,
-                tier11
-                    ? SomeEngine.Graphics.RayTracingTier.Tier1_1
-                    : SomeEngine.Graphics.RayTracingTier.Tier1_0,
+                tier11 ? SomeEngine.Graphics.RayTracingTier.Tier1_1 : SomeEngine.Graphics.RayTracingTier.Tier1_0,
                 pipelineRayTracing: true,
                 inlineRayQuery: tier11,
                 indirectDispatch: tier11,
@@ -908,12 +706,11 @@ internal sealed unsafe partial class D3D12Backend
                 accelerationStructureAlignment: 256,
                 scratchAlignment: 256,
                 shaderTableAlignment: 64,
-                shaderRecordAlignment: 32));
+                shaderRecordAlignment: 32
+            ));
         }
 
-        private void AddMeshAndShadingCapabilities(
-            in D3D12FeatureSupport features,
-            DeviceFeatures enabledFeatures)
+        private void AddMeshAndShadingCapabilities(in D3D12FeatureSupport features, DeviceFeatures enabledFeatures)
         {
             if ((enabledFeatures & DeviceFeatures.MeshShaders) != 0)
             {
@@ -930,26 +727,14 @@ internal sealed unsafe partial class D3D12Backend
                     maximumPayloadSize: 16 * 1024,
                     maximumSharedMemory: 28 * 1024,
                     maximumOutputVertices: 256,
-                    maximumOutputPrimitives: 256));
+                    maximumOutputPrimitives: 256
+                ));
             }
 
             if ((enabledFeatures & DeviceFeatures.VariableRateShading) == 0)
                 return;
-
-            ShadingRate[] rates = features.Options6.AdditionalShadingRatesSupported
-                ? [ShadingRate.Rate1x1, ShadingRate.Rate1x2, ShadingRate.Rate2x1,
-                    ShadingRate.Rate2x2, ShadingRate.Rate2x4, ShadingRate.Rate4x2,
-                    ShadingRate.Rate4x4]
-                : [ShadingRate.Rate1x1, ShadingRate.Rate1x2, ShadingRate.Rate2x1,
-                    ShadingRate.Rate2x2];
-            ShadingRateCombiner[] combiners =
-            [
-                ShadingRateCombiner.Passthrough,
-                ShadingRateCombiner.Override,
-                ShadingRateCombiner.Minimum,
-                ShadingRateCombiner.Maximum,
-                ShadingRateCombiner.Sum,
-            ];
+            ShadingRate[] rates = features.Options6.AdditionalShadingRatesSupported ? [ShadingRate.Rate1x1, ShadingRate.Rate1x2, ShadingRate.Rate2x1, ShadingRate.Rate2x2, ShadingRate.Rate2x4, ShadingRate.Rate4x2, ShadingRate.Rate4x4] : [ShadingRate.Rate1x1, ShadingRate.Rate1x2, ShadingRate.Rate2x1, ShadingRate.Rate2x2];
+            ShadingRateCombiner[] combiners = [ShadingRateCombiner.Passthrough, ShadingRateCombiner.Override, ShadingRateCombiner.Minimum, ShadingRateCombiner.Maximum, ShadingRateCombiner.Sum, ];
             Add(new VariableRateShading(
                 this,
                 rates,
@@ -958,12 +743,11 @@ internal sealed unsafe partial class D3D12Backend
                 features.Options6.VariableShadingRateTier >= VariableShadingRateTier.Tier2,
                 features.Options6.AdditionalShadingRatesSupported,
                 features.Options6.ShadingRateImageTileSize,
-                features.Options6.ShadingRateImageTileSize));
+                features.Options6.ShadingRateImageTileSize
+            ));
         }
 
-        private void AddDispatchCapabilities(
-            in D3D12FeatureSupport features,
-            DeviceFeatures enabledFeatures)
+        private void AddDispatchCapabilities(in D3D12FeatureSupport features, DeviceFeatures enabledFeatures)
         {
             if ((enabledFeatures & DeviceFeatures.WorkGraphs) != 0)
             {
@@ -976,12 +760,12 @@ internal sealed unsafe partial class D3D12Backend
                     maximumInputRecordSize: 0xFFFF_FFFC,
                     maximumOutputRecordSize: 32 * 1_024,
                     maximumDispatchGridDimension: 65_535,
-                    maximumDispatchGridVolume: 0x00FF_FFFF));
+                    maximumDispatchGridVolume: 0x00FF_FFFF
+                ));
             }
 
             if ((enabledFeatures & DeviceFeatures.IndirectCommands) == 0)
                 return;
-
             Span<IndirectArgumentType> supportedArguments = stackalloc IndirectArgumentType[9];
             int count = 0;
             supportedArguments[count++] = IndirectArgumentType.Draw;
@@ -989,62 +773,48 @@ internal sealed unsafe partial class D3D12Backend
             supportedArguments[count++] = IndirectArgumentType.Dispatch;
             if ((enabledFeatures & DeviceFeatures.MeshShaders) != 0)
                 supportedArguments[count++] = IndirectArgumentType.DispatchMesh;
-            if ((enabledFeatures & DeviceFeatures.RayTracing) != 0 &&
-                features.Options5.RaytracingTier >= NativeRayTracingTier.Tier11)
+            if ((enabledFeatures & DeviceFeatures.RayTracing) != 0 && features.Options5.RaytracingTier >= NativeRayTracingTier.Tier11)
             {
                 supportedArguments[count++] = IndirectArgumentType.DispatchRays;
             }
+
             supportedArguments[count++] = IndirectArgumentType.VertexBuffer;
             supportedArguments[count++] = IndirectArgumentType.IndexBuffer;
             supportedArguments[count++] = IndirectArgumentType.Constants;
             supportedArguments[count++] = IndirectArgumentType.ConstantBuffer;
-
             Add(new IndirectCommands(
                 this,
                 supportedArguments[..count],
                 argumentBufferAlignment: 4,
                 countBufferAlignment: 4,
                 maximumCommandCount: uint.MaxValue,
-                maximumStride: 0xFFFF_FFFC));
+                maximumStride: 0xFFFF_FFFC
+            ));
         }
 
-        private void AddPlatformCapabilities(
-            in D3D12FeatureSupport features,
-            DeviceFeatures enabledFeatures)
+        private void AddPlatformCapabilities(in D3D12FeatureSupport features, DeviceFeatures enabledFeatures)
         {
             if ((enabledFeatures & DeviceFeatures.Presentation) != 0)
                 Add(new Presentation(this));
-
             if ((enabledFeatures & DeviceFeatures.CalibratedTimestamps) != 0)
                 Add(new CalibratedTimestamps(this));
-
             if ((enabledFeatures & DeviceFeatures.LinkedAdapters) != 0)
             {
-                uint mask = features.NodeCount == 32
-                    ? uint.MaxValue
-                    : (1u << checked((int)features.NodeCount)) - 1u;
+                uint mask = features.NodeCount == 32 ? uint.MaxValue : (1u << checked((int)features.NodeCount)) - 1u;
                 Add(new LinkedAdapters(this, features.NodeCount, mask, mask, mask, mask));
             }
 
             ExternalHandleType[] win32Handles = [ExternalHandleType.OpaqueWin32];
             if ((enabledFeatures & DeviceFeatures.ExternalResources) != 0)
             {
-                Add(new ExternalResources(
-                    this,
-                    win32Handles,
-                    win32Handles,
-                    win32Handles,
-                    win32Handles,
-                    win32Handles,
-                    win32Handles));
+                Add(new ExternalResources(this, win32Handles, win32Handles, win32Handles, win32Handles, win32Handles, win32Handles));
             }
+
             if ((enabledFeatures & DeviceFeatures.ExternalTimelines) != 0)
                 Add(new ExternalTimelines(this, win32Handles, win32Handles));
         }
 
-        private void Add(DeviceCapability capability) =>
-            _capabilities.Add(capability.GetType(), capability);
-
+        private void Add(DeviceCapability capability) => _capabilities.Add(capability.GetType(), capability);
         private void ReleaseNative()
         {
             ReleaseQueues();
@@ -1053,12 +823,10 @@ internal sealed unsafe partial class D3D12Backend
             ReleaseDescriptorPublishers();
             ReleaseDescriptorAllocators();
             _resourceAllocator.Dispose();
-
             ID3D12Device10* native = _native;
             _native = null;
             if (native is not null)
                 _ = DeviceQueryTrace.Release(native);
-
             IDXGIAdapter4* adapter = _adapter;
             _adapter = null;
             if (adapter is not null)
@@ -1072,47 +840,28 @@ internal sealed unsafe partial class D3D12Backend
             _queues.Clear();
         }
 
-        private static DeviceCapabilities CreateDeviceCapabilities(
-            in D3D12FeatureSupport features) =>
-            new(
-                new DeviceLimits(
-                    MaximumBufferSize: ulong.MaxValue,
-                    MaximumTextureDimension1D: 16_384,
-                    MaximumTextureDimension2D: 16_384,
-                    MaximumTextureDimension3D: 2_048,
-                    MaximumTextureArrayLayers: 2_048,
-                    MaximumColorAttachments: 8,
-                    MaximumViewports: 16,
-                    ResourceDescriptorCapacity: 1_000_000,
-                    SamplerDescriptorCapacity: 2_048,
-                    ConstantBufferAlignment: 256,
-                    ShaderBufferAlignment: 16,
-                    TextureDataPitchAlignment: 256,
-                    TextureDataPlacementAlignment: 512,
-                    MaximumConstantBufferRange: 65_536),
-                supportsBundles: true,
-                supportsPipelineStatistics: true,
-                supportsStreamOutputStatistics: true,
-                supportsDepthBounds: features.DepthBoundsSupported,
-                supportedDynamicStates: GetSupportedDynamicStates(features),
-                features.Formats,
-                supportsBufferInt64Atomics: features.BufferInt64AtomicsSupported,
-                supportsImageInt64Atomics: features.ImageInt64AtomicsSupported,
-                // D3D12/SM 6.6 does not guarantee forward progress between thread groups.
-                // Keep the persistent queue disabled until the backend can prove a stronger
-                // device-specific scheduling contract.
-                supportsComputeForwardProgress: false,
-                supportsConcurrentBufferReads: features.EnhancedBarriers);
-
-        private static DynamicStates GetSupportedDynamicStates(
-            in D3D12FeatureSupport features)
+        private static DeviceCapabilities CreateDeviceCapabilities(in D3D12FeatureSupport features) => new(new DeviceLimits(
+            MaximumBufferSize: ulong.MaxValue,
+            MaximumTextureDimension1D: 16_384,
+            MaximumTextureDimension2D: 16_384,
+            MaximumTextureDimension3D: 2_048,
+            MaximumTextureArrayLayers: 2_048,
+            MaximumColorAttachments: 8,
+            MaximumViewports: 16,
+            ResourceDescriptorCapacity: 1_000_000,
+            SamplerDescriptorCapacity: 2_048,
+            ConstantBufferAlignment: 256,
+            ShaderBufferAlignment: 16,
+            TextureDataPitchAlignment: 256,
+            TextureDataPlacementAlignment: 512,
+            MaximumConstantBufferRange: 65_536
+        ), supportsBundles: true, supportsPipelineStatistics: true, supportsStreamOutputStatistics: true, supportsDepthBounds: features.DepthBoundsSupported, supportedDynamicStates: GetSupportedDynamicStates(features), features.Formats, supportsBufferInt64Atomics: features.BufferInt64AtomicsSupported, supportsImageInt64Atomics: features.ImageInt64AtomicsSupported, // D3D12/SM 6.6 does not guarantee forward progress between thread groups.
+        // Keep the persistent queue disabled until the backend can prove a stronger
+        // device-specific scheduling contract.
+        supportsComputeForwardProgress: false, supportsConcurrentBufferReads: features.EnhancedBarriers);
+        private static DynamicStates GetSupportedDynamicStates(in D3D12FeatureSupport features)
         {
-            DynamicStates result =
-                DynamicStates.Viewport |
-                DynamicStates.Scissor |
-                DynamicStates.BlendConstants |
-                DynamicStates.StencilReference |
-                DynamicStates.PrimitiveTopology;
+            DynamicStates result = DynamicStates.Viewport | DynamicStates.Scissor | DynamicStates.BlendConstants | DynamicStates.StencilReference | DynamicStates.PrimitiveTopology;
             if (features.DepthBoundsSupported)
                 result |= DynamicStates.DepthBounds;
             if (features.DynamicDepthBiasSupported)
@@ -1129,7 +878,6 @@ internal sealed unsafe partial class D3D12Backend
         private ulong _nextCompletion = 1;
         private readonly Dictionary<D3D12Queue, ulong> _completionWaits = [];
         private int _released;
-
         internal D3D12Queue(
             D3D12Device device,
             QueueType type,
@@ -1137,16 +885,11 @@ internal sealed unsafe partial class D3D12Backend
             float priority,
             uint nodeMask,
             ID3D12CommandQueue* native,
-            ID3D12Fence* fence)
-            : base(
-                device,
-                type,
-                index,
-                priority,
-                checked((uint)BitOperations.TrailingZeroCount(nodeMask)))
+            ID3D12Fence* fence
+        ) : base(device, type, index, priority, checked((uint)BitOperations.TrailingZeroCount(nodeMask)))
         {
             _device = device;
-            _nativeLock = new D3D12NativeQueueLockLease(this);
+            _nativeLock = new D3D12NativeQueueLockHandle(this);
             NodeMask = nodeMask;
             Native = native;
             Fence = fence;
@@ -1167,57 +910,42 @@ internal sealed unsafe partial class D3D12Backend
         {
             if (ResourceTrace.GetCompletedValue(Fence) == ulong.MaxValue)
             {
-                throw PublishDeviceLoss(
-                    _device,
-                    DxgiErrorDeviceRemoved,
-                    "D3D12 reported the device-removal completion sentinel.",
-                    DxgiErrorDeviceRemoved);
+                throw PublishDeviceLoss(_device, DxgiErrorDeviceRemoved, "D3D12 reported the device-removal completion sentinel.");
             }
+
             if (_nextCompletion == ulong.MaxValue)
-                throw new InvalidOperationException("The Queue completion domain is exhausted.");
+                throw new GraphicsException(GraphicsError.NativeFailure, "The Queue completion domain is exhausted.");
             ulong value = _nextCompletion;
-            ThrowIfFailed(
-                _device,
-                    QueueTrace.Signal(Native, Fence, value),
-                NativeOperationType.Ordinary,
-                "ID3D12CommandQueue::Signal");
+            ThrowIfFailed(_device, QueueTrace.Signal(Native, Fence, value), NativeOperationType.Ordinary, "ID3D12CommandQueue::Signal");
             _nextCompletion = value + 1;
+            MarkSubmitted(value);
             return new QueueCompletion(this, value);
         }
 
         internal bool WaitForCompletionUnderGate(D3D12Queue source, ulong value)
         {
-            if (ReferenceEquals(this, source) ||
-                (_completionWaits.TryGetValue(source, out ulong covered) && covered >= value))
+            if (ReferenceEquals(this, source) || (_completionWaits.TryGetValue(source, out ulong covered) && covered >= value))
                 return false;
             bool complete = source.IsComplete(value);
             if (!complete)
             {
-                ThrowIfFailed(
-                    _device,
-                    QueueTrace.Wait(Native, source.Fence, value),
-                    NativeOperationType.Ordinary,
-                    "ID3D12CommandQueue::Wait");
+                ThrowIfFailed(_device, QueueTrace.Wait(Native, source.Fence, value), NativeOperationType.Ordinary, "ID3D12CommandQueue::Wait");
             }
+
             _completionWaits[source] = value;
             return !complete;
         }
 
-        internal bool IsComplete(ulong value)
-            => ReadCompletedValue() >= value;
-
+        internal bool IsComplete(ulong value) => ReadCompletedValue() >= value;
         internal ulong ReadCompletedValue()
         {
             _device.ThrowIfUnavailable();
             ulong completed = ResourceTrace.GetCompletedValue(Fence);
             if (completed == ulong.MaxValue)
             {
-                throw PublishDeviceLoss(
-                    _device,
-                    DxgiErrorDeviceRemoved,
-                    "D3D12 reported the device-removal completion sentinel.",
-                    DxgiErrorDeviceRemoved);
+                throw PublishDeviceLoss(_device, DxgiErrorDeviceRemoved, "D3D12 reported the device-removal completion sentinel.");
             }
+
             return completed;
         }
 
@@ -1231,12 +959,10 @@ internal sealed unsafe partial class D3D12Backend
         {
             if (Interlocked.Exchange(ref _released, 1) != 0)
                 return;
-
             ID3D12Fence* fence = Fence;
             Fence = null;
             if (fence is not null)
                 _ = ResourceTrace.Release(fence);
-
             ID3D12CommandQueue* queue = Native;
             Native = null;
             if (queue is not null)
@@ -1266,7 +992,8 @@ internal sealed unsafe partial class D3D12Backend
             FormatSupport[] formats,
             Format[] sparseTexture2DFormats,
             Format[] sparseTexture3DFormats,
-            Format[] samplerFeedbackFormats)
+            Format[] samplerFeedbackFormats
+        )
         {
             NodeCount = nodeCount;
             AvailableFeatures = availableFeatures;
@@ -1308,91 +1035,40 @@ internal sealed unsafe partial class D3D12Backend
         internal Format[] SamplerFeedbackFormats { get; }
         internal bool EnhancedBarriers => Options12.EnhancedBarriersSupported;
         internal bool DepthBoundsSupported => Options2.DepthBoundsTestSupported;
-        internal bool DynamicIndexBufferStripCutSupported =>
-            Options15.DynamicIndexBufferStripCutSupported;
+        internal bool DynamicIndexBufferStripCutSupported => Options15.DynamicIndexBufferStripCutSupported;
         internal bool DynamicDepthBiasSupported => Options16.DynamicDepthBiasSupported;
-        internal bool BufferInt64AtomicsSupported =>
-            ShaderModel66 && Int64ShaderOps;
+        internal bool BufferInt64AtomicsSupported => ShaderModel66 && Int64ShaderOps;
+
         internal bool ImageInt64AtomicsSupported
         {
             get
             {
                 FormatFeatures r64 = Formats[(int)Format.R64UInt].Features;
-                const FormatFeatures required =
-                    FormatFeatures.ShaderLoad |
-                    FormatFeatures.Storage |
-                    FormatFeatures.StorageStore;
-                return ShaderModel66 &&
-                    Int64ShaderOps &&
-                    Options9.AtomicInt64OnTypedResourceSupported &&
-                    (r64 & required) == required;
+                const FormatFeatures required = FormatFeatures.ShaderLoad | FormatFeatures.Storage | FormatFeatures.StorageStore;
+                return ShaderModel66 && Int64ShaderOps && Options9.AtomicInt64OnTypedResourceSupported && (r64 & required) == required;
             }
         }
 
         internal static D3D12FeatureSupport Query(ID3D12Device10* device)
         {
-            FeatureDataD3D12Options options = QueryFeature<FeatureDataD3D12Options>(
-                device,
-                NativeFeature.D3D12Options);
+            FeatureDataD3D12Options options = QueryFeature<FeatureDataD3D12Options>(device, NativeFeature.D3D12Options);
             bool int64ShaderOps = QueryInt64ShaderOps(device);
-            FeatureDataD3D12Options2 options2 = QueryFeature<FeatureDataD3D12Options2>(
-                device,
-                NativeFeature.D3D12Options2);
-            FeatureDataD3D12Options5 options5 = QueryFeature<FeatureDataD3D12Options5>(
-                device,
-                NativeFeature.D3D12Options5);
-            FeatureDataD3D12Options6 options6 = QueryFeature<FeatureDataD3D12Options6>(
-                device,
-                NativeFeature.D3D12Options6);
-            FeatureDataD3D12Options7 options7 = QueryFeature<FeatureDataD3D12Options7>(
-                device,
-                NativeFeature.D3D12Options7);
-            FeatureDataD3D12Options9 options9 = TryQueryFeature(
-                device,
-                NativeFeature.D3D12Options9,
-                out FeatureDataD3D12Options9 queriedOptions9)
-                    ? queriedOptions9
-                    : default;
-            FeatureDataD3D12Options12 options12 = QueryFeature<FeatureDataD3D12Options12>(
-                device,
-                NativeFeature.D3D12Options12);
-            FeatureDataD3D12Options15 options15 = QueryFeature<FeatureDataD3D12Options15>(
-                device,
-                NativeFeature.D3D12Options15);
-            FeatureDataD3D12Options16 options16 = QueryFeature<FeatureDataD3D12Options16>(
-                device,
-                NativeFeature.D3D12Options16);
-            FeatureDataD3D12Options21 options21 = QueryFeature<FeatureDataD3D12Options21>(
-                device,
-                NativeFeature.D3D12Options21);
+            FeatureDataD3D12Options2 options2 = QueryFeature<FeatureDataD3D12Options2>(device, NativeFeature.D3D12Options2);
+            FeatureDataD3D12Options5 options5 = QueryFeature<FeatureDataD3D12Options5>(device, NativeFeature.D3D12Options5);
+            FeatureDataD3D12Options6 options6 = QueryFeature<FeatureDataD3D12Options6>(device, NativeFeature.D3D12Options6);
+            FeatureDataD3D12Options7 options7 = QueryFeature<FeatureDataD3D12Options7>(device, NativeFeature.D3D12Options7);
+            FeatureDataD3D12Options9 options9 = TryQueryFeature(device, NativeFeature.D3D12Options9, out FeatureDataD3D12Options9 queriedOptions9) ? queriedOptions9 : default;
+            FeatureDataD3D12Options12 options12 = QueryFeature<FeatureDataD3D12Options12>(device, NativeFeature.D3D12Options12);
+            FeatureDataD3D12Options15 options15 = QueryFeature<FeatureDataD3D12Options15>(device, NativeFeature.D3D12Options15);
+            FeatureDataD3D12Options16 options16 = QueryFeature<FeatureDataD3D12Options16>(device, NativeFeature.D3D12Options16);
+            FeatureDataD3D12Options21 options21 = QueryFeature<FeatureDataD3D12Options21>(device, NativeFeature.D3D12Options21);
             FeatureDataShaderModel shaderModel = new(D3DShaderModel.ShaderModel66);
-            bool shaderModel66 = DeviceQueryTrace.CheckFeatureSupport(
-device, NativeFeature.ShaderModel,
-                    &shaderModel,
-                    (uint)sizeof(FeatureDataShaderModel)) >= 0 &&
-                shaderModel.HighestShaderModel >= D3DShaderModel.ShaderModel66;
-
-            DeviceFeatures features =
-                DeviceFeatures.Presentation |
-                DeviceFeatures.Residency |
-                DeviceFeatures.IndirectCommands |
-                DeviceFeatures.CalibratedTimestamps |
-                DeviceFeatures.ExternalResources |
-                DeviceFeatures.ExternalTimelines;
-
-            bool samplerFeedbackFormatsAvailable =
-                options7.SamplerFeedbackTier != NativeSamplerFeedbackTier.TierNotSupported &&
-                SupportsSamplerFeedbackOpaqueFormats(device);
-            FormatSupport[] formats = QueryFormatSupport(
-                device,
-                options.TiledResourcesTier,
-                samplerFeedbackFormatsAvailable);
-            Format[] sparseTexture2DFormats = SelectFormats(
-                formats,
-                FormatFeatures.SparseTexture2D);
-            Format[] sparseTexture3DFormats = SelectFormats(
-                formats,
-                FormatFeatures.SparseTexture3D);
+            bool shaderModel66 = DeviceQueryTrace.CheckFeatureSupport(device, NativeFeature.ShaderModel, &shaderModel, (uint)sizeof(FeatureDataShaderModel)) >= 0 && shaderModel.HighestShaderModel >= D3DShaderModel.ShaderModel66;
+            DeviceFeatures features = DeviceFeatures.Presentation | DeviceFeatures.Residency | DeviceFeatures.IndirectCommands | DeviceFeatures.CalibratedTimestamps | DeviceFeatures.ExternalResources | DeviceFeatures.ExternalTimelines;
+            bool samplerFeedbackFormatsAvailable = options7.SamplerFeedbackTier != NativeSamplerFeedbackTier.TierNotSupported && SupportsSamplerFeedbackOpaqueFormats(device);
+            FormatSupport[] formats = QueryFormatSupport(device, options.TiledResourcesTier, samplerFeedbackFormatsAvailable);
+            Format[] sparseTexture2DFormats = SelectFormats(formats, FormatFeatures.SparseTexture2D);
+            Format[] sparseTexture3DFormats = SelectFormats(formats, FormatFeatures.SparseTexture3D);
             if (options.TiledResourcesTier != TiledResourcesTier.TierNotSupported)
                 features |= DeviceFeatures.SparseResources;
             if (options5.RaytracingTier != NativeRayTracingTier.TierNotSupported)
@@ -1401,18 +1077,14 @@ device, NativeFeature.ShaderModel,
                 features |= DeviceFeatures.VariableRateShading;
             if (options7.MeshShaderTier != MeshShaderTier.TierNotSupported)
                 features |= DeviceFeatures.MeshShaders;
-            Format[] samplerFeedbackFormats = SelectFormats(
-                formats,
-                FormatFeatures.SamplerFeedbackTarget);
+            Format[] samplerFeedbackFormats = SelectFormats(formats, FormatFeatures.SamplerFeedbackTarget);
             if (samplerFeedbackFormats.Length != 0)
                 features |= DeviceFeatures.SamplerFeedback;
             if (options21.WorkGraphsTier != Silk.NET.Direct3D12.WorkGraphsTier.TierNotSupported)
                 features |= DeviceFeatures.WorkGraphs;
-
             uint nodeCount = DeviceQueryTrace.GetNodeCount(device);
             if (nodeCount > 1)
                 features |= DeviceFeatures.LinkedAdapters;
-
             return new D3D12FeatureSupport(
                 nodeCount,
                 features,
@@ -1431,18 +1103,16 @@ device, NativeFeature.ShaderModel,
                 formats,
                 sparseTexture2DFormats,
                 sparseTexture3DFormats,
-                samplerFeedbackFormats);
+                samplerFeedbackFormats
+            );
         }
 
-        private static bool QueryInt64ShaderOps(ID3D12Device10* device) =>
-            QueryFeature<FeatureDataD3D12Options1>(
-                device,
-                NativeFeature.D3D12Options1).Int64ShaderOps;
-
+        private static bool QueryInt64ShaderOps(ID3D12Device10* device) => QueryFeature<FeatureDataD3D12Options1>(device, NativeFeature.D3D12Options1).Int64ShaderOps;
         private static FormatSupport[] QueryFormatSupport(
             ID3D12Device10* device,
             TiledResourcesTier tiledResourcesTier,
-            bool samplerFeedbackFormatsAvailable)
+            bool samplerFeedbackFormatsAvailable
+        )
         {
             Format[] formats = Enum.GetValues<Format>();
             FormatSupport[] result = new FormatSupport[formats.Length];
@@ -1450,79 +1120,44 @@ device, NativeFeature.ShaderModel,
             {
                 Format format = formats[index];
                 FeatureDataFormatSupport support = new(FormatMappings.ToDxgi(format));
-                int query = DeviceQueryTrace.CheckFeatureSupport(
-device, NativeFeature.FormatSupport,
-                    &support,
-                    (uint)sizeof(FeatureDataFormatSupport));
-                ThrowIfFailed(
-                    null,
-                    query,
-                    NativeOperationType.Ordinary,
-                    $"ID3D12Device::CheckFeatureSupport(FormatSupport:{format})");
-
-                FormatFeatures features = ToFormatFeatures(
-                    support.Support1,
-                    support.Support2,
-                    tiledResourcesTier,
-                    samplerFeedbackFormatsAvailable);
+                int query = DeviceQueryTrace.CheckFeatureSupport(device, NativeFeature.FormatSupport, &support, (uint)sizeof(FeatureDataFormatSupport));
+                ThrowIfFailed(null, query, NativeOperationType.Ordinary, $"ID3D12Device::CheckFeatureSupport(FormatSupport:{format})");
+                FormatFeatures features = ToFormatFeatures(support.Support1, support.Support2, tiledResourcesTier, samplerFeedbackFormatsAvailable);
                 if (FormatMappings.IsDepthStencil(format))
                 {
-                    features |= QueryDepthStencilShaderFeatures(
-                        device,
-                        format,
-                        tiledResourcesTier);
+                    features |= QueryDepthStencilShaderFeatures(device, format, tiledResourcesTier);
                 }
-                SampleCounts sampleCounts = QuerySampleCounts(
-                    device,
-                    FormatMappings.ToDxgi(format),
-                    MultisampleQualityLevelFlags.None,
-                    (features & FormatFeatures.Texture2D) != 0);
+
+                SampleCounts sampleCounts = QuerySampleCounts(device, FormatMappings.ToDxgi(format), MultisampleQualityLevelFlags.None, (features & FormatFeatures.Texture2D) != 0);
                 SampleCounts sparseSampleCounts = QuerySampleCounts(
                     device,
                     FormatMappings.ToDxgi(format),
                     MultisampleQualityLevelFlags.TiledResource,
-                    (features & FormatFeatures.SparseTexture2D) != 0);
-                result[index] = new FormatSupport(
-                    format,
-                    features,
-                    sampleCounts,
-                    sparseSampleCounts);
+                    (features & FormatFeatures.SparseTexture2D) != 0
+                );
+                result[index] = new FormatSupport(format, features, sampleCounts, sparseSampleCounts);
             }
+
             return result;
         }
 
-        private static FormatFeatures QueryDepthStencilShaderFeatures(
-            ID3D12Device10* device,
-            Format format,
-            TiledResourcesTier tiledResourcesTier)
+        private static FormatFeatures QueryDepthStencilShaderFeatures(ID3D12Device10* device, Format format, TiledResourcesTier tiledResourcesTier)
         {
-            const FormatFeatures shaderFeatures =
-                FormatFeatures.ShaderLoad |
-                FormatFeatures.ShaderSample |
-                FormatFeatures.ShaderSampleComparison |
-                FormatFeatures.MultisampleLoad;
+            const FormatFeatures shaderFeatures = FormatFeatures.ShaderLoad | FormatFeatures.ShaderSample | FormatFeatures.ShaderSampleComparison | FormatFeatures.MultisampleLoad;
             FormatFeatures result = Query(TextureAspects.Depth);
             if (FormatMappings.PlaneCount(format) == 2)
                 result |= Query(TextureAspects.Stencil);
             return result & shaderFeatures;
-
             FormatFeatures Query(TextureAspects aspect)
             {
-                FeatureDataFormatSupport support = new(
-                    FormatMappings.ToShaderViewFormat(format, aspect));
+                FeatureDataFormatSupport support = new(FormatMappings.ToShaderViewFormat(format, aspect));
                 ThrowIfFailed(
                     null,
-                        DeviceQueryTrace.CheckFeatureSupport(
-                    device, NativeFeature.FormatSupport,
-                        &support,
-                        (uint)sizeof(FeatureDataFormatSupport)),
+                    DeviceQueryTrace.CheckFeatureSupport(device, NativeFeature.FormatSupport, &support, (uint)sizeof(FeatureDataFormatSupport)),
                     NativeOperationType.Ordinary,
-                    $"ID3D12Device::CheckFeatureSupport(FormatSupport:{format}:{aspect})");
-                return ToFormatFeatures(
-                    support.Support1,
-                    support.Support2,
-                    tiledResourcesTier,
-                    samplerFeedbackFormatsAvailable: false);
+                    $"ID3D12Device::CheckFeatureSupport(FormatSupport:{format}:{aspect})"
+                );
+                return ToFormatFeatures(support.Support1, support.Support2, tiledResourcesTier, samplerFeedbackFormatsAvailable: false);
             }
         }
 
@@ -1530,7 +1165,8 @@ device, NativeFeature.FormatSupport,
             FormatSupport1 support1,
             FormatSupport2 support2,
             TiledResourcesTier tiledResourcesTier,
-            bool samplerFeedbackFormatsAvailable)
+            bool samplerFeedbackFormatsAvailable
+        )
         {
             FormatFeatures result = FormatFeatures.None;
             Add(FormatSupport1.Buffer, FormatFeatures.Buffer);
@@ -1548,45 +1184,32 @@ device, NativeFeature.FormatSupport,
             Add(FormatSupport1.RenderTarget, FormatFeatures.ColorAttachment);
             Add(FormatSupport1.Blendable, FormatFeatures.ColorAttachmentBlend);
             Add(FormatSupport1.DepthStencil, FormatFeatures.DepthStencilAttachment);
-            Add(
-                FormatSupport1.MultisampleRendertarget,
-                FormatFeatures.MultisampleColorAttachment);
+            Add(FormatSupport1.MultisampleRendertarget, FormatFeatures.MultisampleColorAttachment);
             Add(FormatSupport1.MultisampleLoad, FormatFeatures.MultisampleLoad);
             Add(FormatSupport1.MultisampleResolve, FormatFeatures.MultisampleResolve);
             Add(FormatSupport1.TypedUnorderedAccessView, FormatFeatures.Storage);
             Add2(FormatSupport2.UavTypedLoad, FormatFeatures.StorageLoad);
             Add2(FormatSupport2.UavTypedStore, FormatFeatures.StorageStore);
             Add2(FormatSupport2.OutputMergerLogicOp, FormatFeatures.LogicOperation);
-
-            const FormatSupport2 atomic =
-                FormatSupport2.UavAtomicAdd |
-                FormatSupport2.UavAtomicBitwiseOps |
-                FormatSupport2.UavAtomicCompareStoreOrCompareExchange |
-                FormatSupport2.UavAtomicExchange |
-                FormatSupport2.UavAtomicSignedMinOrMax |
-                FormatSupport2.UavAtomicUnsignedMinOrMax;
+            const FormatSupport2 atomic = FormatSupport2.UavAtomicAdd | FormatSupport2.UavAtomicBitwiseOps | FormatSupport2.UavAtomicCompareStoreOrCompareExchange | FormatSupport2.UavAtomicExchange | FormatSupport2.UavAtomicSignedMinOrMax | FormatSupport2.UavAtomicUnsignedMinOrMax;
             if ((support2 & atomic) != 0)
                 result |= FormatFeatures.StorageAtomic;
-
             if ((support2 & FormatSupport2.Tiled) != 0)
             {
                 if ((support1 & FormatSupport1.Texture2D) != 0)
                     result |= FormatFeatures.SparseTexture2D;
-                if (tiledResourcesTier >= TiledResourcesTier.Tier3 &&
-                    (support1 & FormatSupport1.Texture3D) != 0)
+                if (tiledResourcesTier >= TiledResourcesTier.Tier3 && (support1 & FormatSupport1.Texture3D) != 0)
                 {
                     result |= FormatFeatures.SparseTexture3D;
                 }
             }
 
-            if (samplerFeedbackFormatsAvailable &&
-                (support1 & (FormatSupport1.Texture2D | FormatSupport1.ShaderSample)) ==
-                    (FormatSupport1.Texture2D | FormatSupport1.ShaderSample))
+            if (samplerFeedbackFormatsAvailable && (support1 & (FormatSupport1.Texture2D | FormatSupport1.ShaderSample)) == (FormatSupport1.Texture2D | FormatSupport1.ShaderSample))
             {
                 result |= FormatFeatures.SamplerFeedbackTarget;
             }
-            return result;
 
+            return result;
             void Add(FormatSupport1 native, FormatFeatures portable)
             {
                 if ((support1 & native) != 0)
@@ -1604,34 +1227,31 @@ device, NativeFeature.FormatSupport,
             ID3D12Device10* device,
             Silk.NET.DXGI.Format format,
             MultisampleQualityLevelFlags flags,
-            bool singleSampleSupported)
+            bool singleSampleSupported
+        )
         {
             if (!singleSampleSupported)
                 return SampleCounts.None;
-
             SampleCounts result = SampleCounts.One;
             ReadOnlySpan<uint> counts = [2, 4, 8, 16, 32];
             foreach (uint count in counts)
             {
                 FeatureDataMultisampleQualityLevels levels = new(format, count, flags, 0);
-                int query = DeviceQueryTrace.CheckFeatureSupport(
-device, NativeFeature.MultisampleQualityLevels,
-                    &levels,
-                    (uint)sizeof(FeatureDataMultisampleQualityLevels));
+                int query = DeviceQueryTrace.CheckFeatureSupport(device, NativeFeature.MultisampleQualityLevels, &levels, (uint)sizeof(FeatureDataMultisampleQualityLevels));
                 ThrowIfFailed(
                     null,
                     query,
                     NativeOperationType.Ordinary,
-                    $"ID3D12Device::CheckFeatureSupport(MultisampleQualityLevels:{format}:{count})");
+                    $"ID3D12Device::CheckFeatureSupport(MultisampleQualityLevels:{format}:{count})"
+                );
                 if (levels.NumQualityLevels != 0)
                     result |= (SampleCounts)count;
             }
+
             return result;
         }
 
-        private static Format[] SelectFormats(
-            ReadOnlySpan<FormatSupport> supports,
-            FormatFeatures required)
+        private static Format[] SelectFormats(ReadOnlySpan<FormatSupport> supports, FormatFeatures required)
         {
             List<Format> result = [];
             foreach (ref readonly FormatSupport support in supports)
@@ -1639,35 +1259,21 @@ device, NativeFeature.MultisampleQualityLevels,
                 if ((support.Features & required) == required)
                     result.Add(support.Format);
             }
-            return [.. result];
+
+            return[..result];
         }
 
         private static bool SupportsSamplerFeedbackOpaqueFormats(ID3D12Device10* device)
         {
-            return SupportsSamplerFeedbackFormat(
-                    device,
-                    Silk.NET.DXGI.Format.FormatSamplerFeedbackMinMipOpaque) &&
-                SupportsSamplerFeedbackFormat(
-                    device,
-                    Silk.NET.DXGI.Format.FormatSamplerFeedbackMipRegionUsedOpaque);
+            return SupportsSamplerFeedbackFormat(device, Silk.NET.DXGI.Format.FormatSamplerFeedbackMinMipOpaque) && SupportsSamplerFeedbackFormat(device, Silk.NET.DXGI.Format.FormatSamplerFeedbackMipRegionUsedOpaque);
         }
 
-        private static bool SupportsSamplerFeedbackFormat(
-            ID3D12Device10* device,
-            Silk.NET.DXGI.Format format)
+        private static bool SupportsSamplerFeedbackFormat(ID3D12Device10* device, Silk.NET.DXGI.Format format)
         {
             FeatureDataFormatSupport support = new(format);
-            int query = DeviceQueryTrace.CheckFeatureSupport(
-device, NativeFeature.FormatSupport,
-                &support,
-                (uint)sizeof(FeatureDataFormatSupport));
-            ThrowIfFailed(
-                null,
-                query,
-                NativeOperationType.Ordinary,
-                $"ID3D12Device::CheckFeatureSupport(SamplerFeedbackFormat:{format})");
-            return (support.Support1 & FormatSupport1.Texture2D) != 0 &&
-                (support.Support2 & FormatSupport2.SamplerFeedback) != 0;
+            int query = DeviceQueryTrace.CheckFeatureSupport(device, NativeFeature.FormatSupport, &support, (uint)sizeof(FeatureDataFormatSupport));
+            ThrowIfFailed(null, query, NativeOperationType.Ordinary, $"ID3D12Device::CheckFeatureSupport(SamplerFeedbackFormat:{format})");
+            return (support.Support1 & FormatSupport1.Texture2D) != 0 && (support.Support2 & FormatSupport2.SamplerFeedback) != 0;
         }
 
         private static T QueryFeature<T>(ID3D12Device10* device, NativeFeature feature)
@@ -1676,21 +1282,18 @@ device, NativeFeature.FormatSupport,
             T value = default;
             ThrowIfFailed(
                 null,
-                    DeviceQueryTrace.CheckFeatureSupport(device, feature, &value, (uint)sizeof(T)),
+                DeviceQueryTrace.CheckFeatureSupport(device, feature, &value, (uint)sizeof(T)),
                 NativeOperationType.Ordinary,
-                $"ID3D12Device::CheckFeatureSupport({feature})");
+                $"ID3D12Device::CheckFeatureSupport({feature})"
+            );
             return value;
         }
 
-        private static bool TryQueryFeature<T>(
-            ID3D12Device10* device,
-            NativeFeature feature,
-            out T value)
+        private static bool TryQueryFeature<T>(ID3D12Device10* device, NativeFeature feature, out T value)
             where T : unmanaged
         {
             T queried = default;
-            bool supported =
-                DeviceQueryTrace.CheckFeatureSupport(device, feature, &queried, (uint)sizeof(T)) >= 0;
+            bool supported = DeviceQueryTrace.CheckFeatureSupport(device, feature, &queried, (uint)sizeof(T)) >= 0;
             value = queried;
             return supported;
         }
@@ -1701,20 +1304,11 @@ device, NativeFeature.FormatSupport,
         QueueType.Graphics => CommandListType.Direct,
         QueueType.Compute => CommandListType.Compute,
         QueueType.Copy => CommandListType.Copy,
-        _ => throw new ArgumentOutOfRangeException(nameof(type)),
+        _ => default,
     };
     private static partial class RequireD3D12
     {
-        internal static D3D12Device Device(Device value) =>
-            value as D3D12Device ??
-            throw new ArgumentException(
-                "The Device was not created by the Direct3D 12 backend.",
-                nameof(value));
-
-        internal static D3D12Queue Queue(Queue value) =>
-            value as D3D12Queue ??
-            throw new ArgumentException(
-                "The Queue was not created by the Direct3D 12 backend.",
-                nameof(value));
+        internal static D3D12Device Device(Device value) => (D3D12Device)value;
+        internal static D3D12Queue Queue(Queue value) => (D3D12Queue)value;
     }
 }

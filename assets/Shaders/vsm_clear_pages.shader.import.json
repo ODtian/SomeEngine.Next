@@ -1,28 +1,37 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 28,
-  "input_hash": "11f1c4eacc5298240d8cdb7640779f496d3688e4284aa0524aa642382346675a",
+  "importer_version": 36,
+  "input_hash": "fd882e7e569a46e835933971af5ce64065868ffec603ea8ce6420da748c8c076",
   "inputs": [
     {
       "relative_path": "assets/Shaders/vsm_clear_pages.shader",
-      "content_hash": "61c2eea0591df1bd959d63913c083a8b707a30cbf336c7af6949fb0e1b14a87d"
+      "content_hash": "3a836a0489759d48eccd1a1f5bd021784c1343d695dde0aa32d392638ef0de4e"
     },
     {
       "relative_path": "assets/Shaders/vsm_clear_pages.slang",
-      "content_hash": "490b269fea86c92ef479fe7a71fd93a09e93ec72107a0d2eec740ccf682de758"
+      "content_hash": "c5b09fdf74f393f04a29fbccd249b8b30a1b1480d79fc8ba8dd38000789856cb"
     }
   ],
   "reported_inputs": [],
+  "asset_inputs": [
+    "37d3be3a-aba3-4b6a-bd0c-2d90175bd2a5",
+    "289d5d93-babf-4329-8e23-c47b465a620b",
+    "5468582d-af2a-4bc7-a38a-33a3e848f2bd"
+  ],
   "outputs": [
     {
       "asset_guid": "a9a22745-3926-5a80-b5ce-0c0ed50716bd",
       "sub_asset_key": "",
-      "input_hash": "11f1c4eacc5298240d8cdb7640779f496d3688e4284aa0524aa642382346675a",
+      "input_hash": "fd882e7e569a46e835933971af5ce64065868ffec603ea8ce6420da748c8c076",
       "dependencies": [],
       "asset_path": "vsm_clear_pages.shader.asset",
-      "version": "0a9f2dad-5e95-ade0-0954-8a6a0724152f",
-      "content_hash": "19127EFE7409BF5D616B1A68B02390CC480617C6BD13D3109FB78BB6928398A9",
-      "asset_dependencies": []
+      "version": "e81fc8a5-420f-ed98-c728-91882651cafb",
+      "content_hash": "FC24B88DCA5CFD95A396047E5EC0493B9F332F95E28E3C794F736723C4A34936",
+      "asset_dependencies": [
+        "289d5d93-babf-4329-8e23-c47b465a620b",
+        "37d3be3a-aba3-4b6a-bd0c-2d90175bd2a5",
+        "5468582d-af2a-4bc7-a38a-33a3e848f2bd"
+      ]
     }
   ]
 }

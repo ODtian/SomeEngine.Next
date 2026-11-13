@@ -27,6 +27,7 @@ public struct GpuPoseTarget : IComponent
     public ulong InputNumber;
     public CpuBoneDemand? CpuBones;
     public ReadOnlyMemory<GpuPoseReadbackRequest> Readbacks { get; internal set; }
+    public ReadOnlyMemory<GpuPoseReadbackResult> CompletedReadbacks { get; internal set; }
     public GpuPoseEvaluation? Evaluation;
     public RootMotionDelta RootMotion;
     public bool ExtractRootMotion;

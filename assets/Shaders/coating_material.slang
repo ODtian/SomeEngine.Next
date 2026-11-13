@@ -1,7 +1,7 @@
 #ifndef COATING_MATERIAL_SLANG
 #define COATING_MATERIAL_SLANG
 
-#include "material_decals.slang"
+__exported import material_decals;
 
 Texture2D<float4> CoatingMaterialTextures[];
 SamplerState CoatingMaterialSamplers[];

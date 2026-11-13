@@ -1,3 +1,4 @@
+﻿using SomeEngine.Render;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.ECS.Entities;
@@ -16,8 +17,10 @@ using SomeEngine.Resources;
 namespace SomeEngine.Terrains;
 
 internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext>, ISystem<RenderFrameSystemContext>,
-    IRenderGraphFrameExecutionObserver, IDisposable
+    IDisposable
 {
+
+    private readonly RenderPipelines _renderPipelines;
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly RenderTerrainData _fields;
@@ -28,18 +31,24 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
     private readonly Dictionary<TerrainGeometryRequest, Batch> _batches = [];
     private readonly Dictionary<(int Geometry, ulong Revision), GeometryData> _geometries = [];
     private readonly Dictionary<(Shader Shader, string Entry), ComputeData> _pipelines = [];
-    private readonly List<Task> _completions = [];
+    private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private QueryHandle _requests, _chunks, _selection;
 
-    internal RenderTerrainGeometry(IGraphicsBackend backend, Device device, ClusterRenderResources cluster,
+    internal RenderTerrainGeometry(IGraphicsBackend backend, Device device, RenderPipelines pipelines, ClusterRenderResources cluster,
         global::SomeEngine.RenderGraph.RenderGraph graph, RenderTerrainData fields, TerrainScene scene)
     {
+
+        _renderPipelines = pipelines;
+        _graph = graph;
         _backend = backend;
         _device = device;
         _fields = fields;
         _adapter = scene.GpuAdapter!;
         _scene = scene.RenderKey;
-        _builder = new(backend, device, cluster, graph, _adapter.Encoder);
+        foreach (TerrainShaderEntry entry in _adapter.Mesher.Entries) AddPipeline(entry.Shader, entry.EntryPoint);
+        AddPipeline(_adapter.Attributes.Shader, _adapter.Attributes.EntryPoint);
+        if (_adapter.Attributes.MaterialEntryPoint is { } materialEntry) AddPipeline(_adapter.Attributes.Shader, materialEntry);
+        _builder = new(backend, device, pipelines, cluster, graph, _adapter.Encoder);
         using RenderGraphEdit edit = graph.BeginEdit();
         _extensionPoint = edit.AddFrameRegion("Terrain geometry input");
         edit.Commit();
@@ -145,17 +154,18 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
         foreach (TerrainGeometryRequest request in _batches.Keys.ToArray())
             if (request.IsSubmitted && request.Chunks.All(chunk => !_geometries.ContainsKey((chunk.GeometryId, request.Revision))))
                 _batches.Remove(request);
-        _completions.RemoveAll(static task => task.IsCompletedSuccessfully);
     }
 
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
         RenderGraphFrame frame = context.Graph;
         var extension = new TerrainFrameCommands(frame, _extensionPoint);
+        GeometrySubmission submission = frame.GetFrameData(this, () => new GeometrySubmission(this));
+        frame.ObserveExecution(submission);
         foreach (Batch batch in _batches.Values)
         {
             TerrainGeometryRequest request = batch.Request;
-            if (request.IsSubmitted || batch.Pass != default || !batch.Reserved) continue;
+            if (request.IsSubmitted || !batch.Reserved || !submission.Requests.Add(request)) continue;
             request.Dependency.Complete();
             var inputExtension = extension;
             var sourceBindings = new Dictionary<string, GraphParameterResourceBinding>();
@@ -209,7 +219,6 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
                 if (previous != default) frame.OrderAfter(pass, previous);
                 previous = pass;
             }
-            batch.Pass = previous;
         }
     }
 
@@ -219,14 +228,9 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
     internal GraphPassId AddCompute(ref RenderGraphFrame frame, Shader shader, string entry,
         IReadOnlyDictionary<string, GraphParameterResourceBinding> bindings, DispatchArguments dispatch)
     {
-        if (!_pipelines.TryGetValue((shader, entry), out ComputeData? compute))
-        {
-            LinkedComputePipeline pipeline = LinkedComputePipeline.Create(_backend, _device, shader, entry, "Terrain geometry");
-            compute = new(pipeline, ClusterLinkedStageLayout.Create(pipeline.ParameterLayout));
-            _pipelines.Add((shader, entry), compute);
-        }
+        ComputeData compute = _pipelines[(shader, entry)];
         var resources = new List<GraphParameterResourceBinding>();
-        foreach (ClusterLinkedStageResource resource in compute.Layout.Resources) resources.Add(bindings[resource.Name]);
+        foreach (ShaderParameterResource resource in compute.Layout.Resources) resources.Add(bindings[resource.Name]);
         var value = new ComputePass(compute.Pipeline, resources.ToArray(), dispatch);
         return frame.AddComputePass(entry, PassQueueSelection.AnyCompatible(), value,
             new PassOptions(Culling: PassCullingMode.NeverCull),
@@ -239,32 +243,37 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
             static (ref ComputePassCommandScope commands, in ComputePass data) => commands.Dispatch(data.Dispatch));
     }
 
-    public void OnRenderGraphSubmitted(RenderGraphFrameResult result)
+    private void AddPipeline(Shader shader, string entry)
     {
-        foreach (Batch batch in _batches.Values)
+        if (_pipelines.ContainsKey((shader, entry))) return;
+        LinkedComputePipeline pipeline = LinkedComputePipeline.Create(_renderPipelines, shader, entry, "Terrain geometry");
+        _pipelines.Add((shader, entry), new(pipeline, ShaderParameterResources.Create(pipeline.ParameterLayout)));
+    }
+
+    private sealed class GeometrySubmission(RenderTerrainGeometry geometry) : IRenderGraphFrameExecutionObserver
+    {
+        internal readonly HashSet<TerrainGeometryRequest> Requests = [];
+        public void OnFrameSubmitted(in RenderGraphSubmission submission)
         {
-            TerrainGeometryRequest request = batch.Request;
-            if (request.IsSubmitted || !result.TryGetPassCompletion(batch.Pass, out QueueCompletion completion)) continue;
-            request.AcceptSubmission();
-            _completions.Add(Task.Run(() =>
+            foreach (TerrainGeometryRequest request in Requests)
             {
-                try
-                {
-                    WaitStatus status = _backend.WaitCpu(completion, Timeout.InfiniteTimeSpan);
-                    if (status != WaitStatus.Completed) throw new InvalidOperationException($"Terrain geometry ended with {status}.");
-                    request.ReleaseInput();
-                    request.Completion.Complete();
-                }
-                catch (Exception failure) { request.Completion.Fail(failure); }
-            }));
+                request.AcceptSubmission();
+                geometry._graph.RetireAfterSubmittedFrames(new CompletedGeometry(request));
+            }
         }
     }
 
-    public void OnRenderGraphFrameFinished(RenderGraphFrameResult result) => OnRenderGraphSubmitted(result);
+    private sealed class CompletedGeometry(TerrainGeometryRequest request) : IDisposable
+    {
+        public void Dispose()
+        {
+            request.ReleaseInput();
+            request.Completion.Complete();
+        }
+    }
 
     public void OnDestroy(ref RenderPrepareSystemContext context)
     {
-        Task.WhenAll(_completions).GetAwaiter().GetResult();
         foreach (TerrainGeometryRequest request in _batches.Keys) request.Withdraw();
         foreach (GeometryData geometry in _geometries.Values) _builder.Release(context, geometry.Geometry);
         context.World.ReleaseQuery(_requests);
@@ -274,7 +283,6 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
 
     public void Dispose()
     {
-        Task.WhenAll(_completions).GetAwaiter().GetResult();
         foreach (TerrainGeometryRequest request in _batches.Keys)
         {
             request.ReleaseInput();
@@ -316,12 +324,11 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
     {
         internal TerrainGeometryRequest Request { get; } = request;
         internal bool Reserved;
-        internal GraphPassId Pass;
     }
 
     [StructLayout(LayoutKind.Sequential, Size = 48)]
     private readonly record struct SurfaceParameters(Vector3 Min, float CellSize, int CellCount,
         uint VertexCapacity, uint TriangleCapacity, float FinestCellSize, uint TransitionFaces);
-    private sealed record ComputeData(LinkedComputePipeline Pipeline, ClusterLinkedStageLayout Layout);
+    private sealed record ComputeData(LinkedComputePipeline Pipeline, ShaderParameterResources Layout);
     private sealed record ComputePass(LinkedComputePipeline Pipeline, GraphParameterResourceBinding[] Bindings, DispatchArguments Dispatch);
 }

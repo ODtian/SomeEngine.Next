@@ -20,13 +20,12 @@ public sealed class SharedGeometryReadTests
         {
             geometry = edit.CreateTransientBuffer(new BufferDesc(rangeCount * 8,
                 BufferUsages.CopyDestination | BufferUsages.CopySource));
-            result = edit.RegisterExternalBuffer(output,
-                [new(BufferRange.Whole, output.InitialSync, output.InitialAccess, ResourceContentState.Undefined)]);
+            result = edit.RegisterExternalBuffer(output);
             for (int index = 0; index < readers.Length; index++)
             {
                 var data = new SparseRead(geometry, result, BufferRangeSet.Empty, (ulong)index * rangeCount * 4);
                 readers[index] = edit.AddCopyFramePass("retained geometry reader",
-                    PassQueueSelection.Exact(support.GraphicsQueue), data, default,
+                    PassQueueSelection.OnQueue(support.GraphicsQueue), data, default,
                     static (ref PassDefinition pass, ref SparseRead data) =>
                         pass.Write(data.Destination, new(data.OutputOffset, rangeCount * 4),
                             PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete),
@@ -55,7 +54,7 @@ public sealed class SharedGeometryReadTests
                 GraphBufferSlice source = frame.Upload(bytes, BufferUsages.CopySource);
                 var copies = new SparseRead(source.Buffer, geometry, ranges, source.Range.Offset);
                 GraphPassId upload = frame.AddCopyPass("frame geometry uploads",
-                    PassQueueSelection.Exact(support.GraphicsQueue), copies, default,
+                    PassQueueSelection.OnQueue(support.GraphicsQueue), copies, default,
                     static (ref PassDefinition pass, ref SparseRead data) =>
                     {
                         pass.Read(data.Source, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);

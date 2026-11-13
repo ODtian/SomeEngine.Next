@@ -1,16 +1,35 @@
+using SomeEngine.Render;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SlangShaderSharp;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Assets;
-using SomeEngine.Render.Cluster.Pipeline;
+using SomeEngine.Render.Features.Layers;
+using SomeEngine.Assets.Importers;
 using SomeEngine.RenderGraph;
 using SomeEngine.Resources;
 using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Runtime.Tests;
 
-internal sealed record HardwareOrderedDraw(Vector3[] Positions, Vector4 Color, MaterialState State)
+internal readonly record struct HardwareOrderedState
+{
+    internal byte DrawOrder { get; init; }
+    internal bool TwoSided { get; init; }
+    internal byte StencilRef { get; init; }
+    internal BlendAttachmentState Blend { get; init; }
+    internal Vector4 BlendConstant { get; init; }
+    internal DepthStencilState DepthStencil { get; init; }
+
+    public HardwareOrderedState()
+    {
+        this = default;
+        Blend = new();
+        DepthStencil = new();
+    }
+}
+
+internal sealed record HardwareOrderedDraw(Vector3[] Positions, Vector4 Color, HardwareOrderedState State)
 {
     internal bool Enabled { get; set; }
 }
@@ -22,38 +41,65 @@ internal sealed class HardwareOrderedFeature : IApplicationColorFeature
     private readonly List<(GraphPassId Pass, HardwareOrderedDraw Draw)> _draws = [];
     private readonly GraphTextureInput _color, _depth;
     private readonly GraphPassId _depthPass;
+    private readonly GraphPassId _begin;
 
     internal HardwareOrderedFeature(ApplicationRendering rendering, IReadOnlyList<HardwareOrderedDraw> draws, Matrix4x4 view,
         HardwareOrderedDraw? roundTripProbe = null)
     {
-        ClusterStencil stencil = rendering.Stencil!;
-        Shader shader = CreateShader(rendering.Device.Capabilities.CompileTarget);
-        using RenderGraphEdit edit = rendering.Graph.BeginEdit();
-        _color = edit.CreateTextureInput(); _depth = edit.CreateTextureInput();
-        RenderGraphEdit mutable = edit;
-        ClusterStencilAttachment attachment = stencil.Export(ref mutable);
-        GraphRegionId region = stencil.Region;
+        LayerComposition layers = rendering.Layers!;
+        LayerStencil stencil = layers.Stencil;
+        Shader shader = rendering.ShaderLibrary.CreateAsync("Ordered hardware reference", "ordered_hardware_reference.slang", Source)
+            .AsTask().GetAwaiter().GetResult();
+        Shader transfer = rendering.ShaderLibrary.GetAsync(rendering.Files, EngineShaderAssets.LayerStencilTransfer)
+            .AsTask().GetAwaiter().GetResult();
+        GraphRegionId region;
+        RenderGraphEdit edit = rendering.Graph.BeginEdit();
+        try
+        {
+            _color = edit.CreateTextureInput(); _depth = edit.CreateTextureInput();
+            region = edit.AddRegion("Hardware ordered reference", layers.CompositeRegion);
+            _begin = edit.AddComputeFramePass("Begin hardware ordered reference", PassQueueSelection.AnyCompatible(), 0,
+                new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition _, ref int _) => { },
+                static (ref ComputePassCommandScope _, in int _) => { }, region);
+            edit.Commit();
+        }
+        finally { edit.Dispose(); }
+        LayerStencilAttachment attachment = stencil.Export(transfer, _begin, region);
         var extent = new DrawSize((uint)rendering.Width, (uint)rendering.Height, 3, 0, Vector4.Zero);
-        LinkedRasterPipeline depthPipeline = Keep(LinkedRasterPipeline.Create(rendering.Backend, rendering.Device, shader,
+        LinkedRasterPipeline depthPipeline = Keep(LinkedRasterPipeline.Create(rendering.Pipelines, shader,
             "DepthVertex", "DepthPixel", [], Format.D32FloatS8UInt, rasterizer: new(Cull: CullType.None),
             depthStencil: new(DepthTest: true, DepthWrite: true, DepthComparison: CompareOperation.Always),
             label: "Hardware reference scene depth"));
         VariableLayoutReflection depthLayout = depthPipeline.Reflection.GetGlobalParamsVarLayout()!.Value;
-        _depthPass = AddDepth(ref mutable, attachment);
-        GraphPassId previous = _depthPass;
-        foreach (HardwareOrderedDraw draw in draws.OrderBy(draw => draw.State.DrawOrder))
-            previous = AddMaterialDraw(ref mutable, draw, attachment.Texture, previous);
-        CompletePass = attachment.Import(ref mutable, previous);
+        GraphPassId previous;
+        edit = rendering.Graph.BeginEdit();
+        try
+        {
+            _depthPass = AddDepth(ref edit, attachment);
+            previous = _depthPass;
+            foreach (HardwareOrderedDraw draw in draws.OrderBy(draw => draw.State.DrawOrder))
+                previous = AddMaterialDraw(ref edit, draw, attachment.Texture, previous);
+            edit.Commit();
+        }
+        finally { edit.Dispose(); }
+        CompletePass = attachment.Import(previous);
         if (roundTripProbe is not null)
         {
-            ClusterStencilAttachment second = stencil.Export(ref mutable);
-            GraphPassId depth = AddDepth(ref mutable, second);
-            GraphPassId probe = AddMaterialDraw(ref mutable, roundTripProbe, second.Texture, depth);
-            CompletePass = second.Import(ref mutable, probe);
+            LayerStencilAttachment second = stencil.Export(transfer, CompletePass, region);
+            GraphPassId probe;
+            edit = rendering.Graph.BeginEdit();
+            try
+            {
+                GraphPassId depth = AddDepth(ref edit, second);
+                probe = AddMaterialDraw(ref edit, roundTripProbe, second.Texture, depth);
+                edit.Commit();
+            }
+            finally { edit.Dispose(); }
+            CompletePass = second.Import(probe);
         }
-        edit.Commit();
 
-        GraphPassId AddDepth(ref RenderGraphEdit graphEdit, ClusterStencilAttachment target)
+        GraphPassId AddDepth(ref RenderGraphEdit graphEdit, LayerStencilAttachment target)
         {
             GraphPassId id = AddDraw(ref graphEdit, depthPipeline, depthLayout, extent, region);
             PassDefinition pass = graphEdit.GetPass(id);
@@ -70,8 +116,8 @@ internal sealed class HardwareOrderedFeature : IApplicationColorFeature
         GraphPassId AddMaterialDraw(ref RenderGraphEdit graphEdit, HardwareOrderedDraw draw, GraphTextureId attachmentTexture,
             GraphPassId before)
         {
-            MaterialState state = draw.State;
-            LinkedRasterPipeline pipeline = Keep(LinkedRasterPipeline.Create(rendering.Backend, rendering.Device, shader,
+            HardwareOrderedState state = draw.State;
+            LinkedRasterPipeline pipeline = Keep(LinkedRasterPipeline.Create(rendering.Pipelines, shader,
                 "DrawVertex", "DrawPixel", [Format.R16G16B16A16Float], Format.D32FloatS8UInt,
                 rasterizer: new(Cull: state.TwoSided ? CullType.None : CullType.Back), depthStencil: state.DepthStencil,
                 blendAttachments: [state.Blend], label: "Hardware reference ordered material",
@@ -87,8 +133,7 @@ internal sealed class HardwareOrderedFeature : IApplicationColorFeature
                 MemoryMarshal.AsBytes(values.AsSpan()).CopyTo(mapped.Bytes);
                 mapped.Flush(mapped.Range);
             }
-            GraphBufferId uniformId = graphEdit.RegisterExternalBuffer(uniforms,
-                [new(BufferRange.Whole, PipelineSync.AllShading, ResourceAccess.ConstantBuffer, ResourceContentState.Defined)]);
+            GraphBufferId uniformId = graphEdit.RegisterExternalBuffer(uniforms);
             VariableLayoutReflection layout = pipeline.Reflection.GetGlobalParamsVarLayout()!.Value;
             var size = extent with { Vertices = (uint)draw.Positions.Length, StencilRef = state.StencilRef, BlendConstant = state.BlendConstant };
             GraphPassId id = AddDraw(ref graphEdit, pipeline, layout, size, region);
@@ -112,7 +157,7 @@ internal sealed class HardwareOrderedFeature : IApplicationColorFeature
     }
 
     public GraphPassId CompletePass { get; }
-    public void OrderAfter(ref RenderGraphEdit graph, GraphPassId colorReady) => graph.OrderAfter(_depthPass, colorReady);
+    public void OrderAfter(ref RenderGraphEdit graph, GraphPassId colorReady) => graph.OrderAfter(_begin, colorReady);
     public GraphTextureId Record(ref RenderGraphFrame graph, GraphTextureId color, GraphTextureId depth)
     {
         graph.SetTextureInput(_color, color); graph.SetTextureInput(_depth, depth);
@@ -127,7 +172,7 @@ internal sealed class HardwareOrderedFeature : IApplicationColorFeature
     {
         pass.BindParameterBlock(layout);
         pass.Bind(GraphParameterResourceBinding.Null(ResourceBindingType.ConstantBuffer));
-        pass.Bind(edit.CreateTextureSrv(_depth, new(0, 1, 0, 1, TextureAspects.Depth), Format.D32Float,
+        pass.Bind(edit.CreateTextureSrv(_depth, new(0, 1, 0, 1, TextureAspects.Color), Format.R32Float,
             TextureViewDimension.Texture2DArray), PipelineSync.PixelShading);
     }
 
@@ -145,23 +190,6 @@ internal sealed class HardwareOrderedFeature : IApplicationColorFeature
             }, region: region);
 
     private readonly record struct DrawSize(uint Width, uint Height, uint Vertices, uint StencilRef, Vector4 BlendConstant);
-
-    private static Shader CreateShader(SlangCompileTarget compileTarget)
-    {
-        IGlobalSession global = Shader.CreateSlangGlobalSession();
-        TargetDesc target = new() { Format = compileTarget,
-            Profile = global.FindProfile(compileTarget == SlangCompileTarget.Dxil ? "sm_6_6" : "spirv_1_5") };
-        global.CreateSession(new SessionDesc { Targets = [target], DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
-            CompilerOptionEntries = [new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(0)),
-                new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0))] }, out ISession session);
-        IModule unit = session.LoadModuleFromSource("ordered_hardware_reference", "ordered_hardware_reference.slang",
-            Slang.CreateBlob(Source), out ISlangBlob? diagnostics) ?? throw new InvalidDataException(diagnostics?.AsString);
-        var entries = new IEntryPoint[4];
-        for (int index = 0; index < entries.Length; index++) unit.GetDefinedEntryPoint(index, out entries[index]);
-        session.CreateCompositeComponentType([unit, .. entries], out IComponentType combined, out diagnostics);
-        Assert.True(combined.Link(out IComponentType linked, out diagnostics).Succeeded, diagnostics?.AsString);
-        return Shader.CreateFromSlang("Ordered hardware reference", global, session, [unit], entries, linked, [target], generateLibraryCode: false);
-    }
 
     private const string Source = """
         struct DrawParameters { float4 Positions[6]; float4 Color; };

@@ -1,3 +1,4 @@
+﻿using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Text;
 using SlangShaderSharp;
@@ -130,11 +131,10 @@ public sealed class ResourceReuseTests
         await using var storage = new ReadingStorage();
         AssetId<ShaderAsset> id = await WriteShaderAsync(directory, storage);
         await using var files = new AssetLoader(storage);
-        var values = new WeakValues<AssetResourceKey<ShaderAsset>, Shader>();
-        SessionDesc settings = ShaderSettings();
+        using var library = new ShaderLibrary(SlangShaderImporter.GlobalSession, ShaderSettings());
 
-        Shader first = await ShaderAsset.GetAsync(files, id, values, SlangShaderImporter.GlobalSession, settings);
-        Shader second = await ShaderAsset.GetAsync(files, id, values, SlangShaderImporter.GlobalSession, settings);
+        Shader first = await library.GetAsync(files, id);
+        Shader second = await library.GetAsync(files, id);
 
         Assert.Same(first, second);
         Assert.Equal(1, storage.Opens);
@@ -147,12 +147,11 @@ public sealed class ResourceReuseTests
         await using var storage = new ReadingStorage(block: true);
         AssetId<ShaderAsset> id = await WriteShaderAsync(directory, storage);
         await using var files = new AssetLoader(storage);
-        var values = new WeakValues<AssetResourceKey<ShaderAsset>, Shader>();
-        SessionDesc settings = ShaderSettings();
-        Task<Shader> first = ShaderAsset.GetAsync(files, id, values, SlangShaderImporter.GlobalSession, settings).AsTask();
+        using var library = new ShaderLibrary(SlangShaderImporter.GlobalSession, ShaderSettings());
+        Task<Shader> first = library.GetAsync(files, id).AsTask();
         await storage.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
         Task<Shader>[] others = Enumerable.Range(0, 31).Select(_ =>
-            ShaderAsset.GetAsync(files, id, values, SlangShaderImporter.GlobalSession, settings).AsTask()).ToArray();
+            library.GetAsync(files, id).AsTask()).ToArray();
         Assert.Equal(1, storage.Opens);
         storage.ReleaseReads();
         Shader expected = await first;
@@ -163,20 +162,19 @@ public sealed class ResourceReuseTests
     }
 
     [Fact]
-    public async Task DifferentFileSourcesCreateTheirOwnShaders()
+    public async Task ShaderContentIsSharedAcrossFileReaders()
     {
         using var directory = new AssetTestDirectory();
         await using var storage = new ReadingStorage();
         AssetId<ShaderAsset> id = await WriteShaderAsync(directory, storage);
         await using var firstFiles = new AssetLoader(storage);
         await using var secondFiles = new AssetLoader(storage);
-        var values = new WeakValues<AssetResourceKey<ShaderAsset>, Shader>();
-        SessionDesc settings = ShaderSettings();
+        using var library = new ShaderLibrary(SlangShaderImporter.GlobalSession, ShaderSettings());
 
-        Shader first = await ShaderAsset.GetAsync(firstFiles, id, values, SlangShaderImporter.GlobalSession, settings);
-        Shader second = await ShaderAsset.GetAsync(secondFiles, id, values, SlangShaderImporter.GlobalSession, settings);
+        Shader first = await library.GetAsync(firstFiles, id);
+        Shader second = await library.GetAsync(secondFiles, id);
 
-        Assert.NotSame(first, second);
+        Assert.Same(first, second);
         Assert.Equal(2, storage.Opens);
         GC.KeepAlive(first);
     }
@@ -188,38 +186,40 @@ public sealed class ResourceReuseTests
         await using var storage = new ReadingStorage();
         AssetId<ShaderAsset> id = await WriteShaderAsync(directory, storage);
         await using var files = new AssetLoader(storage);
-        var values = new WeakValues<AssetResourceKey<ShaderAsset>, Shader>();
-        SessionDesc settings = ShaderSettings();
-        Shader first = await ShaderAsset.GetAsync(files, id, values, SlangShaderImporter.GlobalSession, settings);
+        using var library = new ShaderLibrary(SlangShaderImporter.GlobalSession, ShaderSettings());
+        Shader first = await library.GetAsync(files, id);
 
-        await WriteShaderAsync(directory, storage, id.Value);
-        Shader second = await ShaderAsset.GetAsync(files, id, values, SlangShaderImporter.GlobalSession, settings);
+        await WriteShaderAsync(directory, storage, id.Value, addition: 1);
+        await library.RefreshAsync();
+        Shader second = await library.GetAsync(files, id);
 
         Assert.NotSame(first, second);
         Assert.True(first.TryGetSlangEntry(0, "Compute", SlangStage.Compute, out EntryPointReflection oldEntry));
         Assert.True(first.GetSlangEntryBlob(0, oldEntry)!.GetBufferSize() > 0);
-        Assert.Same(second, await ShaderAsset.GetAsync(files, id, values, SlangShaderImporter.GlobalSession, settings));
+        Assert.Same(second, await library.GetAsync(files, id));
+        Assert.NotEqual(first.GetSlangEntryBlob(0, oldEntry)!.Buffer.ToArray(),
+            second.GetSlangEntryBlob(0, second.RequireSlangEntry(0, "Compute", SlangStage.Compute))!.Buffer.ToArray());
         Assert.Equal(2, storage.Opens);
     }
 
     [Fact]
-    public async Task CollectedShaderIsCreatedAgainFromTheSameSource()
+    public async Task ShaderLibraryRetainsAcquiredShaders()
     {
         using var directory = new AssetTestDirectory();
         await using var storage = new ReadingStorage();
         AssetId<ShaderAsset> id = await WriteShaderAsync(directory, storage);
         await using var files = new AssetLoader(storage);
-        var values = new WeakValues<AssetResourceKey<ShaderAsset>, Shader>();
-        SessionDesc settings = ShaderSettings();
-        WeakReference<Shader> first = GetCollectibleShader(files, id, values, settings);
+        using var library = new ShaderLibrary(SlangShaderImporter.GlobalSession, ShaderSettings());
+        WeakReference<Shader> first = GetCollectibleShader(files, id, library);
         Collect();
-        Assert.False(first.TryGetTarget(out _));
+        Assert.True(first.TryGetTarget(out Shader? retained));
 
-        Shader second = await ShaderAsset.GetAsync(files, id, values, SlangShaderImporter.GlobalSession, settings);
+        Shader second = await library.GetAsync(files, id);
+        Assert.Same(retained, second);
 
         Assert.True(second.TryGetSlangEntry(0, "Compute", SlangStage.Compute, out EntryPointReflection entry));
         Assert.True(second.GetSlangEntryBlob(0, entry)!.GetBufferSize() > 0);
-        Assert.Same(second, await ShaderAsset.GetAsync(files, id, values, SlangShaderImporter.GlobalSession, settings));
+        Assert.Same(second, await library.GetAsync(files, id));
     }
 
     [Fact]
@@ -229,8 +229,8 @@ public sealed class ResourceReuseTests
         await using var storage = new ReadingStorage();
         AssetId<ShaderAsset> id = await WriteShaderAsync(directory, storage);
         await using var files = new AssetLoader(storage);
-        var values = new WeakValues<AssetResourceKey<ShaderAsset>, Shader>();
-        Shader shader = await ShaderAsset.GetAsync(files, id, values, SlangShaderImporter.GlobalSession, ShaderSettings());
+        using var library = new ShaderLibrary(SlangShaderImporter.GlobalSession, ShaderSettings());
+        Shader shader = await library.GetAsync(files, id);
 
         await files.DisposeAsync();
 
@@ -263,7 +263,7 @@ public sealed class ResourceReuseTests
     }
 
     private static async Task<AssetId<ShaderAsset>> WriteShaderAsync(
-        AssetTestDirectory directory, ReadingStorage storage, Guid id = default)
+        AssetTestDirectory directory, ReadingStorage storage, Guid id = default, uint addition = 0)
     {
         IGlobalSession slang = SlangShaderImporter.GlobalSession;
         Assert.True(slang.CreateSession(ShaderSettings(), out ISession session).Succeeded);
@@ -271,8 +271,8 @@ public sealed class ResourceReuseTests
             RWStructuredBuffer<uint> Values;
             [shader("compute")]
             [numthreads(1, 1, 1)]
-            void Compute(uint3 thread : SV_DispatchThreadID) { Values[thread.x] = thread.x; }
-            """));
+            void Compute(uint3 thread : SV_DispatchThreadID) { Values[thread.x] = thread.x + ADDITIONu; }
+            """.Replace("ADDITION", addition.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)));
         IModule? input = session.LoadModuleFromSource("reuse", "reuse.slang", text, out ISlangBlob? diagnostics);
         Assert.True(input is not null, diagnostics?.AsString);
         Assert.True(input!.Serialize(out ISlangBlob serialized).Succeeded);
@@ -302,8 +302,8 @@ public sealed class ResourceReuseTests
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static WeakReference<Shader> GetCollectibleShader(AssetLoader files, AssetId<ShaderAsset> id,
-        WeakValues<AssetResourceKey<ShaderAsset>, Shader> values, SessionDesc settings)
-        => new(ShaderAsset.GetAsync(files, id, values, SlangShaderImporter.GlobalSession, settings).AsTask().GetAwaiter().GetResult());
+        ShaderLibrary library)
+        => new(library.GetAsync(files, id).AsTask().GetAwaiter().GetResult());
 
     private static void Collect()
     {

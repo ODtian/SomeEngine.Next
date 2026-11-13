@@ -26,18 +26,26 @@ public sealed class ApplicationShaderLifetimeTests(TransparencyContentFixture co
     private async Task<SceneLinearImage> RenderAndCloseApplication(string backend)
     {
         SceneLinearImage? image = null;
+        var materials = new List<Material>();
         await SceneImages.RunAsync(backend, new SceneScript(content.DirectoryPath, 8,
         [
             new(0, edit =>
             {
                 foreach (var entity in edit.MeshEntities)
                 {
-                    Material material = edit.GetMaterial(entity);
-                    material.State = material.State with { Surface = SurfaceMode.Translucent };
+                    materials.Add(edit.GetMaterial(entity));
                 }
             }),
             new(7, edit => edit.CaptureLinearImage(frame => image = frame)),
-        ]), "--hardware-raster", "--no-taa", "--no-vsm", "--static-scene");
+        ])
+        {
+            CreateFrameFeatures = rendering =>
+            {
+                var pass = rendering.Layers!.AddPass(new("Shader lifetime layers"));
+                foreach (Material material in materials) material.Layer = new(pass, 0, new());
+                return [];
+            },
+        }, "--hardware-raster", "--no-taa", "--no-vsm", "--static-scene");
         return Assert.IsType<SceneLinearImage>(image);
     }
 }

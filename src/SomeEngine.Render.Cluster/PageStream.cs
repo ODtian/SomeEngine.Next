@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using SomeEngine.Resources.Geometry;
 using SomeEngine.Serialization.Streaming;
@@ -13,7 +13,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
 {
     internal const int DefaultMaxInFlightLoads = 1024;
     internal const long DefaultMaxRetainedBytes = 64L * 1024 * 1024;
-    internal const int DefaultMaxPendingFaultWords = 16 * 1024;
+    internal const int DefaultMaximumFaultRequests = 16 * 1024;
     internal const int DefaultMaxQueuedPages = 16 * 1024;
     private const int ConcurrentPageReads = 8;
 
@@ -23,11 +23,11 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         Exception? Error);
 
     private readonly ClusterPageRequest[] _faultInbox;
-    private ReadOnlyMemory<ClusterPageDemand> _demandInbox;
+    private ReadOnlyMemory<ClusterPagePriority> _demandInbox;
     private bool _hasDemand;
     private bool _demandComplete;
     private ulong _demandFrameIdentity;
-    private readonly Dictionary<uint, ClusterPageRequest> _pendingRequests = new();
+    private readonly Dictionary<uint, ClusterPageRequest> _requestedLeaves = new();
     private readonly Dictionary<uint, uint> _pagePriorities = [];
     private readonly Dictionary<uint, uint> _queuedPages = new();
     private readonly List<KeyValuePair<uint, uint>> _loadCandidates = [];
@@ -37,7 +37,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
     private readonly object _coordinatorGate = new();
     private readonly object _completionGate = new();
     private readonly object _faultGate = new();
-    private readonly object _snapshotGate = new();
+    private readonly object _diagnosticsGate = new();
     private readonly ClusterMeshes _resources;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly TaskCompletionSource _disposalCompletion = new(
@@ -45,20 +45,20 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
     private Task _shutdownCancellation = Task.CompletedTask;
     private readonly int _maxInFlightLoads;
     private readonly long _maxRetainedBytes;
-    private readonly int _maxPendingFaultWords;
+    private readonly int _maximumFaultRequests;
     private readonly int _maxQueuedPages;
     private long _loadingBytes;
-    private int _pendingFaultWords;
-    private ulong _pendingReportedFaults;
-    private ulong _pendingStoredFaults;
-    private ulong _pendingDroppedFaults;
+    private int _faultRequestCount;
+    private ulong _receivedFaultCount;
+    private ulong _receivedStoredFaultCount;
+    private ulong _receivedDroppedFaultCount;
     private ulong _reportedFaultCount;
     private ulong _storedFaultCount;
     private ulong _droppedFaultCount;
     private ulong _totalDroppedFaultCount;
     private uint _uniqueFaultLeafCount;
     private uint _knownFaultLeafCount;
-    private uint _stagedPageCount;
+    private uint _loadedPageCount;
     private uint _failedPageCount;
     private uint _backpressuredPageCount;
     private ulong _totalLoadFailureCount;
@@ -66,18 +66,18 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
     private ulong _updateRevision;
     private ulong _failureSequence;
     private PageStreamFailure? _lastFailure;
-    private PageStreamSnapshot _snapshot;
-    private PageStreamSnapshot? _disposeTerminalSnapshot;
+    private PageStreamDiagnostics _diagnostics;
+    private PageStreamDiagnostics? _closingDiagnostics;
     private int _lifecycleState;
-    private int _disposePendingLoads;
+    private int _closingLoadCount;
     private int _disposeSynchronousCleanupComplete;
     private int _disposeCompletionPublished;
     private int _resourcesAttached;
 
-    public PageStreamSnapshot CaptureSnapshot()
+    public PageStreamDiagnostics CaptureDiagnostics()
     {
-        lock (_snapshotGate)
-            return _snapshot;
+        lock (_diagnosticsGate)
+            return _diagnostics;
     }
 
     public PageStream(ClusterMeshes resources)
@@ -85,7 +85,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             resources,
             DefaultMaxInFlightLoads,
             DefaultMaxRetainedBytes,
-            DefaultMaxPendingFaultWords,
+            DefaultMaximumFaultRequests,
             DefaultMaxQueuedPages)
     {
     }
@@ -94,7 +94,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         ClusterMeshes resources,
         int maxInFlightLoads = DefaultMaxInFlightLoads,
         long maxRetainedBytes = DefaultMaxRetainedBytes,
-        int maxPendingFaultWords = DefaultMaxPendingFaultWords,
+        int maximumFaultRequests = DefaultMaximumFaultRequests,
         int maxQueuedPages = DefaultMaxQueuedPages)
     {
         _resources = resources ?? throw new ArgumentNullException(nameof(resources));
@@ -106,22 +106,22 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                 nameof(maxRetainedBytes),
                 $"The retained-byte budget must fit one maximum-size page ({MeshPageHeader.MaxPageSize} bytes).");
         }
-        if (maxPendingFaultWords <= 0)
-            throw new ArgumentOutOfRangeException(nameof(maxPendingFaultWords));
+        if (maximumFaultRequests <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maximumFaultRequests));
         if (maxQueuedPages <= 0)
             throw new ArgumentOutOfRangeException(nameof(maxQueuedPages));
 
         _maxInFlightLoads = maxInFlightLoads;
         _maxRetainedBytes = maxRetainedBytes;
-        _maxPendingFaultWords = maxPendingFaultWords;
+        _maximumFaultRequests = maximumFaultRequests;
         _maxQueuedPages = maxQueuedPages;
-        _faultInbox = new ClusterPageRequest[maxPendingFaultWords];
-        _pendingRequests.EnsureCapacity(maxPendingFaultWords);
+        _faultInbox = new ClusterPageRequest[maximumFaultRequests];
+        _requestedLeaves.EnsureCapacity(maximumFaultRequests);
         _queuedPages.EnsureCapacity(maxQueuedPages);
         _loadCandidates.EnsureCapacity(maxQueuedPages);
         _loadingPages.EnsureCapacity(maxInFlightLoads);
         _completedStagedPages.EnsureCapacity(maxInFlightLoads);
-        PublishSnapshot(PageStreamLifecycle.Active);
+        UpdateDiagnostics(PageStreamLifecycle.Active);
         try
         {
             _resources.AttachPageStream();
@@ -148,23 +148,23 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
 
             int acceptedCount = Math.Min(
                 faults.Requests.Length,
-                _maxPendingFaultWords - _pendingFaultWords);
+                _maximumFaultRequests - _faultRequestCount);
             ulong accepted = checked((uint)acceptedCount);
             ulong dropped = faults.ReportedCount - accepted;
             if (acceptedCount != 0)
             {
                 faults.Requests[..acceptedCount].CopyTo(
-                    _faultInbox.AsSpan(_pendingFaultWords, acceptedCount));
-                _pendingFaultWords = checked(_pendingFaultWords + acceptedCount);
+                    _faultInbox.AsSpan(_faultRequestCount, acceptedCount));
+                _faultRequestCount = checked(_faultRequestCount + acceptedCount);
             }
 
-            _pendingReportedFaults = SaturatingAdd(_pendingReportedFaults, faults.ReportedCount);
-            _pendingStoredFaults = SaturatingAdd(_pendingStoredFaults, accepted);
-            _pendingDroppedFaults = SaturatingAdd(_pendingDroppedFaults, dropped);
+            _receivedFaultCount = SaturatingAdd(_receivedFaultCount, faults.ReportedCount);
+            _receivedStoredFaultCount = SaturatingAdd(_receivedStoredFaultCount, accepted);
+            _receivedDroppedFaultCount = SaturatingAdd(_receivedDroppedFaultCount, dropped);
         }
     }
 
-    internal void PushDemand(ReadOnlyMemory<ClusterPageDemand> demands, bool complete, ulong frameIdentity)
+    internal void PushDemand(ReadOnlyMemory<ClusterPagePriority> demands, bool complete, ulong frameIdentity)
     {
         lock (_faultGate)
         {
@@ -176,7 +176,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             // Fault diagnostics retain their separate accumulation across all frames.
             // The feedback channel supplies a private array that is not modified after enqueue.
             // Retain it until this coordinator takes the demand instead of copying a second inbox.
-            int count = Math.Min(demands.Length, _maxPendingFaultWords);
+            int count = Math.Min(demands.Length, _maximumFaultRequests);
             _demandInbox = demands[..count];
             _demandComplete = complete && count == demands.Length;
             _hasDemand = true;
@@ -192,15 +192,15 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         try
         {
             ThrowIfNotActive();
-            bool? demandComplete = DrainFaultInbox(out ReadOnlyMemory<ClusterPageDemand> demands);
+            bool? demandComplete = DrainFaultInbox(out ReadOnlyMemory<ClusterPagePriority> demands);
             DrainCompleted(out uint stagedPages, out uint failedPages);
             ClusterStreamingDemand? demand = QueueRequestedPages(demands.Span, demandComplete);
             StartQueuedPageLoads();
-            _stagedPageCount = stagedPages;
+            _loadedPageCount = stagedPages;
             _failedPageCount = failedPages;
             _totalLoadFailureCount = SaturatingAdd(_totalLoadFailureCount, failedPages);
             _updateRevision = SaturatingAdd(_updateRevision, 1);
-            PublishSnapshot(PageStreamLifecycle.Active);
+            UpdateDiagnostics(PageStreamLifecycle.Active);
             return demand;
         }
         finally
@@ -209,7 +209,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         }
     }
 
-    private bool? DrainFaultInbox(out ReadOnlyMemory<ClusterPageDemand> demands)
+    private bool? DrainFaultInbox(out ReadOnlyMemory<ClusterPagePriority> demands)
     {
         _uniqueFaultLeafCount = 0;
         _knownFaultLeafCount = 0;
@@ -220,19 +220,19 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
 
         lock (_faultGate)
         {
-            _pendingRequests.EnsureCapacity(
-                checked(_pendingRequests.Count + _pendingFaultWords));
-            _reportedFaultCount = _pendingReportedFaults;
-            _storedFaultCount = _pendingStoredFaults;
-            _droppedFaultCount = _pendingDroppedFaults;
-            _pendingReportedFaults = 0;
-            _pendingStoredFaults = 0;
-            _pendingDroppedFaults = 0;
+            _requestedLeaves.EnsureCapacity(
+                checked(_requestedLeaves.Count + _faultRequestCount));
+            _reportedFaultCount = _receivedFaultCount;
+            _storedFaultCount = _receivedStoredFaultCount;
+            _droppedFaultCount = _receivedDroppedFaultCount;
+            _receivedFaultCount = 0;
+            _receivedStoredFaultCount = 0;
+            _receivedDroppedFaultCount = 0;
 
-            foreach (ClusterPageRequest request in _faultInbox.AsSpan(0, _pendingFaultWords))
-                if (!_pendingRequests.TryGetValue(request.LeafNodeIndex, out var current) || request.Priority > current.Priority)
-                    _pendingRequests[request.LeafNodeIndex] = request;
-            _pendingFaultWords = 0;
+            foreach (ClusterPageRequest request in _faultInbox.AsSpan(0, _faultRequestCount))
+                if (!_requestedLeaves.TryGetValue(request.LeafNodeIndex, out var current) || request.Priority > current.Priority)
+                    _requestedLeaves[request.LeafNodeIndex] = request;
+            _faultRequestCount = 0;
             if (_hasDemand)
             {
                 demandComplete = _demandComplete;
@@ -247,15 +247,15 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         return demandComplete;
     }
 
-    private ClusterStreamingDemand? QueueRequestedPages(ReadOnlySpan<ClusterPageDemand> demands, bool? demandComplete)
+    private ClusterStreamingDemand? QueueRequestedPages(ReadOnlySpan<ClusterPagePriority> demands, bool? demandComplete)
     {
-        if (_pendingRequests.Count == 0 && !demandComplete.HasValue)
+        if (_requestedLeaves.Count == 0 && !demandComplete.HasValue)
             return null;
 
         ClusterStreamingDemand? demand = null;
         if (demandComplete.HasValue)
         {
-            foreach (ClusterPageDemand request in demands)
+            foreach (ClusterPagePriority request in demands)
                 if (!_pagePriorities.TryGetValue(request.PageId, out uint priority) || request.Priority > priority)
                     _pagePriorities[request.PageId] = request.Priority;
             _resources.CollectPageDependencies(_pagePriorities);
@@ -267,8 +267,8 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
 
         // Fault packets may be older than the latest view. They still contribute
         // diagnostics and reads, but never replace that view's protection or quality.
-        _uniqueFaultLeafCount = checked((uint)_pendingRequests.Count);
-        foreach (ClusterPageRequest request in _pendingRequests.Values)
+        _uniqueFaultLeafCount = checked((uint)_requestedLeaves.Count);
+        foreach (ClusterPageRequest request in _requestedLeaves.Values)
         {
             PageFaultResolution resolution = _resources.ResolvePageFault(request.LeafNodeIndex);
             if (resolution.Kind == PageFaultResolutionKind.Unknown)
@@ -287,7 +287,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         }
         _resources.CollectPageDependencies(_pagePriorities);
         QueueResolvedPages();
-        _pendingRequests.Clear();
+        _requestedLeaves.Clear();
         _pagePriorities.Clear();
         return demand;
     }
@@ -344,7 +344,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             PageFaultResolution resolution = _resources.ResolvePage(pageID);
             if (resolution.Kind is PageFaultResolutionKind.Unknown or
                 PageFaultResolutionKind.Satisfied or
-                PageFaultResolutionKind.Pending)
+                PageFaultResolutionKind.UploadQueued)
                 continue;
             if (_permanentlyFailedPages.Contains(pageID) ||
                 _loadingPages.ContainsKey(pageID))
@@ -403,7 +403,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         }
 
         if (Volatile.Read(ref _lifecycleState) == 1 &&
-            Interlocked.Decrement(ref _disposePendingLoads) == 0)
+            Interlocked.Decrement(ref _closingLoadCount) == 0)
         {
             TryFinishDisposal();
         }
@@ -502,48 +502,48 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             _permanentlyFailedPages.Add(pageId);
     }
 
-    private void PublishSnapshot(PageStreamLifecycle lifecycle)
-        => WriteSnapshot(CreateSnapshot(lifecycle, CurrentWork()));
+    private void UpdateDiagnostics(PageStreamLifecycle lifecycle)
+        => WriteDiagnostics(CreateDiagnostics(lifecycle, CurrentWork()));
 
-    private void WriteSnapshot(PageStreamSnapshot snapshot)
+    private void WriteDiagnostics(PageStreamDiagnostics diagnostics)
     {
-        lock (_snapshotGate)
-            _snapshot = snapshot;
+        lock (_diagnosticsGate)
+            _diagnostics = diagnostics;
     }
 
-    private PageStreamSnapshot CreateSnapshot(
+    private PageStreamDiagnostics CreateDiagnostics(
         PageStreamLifecycle lifecycle,
-        PageStreamWorkSnapshot work)
-        => CreateSnapshot(
+        PageStreamWorkDiagnostics work)
+        => CreateDiagnostics(
             lifecycle,
             work,
-            new PageStreamTotalsSnapshot(
+            new PageStreamTotalsDiagnostics(
                 _totalDroppedFaultCount,
                 _totalLoadFailureCount,
                 _totalBackpressuredPageCount));
 
-    private PageStreamSnapshot CreateSnapshot(
+    private PageStreamDiagnostics CreateDiagnostics(
         PageStreamLifecycle lifecycle,
-        PageStreamWorkSnapshot work,
-        PageStreamTotalsSnapshot totals)
+        PageStreamWorkDiagnostics work,
+        PageStreamTotalsDiagnostics totals)
         => new(
             _resources.EpochId,
             lifecycle,
             _updateRevision,
-            new PageStreamUpdateSnapshot(
+            new PageStreamUpdateDiagnostics(
                 _reportedFaultCount,
                 _storedFaultCount,
                 _droppedFaultCount,
                 _uniqueFaultLeafCount,
                 _knownFaultLeafCount,
-                _stagedPageCount,
+                _loadedPageCount,
                 _failedPageCount,
                 _backpressuredPageCount),
             totals,
             work,
             _lastFailure);
 
-    private PageStreamWorkSnapshot CurrentWork()
+    private PageStreamWorkDiagnostics CurrentWork()
         => new(
             _queuedPages.Count,
             _loadingPages.Count,
@@ -576,33 +576,33 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                             "Completed Cluster page loads exceed the tracked in-flight load count.");
                     }
 
-                    int pendingLoads = _loadingPages.Count - completedCount;
-                    var finalTotals = new PageStreamTotalsSnapshot(
-                        SaturatingAdd(_totalDroppedFaultCount, _pendingDroppedFaults),
+                    int closingLoads = _loadingPages.Count - completedCount;
+                    var finalTotals = new PageStreamTotalsDiagnostics(
+                        SaturatingAdd(_totalDroppedFaultCount, _receivedDroppedFaultCount),
                         _totalLoadFailureCount,
                         _totalBackpressuredPageCount);
-                    PageStreamSnapshot disposing = CreateSnapshot(
+                    PageStreamDiagnostics disposing = CreateDiagnostics(
                         PageStreamLifecycle.Disposing,
                         CurrentWork(),
                         finalTotals);
-                    PageStreamSnapshot terminal = CreateSnapshot(
+                    PageStreamDiagnostics terminal = CreateDiagnostics(
                         PageStreamLifecycle.Disposed,
                         default,
                         finalTotals);
 
-                    _disposePendingLoads = pendingLoads;
-                    _disposeTerminalSnapshot = terminal;
+                    _closingLoadCount = closingLoads;
+                    _closingDiagnostics = terminal;
                     _totalDroppedFaultCount = finalTotals.DroppedFaults;
                     Volatile.Write(ref _lifecycleState, 1);
-                    WriteSnapshot(disposing);
+                    WriteDiagnostics(disposing);
 
-                    _pendingFaultWords = 0;
+                    _faultRequestCount = 0;
                     _demandInbox = default;
                     _hasDemand = false;
-                    _pendingReportedFaults = 0;
-                    _pendingStoredFaults = 0;
-                    _pendingDroppedFaults = 0;
-                    _pendingRequests.Clear();
+                    _receivedFaultCount = 0;
+                    _receivedStoredFaultCount = 0;
+                    _receivedDroppedFaultCount = 0;
+                    _requestedLeaves.Clear();
                     _queuedPages.Clear();
                     _completedStagedPages.Clear();
                     _loadingPages.Clear();
@@ -646,7 +646,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
     {
         Task cancellation = Volatile.Read(ref _shutdownCancellation);
         if (Volatile.Read(ref _disposeSynchronousCleanupComplete) == 0 ||
-            Volatile.Read(ref _disposePendingLoads) != 0 ||
+            Volatile.Read(ref _closingLoadCount) != 0 ||
             !cancellation.IsCompleted ||
             Interlocked.CompareExchange(ref _disposeCompletionPublished, 1, 0) != 0)
         {
@@ -661,14 +661,14 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             try { _shutdown.Dispose(); }
             catch { }
 
-            PageStreamSnapshot terminal = _disposeTerminalSnapshot ??
-                throw new InvalidOperationException("PageStream disposal has no prepared terminal snapshot.");
+            PageStreamDiagnostics terminal = _closingDiagnostics ??
+                throw new InvalidOperationException("PageStream disposal has no prepared terminal diagnostics.");
             if (Volatile.Read(ref _resourcesAttached) != 0)
             {
                 _resources.DetachPageStream();
                 Volatile.Write(ref _resourcesAttached, 0);
             }
-            WriteSnapshot(terminal);
+            WriteDiagnostics(terminal);
             Volatile.Write(ref _lifecycleState, 2);
             _disposalCompletion.TrySetResult();
         }

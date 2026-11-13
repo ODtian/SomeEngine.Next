@@ -11,7 +11,7 @@ namespace SomeEngine.Graphics;
 public readonly record struct CommandContextDesc(
     QueueType QueueType,
     uint QueueIndex,
-    uint InitialSlotCount,
+    uint InitialBufferCount,
     bool Bundle = false,
     string? Label = null);
 
@@ -24,8 +24,8 @@ public readonly record struct CommandContextDesc(
 public readonly record struct CommandRecordingDesc(
     uint InitialResourceDescriptorCapacity = 0,
     uint InitialSamplerDescriptorCapacity = 0,
-    uint InitialCapturedResourceCapacity = 0,
-    string? Label = null);
+    string? Label = null,
+    bool Repeatable = false);
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe and collectively perform one logical release; normal use racing with Dispose is not.</para>
@@ -53,292 +53,96 @@ public abstract class CommandContext : DeviceResource
     public bool Bundle { get; }
 }
 
-internal abstract class RecordedCommandsLease
+internal abstract class RecordedCommandsData
 {
-    private readonly object _gate = new();
     private ulong _sequence;
-    private RecordedCommandsStatus _status = RecordedCommandsStatus.Discarded;
-    private bool _callerDisposed = true;
-    private int _callerReleaseState = 2;
-    private int _callerReleaseOwnerThreadId;
+    private RecordedCommands? _commands;
 
-    internal event Action<RecordedCommandsLease, ulong>? Discarded;
-
-    protected RecordedCommandsLease(Device device, Queue queue)
-    {
-        Device = device;
-        Queue = queue;
-    }
-
+    protected RecordedCommandsData(Device device, Queue queue) => (Device, Queue) = (device, queue);
     internal Device Device { get; }
     internal Queue Queue { get; }
-    internal RecordedCommandsStatus GetStatus(ulong sequence)
-    {
-        lock (_gate)
-        {
-            EnsureSequenceUnderGate(sequence);
-            return _callerDisposed ? RecordedCommandsStatus.Disposed : _status;
-        }
-    }
+    internal event Action<RecordedCommandsData, ulong>? Discarded;
 
-    protected void Activate(ulong sequence)
-    {
-        if (sequence == 0)
-            throw new ArgumentOutOfRangeException(nameof(sequence));
-        lock (_gate)
-        {
-            while (_callerReleaseState == 1)
-                Monitor.Wait(_gate);
-            if (_sequence != 0 &&
-                _status is RecordedCommandsStatus.Executable or
-                    RecordedCommandsStatus.Submitting or
-                    RecordedCommandsStatus.Submitted)
-            {
-                throw new InvalidOperationException("The command payload is still active.");
-            }
-            _sequence = sequence;
-            _status = RecordedCommandsStatus.Executable;
-            _callerDisposed = false;
-            _callerReleaseState = 0;
-            _callerReleaseOwnerThreadId = 0;
-        }
-    }
-
-    internal bool TryBeginSubmit(ulong sequence)
-    {
-        lock (_gate)
-        {
-            EnsureSequenceUnderGate(sequence);
-            if (_callerDisposed || _status != RecordedCommandsStatus.Executable)
-                return false;
-            _status = RecordedCommandsStatus.Submitting;
-            return true;
-        }
-    }
-
-    internal void RestoreExecutable(ulong sequence)
-    {
-        lock (_gate)
-        {
-            EnsureSequenceUnderGate(sequence);
-            if (_status != RecordedCommandsStatus.Submitting)
-                throw new InvalidOperationException("The command payload cannot be restored to Executable.");
-            _status = RecordedCommandsStatus.Executable;
-        }
-    }
-
-    internal void MarkSubmitted(ulong sequence)
-    {
-        lock (_gate)
-        {
-            EnsureSequenceUnderGate(sequence);
-            if (_status != RecordedCommandsStatus.Submitting)
-                throw new InvalidOperationException("The command payload is not being submitted.");
-            _status = RecordedCommandsStatus.Submitted;
-        }
-    }
-
-    internal void MarkCompleted(ulong sequence)
-    {
-        lock (_gate)
-        {
-            EnsureSequenceUnderGate(sequence);
-            if (_status == RecordedCommandsStatus.Submitted)
-                _status = RecordedCommandsStatus.Completed;
-        }
-    }
+    protected void Activate(ulong sequence) => (_sequence, _commands) = (sequence, null);
+    internal void Attach(RecordedCommands commands) => _commands = commands;
+    internal bool TryBeginSubmit(ulong sequence) => _commands!.TrySubmit();
+    internal void RestoreExecutable(ulong sequence) => _commands!.RestoreExecutable();
 
     internal void MarkDeviceLost(ulong sequence)
     {
-        bool discard;
-        lock (_gate)
-        {
-            EnsureSequenceUnderGate(sequence);
-            discard = _status == RecordedCommandsStatus.Executable;
-            _status = RecordedCommandsStatus.DeviceLost;
-        }
-        if (discard)
-            NotifyDiscarded(sequence);
+        if (_commands?.Status == RecordedCommandsStatus.Executable)
+            Discarded?.Invoke(this, sequence);
     }
 
     protected bool TryMarkDeviceLostFromDevice(out ulong sequence, out bool abandon)
     {
-        bool changed;
-        lock (_gate)
-        {
-            sequence = _sequence;
-            abandon = false;
-            switch (_status)
-            {
-                case RecordedCommandsStatus.Executable:
-                    _status = RecordedCommandsStatus.DeviceLost;
-                    abandon = true;
-                    changed = true;
-                    break;
-                case RecordedCommandsStatus.Submitting:
-                case RecordedCommandsStatus.Submitted:
-                    _status = RecordedCommandsStatus.DeviceLost;
-                    changed = true;
-                    break;
-                default:
-                    changed = false;
-                    break;
-            }
-        }
+        sequence = _sequence;
+        abandon = _commands?.Status == RecordedCommandsStatus.Executable;
         if (abandon)
-            NotifyDiscarded(sequence);
-        return changed;
+            Discarded?.Invoke(this, sequence);
+        return _commands is not null;
     }
 
     protected bool TryDiscardExecutableFromDevice(out ulong sequence)
     {
-        lock (_gate)
-        {
-            sequence = _sequence;
-            if (_callerReleaseState == 1)
-            {
-                if (_callerReleaseOwnerThreadId == Environment.CurrentManagedThreadId)
-                    return false;
-                while (_sequence == sequence && _callerReleaseState == 1)
-                    Monitor.Wait(_gate);
-                return false;
-            }
-            if (_status != RecordedCommandsStatus.Executable)
-                return false;
-
-            _status = RecordedCommandsStatus.Discarded;
-        }
-        NotifyDiscarded(sequence);
+        sequence = _sequence;
+        if (_commands?.TryDiscard() != true)
+            return false;
+        Discarded?.Invoke(this, sequence);
         return true;
     }
 
-    protected void EnsureSequence(ulong sequence)
+    internal void Discard(ulong sequence)
     {
-        lock (_gate)
-            EnsureSequenceUnderGate(sequence);
-    }
-
-    internal void DisposeCaller(ulong sequence)
-    {
-        bool discard = false;
-        lock (_gate)
-        {
-            if (_sequence != sequence)
-                return;
-            if (_callerDisposed)
-            {
-                if (_callerReleaseState == 1 &&
-                    _callerReleaseOwnerThreadId == Environment.CurrentManagedThreadId)
-                {
-                    return;
-                }
-                while (_sequence == sequence && _callerReleaseState == 1)
-                    Monitor.Wait(_gate);
-                return;
-            }
-            _callerDisposed = true;
-            if (_status == RecordedCommandsStatus.Executable)
-            {
-                _status = RecordedCommandsStatus.Discarded;
-                _callerReleaseState = 1;
-                _callerReleaseOwnerThreadId = Environment.CurrentManagedThreadId;
-                discard = true;
-            }
-            else
-            {
-                _callerReleaseState = 2;
-                _callerReleaseOwnerThreadId = 0;
-            }
-        }
-        if (!discard)
-            return;
-        try
-        {
-            DiscardUnsubmitted(sequence);
-        }
-        catch
-        {
-        }
-        finally
-        {
-            NotifyDiscarded(sequence);
-            lock (_gate)
-            {
-                if (_sequence == sequence)
-                {
-                    _callerReleaseState = 2;
-                    _callerReleaseOwnerThreadId = 0;
-                    Monitor.PulseAll(_gate);
-                }
-            }
-        }
-    }
-
-    protected void CancelActivation(ulong sequence)
-    {
-        lock (_gate)
-        {
-            EnsureSequenceUnderGate(sequence);
-            if (_status != RecordedCommandsStatus.Executable)
-                return;
-            _status = RecordedCommandsStatus.Discarded;
-            _callerDisposed = true;
-            _callerReleaseState = 2;
-            _callerReleaseOwnerThreadId = 0;
-        }
-    }
-
-    private void NotifyDiscarded(ulong sequence)
-    {
-        if (Discarded is not { } discarded) return;
-        foreach (Action<RecordedCommandsLease, ulong> observer in discarded.GetInvocationList())
-        {
-            try { observer(this, sequence); }
-            catch { }
-        }
+        DiscardUnsubmitted(sequence);
+        Discarded?.Invoke(this, sequence);
     }
 
     protected abstract void DiscardUnsubmitted(ulong sequence);
-
-    private void EnsureSequenceUnderGate(ulong sequence)
-    {
-        if (sequence == 0 || _sequence != sequence)
-            throw new InvalidOperationException("The RecordedCommands sequence is no longer current.");
-    }
 }
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe and collectively perform one logical release; normal use racing with Dispose is not.</para>
 /// <para><b>Ownership:</b> Caller-disposed single-submit right. The accepted submission retains its native execution dependencies until Queue completion; public wrappers remain caller-owned.</para>
-/// <para><b>After Dispose:</b> Status remains readable as Disposed; submission and payload access are invalid.</para>
+/// <para><b>After Dispose:</b> Status remains readable; executable command disposal changes it to Discarded.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
-public readonly struct RecordedCommands : IDisposable
+public sealed class RecordedCommands : IDisposable
 {
-    private readonly RecordedCommandsLease? _lease;
-    private readonly ulong _sequence;
-
-    internal RecordedCommands(RecordedCommandsLease lease, ulong sequence)
+    private int _status = (int)RecordedCommandsStatus.Executable;
+    internal event Action<RecordedCommands>? Disposing;
+    internal RecordedCommands(RecordedCommandsData data, ulong sequence)
     {
-        _lease = lease ?? throw new ArgumentNullException(nameof(lease));
-        _sequence = sequence != 0
-            ? sequence
-            : throw new ArgumentOutOfRangeException(nameof(sequence));
+        Data = data;
+        Sequence = sequence;
+        data.Attach(this);
     }
 
-    internal RecordedCommandsLease Lease => _lease
-        ?? throw new InvalidOperationException("The default RecordedCommands is invalid.");
-    internal ulong Sequence => _sequence != 0
-        ? _sequence
-        : throw new InvalidOperationException("The default RecordedCommands is invalid.");
+    internal RecordedCommandsData Data { get; }
+    internal ulong Sequence { get; }
+    public Device Device => Data.Device;
+    public Queue Queue => Data.Queue;
+    public RecordedCommandsStatus Status => (RecordedCommandsStatus)Volatile.Read(ref _status);
+    internal bool TrySubmit() => Interlocked.CompareExchange(
+        ref _status,
+        (int)RecordedCommandsStatus.Submitted,
+        (int)RecordedCommandsStatus.Executable) == (int)RecordedCommandsStatus.Executable;
 
-    public Device Device => Lease.Device;
-    public Queue Queue => Lease.Queue;
-    public RecordedCommandsStatus Status => Lease.GetStatus(Sequence);
+    internal void RestoreExecutable() => Interlocked.CompareExchange(
+        ref _status,
+        (int)RecordedCommandsStatus.Executable,
+        (int)RecordedCommandsStatus.Submitted);
+
+    internal bool TryDiscard() => Interlocked.CompareExchange(
+        ref _status,
+        (int)RecordedCommandsStatus.Discarded,
+        (int)RecordedCommandsStatus.Executable) == (int)RecordedCommandsStatus.Executable;
+
     public void Dispose()
     {
-        if (_lease is not null)
-            _lease.DisposeCaller(_sequence);
+        Disposing?.Invoke(this);
+        if (TryDiscard())
+            Data.Discard(Sequence);
     }
 }
 

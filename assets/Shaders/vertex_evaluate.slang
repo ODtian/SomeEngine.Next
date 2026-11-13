@@ -1,7 +1,7 @@
 #ifndef VERTEX_EVALUATE_SLANG
 #define VERTEX_EVALUATE_SLANG
 
-#include "vertex_evaluate_interfaces.slang"
+__exported import vertex_evaluate_interfaces;
 
 float3 EvalObjectPosition(VertexEvalContext ctx)
 {

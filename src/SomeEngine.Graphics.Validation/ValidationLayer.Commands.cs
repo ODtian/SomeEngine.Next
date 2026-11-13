@@ -9,6 +9,8 @@ public sealed partial class ValidationLayer
     public CommandContext CreateCommandContext(Device device, in CommandContextDesc desc)
     {
         RequireDevice(device);
+        if (desc.Bundle && !device.Capabilities.SupportsBundles)
+            throw new NotSupportedException("Command bundles are unavailable on this device.");
         var state = new ContextValidationState
         {
             Bundle = desc.Bundle,
@@ -87,7 +89,7 @@ public sealed partial class ValidationLayer
             lock (_gate)
                 ReserveValidationCapacity(null, default, reserveRecorded: true);
             bool backendEnded = false;
-            RecordedCommands result = default;
+            RecordedCommands result = null!;
             try
             {
                 result = Backend.End(context);
@@ -95,7 +97,9 @@ public sealed partial class ValidationLayer
                 lock (_gate)
                 {
                     _recorded.Add(new RecordedCommandsKey(result), validation);
-                    result.Lease.Discarded += ForgetDiscardedCommands;
+                    validation.Commands = result;
+                    result.Disposing += ValidateCommandDisposal;
+                    result.Data.Discarded += ForgetDiscardedCommands;
                 }
                 ResetContextRecordingState(state);
                 return result;
@@ -202,6 +206,9 @@ public sealed partial class ValidationLayer
     {
         RequireOutsideRendering(context);
         ValidateBarrierPhase(barrier.Phase);
+        if (barrier.Phase != BarrierPhase.Complete &&
+            context.Device is IMemoryBarrierSupport { SplitMemoryBarriers: false })
+            throw new NotSupportedException("Split memory barriers are unavailable on this device.");
         Backend.Barrier(context, barrier);
     }
 
@@ -303,6 +310,8 @@ public sealed partial class ValidationLayer
         ContextValidationState state = RequireOutsideRendering(context);
         RequireOnDevice(context.Device, copy.Source, "Copy source");
         RequireOnDevice(context.Device, copy.Destination, "Copy destination");
+        ValidateBufferRange(copy.Source, copy.SourceOffset, copy.Size);
+        ValidateBufferRange(copy.Destination, copy.DestinationOffset, copy.Size);
         PrepareCommandDependencies(state, copy.Source, copy.Destination);
         Backend.CopyBuffer(context, copy);
         RecordCommandDependency(state, copy.Source);
@@ -314,6 +323,7 @@ public sealed partial class ValidationLayer
         ContextValidationState state = RequireOutsideRendering(context);
         RequireOnDevice(context.Device, copy.Buffer, "Copy buffer");
         RequireOnDevice(context.Device, copy.Texture, "Copy texture");
+        ValidateBufferTextureCopy(copy);
         PrepareCommandDependencies(state, copy.Buffer, copy.Texture);
         Backend.CopyBufferToTexture(context, copy);
         RecordCommandDependency(state, copy.Buffer);
@@ -325,6 +335,7 @@ public sealed partial class ValidationLayer
         ContextValidationState state = RequireOutsideRendering(context);
         RequireOnDevice(context.Device, copy.Buffer, "Copy buffer");
         RequireOnDevice(context.Device, copy.Texture, "Copy texture");
+        ValidateBufferTextureCopy(copy);
         PrepareCommandDependencies(state, copy.Buffer, copy.Texture);
         Backend.CopyTextureToBuffer(context, copy);
         RecordCommandDependency(state, copy.Buffer);
@@ -336,6 +347,12 @@ public sealed partial class ValidationLayer
         ContextValidationState state = RequireOutsideRendering(context);
         RequireOnDevice(context.Device, copy.Source, "Copy source");
         RequireOnDevice(context.Device, copy.Destination, "Copy destination");
+        ValidateTextureRegion(copy.Source.Info, copy.SourceMipLevel, copy.SourceArrayLayer, copy.SourceAspect,
+            copy.SourceX, copy.SourceY, copy.SourceZ, copy.Width, copy.Height, copy.Depth);
+        ValidateTextureRegion(copy.Destination.Info, copy.DestinationMipLevel, copy.DestinationArrayLayer, copy.DestinationAspect,
+            copy.DestinationX, copy.DestinationY, copy.DestinationZ, copy.Width, copy.Height, copy.Depth);
+        if (copy.Source.Info.SampleCount != copy.Destination.Info.SampleCount)
+            throw new ArgumentException("The texture copy sample counts differ.", nameof(copy));
         PrepareCommandDependencies(state, copy.Source, copy.Destination);
         Backend.CopyTexture(context, copy);
         RecordCommandDependency(state, copy.Source);
@@ -347,6 +364,24 @@ public sealed partial class ValidationLayer
         ContextValidationState state = RequireGraphicsOutsideRendering(context);
         RequireOnDevice(context.Device, resolve.Source, "Resolve source");
         RequireOnDevice(context.Device, resolve.Destination, "Resolve destination");
+        TextureInfo source = resolve.Source.Info;
+        TextureInfo target = resolve.Destination.Info;
+        if (context.Device.Capabilities.CompileTarget == SlangCompileTarget.Dxil && resolve.Type == ResolveType.SampleZero)
+            throw new NotSupportedException("Direct3D 12 color resolves support average, minimum and maximum sample reduction.");
+        if (context.Device.Capabilities.CompileTarget == SlangCompileTarget.Spirv &&
+            resolve.Type is ResolveType.Minimum or ResolveType.Maximum)
+            throw new NotSupportedException("The Vulkan color resolve command uses average or sample-zero reduction.");
+        if (!Enum.IsDefined(resolve.Type) || source.SampleCount <= 1 || target.SampleCount != 1 ||
+            MipExtent(source.Width, resolve.SourceMipLevel) != MipExtent(target.Width, resolve.DestinationMipLevel) ||
+            MipExtent(source.Height, resolve.SourceMipLevel) != MipExtent(target.Height, resolve.DestinationMipLevel) ||
+            FormatLayouts.Get(source.Format).Family != FormatLayouts.Get(target.Format).Family ||
+            FormatLayouts.Get(resolve.Format).Family != FormatLayouts.Get(source.Format).Family ||
+            resolve.Type == ResolveType.Average && FormatLayouts.IsInteger(resolve.Format))
+            throw new ArgumentException("The resolve textures or mode are incompatible.", nameof(resolve));
+        ValidateTextureRegion(source, resolve.SourceMipLevel, resolve.SourceArrayLayer, TextureAspects.Color,
+            0, 0, 0, MipExtent(source.Width, resolve.SourceMipLevel), MipExtent(source.Height, resolve.SourceMipLevel), 1);
+        ValidateTextureRegion(target, resolve.DestinationMipLevel, resolve.DestinationArrayLayer, TextureAspects.Color,
+            0, 0, 0, MipExtent(target.Width, resolve.DestinationMipLevel), MipExtent(target.Height, resolve.DestinationMipLevel), 1);
         PrepareCommandDependencies(state, resolve.Source, resolve.Destination);
         Backend.ResolveTexture(context, resolve);
         RecordCommandDependency(state, resolve.Source);
@@ -357,6 +392,7 @@ public sealed partial class ValidationLayer
     {
         ContextValidationState state = RequireOutsideRendering(context);
         RequireOnDevice(context.Device, buffer, "Buffer");
+        _ = range.Resolve(buffer.Info.Size);
         PrepareCommandDependency(state, buffer);
         Backend.ClearBuffer(context, buffer, range, value);
         RecordCommandDependency(state, buffer);
@@ -370,6 +406,11 @@ public sealed partial class ValidationLayer
     {
         ContextValidationState state = RequireGraphicsOutsideRendering(context);
         RequireOnDevice(context.Device, texture, "Texture");
+        if (texture.Device.Capabilities.CompileTarget == SlangCompileTarget.Dxil &&
+            (texture.Info.Usages & TextureUsages.ColorAttachment) == 0)
+            throw new ArgumentException("Color clearing requires ColorAttachment usage.", nameof(texture));
+        ValidateTextureClearRange(texture.Info, range, IsDepthFormat(texture.Info.Format)
+            ? TextureAspects.None : TextureAspects.Color | TextureAspects.Plane0);
         PrepareCommandDependency(state, texture);
         Backend.ClearTexture(context, texture, range, color);
         RecordCommandDependency(state, texture);
@@ -384,6 +425,11 @@ public sealed partial class ValidationLayer
     {
         ContextValidationState state = RequireGraphicsOutsideRendering(context);
         RequireOnDevice(context.Device, texture, "Texture");
+        if (texture.Device.Capabilities.CompileTarget == SlangCompileTarget.Dxil &&
+            (texture.Info.Usages & TextureUsages.DepthStencilAttachment) == 0)
+            throw new ArgumentException("Depth clearing requires DepthStencilAttachment usage.", nameof(texture));
+        ValidateTextureClearRange(texture.Info, range,
+            FormatLayouts.Get(texture.Info.Format).Aspects & (TextureAspects.Depth | TextureAspects.Stencil));
         PrepareCommandDependency(state, texture);
         Backend.ClearDepthStencil(context, texture, range, depth, stencil);
         RecordCommandDependency(state, texture);
@@ -392,6 +438,9 @@ public sealed partial class ValidationLayer
     public void BeginRendering(CommandContext context, in RenderingDesc desc)
     {
         ContextValidationState state = RequireRecording(context);
+        if (context.Device.Capabilities.CompileTarget == SlangCompileTarget.Dxil &&
+            (desc.Options & (RenderingOptions.Suspending | RenderingOptions.Resuming)) != 0)
+            throw new NotSupportedException("The Direct3D 12 encoder supports complete rendering scopes.");
         lock (state)
         {
             if (context.QueueType != QueueType.Graphics || context.Bundle)
@@ -415,6 +464,7 @@ public sealed partial class ValidationLayer
                 RequireOnDevice(context.Device, attachment.View, "Color attachment");
             if (desc.DepthStencil is { } depthStencil)
                 RequireOnDevice(context.Device, depthStencil.View, "Depth/stencil attachment");
+            ValidateRenderingAttachments(desc);
             CommandMutationCapacity capacity = default;
             foreach (ColorAttachmentDesc attachment in desc.Colors)
                 PrepareCommandDependencyCore(state, attachment.View, ref capacity);
@@ -483,10 +533,10 @@ public sealed partial class ValidationLayer
         lock (state)
         {
             if (!ReferenceEquals(state.Pipeline, bindingState!.Pipeline))
-                Reject(
+                RejectArgument(
                     "Bindings",
                     "PersistentParameterBindings can only be used with the exact Pipeline that created it.",
-                    context.Label);
+                    nameof(bindings), context.Label);
         }
         PrepareCommandDependencies(state, bindings, bindingState!.Dependencies);
         try
@@ -495,7 +545,7 @@ public sealed partial class ValidationLayer
         }
         catch (Exception exception) when (exception is ArgumentException or GraphicsException)
         {
-            Reject("Bindings", exception.Message, context.Label);
+            Report(ValidationMessageType.Error, "Bindings", exception.Message, context.Label);
             throw;
         }
         RecordCommandDependency(state, bindings);
@@ -520,7 +570,7 @@ public sealed partial class ValidationLayer
             Reject("Ownership", "The selected Pipeline has no binding validation state.", context.Label);
         if (DiagnoseParameterBindings(reflectedLayout, bindings.Resources,
                 bindings.OrdinaryData, pipelineBindings) is string diagnostic)
-            Reject("Bindings", diagnostic, context.Label);
+            RejectArgument("Bindings", diagnostic, nameof(bindings), context.Label);
         GraphicsObject[] dependencies = CollectBindingDependencies(
             context.Device, bindings.Resources);
         PrepareCommandDependencies(state, dependencies);
@@ -531,7 +581,7 @@ public sealed partial class ValidationLayer
         catch (Exception exception) when (exception is ArgumentException or
             GraphicsException or OverflowException)
         {
-            Reject("Bindings", exception.Message, context.Label);
+            Report(ValidationMessageType.Error, "Bindings", exception.Message, context.Label);
             throw;
         }
         RecordCommandDependencies(state, dependencies);
@@ -539,12 +589,17 @@ public sealed partial class ValidationLayer
 
     public void SetVertexBuffers(
         CommandContext context,
-        uint firstSlot,
+        uint firstBinding,
         ReadOnlySpan<VertexBufferBinding> bindings)
     {
         ContextValidationState state = RequireGraphicsRecording(context);
+        if ((uint)bindings.Length > 32 || firstBinding > 32 - (uint)bindings.Length)
+            throw new ArgumentOutOfRangeException(nameof(bindings));
         foreach (VertexBufferBinding binding in bindings)
+        {
             RequireOnDevice(context.Device, binding.Buffer, "Vertex Buffer");
+            ValidateBufferRange(binding.Buffer, binding.Offset, binding.Size);
+        }
         lock (state)
         {
             CommandMutationCapacity capacity = default;
@@ -552,7 +607,7 @@ public sealed partial class ValidationLayer
                 PrepareCommandDependencyCore(state, binding.Buffer, ref capacity);
             ReserveCommandMutation(state, capacity);
         }
-        Backend.SetVertexBuffers(context, firstSlot, bindings);
+        Backend.SetVertexBuffers(context, firstBinding, bindings);
         foreach (VertexBufferBinding binding in bindings)
             RecordCommandDependency(state, binding.Buffer);
     }
@@ -561,6 +616,7 @@ public sealed partial class ValidationLayer
     {
         ContextValidationState state = RequireGraphicsRecording(context);
         RequireOnDevice(context.Device, binding.Buffer, "Index Buffer");
+        ValidateBufferRange(binding.Buffer, binding.Offset, binding.Size);
         PrepareCommandDependency(state, binding.Buffer);
         Backend.SetIndexBuffer(context, binding);
         RecordCommandDependency(state, binding.Buffer);
@@ -568,15 +624,18 @@ public sealed partial class ValidationLayer
 
     public void SetStreamOutputBuffers(
         CommandContext context,
-        uint firstSlot,
+        uint firstBinding,
         ReadOnlySpan<StreamOutputBufferBinding> bindings)
     {
         ContextValidationState state = RequireGraphicsRecording(context);
         if (context.Bundle)
             Reject("Commands", "Stream-output targets are not legal in a command bundle.", context.Label);
+        if ((uint)bindings.Length > 4 || firstBinding > 4 - (uint)bindings.Length)
+            throw new ArgumentOutOfRangeException(nameof(bindings));
         foreach (StreamOutputBufferBinding binding in bindings)
         {
             RequireOnDevice(context.Device, binding.Buffer, "Stream-output Buffer");
+            ValidateBufferRange(binding.Buffer, binding.Offset, binding.Size);
             if (binding.FilledSizeBuffer is not null)
                 RequireOnDevice(context.Device, binding.FilledSizeBuffer, "Stream-output filled-size Buffer");
         }
@@ -591,7 +650,7 @@ public sealed partial class ValidationLayer
             }
             ReserveCommandMutation(state, capacity);
         }
-        Backend.SetStreamOutputBuffers(context, firstSlot, bindings);
+        Backend.SetStreamOutputBuffers(context, firstBinding, bindings);
         foreach (StreamOutputBufferBinding binding in bindings)
         {
             RecordCommandDependency(state, binding.Buffer);
@@ -605,6 +664,8 @@ public sealed partial class ValidationLayer
         RequireGraphicsRecording(context);
         if (context.Bundle)
             Reject("Commands", "Viewports are not legal in a command bundle.", context.Label);
+        if ((uint)viewports.Length > context.Device.Capabilities.Limits.MaximumViewports)
+            throw new ArgumentOutOfRangeException(nameof(viewports));
         Backend.SetViewports(context, viewports);
     }
 
@@ -788,9 +849,10 @@ public sealed partial class ValidationLayer
         workspace.Clear();
         foreach (SwapchainImage image in desc.SwapchainImages)
         {
+            ValidateSwapchainImage(image, SwapchainImageStatus.Acquired);
             RequireOnDevice(queue.Device, image.Swapchain, "SwapchainImage");
             RequirePresentationQueue(queue, image.Swapchain);
-            if (!workspace.Images.Add(image.Lease))
+            if (!workspace.Images.Add(image.Handle))
                 Reject("Submission", "QueueSubmitDesc contains a duplicate SwapchainImage.");
         }
         foreach (TimelineSignal signal in desc.TimelineSignals)
@@ -807,14 +869,20 @@ public sealed partial class ValidationLayer
                 workspace.Recordings,
                 desc.TimelineSignals,
                 workspace);
+            foreach (SwapchainImage image in desc.SwapchainImages)
+                ValidatePresentTextureState(queue, image.Texture, reservation?.Resources);
             QueueCompletion completion = Backend.Submit(queue, desc);
             CompleteSubmitValidation(reservation, queue, completion, commit: true);
+            lock (_gate)
+                foreach (RecordedValidationState recording in workspace.Recordings) recording.SubmissionInProgress = false;
             ForgetRecordedSubmission(desc.Commands, onlyConsumed: false);
             return completion;
         }
         catch
         {
             CompleteSubmitValidation(reservation, queue, default, commit: false);
+            lock (_gate)
+                foreach (RecordedValidationState recording in workspace.Recordings) recording.SubmissionInProgress = false;
             ForgetRecordedSubmission(desc.Commands, onlyConsumed: true);
             throw;
         }
@@ -832,21 +900,21 @@ public sealed partial class ValidationLayer
         {
             ReadOnlySpan<RecordedValidationState> recordingSpan =
                 CollectionsMarshal.AsSpan(recordings);
-            ResourceSubmissionReservation? resources = PlanResourceSubmission(
+            ResourceSubmissionReservation? resources = ValidateResourceSubmission(
                 queue,
                 completionWaits,
                 timelineWaits,
                 recordingSpan,
                 timelineSignals,
                 workspace.Resources);
-            QuerySubmissionReservation? queries = PlanQuerySubmission(
+            QuerySubmissionReservation? queries = ValidateQuerySubmission(
                 queue,
                 completionWaits,
                 timelineWaits,
                 recordingSpan,
                 timelineSignals,
                 workspace.Queries);
-            TimelineSignalReservation? timelines = PlanTimelineSignals(timelineSignals);
+            TimelineSignalReservation? timelines = ValidateTimelineSignals(timelineSignals);
             SubmitValidationReservation reservation = workspace.Reservation;
             reservation.Resources = resources;
             reservation.Queries = queries;
@@ -879,13 +947,13 @@ public sealed partial class ValidationLayer
             CompleteTimelineSignals(reservation.Timelines, commit);
             if (!commit && reservation.Queries is not null)
             {
-                foreach ((QuerySlot slot, _) in reservation.Queries.NewStates)
-                    _queryStates.Remove(slot);
+                foreach ((QueryIndex entry, _) in reservation.Queries.NewStates)
+                    _queryStates.Remove(entry);
             }
         }
     }
 
-    private void RollbackSubmitPublication(SubmitValidationReservation reservation)
+    private void RestoreSubmissionState(SubmitValidationReservation reservation)
     {
         if (reservation.Resources is not null)
         {
@@ -896,8 +964,8 @@ public sealed partial class ValidationLayer
         {
             foreach (QuerySubmissionEntry entry in reservation.Queries.Entries)
                 entry.State.SubmissionInProgress = false;
-            foreach ((QuerySlot slot, _) in reservation.Queries.NewStates)
-                _queryStates.Remove(slot);
+            foreach ((QueryIndex entry, _) in reservation.Queries.NewStates)
+                _queryStates.Remove(entry);
         }
         if (reservation.Timelines is not null)
         {
@@ -906,7 +974,7 @@ public sealed partial class ValidationLayer
         }
     }
 
-    private void ForgetDiscardedCommands(RecordedCommandsLease commands, ulong sequence)
+    private void ForgetDiscardedCommands(RecordedCommandsData commands, ulong sequence)
     {
         lock (_gate)
         {
@@ -914,7 +982,8 @@ public sealed partial class ValidationLayer
             if (_recorded.Remove(key, out RecordedValidationState? recording))
             {
                 commands.Discarded -= ForgetDiscardedCommands;
-                recording.Owner.RecycleRecording(recording);
+                recording.Commands.Disposing -= ValidateCommandDisposal;
+                recording.Context.RecycleRecording(recording);
             }
         }
     }
@@ -932,8 +1001,9 @@ public sealed partial class ValidationLayer
                     var key = new RecordedCommandsKey(command);
                     if (_recorded.Remove(key, out RecordedValidationState? recording))
                     {
-                        key.Lease.Discarded -= ForgetDiscardedCommands;
-                        recording.Owner.RecycleRecording(recording);
+                        key.Data.Discarded -= ForgetDiscardedCommands;
+                        recording.Commands.Disposing -= ValidateCommandDisposal;
+                        recording.Context.RecycleRecording(recording);
                     }
                 }
             }
@@ -964,10 +1034,11 @@ public sealed partial class ValidationLayer
                 }
                 workspace.Recordings.Add(recording!);
             }
+            foreach (RecordedValidationState recording in workspace.Recordings) recording.SubmissionInProgress = true;
         }
     }
 
-    private TimelineSignalReservation? PlanTimelineSignals(
+    private TimelineSignalReservation? ValidateTimelineSignals(
         ReadOnlySpan<TimelineSignal> signals)
     {
         if (signals.IsEmpty)
@@ -981,8 +1052,8 @@ public sealed partial class ValidationLayer
                 Reject("Ownership", "ExternalTimeline was not created through this Validation Layer.");
 
             TimelineValidationState requiredState = state!;
-                ulong previous = proposed.TryGetValue(requiredState, out ulong pending)
-                    ? pending
+                ulong previous = proposed.TryGetValue(requiredState, out ulong proposedValue)
+                    ? proposedValue
                     : requiredState.LastSignalValue;
                 bool previousKnown = proposed.ContainsKey(requiredState) || requiredState.LastSignalKnown;
                 if (previousKnown && signal.Value < previous)
@@ -1024,7 +1095,7 @@ public sealed partial class ValidationLayer
         }
     }
 
-    private QuerySubmissionReservation? PlanQuerySubmission(
+    private QuerySubmissionReservation? ValidateQuerySubmission(
         Queue queue,
         ReadOnlySpan<QueueCompletion> completionWaits,
         ReadOnlySpan<TimelinePoint> timelineWaits,
@@ -1036,22 +1107,22 @@ public sealed partial class ValidationLayer
             return null;
 
             workspace.Clear();
-            Dictionary<QuerySlot, QuerySubmissionEntry> simulated = workspace.Simulated;
+            Dictionary<QueryIndex, QuerySubmissionEntry> simulated = workspace.Simulated;
             foreach (RecordedValidationState recording in recordings)
             {
                 foreach (QueryValidationEvent queryEvent in recording.QueryEvents)
                 {
-                    QuerySlot slot = queryEvent.Slot;
-                    if (!simulated.TryGetValue(slot, out QuerySubmissionEntry entry))
+                    QueryIndex queryIndex = queryEvent.Entry;
+                    if (!simulated.TryGetValue(queryIndex, out QuerySubmissionEntry entry))
                     {
-                        if (!_queryStates.TryGetValue(slot, out QueryValidationState? state))
+                        if (!_queryStates.TryGetValue(queryIndex, out QueryValidationState? state))
                             state = new QueryValidationState();
                         if (state.SubmissionInProgress)
                         {
                             Reject(
                                 "Concurrency",
                                 "Query index is already being submitted on another Queue.",
-                                slot.Pool.Label);
+                                queryIndex.Pool.Label);
                         }
                         if (state.HasCompletion &&
                             !IsQueryUseOrdered(
@@ -1063,16 +1134,16 @@ public sealed partial class ValidationLayer
                             Reject(
                                 "Queries",
                                 "Cross-Queue query reuse requires an explicit completion or timeline wait.",
-                                slot.Pool.Label);
+                                queryIndex.Pool.Label);
                         }
                         entry = new QuerySubmissionEntry(state, state.Phase);
                     }
 
                     entry = entry with
                     {
-                        Phase = ApplyQueryEvent(slot, entry.Phase, queryEvent.Type),
+                        Phase = ApplyQueryEvent(queryIndex, entry.Phase, queryEvent.Type),
                     };
-                    simulated[slot] = entry;
+                    simulated[queryIndex] = entry;
                 }
             }
 
@@ -1087,12 +1158,12 @@ public sealed partial class ValidationLayer
                 TimelineSignal signal = timelineSignals[index];
                 signals[index] = new TimelinePoint(signal.Timeline, signal.Value);
             }
-            foreach ((QuerySlot slot, QuerySubmissionEntry entry) in simulated)
+            foreach ((QueryIndex queryIndex, QuerySubmissionEntry entry) in simulated)
             {
                 workspace.Entries.Add(entry);
-                if (!_queryStates.ContainsKey(slot))
+                if (!_queryStates.ContainsKey(queryIndex))
                     workspace.NewStates.Add(
-                        new KeyValuePair<QuerySlot, QueryValidationState>(slot, entry.State));
+                        new KeyValuePair<QueryIndex, QueryValidationState>(queryIndex, entry.State));
             }
             workspace.TimelineSignals = signals;
             return workspace;
@@ -1132,7 +1203,7 @@ public sealed partial class ValidationLayer
     }
 
     private QueryValidationPhase ApplyQueryEvent(
-        in QuerySlot slot,
+        in QueryIndex entry,
         QueryValidationPhase phase,
         QueryValidationEventType operation)
     {
@@ -1140,23 +1211,23 @@ public sealed partial class ValidationLayer
         {
             case QueryValidationEventType.Reset:
                 if (phase == QueryValidationPhase.Active)
-                    Reject("Queries", "An active query cannot be reset.", slot.Pool.Label);
+                    Reject("Queries", "An active query cannot be reset.", entry.Pool.Label);
                 return QueryValidationPhase.Reset;
             case QueryValidationEventType.Begin:
                 if (phase != QueryValidationPhase.Reset)
-                    Reject("Queries", "Query index was reused before its prior result was resolved.", slot.Pool.Label);
+                    Reject("Queries", "Query index was reused before its prior result was resolved.", entry.Pool.Label);
                 return QueryValidationPhase.Active;
             case QueryValidationEventType.End:
                 if (phase != QueryValidationPhase.Active)
-                    Reject("Queries", "EndQuery has no matching BeginQuery in Queue execution order.", slot.Pool.Label);
+                    Reject("Queries", "EndQuery has no matching BeginQuery in Queue execution order.", entry.Pool.Label);
                 return QueryValidationPhase.Ready;
             case QueryValidationEventType.Write:
                 if (phase != QueryValidationPhase.Reset)
-                    Reject("Queries", "Timestamp query index was reused before resolve.", slot.Pool.Label);
+                    Reject("Queries", "Timestamp query index was reused before resolve.", entry.Pool.Label);
                 return QueryValidationPhase.Ready;
             case QueryValidationEventType.Resolve:
                 if (phase != QueryValidationPhase.Ready)
-                    Reject("Queries", "ResolveQueries requires an ended or written query result.", slot.Pool.Label);
+                    Reject("Queries", "ResolveQueries requires an ended or written query result.", entry.Pool.Label);
                 return QueryValidationPhase.Resolved;
             default:
                 throw new ArgumentOutOfRangeException(nameof(operation));
@@ -1394,10 +1465,10 @@ public sealed partial class ValidationLayer
                     }
                     if (submitReservation.Queries is not null)
                     {
-                        foreach ((QuerySlot slot, QueryValidationState queryState) in
+                        foreach ((QueryIndex entry, QueryValidationState queryState) in
                                  submitReservation.Queries.NewStates)
                         {
-                            _queryStates.Add(slot, queryState);
+                            _queryStates.Add(entry, queryState);
                         }
                         foreach (QuerySubmissionEntry entry in submitReservation.Queries.Entries)
                             entry.State.SubmissionInProgress = true;
@@ -1413,7 +1484,7 @@ public sealed partial class ValidationLayer
                 }
                 catch
                 {
-                    RollbackSubmitPublication(submitReservation);
+                    RestoreSubmissionState(submitReservation);
                     throw;
                 }
             }
@@ -1464,6 +1535,8 @@ public sealed partial class ValidationLayer
         GraphicsObject? current = dependency;
         while (current is not null && current is not Device)
         {
+            if (current is Texture texture)
+                ValidateSwapchainTextureForRecording(texture);
             state.Dependencies.Add(current);
             current = _objects.TryGetValue(current, out ValidationObjectInfo? info)
                 ? info.Parent
@@ -1581,10 +1654,10 @@ public sealed partial class ValidationLayer
                 out PipelineBindingValidationState? bindings) ||
             !bindings.Contains(layout))
         {
-            Reject(
+            RejectArgument(
                 "Bindings",
                 "The Slang parameter layout is not part of the selected Pipeline.",
-                context.Label);
+                nameof(layout), context.Label);
         }
         return layout;
     }

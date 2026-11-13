@@ -1,4 +1,4 @@
-namespace SomeEngine.Runtime;
+﻿namespace SomeEngine.Runtime;
 
 public static class Application
 {
@@ -40,7 +40,7 @@ public static class Application
             if (!OperatingSystem.IsWindows())
                 throw new PlatformNotSupportedException("SomeEngine.Runtime currently requires Direct3D 12 on Windows.");
 
-            RuntimeStartupOptions options = application?.Options ?? RuntimeStartupOptions.Parse(args);
+            ApplicationOptions options = application?.Options ?? ApplicationOptions.Parse(args);
             if (script is not null) options = options with { FrameLimit = script.FrameCount, SynchronousFrames = script.WaitForFrames };
             using var trace = options.TraceOutput is null ? null : SomeEngine.Diagnostics.EngineTrace.Start(
                 options.TraceOutput, new SomeEngine.Diagnostics.TraceOptions
@@ -71,7 +71,7 @@ public static class Application
             bool useWarp = (script is not null && !args.Contains("--hardware-adapter", StringComparer.OrdinalIgnoreCase)) || args.Any(static value =>
                 string.Equals(value, "--warp", StringComparison.OrdinalIgnoreCase));
             startup.StartTrace(application?.StartupTraceOutput);
-            int frames = await RuntimeApplication.RunAsync<TMaterials>(options, useWarp, startup, animateMaterial, application ?? script?.Application, script).ConfigureAwait(false);
+            int frames = await ApplicationLoop.RunAsync<TMaterials>(options, useWarp, startup, animateMaterial, application ?? script?.Application, script).ConfigureAwait(false);
             return new(ApplicationFailure.None, frames) { Startup = startup.Result };
         }
         catch (Exception failure)

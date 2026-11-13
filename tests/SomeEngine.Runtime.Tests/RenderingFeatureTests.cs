@@ -40,7 +40,7 @@ public sealed class RenderingFeatureTests(RenderingContentFixture content)
     public async Task VsmAndTemporalCombinationsMatchTheFinalLightWithFreshCameraHistory(string backend, string vsm, string temporal)
     {
         SceneImage? actual = null, expected = null;
-        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Shadows, 24,
         [
             new(16, edit =>
             {
@@ -49,7 +49,7 @@ public sealed class RenderingFeatureTests(RenderingContentFixture content)
                 edit.CaptureImage(image => actual = image);
             }),
         ]) { ShadowSettings = new() { VirtualResolution = 4096, AtlasSize = 2048, MaxShadowLights = 1 } }, vsm, temporal);
-        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Shadows, 24,
         [
             new(0, edit => edit.SetPointLight(edit.PointLights.Single(), new(new(-4, 2, 3), 20, Vector3.One, 30))),
             new(16, edit => { edit.ResetCameraHistory(); edit.CaptureImage(image => expected = image); }),

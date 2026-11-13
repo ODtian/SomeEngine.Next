@@ -6,30 +6,33 @@ public sealed partial class RenderGraph : IDisposable
     {
         if (input.PersistentValue == value) return;
         input.PersistentValue = value;
-        foreach (FrameSlot frame in _frameSlots) frame.ParameterInputChanged(input);
+        foreach (FrameResources frame in _frameResources) frame.ParameterInputChanged(input);
     }
 
-    internal void PropertyChanged(GraphIdentity identity, GraphStoreKind kind, bool refreshViews = true)
+    internal void PropertyChanged(GraphIdentity identity, GraphStoreKind kind, bool refreshViews = true,
+        FrameResources? currentFrame = null)
     {
-        foreach (FrameSlot frame in _frameSlots) frame.ChangeProperty(identity, kind, refreshViews);
+        foreach (FrameResources frame in _frameResources)
+            if (!ReferenceEquals(frame, currentFrame)) frame.ChangeProperty(identity, kind, refreshViews);
     }
 
     internal void BoundaryChanged(GraphIdentity identity, GraphStoreKind kind)
     {
-        foreach (FrameSlot frame in _frameSlots) frame.BoundaryChanged(identity, kind);
+        foreach (FrameResources frame in _frameResources) frame.BoundaryChanged(identity, kind);
     }
 
     internal void CommandDataChanged(GraphIdentity identity)
     {
-        foreach (FrameSlot frame in _frameSlots) frame.CommandDataChanged(identity);
+        foreach (FrameResources frame in _frameResources) frame.CommandDataChanged(identity);
     }
 
-    private static long s_nextOwnerIdentity;
+    private static long s_nextScopeIdentity;
 
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly Queue[] _queues;
-    private readonly FrameSlot[] _frameSlots;
+    private readonly FrameResources[] _frameResources;
+    private readonly GraphSchedule _schedule;
     private readonly CommandContextPool _commandContexts;
     private readonly HeapByteBudget _heapByteBudget;
     private readonly PersistentResourceAllocator _persistentResources;
@@ -74,14 +77,15 @@ public sealed partial class RenderGraph : IDisposable
                     throw new ArgumentException("A Queue cannot be registered twice.", nameof(queues));
         }
 
-        Identity = AllocateOwnerIdentity();
+        Identity = AllocateScopeIdentity();
+        _schedule = new GraphSchedule(this);
         Description = new RenderGraphDesc(
             maximumFramesInFlight,
             maximumHeapBytes,
             description.Label);
-        _frameSlots = new FrameSlot[checked((int)maximumFramesInFlight)];
-        for (int i = 0; i < _frameSlots.Length; i++)
-            _frameSlots[i] = new FrameSlot(i);
+        _frameResources = new FrameResources[checked((int)maximumFramesInFlight)];
+        for (int i = 0; i < _frameResources.Length; i++)
+            _frameResources[i] = new FrameResources(i);
         _commandContexts = new CommandContextPool(_backend, _device);
         _heapByteBudget = new HeapByteBudget(maximumHeapBytes);
         _persistentResources = new PersistentResourceAllocator(
@@ -91,9 +95,17 @@ public sealed partial class RenderGraph : IDisposable
     }
 
     internal ulong Identity { get; }
-    internal IGraphicsBackend Backend => _backend;
+    public IGraphicsBackend Backend => _backend;
     public Device Device => _device;
+    public bool IsLost => _lost;
+    public bool IsDisposed => _disposed;
     internal GraphStructureIndex StructureIndex => _structureIndex;
+    internal GraphSchedule Schedule => _schedule;
+    internal void ConnectionsChanged(IEnumerable<int> passes, FrameResources current)
+    {
+        foreach (FrameResources resources in _frameResources)
+            if (!ReferenceEquals(resources, current)) resources.ConnectionsChanged(passes);
+    }
     public bool TryGetBufferId(Buffer buffer, out GraphBufferId id)
     {
         bool found = _structureIndex.ResourceIdentities.TryGetValue(buffer, out GraphIdentity identity);
@@ -111,7 +123,7 @@ public sealed partial class RenderGraph : IDisposable
     internal CommandContextPool CommandContexts => _commandContexts;
     internal PersistentResourceAllocator PersistentResources => _persistentResources;
     internal HeapByteBudget HeapByteBudget => _heapByteBudget;
-    internal int FrameSlotCount => _frameSlots.Length;
+    internal int FrameResourceCount => _frameResources.Length;
     public RenderGraphDesc Description { get; }
     public ulong StructureVersion { get; private set; }
     public string? Label => Description.Label;
@@ -172,19 +184,19 @@ public sealed partial class RenderGraph : IDisposable
     public RenderGraphFrame BeginFrame(in RenderGraphFrameOptions options = default)
     {
         if (!TryBeginFrame(out RenderGraphFrame frame, options))
-            throw new InvalidOperationException("No frame slot is available. Call WaitForFrameSlot explicitly.");
+            throw new InvalidOperationException("No frame index is available. Call WaitForFrameResources explicitly.");
         return frame;
     }
 
-    public WaitStatus WaitForFrameSlot(TimeSpan timeout)
+    public WaitStatus WaitForFrameResources(TimeSpan timeout)
     {
         EnsureAvailable();
         DateTime deadline = timeout == Timeout.InfiniteTimeSpan
             ? DateTime.MaxValue
             : DateTime.UtcNow + timeout;
-        foreach (FrameSlot slot in _frameSlots)
+        foreach (FrameResources resources in _frameResources)
         {
-            foreach (QueueCompletion completion in slot.Completions)
+            foreach (QueueCompletion completion in resources.Completions)
             {
                 TimeSpan remaining = deadline == DateTime.MaxValue
                     ? Timeout.InfiniteTimeSpan
@@ -193,37 +205,58 @@ public sealed partial class RenderGraph : IDisposable
                 WaitStatus status = _backend.WaitCpu(completion, remaining);
                 if (status != WaitStatus.Completed) return status;
             }
-            if (slot.IsReady(_backend)) return WaitStatus.Completed;
+            if (resources.IsReady(_backend)) return WaitStatus.Completed;
         }
         return WaitStatus.Completed;
     }
 
     public void CollectCompleted()
     {
-        EnsureAvailable();
+        EnsureCompletionQueries();
         _backend.CollectCompleted(_device);
         lock (_structureGate)
             _persistentResources.CollectCompleted();
-        foreach (FrameSlot slot in _frameSlots)
-            slot.CollectCompleted(_backend);
+        CollectCompletedFrames();
+        foreach (FrameResources resources in _frameResources)
+            resources.CollectCompleted(_backend);
     }
 
     public int GetRangeCompletionCount(GraphBufferId buffer, in BufferRange range) =>
-        GetRangeCompletionCount(GetPersistentBuffer(buffer), range);
+        GetRangeCompletionCount(GetBuffer(buffer), range);
 
     public int CopyRangeCompletions(GraphBufferId buffer, in BufferRange range, Span<QueueCompletion> destination) =>
-        CopyRangeCompletions(GetPersistentBuffer(buffer), range, destination);
+        CopyRangeCompletions(GetBuffer(buffer), range, destination);
 
-    private Buffer GetPersistentBuffer(GraphBufferId buffer)
+    public Buffer GetBuffer(GraphBufferId buffer)
     {
         EnsureAvailable();
         lock (_structureGate)
         {
-            DevelopmentCheck.Require(buffer.Value.Owner == Identity && _structure.Buffers.Contains(buffer.Value),
+            DevelopmentCheck.Require(buffer.Value.ScopeId == Identity && _structure.Buffers.Contains(buffer.Value),
                 "The buffer must belong to this graph.");
             GraphBuffer data = _structure.Buffers.Get(buffer.Value);
             return data.PersistentResource ?? data.RegisteredResource ??
                 throw new InvalidOperationException("Range completions require a persistent buffer.");
+        }
+    }
+
+    public BufferDesc GetBufferDescription(GraphBufferId buffer)
+    {
+        EnsureAvailable();
+        lock (_structureGate) return _structure.Buffers.Get(buffer.Value).Description;
+    }
+
+    /// <summary>Returns a persistent or registered texture for cold-path descriptor creation.</summary>
+    public Texture GetTexture(GraphTextureId texture)
+    {
+        EnsureAvailable();
+        lock (_structureGate)
+        {
+            DevelopmentCheck.Require(texture.Value.ScopeId == Identity && _structure.Textures.Contains(texture.Value),
+                "The texture must belong to this graph.");
+            GraphTexture data = _structure.Textures.Get(texture.Value);
+            return data.PersistentResource ?? data.RegisteredResource ??
+                throw new InvalidOperationException("A texture object requires persistent storage.");
         }
     }
 
@@ -271,8 +304,8 @@ public sealed partial class RenderGraph : IDisposable
             if (_editToken != 0 || _frameToken != 0)
                 throw new InvalidOperationException(
                     "Transient compaction requires an idle RenderGraph with no edit or CPU frame.");
-            foreach (FrameSlot slot in _frameSlots)
-                if (!slot.IsReady(_backend))
+            foreach (FrameResources resources in _frameResources)
+                if (!resources.IsReady(_backend))
                     throw new InvalidOperationException(
                         "Transient compaction requires every submitted frame to complete.");
 
@@ -283,10 +316,10 @@ public sealed partial class RenderGraph : IDisposable
                 else if (resource.Domain == GraphIdentityDomain.Texture) changes.Textures.Add(resource);
                 changes.Views.UnionWith(_structureIndex.ResourceViews.GetValueOrDefault(resource, []));
             }
-            foreach (FrameSlot slot in _frameSlots)
+            foreach (FrameResources resources in _frameResources)
             {
-                slot.ApplyEdit(changes);
-                slot.TransientResources?.Compact();
+                resources.ScheduleVersion = 0;
+                resources.TransientResources?.Compact();
             }
 
         }
@@ -301,7 +334,7 @@ public sealed partial class RenderGraph : IDisposable
 
     internal void ValidateQueueSelection(in PassQueueSelection policy, GraphPassKind kind)
     {
-        if (policy.IsExact)
+        if (policy.UsesQueue)
         {
             Queue queue = policy.Queue!;
             if (!ReferenceEquals(queue.Device, _device) || !_queues.Contains(queue))
@@ -324,7 +357,7 @@ public sealed partial class RenderGraph : IDisposable
         List<Queue> destination)
     {
         destination.Clear();
-        if (policy.IsExact)
+        if (policy.UsesQueue)
         {
             Queue queue = policy.Queue!;
             if (!ReferenceEquals(queue.Device, _device) || !_queues.Contains(queue))
@@ -384,7 +417,7 @@ public sealed partial class RenderGraph : IDisposable
                 if (_frameToken != 0) _deferredRetirements.Add(new StructureTransition(previous, staging, changes));
                 _structure = staging;
                 _structureIndex = _structureIndex.WithStructure(staging);
-                foreach (FrameSlot slot in _frameSlots) slot.ApplyEdit(changes);
+                _schedule.ApplyEdit(changes);
 #if DEBUG
                 LastEditStatistics = new RenderGraphEditStatistics(changes.Labels.Count, 0, 1, 9, 0, 0, 0, 0);
 #endif
@@ -405,8 +438,8 @@ public sealed partial class RenderGraph : IDisposable
                 _deferredRetirements.Add(new StructureTransition(previous, staging, changes));
             _structure = staging;
             _structureIndex = index;
+            _schedule.ApplyEdit(changes);
             StructureVersion++;
-            foreach (FrameSlot slot in _frameSlots) slot.ApplyEdit(changes);
 #if DEBUG
             int sharedBlocks = staging.CountSharedBlocks(previous);
             LastEditStatistics = new RenderGraphEditStatistics(
@@ -472,11 +505,16 @@ public sealed partial class RenderGraph : IDisposable
 
     internal void RetireAfterSubmittedFrames(ReadOnlySpan<IDisposable> values)
     {
+        if (_disposed)
+        {
+            foreach (IDisposable value in values) value.Dispose();
+            return;
+        }
         var completions = new List<QueueCompletion>();
         lock (_structureGate)
         {
-            foreach (FrameSlot slot in _frameSlots)
-                foreach (QueueCompletion completion in slot.Completions)
+            foreach (FrameResources resources in _frameResources)
+                foreach (QueueCompletion completion in resources.Completions)
                     AddCompletion(completions, completion);
             _persistentResources.Retire(values, CollectionsMarshal.AsSpan(completions));
         }
@@ -508,11 +546,8 @@ public sealed partial class RenderGraph : IDisposable
             GraphBuffer source = previous.Buffers.Get(identity);
             GraphBuffer destination = next.Buffers.Get(identity);
             destination.CurrentViewRange = source.CurrentViewRange;
-            if (destination.RegisteredResource is null && destination.Ownership == RenderGraphResourceOwnership.CallerOwned)
-                destination.BoundResource = source.BoundResource;
             if (ReferenceEquals(source.PersistentResource, destination.PersistentResource) &&
-                ReferenceEquals(source.RegisteredResource, destination.RegisteredResource) &&
-                ReferenceEquals(source.BoundResource, destination.BoundResource))
+                ReferenceEquals(source.RegisteredResource, destination.RegisteredResource))
                 destination.Boundaries = source.Boundaries;
         }
         foreach (GraphIdentity identity in changes.Textures)
@@ -520,11 +555,8 @@ public sealed partial class RenderGraph : IDisposable
             if (!previous.Textures.Contains(identity) || !next.Textures.Contains(identity)) continue;
             GraphTexture source = previous.Textures.Get(identity);
             GraphTexture destination = next.Textures.Get(identity);
-            if (destination.RegisteredResource is null && destination.Ownership == RenderGraphResourceOwnership.CallerOwned)
-                destination.BoundResource = source.BoundResource;
             if (ReferenceEquals(source.PersistentResource, destination.PersistentResource) &&
-                ReferenceEquals(source.RegisteredResource, destination.RegisteredResource) &&
-                ReferenceEquals(source.BoundResource, destination.BoundResource))
+                ReferenceEquals(source.RegisteredResource, destination.RegisteredResource))
                 destination.BoundaryStates = source.BoundaryStates;
         }
         foreach (GraphIdentity identity in changes.QueryPools)
@@ -557,14 +589,16 @@ public sealed partial class RenderGraph : IDisposable
     private void EnsureAvailable()
     {
         ObjectDisposedException.ThrowIf(_disposed || _closing, this);
-        if (_lost) throw new GraphicsException(GraphicsError.DeviceLost, "The RenderGraph Device is lost.");
+        if (_lost) throw new RenderGraphLostException();
     }
 
-    internal void MarkDeviceLost() => _lost = true;
+    private void EnsureCompletionQueries() => ObjectDisposedException.ThrowIf(_disposed || _closing, this);
 
-    private static ulong AllocateOwnerIdentity()
+    internal void MarkLost() => _lost = true;
+
+    private static ulong AllocateScopeIdentity()
     {
-        long identity = Interlocked.Increment(ref s_nextOwnerIdentity);
+        long identity = Interlocked.Increment(ref s_nextScopeIdentity);
         if (identity <= 0)
             throw new InvalidOperationException("The render graph owner identity space is exhausted.");
         return checked((ulong)identity);
@@ -575,14 +609,14 @@ public sealed partial class RenderGraph : IDisposable
         if (_disposed) return;
         if (_editToken != 0 || _frameToken != 0)
             throw new InvalidOperationException("A render graph edit or frame is active.");
-        if (!_lost)
+        if (_device.Status == DeviceStatus.Active)
         {
             WaitForSubmittedWork();
-            foreach (FrameSlot slot in _frameSlots) slot.Reset(_backend);
+            foreach (FrameResources resources in _frameResources) resources.Reset(_backend);
         }
         _closing = true;
-        foreach (FrameSlot slot in _frameSlots)
-            slot.Dispose();
+        foreach (FrameResources resources in _frameResources)
+            resources.Dispose();
         _commandContexts.Dispose();
         foreach (GraphView view in _structure.Views.Rows)
         {
@@ -607,8 +641,8 @@ public sealed partial class RenderGraph : IDisposable
     private void WaitForSubmittedWork()
     {
         var completions = new List<QueueCompletion>();
-        foreach (FrameSlot slot in _frameSlots)
-            foreach (QueueCompletion completion in slot.Completions)
+        foreach (FrameResources resources in _frameResources)
+            foreach (QueueCompletion completion in resources.Completions)
                 AddCompletion(completions, completion);
         foreach (GraphBuffer buffer in _structure.Buffers.Rows)
             foreach (BufferBoundaryState endpoint in buffer.BoundaryStates)

@@ -10,12 +10,11 @@
   "Blocks": [
     {
       "TypeId": "def46de0-7af8-87e0-75b9-660aaa202b94",
-      "Schema": "163D4CAD0FD3CEDB",
+      "Schema": "C582D6184D075EEC",
       "Fields": {
         "Inputs": [],
         "Specializations": [],
         "SourceNames": [
-          "cluster_transparency.slang",
           "unlit.slang"
         ]
       },

@@ -26,7 +26,7 @@ public sealed class TextureBarrierCompactionTests
             {
                 int current = index;
                 GraphPassId pass = edit.AddRasterPass<GraphColorAttachmentViewId, byte>(
-                    "adjacent raster " + index, PassQueueSelection.Exact(support.GraphicsQueue), view,
+                    "adjacent raster " + index, PassQueueSelection.OnQueue(support.GraphicsQueue), view,
                     new PassOptions(Culling: PassCullingMode.NeverCull),
                     (ref PassDefinition access, ref GraphColorAttachmentViewId target) =>
                         access.ColorAttachment(0, target, current == 2 ? LoadType.Load : LoadType.Clear,
@@ -36,10 +36,8 @@ public sealed class TextureBarrierCompactionTests
                 if (previous != default) edit.OrderAfter(pass, previous);
                 previous = pass;
             }
-            GraphBufferId output = edit.RegisterExternalBuffer(result,
-                [new BufferBoundaryState(new BufferRange(0, 256), result.InitialSync,
-                    result.InitialAccess, ResourceContentState.Undefined)]);
-            GraphPassId copy = edit.AddCopyFramePass("read final attachment", PassQueueSelection.Exact(support.GraphicsQueue),
+            GraphBufferId output = edit.RegisterExternalBuffer(result);
+            GraphPassId copy = edit.AddCopyFramePass("read final attachment", PassQueueSelection.OnQueue(support.GraphicsQueue),
                 (Texture: texture, Buffer: output), new PassOptions(Culling: PassCullingMode.NeverCull),
                 (ref PassDefinition pass, ref (GraphTextureId Texture, GraphBufferId Buffer) data) =>
                 {
@@ -78,10 +76,8 @@ public sealed class TextureBarrierCompactionTests
             GraphTextureId texture = edit.CreatePersistentTexture(new TextureDesc(
                 TextureDimension.Texture2D, 16, 16, 1, mips, layers, 1, Format.R8G8B8A8UNorm,
                 TextureUsages.ColorAttachment | TextureUsages.Sampled | TextureUsages.CopySource | TextureUsages.Storage));
-            GraphBufferId destination = edit.RegisterExternalBuffer(result,
-                [new BufferBoundaryState(new BufferRange(0, byteCount), result.InitialSync,
-                    result.InitialAccess, ResourceContentState.Undefined)]);
-            edit.AddCopyFramePass("clear all layers and mips", PassQueueSelection.Exact(support.GraphicsQueue),
+            GraphBufferId destination = edit.RegisterExternalBuffer(result);
+            edit.AddCopyFramePass("clear all layers and mips", PassQueueSelection.OnQueue(support.GraphicsQueue),
                 texture, new PassOptions(Culling: PassCullingMode.NeverCull),
                 (ref PassDefinition pass, ref GraphTextureId data) => pass.Write(data, whole,
                     PipelineSync.RenderTarget, ResourceAccess.RenderTarget, TextureLayout.RenderTarget,
@@ -89,14 +85,14 @@ public sealed class TextureBarrierCompactionTests
                 (ref CopyPassCommandScope commands, in GraphTextureId data) =>
                     commands.ClearTexture(commands.GetTexture(data), whole, new Vector4(1, 0.5f, 0, 1)));
             GraphPassId middleMip = edit.AddGeneralFramePass("sample middle mip",
-                PassQueueSelection.Exact(support.GraphicsQueue), texture,
+                PassQueueSelection.OnQueue(support.GraphicsQueue), texture,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition pass, ref GraphTextureId data) => pass.Read(data,
                     new TextureSubresourceRange(1, 1, 0, layers, TextureAspects.Color),
                     PipelineSync.ComputeShading, ResourceAccess.ShaderResource, TextureLayout.ShaderResource),
                 static (ref GeneralPassCommandScope commands, in GraphTextureId data) => { });
             GraphPassId partial = edit.AddGeneralFramePass("partially update overlapping mip ranges",
-                PassQueueSelection.Exact(support.GraphicsQueue), texture, new PassOptions(Culling: PassCullingMode.NeverCull),
+                PassQueueSelection.OnQueue(support.GraphicsQueue), texture, new PassOptions(Culling: PassCullingMode.NeverCull),
                 (ref PassDefinition pass, ref GraphTextureId data) =>
                 {
                     pass.Write(data, whole, PipelineSync.ComputeShading, ResourceAccess.UnorderedAccess, TextureLayout.UnorderedAccess, WriteCoverage.Partial);
@@ -106,7 +102,7 @@ public sealed class TextureBarrierCompactionTests
             edit.OrderAfter(partial, middleMip);
             var copyData = (Texture: texture, Buffer: destination);
             GraphPassId copy = edit.AddCopyFramePass("read every layer and mip",
-                PassQueueSelection.Exact(support.CopyQueue), copyData,
+                PassQueueSelection.OnQueue(support.CopyQueue), copyData,
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 (ref PassDefinition pass, ref (GraphTextureId Texture, GraphBufferId Buffer) data) =>
                 {

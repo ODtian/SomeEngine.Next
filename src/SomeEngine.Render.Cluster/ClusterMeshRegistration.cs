@@ -5,22 +5,23 @@ using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Cluster;
 
+internal readonly record struct ClusterMeshRequest(Mesh Mesh, MeshPayloadSource? PageSource);
+
 internal readonly record struct ClusterMeshRegistrationResult(
     ClusterMeshRegistration Registration,
     bool Added);
 
 internal sealed partial class ClusterMeshes
 {
-    private static readonly AsyncLocal<ClusterMeshes?> RegistrationOwner = new();
+    private static readonly AsyncLocal<ClusterMeshes?> RegistrationContext = new();
 
-    private readonly SemaphoreSlim _registrationAdmission = new(1, 1);
     private readonly CancellationTokenSource _registrationShutdown = new();
     private TaskCompletionSource _registrationIdle = CompletedIdleSource();
     private int _registrationOperationCount;
     private bool _registrationsStopping;
 
-    internal bool IsRegistrationOwner
-        => ReferenceEquals(RegistrationOwner.Value, this);
+    internal bool IsRegistrationContext
+        => ReferenceEquals(RegistrationContext.Value, this);
 
     internal int ActiveRegistrationOperations
     {
@@ -31,183 +32,96 @@ internal sealed partial class ClusterMeshes
         }
     }
 
-    internal async ValueTask<ClusterMeshRegistration> AddMeshAsync(
-        Mesh mesh,
-        CancellationToken cancellationToken = default,
-        MeshPayloadSource? pageSource = null)
-        => (await RegisterMeshAsync(mesh, cancellationToken, pageSource).ConfigureAwait(false)).Registration;
-
-    internal async ValueTask<ClusterMeshRegistrationResult> RegisterMeshAsync(
-        Mesh mesh,
-        CancellationToken cancellationToken = default,
-        MeshPayloadSource? pageSource = null)
-        => await RegisterMeshCoreAsync(
-            mesh,
-            pageSource,
-            cancellationToken).ConfigureAwait(false);
-
-    private async ValueTask<ClusterMeshRegistrationResult> RegisterMeshCoreAsync(
-        Mesh mesh,
-        MeshPayloadSource? pageSource,
-        CancellationToken cancellationToken)
+    private sealed class RegistrationAllocation(MeshPageRanges pages, ClusterBvhDestination destination)
     {
-        bool operationEntered = false;
-        bool admissionAcquired = false;
-        ClusterMeshes? previousOwner = null;
-        MeshPayloadSource? source = null;
-        bool ownsSource = false;
-        ClusterBvhDestination bvhDestination = default;
-        bool destinationAllocated = false;
-        Exception? cleanupFailure = null;
+        internal MeshPageRanges Pages { get; } = pages;
+        internal ClusterBvhDestination Destination { get; } = destination;
+        internal bool Stored;
+    }
+
+    internal async ValueTask<ClusterMeshRegistrationResult[]> RegisterMeshesAsync(
+        IReadOnlyList<ClusterMeshRequest> requests, CancellationToken cancellationToken = default)
+    {
+        EnterRegistrationOperation();
+        ClusterMeshes? previousContext = RegistrationContext.Value;
+        RegistrationContext.Value = this;
+        var allocations = new RegistrationAllocation?[requests.Count];
+        var results = new ClusterMeshRegistrationResult[requests.Count];
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _registrationShutdown.Token);
+        CancellationToken token = stop.Token;
         try
         {
-            ArgumentNullException.ThrowIfNull(mesh);
-            source = pageSource?.Retain();
-            ownsSource = source is not null;
-            if (IsRegistrationOwner)
-            {
-                throw new InvalidOperationException(
-                    "Cluster mesh registration cannot reenter the same residency epoch.");
-            }
-
-            EnterRegistrationOperation();
-            operationEntered = true;
-            using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken,
-                _registrationShutdown.Token);
-            CancellationToken token = linkedCancellation.Token;
-            await _registrationAdmission.WaitAsync(token).ConfigureAwait(false);
-            admissionAcquired = true;
-            previousOwner = RegistrationOwner.Value;
-            RegistrationOwner.Value = this;
-
-            PreparedMeshPages pageRegistration;
             lock (_gate)
             {
                 ThrowIfDisposed();
-                if (_registrationsStopping)
-                    throw new ObjectDisposedException(nameof(ClusterMeshes));
-                bool pagesRegistered = _pages.TryRegistration(
-                    mesh,
-                    out uint existingFirstPage,
-                    out uint existingPageCount);
-                bool rootRegistered = _bvh.TryRegisteredRoot(mesh, out uint existingRoot);
-                if (pagesRegistered != rootRegistered)
+                uint firstPage = _pages.Count;
+                int registrationIndex = _pages.RegistrationCount;
+                for (int index = 0; index < requests.Count; index++)
                 {
-                    throw new InvalidOperationException(
-                        "Cluster mesh registration indexes are inconsistent.");
+                    token.ThrowIfCancellationRequested();
+                    ClusterMeshRequest request = requests[index];
+                    if (_pages.TryRegistration(request.Mesh, out uint existingPage, out uint existingCount))
+                    {
+                        _bvh.TryRegisteredRoot(request.Mesh, out uint root);
+                        results[index] = new(new(request.Mesh, existingPage, existingCount, root,
+                            request.Mesh.LowestDetailPageIndices.Select(page => existingPage + page).ToArray()), Added: false);
+                        continue;
+                    }
+                    MeshPayloadSource source = request.PageSource?.Retain() ?? MeshPayloadSource.FromMesh(request.Mesh);
+                    try
+                    {
+                        MeshPageRanges pages = _pages.PrepareStreamedRegistration(request.Mesh, source, firstPage, registrationIndex);
+                        ClusterBvhDestination destination = _bvh.AllocateRegistration(source.BvhLength);
+                        allocations[index] = new(pages, destination);
+                        firstPage = checked(firstPage + (uint)pages.PageCount);
+                        registrationIndex++;
+                    }
+                    catch { source.Dispose(); throw; }
                 }
-                if (pagesRegistered)
-                {
-                    uint[] lowestDetailPageIds = source?.LowestDetailPageIndices.Span
-                        .ToArray()
-                        .Select(localPage => checked(existingFirstPage + localPage))
-                        .ToArray() ?? [];
-                    return new ClusterMeshRegistrationResult(
-                        new ClusterMeshRegistration(
-                            mesh,
-                            existingFirstPage,
-                            existingPageCount,
-                            existingRoot,
-                            lowestDetailPageIds),
-                        Added: false);
-                }
-
-                source ??= MeshPayloadSource.FromMesh(mesh);
-                ownsSource = true;
-                if (!source.Matches(mesh))
-                    throw new InvalidDataException("The explicit page source differs from the mesh content.");
-                if (source.Pages.Count == 0 || source.BvhLength <= 0)
-                    throw new InvalidDataException("A streamed cluster mesh must contain page metadata and BVH data.");
-
-                pageRegistration = _pages.PrepareStreamedRegistration(
-                    mesh,
-                    source,
-                    ownsSource);
-                bvhDestination = _bvh.AllocateRegistration(source.BvhLength);
-                destinationAllocated = true;
             }
 
-            // Mesh creation already acquired its required BVH. Registration consumes those ready bytes.
-            token.ThrowIfCancellationRequested();
-            mesh.ReadBvh(bvhDestination.Memory.Span);
+            await Task.Run(() => Parallel.For(0, allocations.Length,
+                new ParallelOptions { CancellationToken = token }, index =>
+                {
+                    if (allocations[index] is { } allocation)
+                        allocation.Pages.Mesh.ReadBvh(allocation.Destination.Memory.Span);
+                }), token).ConfigureAwait(false);
 
             lock (_gate)
             {
-                ThrowIfDisposed();
                 token.ThrowIfCancellationRequested();
-                if (_registrationsStopping)
-                    throw new OperationCanceledException("Cluster registration shutdown was requested.", token);
-
-                ClusterBvhRegistration bvh = _bvh.Prepare(
-                    mesh,
-                    bvhDestination,
-                    pageRegistration.FirstPageId,
-                    source.Pages);
-
-                // This is the only cross-subsystem preflight. Every validation and capacity
-                // reservation completes before either canonical registry is mutated.
-                _pages.ReserveRegistration(pageRegistration);
-                _bvh.ReserveCommit(bvh);
-                ClusterPageFixups.Group[] groups = _fixups.ReserveRegistration(bvh);
-
-                _pages.CommitRegistration(pageRegistration);
-                uint rootNode = _bvh.Commit(bvh);
-                _fixups.Register(groups);
-                destinationAllocated = false;
-                source = null;
-                AdvanceRevision();
-                return new ClusterMeshRegistrationResult(
-                    new ClusterMeshRegistration(
-                        mesh,
-                        pageRegistration.FirstPageId,
-                        checked((uint)pageRegistration.PageCount),
-                        rootNode,
-                        pageRegistration.LowestDetailPageIds),
-                    Added: true);
+                for (int index = 0; index < allocations.Length; index++)
+                {
+                    if (allocations[index] is not { } allocation) continue;
+                    MeshPageRanges pages = allocation.Pages;
+                    ClusterBvhRegistration bvh = _bvh.Prepare(pages.Mesh, allocation.Destination,
+                        pages.FirstPageId, pages.Source.Pages);
+                    _pages.ReserveRegistration(pages);
+                    _bvh.ReserveCommit(bvh);
+                    ClusterPageFixups.Group[] groups = _fixups.ReserveRegistration(bvh);
+                    _pages.CommitRegistration(pages);
+                    uint root = _bvh.Commit(bvh);
+                    _fixups.Register(groups);
+                    allocation.Stored = true;
+                    results[index] = new(new(pages.Mesh, pages.FirstPageId, (uint)pages.PageCount,
+                        root, pages.LowestDetailPageIds), Added: true);
+                    AdvanceRevision();
+                }
             }
+            return results;
         }
         finally
         {
-            if (destinationAllocated)
+            foreach (RegistrationAllocation? allocation in allocations)
             {
-                lock (_gate)
-                {
-                    try
-                    {
-                        cleanupFailure = _bvh.CancelRegistration(bvhDestination);
-                    }
-                    catch (Exception error)
-                    {
-                        cleanupFailure = error;
-                    }
-                    finally
-                    {
-                        AdvanceRevision();
-                    }
-                }
+                if (allocation is null || allocation.Stored) continue;
+                Exception? failure;
+                lock (_gate) failure = _bvh.CancelRegistration(allocation.Destination);
+                allocation.Pages.Source.Dispose();
+                if (failure is not null) RecordCleanupFailure(ClusterCleanupStage.Registration, failure);
             }
-            if (ownsSource && source is not null)
-            {
-                try
-                {
-                    source.Dispose();
-                }
-                catch (Exception error)
-                {
-                    cleanupFailure ??= error;
-                }
-            }
-            if (cleanupFailure is not null)
-                RecordCleanupFailure(ClusterCleanupStage.Registration, cleanupFailure);
-
-            if (admissionAcquired)
-            {
-                RegistrationOwner.Value = previousOwner;
-                _registrationAdmission.Release();
-            }
-            if (operationEntered)
-                ExitRegistrationOperation();
+            RegistrationContext.Value = previousContext;
+            ExitRegistrationOperation();
         }
     }
 

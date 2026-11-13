@@ -9,7 +9,7 @@ struct ClusterRasterTargetView
     uint PageSize;
 
     uint MipResolution;
-    uint PhysicalPagesPerRow;
+    uint AtlasPagesPerRow;
     uint CacheGeneration;
     uint MipLevel;
 

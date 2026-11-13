@@ -15,7 +15,7 @@ internal readonly record struct ClusterGpuAllocation(
 internal sealed partial class ClusterMeshes
 {
     private readonly Dictionary<uint, ClusterGpuAllocation> _gpuGeometry = [];
-    private readonly List<(ClusterGpuAllocation Allocation, QueueCompletion[] Completions)> _gpuRetirements = [];
+    private readonly List<(ClusterGpuAllocation Allocation, ulong FrameIdentity)> _gpuRetirements = [];
 
     private uint StreamingPageHeapCapacity
     {
@@ -52,25 +52,25 @@ internal sealed partial class ClusterMeshes
         lock (_gate) return _gpuGeometry[geometry.RootBvh];
     }
 
-    internal void ReleaseGpu(ClusterGeometry geometry, QueueCompletion[] completions)
+    internal void ReleaseGpu(ClusterGeometry geometry, ulong frameIdentity)
     {
         lock (_gate)
         {
             ClusterGpuAllocation allocation = _gpuGeometry[geometry.RootBvh];
             _gpuGeometry.Remove(geometry.RootBvh);
             _bvh.RemoveGpu(allocation.Bvh);
-            _gpuRetirements.Add((allocation, completions));
+            _gpuRetirements.Add((allocation, frameIdentity));
             _residentPageRanges = BuildResidentPageRanges([], []);
             AdvanceRevision();
         }
     }
 
-    private void RetireGpu(IGraphicsBackend backend)
+    private void RetireGpu(global::SomeEngine.RenderGraph.RenderGraph graph)
     {
         for (int index = _gpuRetirements.Count - 1; index >= 0; index--)
         {
             var retirement = _gpuRetirements[index];
-            if (retirement.Completions.Any(completion => !backend.IsComplete(completion))) continue;
+            if (!graph.IsFrameComplete(retirement.FrameIdentity)) continue;
             _heap.Free(retirement.Allocation.PageOffset, retirement.Allocation.Sizes.PageBytes);
             _bvh.ReleaseGpu(retirement.Allocation.Bvh);
             _gpuRetirements.RemoveAt(index);

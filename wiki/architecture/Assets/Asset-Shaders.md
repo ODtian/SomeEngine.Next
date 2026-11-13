@@ -1,134 +1,84 @@
 # ShaderAsset、Block 与驻留 Shader
 
-`ShaderAsset` 是唯一 Shader 语义资产身份。材质、场景和管线配置保存 `AssetId<ShaderAsset>`；target、入口和特化不会产生新的资产类型。
-
-完整规则见 [Shader Block、驻留与 Slang 重构规范](../shader/Shader-Block-Residency-Refactor.md)。本页说明当前取得 API；具名修复及验证状态见 [2026-09-29 审查](../../../reviews/AssetSpecReview-2026-09-29.md)。
+`ShaderAsset` 提供 shader 的资产身份。材质、场景和管线配置保存 `AssetId<ShaderAsset>`；编译目标、入口和特化由同一个资产的 Slang 数据表达。完整规则见 [Shader Block、驻留与 Slang 重构规范](../shader/Shader-Block-Residency-Refactor.md)。
 
 ## Block 组成
 
 ```text
 ShaderAsset
-  +-- ShaderSourceBlock           共享 IR、所选输入的位置与顺序
-  +-- ClusterMaterialEntriesBlock Cluster 入口 IR
-  +-- 业务自己的 ShaderInputBlock 业务管线入口 IR
-  +-- ShaderBlock                 可异步取得的已生成代码
-               -> Shader         同步、驻留的共同链接结果
+  +-- ShaderSourceBlock           根输入、输入位置、共享资产引用与特化
+  +-- 业务自己的 ShaderInputBlock 业务入口 IR
+  +-- ShaderBlock                 已生成的目标及逐入口代码
+               -> Shader         驻留的 Slang 对象、反射及代码
 ```
 
-可读 `.shader` 的 `ShaderSourceBlock.SourceNames` 指定相对于定义文件的根源码。内容构建通过 Slang 读取源码及 include/import，将每个 `IModule.Serialize` 的结果保存到 Block；二进制 Asset 从这些 Slang 数据恢复模块，无需重新打开构建机器上的源码。
+可读 `.shader` 的 `SourceNames` 指定相对于定义文件的根源码。内容构建保存各根输入的 `IModule.Serialize` 结果。公共输入通过独立 shader 资产保存 IR，纯输入资产设为 `SourceOnly = true`，包含入口的资产同样可以被导入；调用者的 `Dependencies` 保存对应资产 GUID。模块的文件输入归它自己的 `SourceBuildRecord`，调用者的构建记录使用 `AssetInputs` 表达资产依赖。
 
-`ShaderInputBlock` 统一保存 `SourceNames` 与逐份序列化 Slang IR。`ShaderSourceBlock`、`ClusterMaterialEntriesBlock` 与消费者派生的入口 Block 使用同一 `ShaderInputData` 编码。消费者声明 `[AssetBlock("业务的持久名称")]` 的具体 partial 类；`AssetBlockGenerator` 生成该类型的复制、静态 `ReadAsync` 和保存方法，恢复为业务指定的具体类型。
+`ShaderInputBlock` 保存 `SourceNames` 与逐份序列化 Slang IR。消费者通过 `[AssetBlock("业务的持久名称")]` 声明具体 partial 类，生成器负责它的复制、静态读取和保存。`ShaderSourceBlock.Inputs` 用 `ShaderInputLocation(BlockTypeId, SourceIndex)` 选择本资产中的实际输入，顺序决定 Slang 输入与入口顺序。`ShaderAsset.SelectInputs<TBlock>()` 选择已经取得的强类型 Block。
 
-`ShaderSourceBlock.Inputs` 保存共同输入清单。每个 `ShaderInputLocation` 用 `BlockTypeId` 与 `SourceIndex` 指向所在 Block 的实际 IR，清单顺序决定 Slang 输入与入口顺序。业务通过 `ShaderAsset.SelectInputs<TBlock>()` 选择已经取得的强类型 Block。各 Block 持有自己的字节，共同清单只持有位置。
+## 共享材质与入口
 
-## 共享材质与入口准备
+`standard_material.shader`、`unlit_material.shader`、接口和透明内核等公共输入在引擎 `assets/Shaders` 各烘焙一份。应用材质的组合源码选择顶点、曲面和可见性求值类型，通过 Slang `import` 使用公共实现。依赖生成布局和材质类型别名的配置头文件见 [Shader Build](../shader/Shader-Build.md#宏配置头文件)。
 
-`StandardMaterialInputs.Create()` 返回含引擎材质接口及 `StandardMaterial` 序列化 IR 的 `ShaderSourceBlock`。`ClusterMaterialEntriesBlock.Create()` 返回 Cluster 材质入口及共享 `cluster_transparency` 内核的 IR。`CreateUnlit()` 同样携带该共享内核；选择整个入口 Block 后，动态透明材质组合从驻留输入取得内核与具体材质实现，并按模块名共用内核。业务入口沿 Slang 的 `import material_interfaces`、`import standard_material` 使用这些公开类型，并将自己 `IModule.Serialize` 的结果放入具体入口 Block。
-
-Unlit 使用 `UnlitMaterialInputs.Create()` 与 `ClusterMaterialEntriesBlock.CreateUnlit()`。DefaultGame 和游戏模板的准备代码显式选择各自的输入，然后保存固定入口集合的共同发布代码。通用 CLI 编译已经准备好的 ShaderAsset 输入；管线集合由业务准备代码选择。
+用户入口可以分别放在本资产的强类型 Block 中，公共材质实现由共享资产引用取得：
 
 ```csharp
 [AssetBlock("Game.ForwardMaterialEntries")]
 public sealed partial class ForwardMaterialEntriesBlock : ShaderInputBlock;
-```
 
-```csharp
-using var asset = new ShaderAsset { Name = "Standard" };
-using ShaderSourceBlock material = StandardMaterialInputs.Create();
-using ClusterMaterialEntriesBlock cluster = ClusterMaterialEntriesBlock.Create();
-using var forward = new ForwardMaterialEntriesBlock { SourceNames = ["forward_material.slang"] };
-forward.SetSerializedSource(0, forwardIr.Span);
-asset.SetBlock(material);
-asset.SetBlock(cluster);
+using var asset = new ShaderAsset { Name = "Material entries" };
+asset.GetBlock<ShaderSourceBlock>().Dependencies = [materialInput];
+using var forward = new ForwardMaterialEntriesBlock { SourceNames = [entryName] };
+forward.SetSerializedSource(0, entryIr.Span);
 asset.SetBlock(forward);
-asset.SelectInputs<ShaderSourceBlock>();
-asset.SelectInputs<ClusterMaterialEntriesBlock>();
 asset.SelectInputs<ForwardMaterialEntriesBlock>();
-Shader shader = await asset.CreateAsync(slang, sessionDescription);
+Shader shader = await shaders.CreateAsync(asset, files);
 ```
 
-`ShaderAsset.CreateAsync` 按共同清单异步取得 IR，使用同一个 `ISession` 恢复 Slang 对象，compose/specialize/link 一次，返回一个包含全部所选入口的 `Shader`。持久 Block 的共同编码由 Asset 的目录与静态数据读取能力直接取得，业务的具体入口类型由泛型 Block 入口确定。`Inputs` 为空时，已有单个 `ShaderSourceBlock` 的取得行为继续作为默认输入。
+`ShaderLibrary` 先取得 `Dependencies`，再从所选 Block 恢复当前资产的 IR，组合并链接入口。共享输入只装入库的 session；公共 IR 的存储和加载分别由它自己的资产与库承担。
 
-引擎 IR 通过固定版本 Slang 导出并嵌入资产程序集。修改相关 Slang 实现后执行：
+`Shader.GetSlangDeclarations()` 提供该 shader 根输入及实际资产依赖的原生声明闭包，按输入名称去重。材质标量、贴花标量和透明求值器从这组声明读取属性，布局由各自已链接 shader 的反射给出。根输入数量、入口顺序与保存的源码数量保留各自含义。保存代码、已经烘焙的特化与组合 shader 共同保留这些原生模块引用。
 
-```powershell
-dotnet run --project tools/ExportShaderInputs/SomeEngine.ExportShaderInputs.csproj -- .
-```
+内置姿势、皮肤包围体、Canvas 与模板缓冲传输 shader 同样通过 `EngineShaderAssets` 中的固定 GUID 引用。对应 `.slang` 与 `.shader` 位于引擎内容目录，feature 使用传入的 `AssetLoader` 和同一个 `ShaderLibrary` 加载。
 
-输出位于 `assets/Shaders/Inputs/*.slang-module`，对应导出来源是同目录的 `*.ir.slang`。
+## 构建与保存代码
 
-## 固定管线发布
+项目通过 `AssetProject.ShaderTargets` 选择编译目标，通过 `BuildAllAsync` 按输入资产依赖排列构建。DefaultGame 开发内容选择 DXIL。独立工具和共享内容目录说明见 [Shader Build](../shader/Shader-Build.md)。
 
-发布内容确定管线入口集合后，调用 `ShaderAsset.CompileAsync(slang, sessionDescription)` 编译全部所选输入并替换共同 `ShaderBlock`。返回的 `ShaderCompilation.Shader` 持有这次 Slang 链接生成的直接代码 blob；源码定义的编译同时保存序列化 IR 并返回实际读取的文件记录。已经准备好的 IR 继续由各输入 Block 持有。
+已有强类型入口 IR 通过 `shaders.CompileAsync(asset, files)` 生成共同 `ShaderBlock`。`InputVersions` 包含本资产和全部传递依赖的输入版本。每项由资产 `AssetId`、输入的 `BlockTypeId` 和 `SourceIndex` 标识实际 Slang 输入，`DataVersion` 记录该输入所在 Block 的版本；按这组身份去重、排序后保存。共享输入的构建结果也保存自己的完整版本闭包，消费者沿同一构建次序收集这些数据。变体的表达式和入口名保存在来源块，加载时统一完成特化，使用时直接查表。
 
-共同 `ShaderBlock` 保存可取得的整 target 代码及全部逐入口代码。`InputVersions` 按输入顺序记录 `ShaderInputLocation` 与所在 Block 的 `DataVersion`。共同 IR 编码保存同一 `DataVersion`，文件重开恢复该内容版本；字节修改、字段替换与入口选择通过现有修改方法推进版本。输入位置、顺序与内容版本共同决定保存代码对应的输入。
+`ShaderBlock` 保存实际代码和逐入口资源使用数据，Slang 提供入口、资源、类型、布局与属性反射。整目标代码可选；逐入口代码能够单独提供执行代码。加载时，保存代码要求完整输入版本和目标设置共同匹配；同一组 IR 恢复的反射与保存的代码、资源使用数据一起组成 `Shader`。输入版本变化或目标缺少适用代码时，同一 `ShaderLibrary` 从当前 IR 生成匹配的代码和资源使用数据。
 
-`ShaderAsset.CreateAsync` 在链接前依据输入版本和现有代码设置寻址选择保存代码或 IR 代码生成。匹配保存代码时，同一组 IR 恢复直接 Slang 对象及反射，代码 chunk 取得为最终托管数组。IR 分发、额外特化以及编译设置变化使用共同输入生成 Slang blob。两条路径都按所选顺序链接一次，并返回同一种 `Shader`。
+当前资产格式为 `ShaderBlock.Version = 13`，`ShaderAsset.Version` 随之变化；`SlangShaderImporter.ImporterVersion = 36`。公共输入与消费者按资产依赖顺序重新构建这些产物。
+
+## 取得与期限
 
 ```csharp
-await asset.CompileAsync(slang, sessionDescription, cancellationToken);
-await asset.SaveAsync(releasePath, cancellationToken);
-using ShaderAsset published = await ShaderAsset.OpenAsync(releasePath, cancellationToken);
-Shader shader = await published.CreateAsync(slang, sessionDescription,
-    cancellationToken: cancellationToken);
+await using AssetLoader files = EngineShaderContent.OpenFiles(contentRoot, manifest);
+using var shaders = new ShaderLibrary(device.Capabilities.CompileTarget);
+Shader shader = await shaders.GetAsync(files, shaderId, cancellationToken);
 ```
 
-共同字节码服务固定管线发布内容的玩家启动。业务添加、替换或重排入口后重新调用 `CompileAsync`，同一资产身份取得新的共同代码。仅 IR 的分发内容保留完整输入，玩家机器通过相同 `CreateAsync` 完成编译。
+`ShaderLibrary` 按编译目标持有一个 global session、一个 session、已加载输入表和 Shader 强引用表。专用线程执行 Slang 前端调用；文件 I/O 在编译线程之外进行。库先取得当前传递依赖，再将其输入版本与资产自身内容一起用于已有缓存键。每个缓存值共同持有 `Shader` 和这次完整的输入版本集合，多个内容根中相同的资产及依赖内容得到同一对象。
 
-`ShaderBlock` 保存由 Slang 生成的代码 chunk。chunk key 由实际 `SessionDesc`/`TargetDesc` 编译设置与入口序号得到；整 target 代码允许缺失，逐入口代码仍可独立取得。Block 不保存入口、阶段、资源、类型或布局的引擎副本。
+一次公共加载、创建或编译调用按资产身份共用本次依赖解析的任务表。多个分支引用相同输入时，共用同一个解析任务；每个节点的资产打开、Block 解码、缓存键计算和模块就绪检查执行一次。任务表随本次解析结束释放，持久 Shader 缓存继续负责跨调用共享。
 
-## 两条取得行为
+Runtime 的 `ApplicationShaders` 在进程范围按目标主持有这些库。每次 `Application.RunAsync` 与场景切换取得同一目标库，`ApplicationRenderer` 保留消费引用；应用退出释放其 renderer、内容访问与 display，进程退出统一关闭库。工具与独立调用方通过普通 `ShaderLibrary` 构造和 Dispose 管理自己的库。
 
-`ShaderSourceBlock.CreateAsync`：
+命中 Shader 缓存后，库通过当前 session 的输入表确认模块就绪并直接返回对象。刷新 session 后，缺失模块的依赖恢复按 Shader key 共享一次加载。依赖读取和资产释放在 shader 表的锁外完成；文件存储的同步版本查询直接读取固定文件头。
 
-1. 异步取得已经保存的序列化 Slang 数据，或从调用方搜索路径读取源码及依赖；
-2. 用调用方提供的 `IGlobalSession` 和 `SessionDesc` 建立 `ISession`；
-3. 恢复 `IModule`，取得 `IEntryPoint`，compose/specialize/link；
-4. 直接持有 Slang 产生的代码 blob；
-5. 返回驻留完成的 `Shader`。
+仅更新传递的 `SourceOnly` 资产也会改变消费者的缓存选择。新请求取得与当前依赖配对的完整 `Shader`，既有读者继续持有原来的对象和代码。文件监视器的替换同时采用新缓存值中的 Shader 与输入版本。
 
-`ShaderBlock.CreateAsync`：
+活动输入条目共同持有原生输入、声明来源与资产 `DataVersion`。同名输入版本变化时，Slang 线程在同一请求中刷新 session 并恢复该 shader 的实际依赖闭包与根 IR；普通入口和每个特化编译均携带这组上下文。同内容缓存命中继续使用原 Shader 与已驻留输入。
 
-1. 通过同一 `ShaderSourceBlock` 恢复直接 Slang 对象与反射；
-2. 异步取得与调用方编译设置匹配的代码 chunk；
-3. 将代码物化为实际长度的最终 `byte[]`，交给 `Shader` 通过普通 GC 引用持有；
-4. 返回同一种 `Shader`。
+`Shader` 通过普通引用保留 Slang 对象、反射、blob 和托管代码数组。Asset 与文件访问结束后，持有该 Shader 的材质和 pipeline 继续使用已驻留数据。pipeline 创建消费已有 Shader；draw/dispatch 消费创建时派生的管线和绑定数据。
 
-释放 `ShaderAsset`、Block 副本或 `AssetFile` 后，已有 `Shader` 仍持有其 `ISession`、`IModule`、`IEntryPoint`、`IComponentType` 以及最终托管代码或直接 `ISlangBlob`。普通入口、反射和代码访问都是同步的。`Shader` 不实现 `IDisposable`，更新创建完整新实例，由消费方交换外层引用。
+`EngineShaderContent.OpenFiles` 将应用目录与 `content-directories.json` 声明的引擎目录组合为多存储加载器。材质通过 `MaterialAsset.CreateAsync` 或 `UpdateAsync` 使用已取得的 Shader 引用；具体材质类型解释自己的资源和标量字段。
 
-`Shader.SlangCode` 是 `SlangShaderData`，共同持有 global、session 与实际 linked component；
-同一码的代码副本共享此对象，独立专门化保留自己的 component。RHI 的管线描述、异步创建请求、
-管线和继续访问 reflection 的参数或间接命令对象传递同一份数据，直到实际使用结束。
-原生 Slang component 通过借用指针访问 session，因此数据还持有一份原生 session 引用；
-由 `SafeHandle` 在普通 COM wrapper finalizer 之后释放，保证整组回收时的父子顺序。
-直接访问 `SlangCode.Code` 或借用的 reflection 时，调用方持续持有对应的 `SlangShaderData`。
+## 更新
 
-`ApplicationShaderLifetimeTests.ApplicationsRenderTheSameSceneAcrossShaderCollection` 于 2026-10-16
-通过 D3D12、Vulkan 两后端检查：每项在同一进程先后启动两个 Application，各渲染 8 帧，
-关闭后执行完整 GC 与 finalizer 等待，两次线性图像在 0.001 容差内一致，测试进程正常完成。
+开发构建的文件监视器根据来源文件与资产依赖构建受影响 shader，通过同一个库取得替代对象。帧边界的 `ReplaceShader` 更新材质和受影响的 pipeline；历史、实例与其它 feature 资源继续由各自持有者维护。
 
-`Shader.GetSlangEntryMetadataAsync` 在驻留 Shader 内共用每个 target/入口的直接 Slang `IMetadata` 与取得任务。材质加载可以提前启动入口准备，渲染侧从同一个 Shader 取得结果；入口准备的后台并发由这一取得路径统一限制。
+实现入口：[ShaderAsset](../../../src/SomeEngine.Assets/Schema/ShaderAsset.cs)、[ShaderInputBlock](../../../src/SomeEngine.Assets/Schema/ShaderInputBlock.cs)、[ShaderSourceBlock](../../../src/SomeEngine.Assets/Schema/ShaderSourceBlock.cs)、[ShaderBlock](../../../src/SomeEngine.Assets/Schema/ShaderBlock.cs)、[ShaderLibrary](../../../src/SomeEngine.Resources/ShaderLibrary.cs)、[Shader](../../../src/SomeEngine.Resources/Shader.cs)。
 
-Cluster 的提前准备与材质阶段解析共用入口选择。应用启动通过具体资产方法创建场景材质和管线 Shader，图形设备创建与内容加载并行；场景资源就绪后，渲染消费阶段对共用 Shader 调用 `ClusterPipelineSystem.PrepareMaterialShader`，按编译 target、可见性模式和设备能力选择着色、细分及光栅入口，启动入口资源分析。Release 的保存代码加载会话使用 Slang 的最少优化及基础代码优化级别完成反射与入口资源分析，必要的 lowering 与资源使用分析仍由 Slang 执行。保存代码 chunk 按调用方原始编译设置读取；源编译与导入使用构建设置。
-
-`ShaderBlock` 的保存代码直接读入最终数组，通过统一 AssetByteCache 预算缓存，后续创建复用缓存结果。ShaderSourceBlock 的 CompileAsync 复用 CreateAsync 的编译主体，返回直接 Shader、序列化 Slang 数据和编译器实际读到的字节摘要。Importer 保存这些结果，并由项目核对输入版本。进程级 Importer 编译服务持有全局 Slang 会话，共同 Block 入口按会话串行访问。
-
-## 引用与配置
-
-`ShaderRef` 保存 `AssetId<ShaderAsset>` 与入口名。调用方为具体 Shader 创建提供 `IGlobalSession`、`SessionDesc` 与所选编译 target。`ShaderRef.LoadAsync` 接收文件读取器、强类型 WeakValues 及明确的 Slang 输入，通过 `ShaderAsset.GetAsync` 取得存活的共同 Shader，返回 `AssetId<ShaderAsset>` 到实际 Shader 的引用字典。Cluster、VirtualShadowMap Block 的 `Create(name, shaders)` 直接从这些实际引用解析入口。
-
-`ClusterShadersAsset` 与 `VirtualShadowMapShadersAsset` 保存角色到 `ShaderRef` 的配置集合。对应 Block 的 `Create(name, shaders)` 同步消费已取得的实际引用，创建的资源组持有该 `Shader` 和由它锚定的 `EntryPointReflection`。
-
-## 构建与失效
-
-`.shader` 是人类可编辑来源，`SourceNames` 与 `Inputs` 表达实际编译输入。构建 target 由工具选择。`SlangShaderImporter` 使用官方 Slang API 编译、保存模块 IR 和可用代码，并记录实际读取的依赖。
-
-这是破坏性 schema；旧反射字段和旧代码容器没有兼容 reader。编译器、来源、依赖、Block 编码或 target 设置变化时重新构建同一资产身份。
-
-实现入口：[ShaderAsset](../../../src/SomeEngine.Assets/Schema/ShaderAsset.cs)、[ShaderInputBlock](../../../src/SomeEngine.Assets/Schema/ShaderInputBlock.cs)、[ShaderSourceBlock](../../../src/SomeEngine.Assets/Schema/ShaderSourceBlock.cs)、[ClusterMaterialEntriesBlock](../../../src/SomeEngine.Assets/Schema/ClusterMaterialEntriesBlock.cs)、[ShaderBlock](../../../src/SomeEngine.Assets/Schema/ShaderBlock.cs)、[Shader](../../../src/SomeEngine.Resources/Shader.cs)、[项目来源说明](../../../docs/ShaderSources.md)。
-
-## 存活实例取得
-
-`ShaderAsset.GetAsync(files, id, values, slang, settings)` 接收业务持有的 `WeakValues<AssetResourceKey<ShaderAsset>, Shader>`。一个索引的使用范围固定 Slang 设置；完整取得键保存文件读取器来源、资产 ID 和存储选定版本。所有可变特化输入通过 `ShaderAsset.CreateAsync` 的明确调用建立独立结果。
-
-索引命中直接返回存活 Shader；唯一创建发起者在索引锁外打开 ShaderAsset、读取全部选定输入并创建完整 Shader。业务在自己的对象中保留实际引用；Shader 代码、反射与 Slang 数据的使用期由这些普通引用表达。完整取得与分批清理见 [WeakValues](../Weak-Values.md)。
+[ShaderDefinitionTests](../../../tests/SomeEngine.Assets.Tests/Assets/ShaderDefinitionTests.cs) 通过公共加载与编译入口验证传递输入变化、旧读者保留、重复请求共享，以及按入口名取得的代码和实际使用资源名称的一致性。[ShaderFileTests](../../../tests/SomeEngine.Assets.Tests/Assets/ShaderFileTests.cs) 验证从保存 IR 生成所选目标及其特化变体。

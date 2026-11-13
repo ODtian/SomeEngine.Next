@@ -144,6 +144,8 @@ public abstract class Swapchain : DeviceResource
     public Surface Surface { get; }
     public SwapchainInfo Info { get; }
     public TextureUsages ImageUsages { get; }
+    internal virtual IReadOnlyList<SwapchainImageUse> ImageUses => [];
+    internal virtual bool IsOutOfDate => false;
 }
 
 /// <remarks>
@@ -196,7 +198,7 @@ public enum ReconfigureStatus : byte
     Unsupported,
 }
 
-internal abstract class SwapchainImageLease
+internal abstract class SwapchainImageUse
 {
     private long _sequence;
     private long _generation;
@@ -206,13 +208,16 @@ internal abstract class SwapchainImageLease
     private ResourceAccess _initialAccess;
     private TextureLayout _initialLayout;
 
-    protected SwapchainImageLease(Swapchain swapchain)
+    protected SwapchainImageUse(Swapchain swapchain)
     {
         Swapchain = swapchain;
     }
 
     internal Swapchain Swapchain { get; }
     internal ulong CurrentSequence => unchecked((ulong)Volatile.Read(ref _sequence));
+    internal ulong CurrentGeneration => unchecked((ulong)Volatile.Read(ref _generation));
+    internal SwapchainImageStatus CurrentStatus => (SwapchainImageStatus)Volatile.Read(ref _status);
+    internal Texture? CurrentTexture => Volatile.Read(ref _texture);
 
     internal void BeginAcquire(
         ulong sequence,
@@ -222,10 +227,6 @@ internal abstract class SwapchainImageLease
         ResourceAccess initialAccess,
         TextureLayout initialLayout)
     {
-        if (sequence is 0 or ulong.MaxValue)
-            throw new ArgumentOutOfRangeException(nameof(sequence));
-        if (generation == 0)
-            throw new ArgumentOutOfRangeException(nameof(generation));
 
         _texture = texture;
         _initialSync = initialSync;
@@ -281,7 +282,6 @@ internal abstract class SwapchainImageLease
 
     internal bool TryBeginSubmit(ulong sequence)
     {
-        Validate(sequence);
         return Interlocked.CompareExchange(
             ref _status,
             (int)SwapchainImageStatus.Submitted,
@@ -290,17 +290,14 @@ internal abstract class SwapchainImageLease
 
     internal void RestoreAcquired(ulong sequence)
     {
-        Validate(sequence);
-        if (Interlocked.CompareExchange(
+        _ = Interlocked.CompareExchange(
                 ref _status,
                 (int)SwapchainImageStatus.Acquired,
-                (int)SwapchainImageStatus.Submitted) != (int)SwapchainImageStatus.Submitted)
-            throw new InvalidOperationException("The image cannot be restored to Acquired.");
+                (int)SwapchainImageStatus.Submitted);
     }
 
     internal bool TryBeginPresent(ulong sequence)
     {
-        Validate(sequence);
         return Interlocked.CompareExchange(
             ref _status,
             (int)SwapchainImageStatus.Presented,
@@ -309,15 +306,10 @@ internal abstract class SwapchainImageLease
 
     internal void RestoreSubmittedAfterPresentFailure(ulong sequence)
     {
-        Validate(sequence);
-        if (Interlocked.CompareExchange(
+        _ = Interlocked.CompareExchange(
                 ref _status,
                 (int)SwapchainImageStatus.Submitted,
-                (int)SwapchainImageStatus.Presented) != (int)SwapchainImageStatus.Presented)
-        {
-            throw new InvalidOperationException(
-                "The image cannot be restored to Submitted after a failed Present.");
-        }
+                (int)SwapchainImageStatus.Presented);
     }
 
     internal void Invalidate(bool deviceLost)
@@ -338,33 +330,34 @@ internal abstract class SwapchainImageLease
 /// </remarks>
 public readonly struct SwapchainImage
 {
-    private readonly SwapchainImageLease? _lease;
+    private readonly SwapchainImageUse? _handle;
     private readonly ulong _sequence;
 
-    internal SwapchainImage(SwapchainImageLease lease, ulong sequence)
+    internal SwapchainImage(SwapchainImageUse handle, ulong sequence)
     {
-        _lease = lease ?? throw new ArgumentNullException(nameof(lease));
+        _handle = handle ?? throw new ArgumentNullException(nameof(handle));
         _sequence = sequence;
     }
 
-    internal SwapchainImageLease Lease => _lease
+    internal SwapchainImageUse Handle => _handle
         ?? throw new InvalidOperationException("The default SwapchainImage is invalid.");
 
     internal ulong Sequence => _sequence;
+    internal SwapchainImageUse? ImageUse => _handle;
 
     public Swapchain Swapchain
     {
         get
         {
-            SwapchainImageLease lease = Lease;
-            lease.Validate(_sequence);
-            return lease.Swapchain;
+            SwapchainImageUse handle = Handle;
+            handle.Validate(_sequence);
+            return handle.Swapchain;
         }
     }
 
-    public Texture Texture => Lease.GetTexture(_sequence);
-    public PipelineSync InitialSync => Lease.GetInitialSync(_sequence);
-    public ResourceAccess InitialAccess => Lease.GetInitialAccess(_sequence);
-    public TextureLayout InitialLayout => Lease.GetInitialLayout(_sequence);
-    public SwapchainImageStatus Status => Lease.GetStatus(_sequence);
+    public Texture Texture => Handle.GetTexture(_sequence);
+    public PipelineSync InitialSync => Handle.GetInitialSync(_sequence);
+    public ResourceAccess InitialAccess => Handle.GetInitialAccess(_sequence);
+    public TextureLayout InitialLayout => Handle.GetInitialLayout(_sequence);
+    public SwapchainImageStatus Status => Handle.GetStatus(_sequence);
 }

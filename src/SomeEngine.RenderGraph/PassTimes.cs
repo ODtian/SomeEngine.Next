@@ -8,7 +8,7 @@ public ref partial struct RenderGraphEdit
     public void MeasurePassTime(GraphPassId pass, GraphQueryPoolId pool, uint firstQuery)
     {
         ValidatePass(pass);
-        ValidateOwner(pool.Value);
+        ValidateScope(pool.Value);
         DevelopmentCheck.Require(Structure.QueryPools.Get(pool.Value).Resource.Description.Type == QueryType.Timestamp,
             "Pass time measurements require timestamp queries.");
         GraphIdentity access = AddQueryAccess(pass.Value, pool, GraphAccessMode.Write, WriteCoverage.Complete,

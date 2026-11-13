@@ -3,8 +3,9 @@
 The private resource allocator uses 64 MiB Device-local blocks and 16 MiB upload/readback blocks,
 partitioned by memory type, heap class and node masks. Eligible small resources use placed
 suballocation; large or unsuitable resources fall back to committed allocation. Device-local block
-growth checks DXGI budget pressure. Suballocations return only when their final `NativeLease`
-releases, and each pool keeps at most one warm empty block.
+growth checks DXGI budget pressure. Suballocations return after their resource, retained views and
+mappings release their allocation references. Device deferred releases carry GPU completion timing,
+and each pool keeps at most one warm empty block.
 
 Allocator construction and growth are failure-atomic: managed containers are reserved before native
 Heap creation, native pointers remain in local cleanup scopes until ownership transfer, and failed

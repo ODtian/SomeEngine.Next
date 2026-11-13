@@ -1,10 +1,10 @@
-#include "vsm_page_entry.slang"
-#include "vsm_page_dispatch.slang"
-#include "vsm_depth_cache.slang"
+__exported import vsm_page_entry;
+__exported import vsm_page_dispatch;
+__exported import vsm_depth_cache;
 struct VirtualShadowPageMergeUniforms
 {
     uint PageSize;
-    uint PhysicalPagesPerRow;
+    uint AtlasPagesPerRow;
     uint AtlasSize;
     uint Pad0;
 };
@@ -22,7 +22,7 @@ void MergeVirtualShadowStaticDepth(uint3 groupId : SV_GroupID, uint3 thread : SV
     if (pageIndex >= MergePhysicalPageCount[0]) return;
     uint page = MergePhysicalPages[pageIndex].x;
     if ((MergePageMetadata[page].Flags & VSM_PAGE_STATIC_UNCACHED) == 0u) return;
-    uint2 origin = uint2(page % PageMerge.PhysicalPagesPerRow, page / PageMerge.PhysicalPagesPerRow) * PageMerge.PageSize;
+    uint2 origin = uint2(page % PageMerge.AtlasPagesPerRow, page / PageMerge.AtlasPagesPerRow) * PageMerge.PageSize;
     uint2 first = (VirtualShadowDispatchTile(groupId, tiles) * 8u + thread.xy) * 2u;
     for (uint y = 0u; y < 2u; y++)
     for (uint x = 0u; x < 2u; x++)

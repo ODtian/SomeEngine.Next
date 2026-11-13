@@ -41,8 +41,10 @@ public static class AssetCommands
                 {
                     using Schema.ShaderAsset shader = await Schema.ShaderAsset.OpenAsync(input, cancellationToken).ConfigureAwait(false);
                     var slang = SlangShaderImporter.GlobalSession;
-                    var settings = SlangShaderImporter.CreateSessionDescription(input, SlangShaderImporter.CreateDefaultTargets(slang));
-                    await shader.CompileAsync(slang, settings, cancellationToken).ConfigureAwait(false);
+                    var settings = SlangShaderImporter.CreateSessionDescription(input, SlangShaderImporter.CreateTargets(slang, project.ShaderTargets));
+                    await using var files = EngineShaderContent.OpenFiles(project.RootPath, project.Manifest);
+                    using var shaders = new SomeEngine.Resources.ShaderLibrary(slang, settings);
+                    await shaders.CompileAsync(shader, files, cancellationToken).ConfigureAwait(false);
                     id = project.RegisterAsset(await shader.SaveAsync(input, cancellationToken).ConfigureAwait(false));
                 }
                 else id = await project.BuildAsync(input, cancellationToken: cancellationToken).ConfigureAwait(false);

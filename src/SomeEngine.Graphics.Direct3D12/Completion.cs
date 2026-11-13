@@ -8,16 +8,16 @@ internal sealed unsafe partial class D3D12Backend
     public bool IsComplete(in QueueCompletion completion)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
-        D3D12Queue queue = RequireQueue(completion.Queue, nameof(completion));
-        return queue.IsComplete(completion.Value);
+        D3D12Queue queue = RequireQueue(completion.QueueReference, nameof(completion));
+        return queue.IsComplete(completion.SubmittedValue);
     }
 
     public WaitStatus WaitCpu(in QueueCompletion completion, TimeSpan timeout)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiWaitAndCollect);
-        int milliseconds = Timeouts.ToMilliseconds(timeout, nameof(timeout));
-        D3D12Queue queue = RequireQueue(completion.Queue, nameof(completion));
-        if (queue.IsComplete(completion.Value))
+        int milliseconds = Timeouts.GetMilliseconds(timeout);
+        D3D12Queue queue = RequireQueue(completion.QueueReference, nameof(completion));
+        if (queue.IsComplete(completion.SubmittedValue))
             return WaitStatus.Completed;
 
         nint waitEvent;
@@ -34,7 +34,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             ThrowIfFailed(
                 queue.NativeDevice,
-                    ResourceTrace.SetEventOnCompletion(queue.Fence, completion.Value, (void*)waitEvent),
+                    ResourceTrace.SetEventOnCompletion(queue.Fence, completion.SubmittedValue, (void*)waitEvent),
                 NativeOperationType.Ordinary,
                 "ID3D12Fence::SetEventOnCompletion");
 
@@ -45,7 +45,7 @@ internal sealed unsafe partial class D3D12Backend
                     milliseconds == Timeout.Infinite ? uint.MaxValue : checked((uint)milliseconds));
             return result switch
             {
-                0 => queue.IsComplete(completion.Value)
+                0 => queue.IsComplete(completion.SubmittedValue)
                     ? WaitStatus.Completed
                     : throw new GraphicsException(
                         GraphicsError.NativeFailure,

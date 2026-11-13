@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using DefaultGame;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.Math;
@@ -35,7 +35,7 @@ public sealed class TerrainAssetRenderingTests(SceneContentFixture content)
             SceneImage? before = null, after = null, expectedBefore = null, expectedAfter = null;
             var application = new ApplicationScene(content.DirectoryPath)
             {
-                Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                     "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
                 UpdateFrame = frame =>
                 {
@@ -75,7 +75,7 @@ public sealed class TerrainAssetRenderingTests(SceneContentFixture content)
             reference.RaiseDetail(2f);
             var expected = new ApplicationScene(content.DirectoryPath)
             {
-                Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                     "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
                 UpdateFrame = frame =>
                 {

@@ -9,6 +9,7 @@ public unsafe partial class Shader
 {
     private IGlobalSession _slangGlobal => SlangCode.Global;
     private readonly ImmutableArray<IModule> _slangUnits;
+    private readonly ImmutableArray<IModule> _slangDeclarationSources;
     private readonly ImmutableArray<IEntryPoint> _slangEntries;
     private IComponentType _slangCode => SlangCode.Code;
     private readonly ImmutableArray<TargetDesc> _slangTargets;
@@ -34,11 +35,13 @@ public unsafe partial class Shader
         int entryCount,
         ImmutableArray<ImmutableHashSet<SlangDescriptorLocation>> usedParameters,
         ImmutableArray<bool> unboundEntries,
-        ImmutableArray<(string EntryPoint, ImmutableArray<string> Arguments, Lazy<Shader> Shader)> specializations = default)
+        ImmutableArray<(string EntryPoint, ImmutableArray<string> Arguments, Shader Shader)> specializations = default,
+        ImmutableArray<IModule> declarationSources = default)
     {
         Name = name;
         SlangCode = slangCode;
         _slangUnits = sourceUnits;
+        _slangDeclarationSources = declarationSources.IsDefault ? sourceUnits : declarationSources;
         _slangEntries = entries;
         _slangTargets = targets;
         _slangReflections = reflections;
@@ -78,8 +81,8 @@ public unsafe partial class Shader
             throw new ArgumentException("Creating a shader requires at least one Slang target.", nameof(targets));
 
         var slangCode = new SlangShaderData(global, session, linkedCode);
-        foreach (IModule sourceUnit in sourceUnits) SlangShaderData.RetainSession(session, sourceUnit);
-        foreach (IEntryPoint entry in entries) SlangShaderData.RetainSession(session, entry);
+        foreach (IModule sourceUnit in sourceUnits) SlangShaderData.RetainSession(global, session, sourceUnit);
+        foreach (IEntryPoint entry in entries) SlangShaderData.RetainSession(global, session, entry);
         bool unbound = linkedCode.GetSpecializationParamCount() != 0;
         ImmutableArray<bool> unboundEntries = entries.Select(entry =>
             unbound && entry.GetSpecializationParamCount() != 0).ToImmutableArray();
@@ -115,7 +118,8 @@ public unsafe partial class Shader
             for (int entryIndex = 0; entryIndex < reflectedEntryCount; entryIndex++)
             {
                 entryBlobs.Add(generateCode && !unboundEntries[entryIndex]
-                    ? GetEntryBlob(linkedCode, targetIndex, entryIndex)
+                    ? GetEntryBlob(linkedCode, targetIndex, entryIndex,
+                        reflection.GetEntryPointByIndex((nuint)entryIndex).Name)
                     : null);
             }
         }
@@ -143,6 +147,9 @@ public unsafe partial class Shader
     public int SlangEntryCount => _slangEntryCount;
     public int SlangSourceUnitCount => _slangUnits.Length;
     public IModule GetSlangSourceUnit(int index) => _slangUnits[index];
+    public IEnumerable<DeclReflection> GetSlangDeclarations() =>
+        _slangDeclarationSources.Select(static source => source.GetModuleReflection());
+    internal IReadOnlyList<IModule> SlangDeclarationSources => _slangDeclarationSources;
     public IEntryPoint GetSlangEntryPoint(int index) => _slangEntries[index];
     public SlangShaderData SlangCode { get; }
     public TargetDesc GetSlangTarget(int targetIndex) => _slangTargets[targetIndex];
@@ -272,7 +279,7 @@ public unsafe partial class Shader
             entryCode.ToImmutableArray(),
             _slangEntryCount,
             usedParameters.ToImmutableArray(),
-            _slangUnboundEntries);
+            _slangUnboundEntries, _specializations, _slangDeclarationSources);
     }
 
     private int GetCodeIndex(int targetIndex, int entryIndex)
@@ -317,7 +324,7 @@ public unsafe partial class Shader
     private static ISlangBlob GetEntryBlob(
         IComponentType linkedCode,
         int targetIndex,
-        int entryIndex)
+        int entryIndex, string entryName)
     {
         SlangResult result = linkedCode.GetEntryPointCode(
             entryIndex,
@@ -328,7 +335,7 @@ public unsafe partial class Shader
         if (result.Failed || blob is null || blob.GetBufferSize() == 0)
         {
             throw new InvalidDataException(
-                $"Slang did not produce code for target {targetIndex}, entry {entryIndex}: " +
+                $"Slang did not produce code for target {targetIndex}, entry '{entryName}' ({entryIndex}): " +
                 diagnosticText);
         }
         return blob;

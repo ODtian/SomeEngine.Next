@@ -1,5 +1,5 @@
-#include "cluster_structures.slang"
-#include "resource_effects.slang"
+__exported import cluster_structures;
+__exported import resource_effects;
 
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWByteAddressBuffer DrawArgs;

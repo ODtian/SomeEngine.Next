@@ -1,4 +1,4 @@
-#include "resource_effects.slang"
+__exported import resource_effects;
 
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWByteAddressBuffer ActivePageCount;

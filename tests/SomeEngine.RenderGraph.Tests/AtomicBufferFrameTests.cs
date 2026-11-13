@@ -37,10 +37,8 @@ public sealed class AtomicBufferFrameTests
         GraphPassId initialize, readback;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            GraphBufferId source = edit.RegisterExternalBuffer(upload,
-                [new(BufferRange.Whole, upload.InitialSync, upload.InitialAccess, ResourceContentState.Defined)]);
-            GraphBufferId result = edit.RegisterExternalBuffer(output,
-                [new(BufferRange.Whole, output.InitialSync, output.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId source = edit.RegisterExternalBuffer(upload);
+            GraphBufferId result = edit.RegisterExternalBuffer(output);
             GraphBufferId buffer = edit.CreatePersistentBuffer(new BufferDesc(16,
                 BufferUsages.CopyDestination | BufferUsages.CopySource | BufferUsages.ShaderRead | BufferUsages.ShaderWrite));
             initialize = edit.AddCopyFramePass("initialize shared data", PassQueueSelection.AnyOfType(QueueType.Graphics),

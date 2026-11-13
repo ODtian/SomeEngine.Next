@@ -1,7 +1,7 @@
 #ifndef VSM_PAGE_LISTS_SLANG
 #define VSM_PAGE_LISTS_SLANG
 
-#include "resource_effects.slang"
+__exported import resource_effects;
 
 static const uint VSM_PAGE_LIST_LRU = 0u;
 static const uint VSM_PAGE_LIST_AVAILABLE = 1u;

@@ -58,7 +58,7 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
         {
             T Keep<T>(T item) where T : IDisposable { owned.Add(item); return item; }
             using CommandContext context = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Compute, 0, 1));
-            backend.Begin(context, new CommandRecordingDesc(64, 8, 64));
+            backend.Begin(context, new CommandRecordingDesc(64, 8));
             List<(string Name, ResourceBinding Binding)> bindings = [];
             List<(Buffer Buffer, ulong Size)> outputs = [];
             foreach (var input in inputs)

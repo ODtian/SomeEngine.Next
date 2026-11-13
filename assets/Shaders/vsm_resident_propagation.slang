@@ -1,7 +1,7 @@
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
-#include "vsm_resident_math.slang"
-#include "resource_effects.slang"
+__exported import vsm_resident_math;
+__exported import resource_effects;
 
 struct VirtualShadowResidentUniforms
 {

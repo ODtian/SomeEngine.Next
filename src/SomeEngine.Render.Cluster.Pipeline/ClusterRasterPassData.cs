@@ -15,7 +15,7 @@ internal readonly record struct ClusterSoftwareRasterPassData(
     {
         _ = pass.Read(
             data.IndirectArguments,
-            new BufferRange(data.IndirectOffset, ClusterIndirectAbi.DispatchBytes),
+            new BufferRange(data.IndirectOffset, ClusterIndirectLayout.DispatchBytes),
             PipelineSync.ExecuteIndirect,
             ResourceAccess.IndirectArgument);
     }
@@ -29,7 +29,7 @@ internal readonly record struct ClusterSoftwareRasterPassData(
             data.IndirectLayout,
             new BufferRegion(
                 arguments,
-                new BufferRange(data.IndirectOffset, ClusterIndirectAbi.DispatchBytes)),
+                new BufferRange(data.IndirectOffset, ClusterIndirectLayout.DispatchBytes)),
             1);
     }
 }
@@ -49,7 +49,7 @@ internal readonly record struct ClusterHardwareRasterPassData(
         _ = pass.Read(
             data.IndirectArguments,
             new BufferRange(data.IndirectOffset + (data.UsesMesh ? 16u : 0u),
-                data.UsesMesh ? ClusterIndirectAbi.DispatchBytes : ClusterIndirectAbi.DrawBytes),
+                data.UsesMesh ? ClusterIndirectLayout.DispatchBytes : ClusterIndirectLayout.DrawBytes),
             PipelineSync.ExecuteIndirect,
             ResourceAccess.IndirectArgument);
     }
@@ -64,7 +64,7 @@ internal readonly record struct ClusterHardwareRasterPassData(
         if (data.UsesMesh)
         {
             commands.DispatchMeshIndirect(new BufferRegion(arguments,
-                new BufferRange(data.IndirectOffset + 16u, ClusterIndirectAbi.DispatchBytes)));
+                new BufferRange(data.IndirectOffset + 16u, ClusterIndirectLayout.DispatchBytes)));
             return;
         }
         commands.ExecuteIndirect(
@@ -72,7 +72,7 @@ internal readonly record struct ClusterHardwareRasterPassData(
             new BufferRegion(
                 arguments,
                 new BufferRange(data.IndirectOffset + (data.UsesMesh ? 16u : 0u),
-                data.UsesMesh ? ClusterIndirectAbi.DispatchBytes : ClusterIndirectAbi.DrawBytes)),
+                data.UsesMesh ? ClusterIndirectLayout.DispatchBytes : ClusterIndirectLayout.DrawBytes)),
             1);
     }
 }

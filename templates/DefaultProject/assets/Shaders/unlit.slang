@@ -1,5 +1,5 @@
-#include "triangle_surface.slang"
-#include "unlit_material.slang"
+__exported import triangle_surface;
+__exported import unlit_material;
 
 typedef StaticVertexEval VertexEvaluate;
 typedef LinearSurface DomainEvaluate;

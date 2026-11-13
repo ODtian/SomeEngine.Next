@@ -1,4 +1,4 @@
-using DefaultGame;
+﻿using DefaultGame;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 using SomeEngine.Render.Terrain;
@@ -29,7 +29,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         var application = new ApplicationScene(content.DirectoryPath)
         {
             SceneCompleted = value => completed = value,
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "5"]),
             UpdateFrame = frame =>
             {
@@ -93,7 +93,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         {
             SceneStarted = _ => runs++,
             SceneCompleted = value => completed = value,
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "5"]),
         };
         application.UpdateFrame = frame =>
@@ -119,7 +119,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
                     canceledHeights = ground.Heights.ReadCpuAsync(ground.Heights.Grid.Range).AsTask();
                     canceledVoxels = voxels.ReadCpuAsync(new(1, 1, 1, 1, 1, 1)).AsTask();
                     frame.Scene.CancelFrame();
-                    application.Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                    application.Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                         "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "3"]);
                     application.Reload();
                 }
@@ -164,7 +164,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         {
             GeometryMemoryBytes = 256 * 1024,
             SceneCompleted = value => completed = value,
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "15"]),
             UpdateFrame = frame =>
             {
@@ -214,13 +214,13 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         {
             SceneStarted = _ => runs++,
             SceneCompleted = value => completed = value,
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "2"]),
         };
         application.FrameCompleted = _ =>
         {
             if (runs != 1) return;
-            application.Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            application.Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "1"]);
             application.Reload();
         };
@@ -256,7 +256,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         var application = new ApplicationScene(content.DirectoryPath)
         {
             SceneCompleted = value => completed = value,
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "3"]),
             UpdateFrame = frame =>
             {

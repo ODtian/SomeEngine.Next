@@ -1,4 +1,4 @@
-using SomeEngine.Render.Instances;
+﻿using SomeEngine.Render.Instances;
 using SomeEngine.Render.Components;
 
 namespace SomeEngine.Render.Cluster;
@@ -7,7 +7,7 @@ namespace SomeEngine.Render.Cluster;
 /// Cluster's declarations in the composable render-instance ABI. Cluster geometry and material
 /// binding are separate contributors: the Cluster geometry contributor writes only
 /// <see cref="GeometryLayout"/>,
-/// while a material system chooses whether <see cref="MaterialSlotLayout"/> is batch-shared or
+/// while a material system chooses whether <see cref="MaterialAddressLayout"/> is batch-shared or
 /// per-instance. <see cref="InstanceLayout"/> is only their exact shader-facing composition.
 /// </summary>
 public static class ClusterRenderFeature
@@ -15,11 +15,8 @@ public static class ClusterRenderFeature
     public static RenderInstancePropertyKey BvhRootKey { get; } =
         new("someengine.cluster.bvh_root");
 
-    public static RenderInstancePropertyKey MaterialSlotOffsetKey { get; } =
+    public static RenderInstancePropertyKey MaterialOffsetKey { get; } =
         new("someengine.cluster.material_slot_offset");
-
-    public static RenderInstancePropertyKey BlendOcclusionKey { get; } =
-        new("someengine.cluster.blend_occlusion");
 
     public static RenderInstancePropertyKey BoundsExpansionKey { get; } =
         new("someengine.cluster.bounds_expansion");
@@ -27,7 +24,6 @@ public static class ClusterRenderFeature
     public static RenderInstancePropertyKey DeformBoundsKey { get; } =
         new("someengine.cluster.deform_bounds");
 
-    public static RenderInstancePropertyKey XrayKey { get; } = new("someengine.xray");
     public static RenderInstancePropertyKey DepthCacheClassKey { get; } = new("someengine.shadow.depth_cache_class");
     public static RenderInstancePropertyKey FirstPersonKey { get; } = new("someengine.shadow.first_person");
 
@@ -50,10 +46,10 @@ public static class ClusterRenderFeature
 
     public static RenderInstancePropertyLayout GeometryLayout { get; } = BuildGeometryLayout();
 
-    public static RenderInstancePropertyLayout MaterialSlotLayout { get; } = BuildMaterialSlotLayout();
+    public static RenderInstancePropertyLayout MaterialAddressLayout { get; } = CreateMaterialAddressLayout();
 
     public static RenderInstancePropertyLayout InstanceLayout { get; } =
-        RenderInstancePropertyLayout.Compose(GeometryLayout, MaterialSlotLayout);
+        RenderInstancePropertyLayout.Compose(GeometryLayout, MaterialAddressLayout);
 
     private static RenderInstancePropertyLayout BuildGeometryLayout()
     {
@@ -72,19 +68,16 @@ public static class ClusterRenderFeature
         _ = builder.Register<uint>("SomeEngine.Render", DepthCacheClassKey, UInt32Encoding);
         _ = builder.Register<FirstPersonMeshData>("SomeEngine.Render", FirstPersonKey,
             new("someengine.render.first_person.v1", valueSize: 8, storageAlignment: 4, storageStride: 8, metadataWordCount: 1));
-        _ = builder.Register<RenderXray>("SomeEngine.Render", XrayKey,
-            new("someengine.render.xray.v1", valueSize: 48, storageAlignment: 4, storageStride: 48, metadataWordCount: 1));
         return builder.Freeze();
     }
 
-    private static RenderInstancePropertyLayout BuildMaterialSlotLayout()
+    private static RenderInstancePropertyLayout CreateMaterialAddressLayout()
     {
         var builder = new RenderInstancePropertyLayoutBuilder();
         _ = builder.Register<uint>(
             "SomeEngine.Render.Cluster.MaterialBinding",
-            MaterialSlotOffsetKey,
+            MaterialOffsetKey,
             UInt32Encoding);
-        _ = builder.Register<uint>("SomeEngine.Render.Cluster.MaterialBinding", BlendOcclusionKey, UInt32Encoding);
         return builder.Freeze();
     }
 }

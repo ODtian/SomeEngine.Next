@@ -1,68 +1,57 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
-  "importer_version": 28,
-  "input_hash": "3d49606634ff50af4ceee74089ce323031112659dd8cef8effc4e1e1b9ce6210",
+  "importer_version": 36,
+  "input_hash": "041bb366797e91361bee684fe7f3d75ccf509977014d5db78b036758e9d895a6",
   "inputs": [
     {
-      "relative_path": "assets/Shaders/cluster_bin_io.slang",
-      "content_hash": "9bdcb1cbe3238c73e5afa78b11ce6c0883b59f684336d1382e7b5460a4c66284"
-    },
-    {
       "relative_path": "assets/Shaders/cluster_instance_properties.slang",
-      "content_hash": "a881c699f3ae666c6d0cda6a391ac173605c29c5f87cb028185a5d57b4726a01"
-    },
-    {
-      "relative_path": "assets/Shaders/cluster_structures.slang",
-      "content_hash": "8b0a185ac68ba4914c404c61e292df4f0ea7a705a6cccdccd220a85a3069d2b0"
+      "content_hash": "a12b057d53d6d11e71b6a110a3df4e28eb6c7579784825a9f2bcf69f84391295"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
-      "content_hash": "b3deb519f6691bbb7bbd28a7d6e5f162dc95b49212ad3bdcf4ff4d78eee5cc06"
-    },
-    {
-      "relative_path": "assets/Shaders/render_instance_properties.slang",
-      "content_hash": "d63867a87e179b0b11ab4cd4a06b5a8f937f1d219d2816853db156eef7c14b8a"
-    },
-    {
-      "relative_path": "assets/Shaders/render_instance_transform.slang",
-      "content_hash": "bee8de55a909be0fe22219acb566c9275974e7a7e2f42966b3452cbb5d979927"
-    },
-    {
-      "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
+      "content_hash": "2a8c5188255ace644be4e94e3e29ebf4d0fc880ef9c96bdd4990ab8346b0fcab"
     },
     {
       "relative_path": "assets/Shaders/shade_bin_common.slang",
-      "content_hash": "321a2128f22a2fa599091befc3ecfc507ffcf05fd7d96d794b4770582b2abdf9"
+      "content_hash": "ccbca64d1eca285d917fcb1528af02897de0d83d0575472ae90818c168b76566"
     },
     {
       "relative_path": "assets/Shaders/shade_bin_reset.shader",
-      "content_hash": "c2c2870779dd2ec7c8fcf7b79d2b906fe90c32284cc0afd63d158ca6ca5c9c19"
+      "content_hash": "d277afdd1c82599e14fb6f1dc6a067dc6234c4fc7ca429c204b2f244225d669a"
     },
     {
       "relative_path": "assets/Shaders/shade_bin_reset.slang",
-      "content_hash": "bd7e9671ad3a7234104bab5dc428c700faf412066dec20d16cf5876349074ae2"
-    },
-    {
-      "relative_path": "assets/Shaders/visbuffer_encoding.slang",
-      "content_hash": "f1148b395dd0151f0da387694369667b9f17d330bdf8b84668ca9d6b2ca4bf70"
-    },
-    {
-      "relative_path": "assets/Shaders/wave_aggregation.slang",
-      "content_hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
+      "content_hash": "49f1ea0f3d08693dea210d100831b0cacd24eb7cccff21afb5e6e1f8b6c2a9fa"
     }
   ],
   "reported_inputs": [],
+  "asset_inputs": [
+    "20401223-bead-4a54-af65-ff9d3ed31b64",
+    "4501d5a1-8d0c-4317-a68e-585870c026d4",
+    "bf2e8b09-821f-49f3-ac34-c534942b1e75",
+    "8bf0bbd7-91f9-480e-8a97-945b7173afbd",
+    "61cd15ab-6575-47b7-916d-540762b8f2ed",
+    "928f32a6-22ab-401e-9c48-a2a9c9d00eda",
+    "f7d60cd3-5ace-4f58-950e-9e931bf5f208"
+  ],
   "outputs": [
     {
       "asset_guid": "1f8d148e-065e-5a3d-8035-4c43a0199c1f",
       "sub_asset_key": "",
-      "input_hash": "3d49606634ff50af4ceee74089ce323031112659dd8cef8effc4e1e1b9ce6210",
+      "input_hash": "041bb366797e91361bee684fe7f3d75ccf509977014d5db78b036758e9d895a6",
       "dependencies": [],
       "asset_path": "shade_bin_reset.shader.asset",
-      "version": "5d932edf-686f-5540-c4a4-32847dc8f8bc",
-      "content_hash": "724709F0824EB7EDAE56829FD75C18E03517836BD3276F3F12C431C1ECB453A8",
-      "asset_dependencies": []
+      "version": "fe2d1964-f1b3-3541-ea1d-f5b518c0b806",
+      "content_hash": "9BC9977EEC91224D5DCDE570937F72F954516772A4BDB9D2C29255CB2975771A",
+      "asset_dependencies": [
+        "20401223-bead-4a54-af65-ff9d3ed31b64",
+        "4501d5a1-8d0c-4317-a68e-585870c026d4",
+        "61cd15ab-6575-47b7-916d-540762b8f2ed",
+        "8bf0bbd7-91f9-480e-8a97-945b7173afbd",
+        "928f32a6-22ab-401e-9c48-a2a9c9d00eda",
+        "bf2e8b09-821f-49f3-ac34-c534942b1e75",
+        "f7d60cd3-5ace-4f58-950e-9e931bf5f208"
+      ]
     }
   ]
 }

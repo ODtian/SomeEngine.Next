@@ -10,14 +10,15 @@ Push-Location -LiteralPath $repository
 try {
     $results = [IO.Path]::GetFullPath($ResultsDirectory)
     [IO.Directory]::CreateDirectory($results) | Out-Null
-    # Existing test projects consume these generated shader assets during compilation.
-    & dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Debug -- sample `
+    & dotnet build tools/BuildContent/BuildContent.csproj -c $Configuration -m:4 -nr:false -v minimal
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & dotnet (Join-Path $repository "tools/BuildContent/bin/$Configuration/net10.0/BuildContent.dll") sample samples/DefaultGame $repository `
         2>&1 | Tee-Object (Join-Path $results 'content.log')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    & dotnet build SomeEngine.slnx -c $Configuration -v minimal 2>&1 | Tee-Object (Join-Path $results 'build.log')
+    & dotnet build SomeEngine.slnx -c $Configuration -m:4 -nr:false -v minimal 2>&1 | Tee-Object (Join-Path $results 'build.log')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    & dotnet publish samples/DefaultGame/DefaultGame.csproj -c Release `
-        -o samples/DefaultGame/bin/game/Release/net10.0 -v minimal `
+    & dotnet publish samples/DefaultGame/DefaultGame.csproj -c $Configuration --no-build --no-restore `
+        -o "samples/DefaultGame/bin/game/$Configuration/net10.0" -v minimal `
         2>&1 | Tee-Object (Join-Path $results 'publish.log')
     exit $LASTEXITCODE
 }

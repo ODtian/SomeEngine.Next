@@ -1,4 +1,4 @@
-using SomeEngine.Render.Components;
+﻿using SomeEngine.Render.Components;
 
 namespace SomeEngine.Render.Instances;
 
@@ -14,15 +14,15 @@ public static class RenderInstanceTransformProperties
     public static RenderInstancePropertyKey PreviousTransformKey { get; } =
         new("someengine.render.previous_transform");
 
-    private static readonly Contracts s_contracts = BuildContracts();
+    private static readonly TransformProperties s_properties = CreateTransformProperties();
 
     public static RenderInstanceProperty<RenderTransform> CurrentTransform =>
-        s_contracts.Current;
+        s_properties.Current;
 
     public static RenderInstanceProperty<RenderPreviousTransform> PreviousTransform =>
-        s_contracts.Previous;
+        s_properties.Previous;
 
-    public static RenderInstancePropertyLayout Layout => s_contracts.Layout;
+    public static RenderInstancePropertyLayout Layout => s_properties.Layout;
 
     public static void Register(RenderInstancePropertyLayoutBuilder builder)
     {
@@ -30,7 +30,7 @@ public static class RenderInstanceTransformProperties
         builder.Include(Layout);
     }
 
-    private static Contracts BuildContracts()
+    private static TransformProperties CreateTransformProperties()
     {
         var transformEncoding = new RenderInstancePropertyEncoding(
             "someengine.render.transform_qvvs48.v1",
@@ -48,10 +48,10 @@ public static class RenderInstanceTransformProperties
                 "SomeEngine.Render",
                 PreviousTransformKey,
                 transformEncoding);
-        return new Contracts(builder.Freeze(), current, previous);
+        return new TransformProperties(builder.Freeze(), current, previous);
     }
 
-    private readonly record struct Contracts(
+    private readonly record struct TransformProperties(
         RenderInstancePropertyLayout Layout,
         RenderInstanceProperty<RenderTransform> Current,
         RenderInstanceProperty<RenderPreviousTransform> Previous);

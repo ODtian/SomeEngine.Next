@@ -1,12 +1,12 @@
-#include "cluster_structures.slang"
+__exported import cluster_structures;
 #include "cluster_instance_properties.slang"
-#include "cluster_view_access.slang"
+__exported import cluster_view_access;
 #include "cluster_bvh_cull_common.slang"
-#include "resource_effects.slang"
-#include "wave_aggregation.slang"
-#include "cluster_view_work.slang"
+__exported import resource_effects;
+__exported import wave_aggregation;
+__exported import cluster_view_work;
 
-#include "cluster_traversal_seed_input.slang"
+__exported import cluster_traversal_seed_input;
 
 StructuredBuffer<ClusterViewUniforms> Views;
 ByteAddressBuffer GlobalBVH;
@@ -25,8 +25,8 @@ RWStructuredBuffer<uint> DeferredWorkCount;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer DeferredWorkDispatchArgs;
 
-#include "cluster_hiz_shared.slang"
-#include "cluster_target_policy_contract.slang"
+__exported import cluster_hiz_shared;
+#include "cluster_target_policy.slang"
 StructuredBuffer<ClusterViewUniforms> PolicyClusterViews;
 
 groupshared float3 ClusterSceneWorldMin[64];
@@ -49,10 +49,10 @@ uint ClusterSeedViewIndex(uint compactViewIndex)
 }
 
 // Reject sample-free roots before expanding their hierarchy.
-bool ClusterSeedTargetAccepts(ClusterProjectedBounds bounds, ClusterViewUniforms view, uint depthCacheClass = 2u)
+bool ClusterSeedTargetAccepts(ClusterProjectedBounds bounds, ClusterViewUniforms view, uint depthCacheClass = 2u, bool shadowPages = false)
 {
     [branch]
-    if (view.TargetPolicy == 0u) return true;
+    if (!shadowPages) return true;
     if (view.CullingEnabled == 0u || bounds.CrossesNearPlane)
         return ClusterTargetPolicyScreenBoundsAccepts(0.0.xx, 1.0.xx, view, depthCacheClass);
     float2 minUv = float2(bounds.NdcMin.x, -bounds.NdcMax.y) * 0.5 + 0.5;
@@ -69,9 +69,9 @@ uint ClusterSeedBoundsState(
     ClusterProjectedBounds projectedBounds,
     uint viewIndex,
     ClusterViewUniforms view,
-    uint depthCacheClass = 2u)
+    uint depthCacheClass = 2u, bool shadowPages = false)
 {
-    if (!ClusterSeedTargetAccepts(projectedBounds, view, depthCacheClass))
+    if (!ClusterSeedTargetAccepts(projectedBounds, view, depthCacheClass, shadowPages))
         return 0u;
     if (view.CullingEnabled == 0u ||
         view.HasPrevHistory == 0u ||
@@ -81,7 +81,7 @@ uint ClusterSeedBoundsState(
     }
 
     bool occluded;
-    if (view.TargetPolicy != 0u)
+    if (shadowPages)
     {
         occluded = ClusterTargetPolicyWorldBoundsOccluded(
             worldMin,
@@ -114,7 +114,7 @@ StructuredBuffer<uint> MaterialBounds;
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void SeedHierarchyRoots(
+void SeedHierarchyRoots<let shadowPages : bool>(
     uint3 groupID : SV_GroupID,
     uint groupThreadIndex : SV_GroupThreadID)
 {
@@ -172,7 +172,7 @@ void SeedHierarchyRoots(
                     ClusterSceneWorldMax[0],
                     sceneBounds,
                     viewIndex,
-                    view)
+                    view, 2u, shadowPages)
                 : 0u;
             if (boundsState != 0u)
                 InterlockedOr(ClusterSceneActiveViewMask, 1u << groupThreadIndex);
@@ -232,7 +232,7 @@ void SeedHierarchyRoots(
                 continue;
             view = ApplyClusterInstanceBounds(MaterialBounds, InstanceData, InstanceProperties, instanceID, view);
             view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
-            if (view.TargetPolicy != 0u && !ClusterTargetPolicyWorldDepthAccepts(
+            if (shadowPages && !ClusterTargetPolicyWorldDepthAccepts(
                     instanceWorldMin, instanceWorldMax, view,
                     LoadTargetDepthCacheClass(instanceID)))
                 continue;
@@ -246,13 +246,13 @@ void SeedHierarchyRoots(
             if (view.CullingEnabled != 0u && outsideFrustum)
                 continue;
             uint boundsState = (occludedGroupViews & (1u << bit)) != 0u
-                ? (ClusterSeedTargetAccepts(projectedBounds, view, view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u) ? 2u : 0u)
+                ? (ClusterSeedTargetAccepts(projectedBounds, view, shadowPages ? LoadTargetDepthCacheClass(instanceID) : 1u, shadowPages) ? 2u : 0u)
                 : ClusterSeedBoundsState(
                     instanceWorldMin,
                     instanceWorldMax,
                     projectedBounds,
                     viewIndex,
-                    view, view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u);
+                    view, shadowPages ? LoadTargetDepthCacheClass(instanceID) : 1u, shadowPages);
             if (boundsState == 0u)
                 continue;
             if (boundsState == 2u)
@@ -356,5 +356,5 @@ void SeedHierarchyRoots(
     }
 }
 
-#include "cluster_work_status.slang"
-#include "cluster_work_queue.slang"
+__exported import cluster_work_status;
+__exported import cluster_work_queue;

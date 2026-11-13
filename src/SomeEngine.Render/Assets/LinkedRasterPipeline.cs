@@ -1,4 +1,4 @@
-using SomeEngine.Assets.Schema;
+﻿using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SlangShaderSharp;
@@ -6,23 +6,23 @@ using GraphicsPipeline = SomeEngine.Graphics.Pipeline;
 
 namespace SomeEngine.Render.Assets;
 
-/// <summary>Owns an attachment-compatible RHI pipeline created from direct Slang data.</summary>
+/// <summary>Pairs raster reflection with a pipeline retained by RenderPipelines.</summary>
 public sealed class LinkedRasterPipeline : IDisposable
 {
-    private bool _disposed;
 
-    private LinkedRasterPipeline(ShaderReflection reflection, GraphicsPipeline pipeline)
+    private LinkedRasterPipeline(Shader shader, ShaderReflection reflection, GraphicsPipeline pipeline)
     {
+        Shader = shader;
         Reflection = reflection;
         Pipeline = pipeline;
     }
 
-    public ShaderReflection Reflection { get; }
-    public GraphicsPipeline Pipeline { get; }
+    public Shader Shader { get; private set; }
+    public ShaderReflection Reflection { get; private set; }
+    public GraphicsPipeline Pipeline { get; private set; }
 
     public static LinkedRasterPipeline Create(
-        IGraphicsBackend backend,
-        Device device,
+        RenderPipelines pipelines,
         Shader shader,
         string vertexEntryPoint,
         string pixelEntryPoint,
@@ -37,15 +37,11 @@ public sealed class LinkedRasterPipeline : IDisposable
         bool alphaToCoverage = false,
         DynamicStates additionalDynamicStates = DynamicStates.None)
     {
-        ArgumentNullException.ThrowIfNull(backend);
-        ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(shader);
         ArgumentException.ThrowIfNullOrWhiteSpace(vertexEntryPoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(pixelEntryPoint);
         GraphicsPipeline? pipeline = null;
-        try
-        {
-            int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+            int targetIndex = shader.RequireSlangTarget(pipelines.Device.Capabilities.CompileTarget);
             ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
             EntryPointReflection vertex = shader.RequireSlangEntry(
                 targetIndex,
@@ -67,8 +63,7 @@ public sealed class LinkedRasterPipeline : IDisposable
                 colorFormats,
                 depthStencilFormat,
                 sampleCount);
-            pipeline = backend.CreateGraphicsPipeline(
-                device,
+            pipeline = pipelines.CreateGraphics(
                 new GraphicsPipelineDesc(
                     shader.SlangCode,
                     reflection,
@@ -88,38 +83,20 @@ public sealed class LinkedRasterPipeline : IDisposable
                     DynamicStates.Viewport | DynamicStates.Scissor | additionalDynamicStates,
                     label,
                     vertexCodeBlob: shader.GetSlangEntryBlob(targetIndex, vertex),
-                    pixelCodeBlob: shader.GetSlangEntryBlob(targetIndex, pixel)));
-            return new LinkedRasterPipeline(reflection, pipeline);
-        }
-        catch (Exception primary)
-        {
-            List<Exception>? cleanupFailures = null;
-            if (pipeline is not null) TryDispose(pipeline, ref cleanupFailures);
-            if (cleanupFailures is not null)
-            {
-                cleanupFailures.Insert(0, primary);
-                throw new AggregateException(
-                    $"Raster pipeline '{label}' construction failed and cleanup also reported failures.",
-                    cleanupFailures);
-            }
-            throw;
-        }
+                    pixelCodeBlob: shader.GetSlangEntryBlob(targetIndex, pixel))).GetAwaiter().GetResult();
+            return new LinkedRasterPipeline(shader, reflection, pipeline);
+    }
+
+    public bool ReplaceShader(RenderPipelines pipelines, Shader previous, Shader next)
+    {
+        if (!ReferenceEquals(Shader, previous)) return false;
+        Pipeline = pipelines.CreateWithShader(Pipeline, next).GetAwaiter().GetResult();
+        Reflection = next.GetSlangReflection(next.RequireSlangTarget(pipelines.Device.Capabilities.CompileTarget));
+        Shader = next;
+        return true;
     }
 
     public void Dispose()
     {
-        if (_disposed)
-            return;
-        List<Exception>? failures = null;
-        TryDispose(Pipeline, ref failures);
-        _disposed = true;
-        if (failures is not null)
-            throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
-    }
-
-    private static void TryDispose(IDisposable value, ref List<Exception>? failures)
-    {
-        try { value.Dispose(); }
-        catch (Exception failure) { (failures ??= []).Add(failure); }
     }
 }

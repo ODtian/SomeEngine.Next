@@ -1,3 +1,6 @@
+__exported import vsm_types;
+__exported import vsm_addressing;
+
 #ifndef VSM_RESIDENT_MATH_SLANG
 #define VSM_RESIDENT_MATH_SLANG
 

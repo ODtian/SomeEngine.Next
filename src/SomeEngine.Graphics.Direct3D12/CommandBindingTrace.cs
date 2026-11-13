@@ -1,32 +1,96 @@
 namespace SomeEngine.Graphics.Direct3D12;
 internal static unsafe class CommandBindingTrace
 {
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetPipelineState1 = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetPipelineState1), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetPipelineState = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetPipelineState), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetDescriptorHeaps = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetDescriptorHeaps), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetComputeRootSignature = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetComputeRootSignature), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetGraphicsRootSignature = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetGraphicsRootSignature), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetComputeRootDescriptorTable = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetComputeRootDescriptorTable), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetGraphicsRootDescriptorTable = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetGraphicsRootDescriptorTable), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetComputeRootConstantBufferView = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetComputeRootConstantBufferView), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetGraphicsRootConstantBufferView = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetGraphicsRootConstantBufferView), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetComputeRoot32BitConstants = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetComputeRoot32BitConstants), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetGraphicsRoot32BitConstants = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetGraphicsRoot32BitConstants), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetPredication = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetPredication), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetMarker = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetMarker), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetProgram = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetProgram), detail: true);
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetPipelineState1 = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetPipelineState1),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetPipelineState = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetPipelineState),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetDescriptorHeaps = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetDescriptorHeaps),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetComputeRootSignature = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetComputeRootSignature),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetGraphicsRootSignature = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetGraphicsRootSignature),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetComputeRootDescriptorTable = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetComputeRootDescriptorTable),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetGraphicsRootDescriptorTable = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetGraphicsRootDescriptorTable),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetComputeRootConstantBufferView = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetComputeRootConstantBufferView),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetGraphicsRootConstantBufferView = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetGraphicsRootConstantBufferView),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetComputeRoot32BitConstants = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetComputeRoot32BitConstants),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetGraphicsRoot32BitConstants = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetGraphicsRoot32BitConstants),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetPredication = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetPredication),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SetMarker = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetMarker),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeWorkGraphSelection = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SetProgram),
+        detail: true
+    );
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SetPipelineState1(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, global::Silk.NET.Direct3D12.ID3D12StateObject* @pStateObject)
+    internal static void SetPipelineState1(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        global::Silk.NET.Direct3D12.ID3D12StateObject* @pStateObject
+    )
     {
-        target = D3D12Backend.RequireNativeRecording(target);
+        target = D3D12Backend.GetNativeRecording(context, target);
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(global::SomeEngine.Graphics.Direct3D12.CommandBindingTrace.NativeID3D12GraphicsCommandList10SetPipelineState1);
         target->SetPipelineState1(@pStateObject);
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SetPipelineState(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, global::Silk.NET.Direct3D12.ID3D12PipelineState* @pPipelineState)
+    internal static void SetPipelineState(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        global::Silk.NET.Direct3D12.ID3D12PipelineState* @pPipelineState
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.SetPipelineState);
             commands.Write((nint)@pPipelineState);
@@ -37,9 +101,14 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SetDescriptorHeaps(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, uint @NumDescriptorHeaps, global::Silk.NET.Direct3D12.ID3D12DescriptorHeap** @ppDescriptorHeaps)
+    internal static void SetDescriptorHeaps(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        uint @NumDescriptorHeaps,
+        global::Silk.NET.Direct3D12.ID3D12DescriptorHeap** @ppDescriptorHeaps
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.SetDescriptorHeaps);
             commands.Write(@NumDescriptorHeaps);
@@ -51,9 +120,13 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SetComputeRootSignature(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, global::Silk.NET.Direct3D12.ID3D12RootSignature* @pRootSignature)
+    internal static void SetComputeRootSignature(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        global::Silk.NET.Direct3D12.ID3D12RootSignature* @pRootSignature
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.SetComputeRootSignature);
             commands.Write((nint)@pRootSignature);
@@ -64,9 +137,13 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SetGraphicsRootSignature(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, global::Silk.NET.Direct3D12.ID3D12RootSignature* @pRootSignature)
+    internal static void SetGraphicsRootSignature(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        global::Silk.NET.Direct3D12.ID3D12RootSignature* @pRootSignature
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.SetGraphicsRootSignature);
             commands.Write((nint)@pRootSignature);
@@ -77,9 +154,14 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SetComputeRootDescriptorTable(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, uint @RootParameterIndex, global::Silk.NET.Direct3D12.GpuDescriptorHandle @BaseDescriptor)
+    internal static void SetComputeRootDescriptorTable(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        uint @RootParameterIndex,
+        global::Silk.NET.Direct3D12.GpuDescriptorHandle @BaseDescriptor
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.SetComputeRootDescriptorTable);
             commands.Write(@RootParameterIndex);
@@ -91,9 +173,14 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SetGraphicsRootDescriptorTable(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, uint @RootParameterIndex, global::Silk.NET.Direct3D12.GpuDescriptorHandle @BaseDescriptor)
+    internal static void SetGraphicsRootDescriptorTable(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        uint @RootParameterIndex,
+        global::Silk.NET.Direct3D12.GpuDescriptorHandle @BaseDescriptor
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.SetGraphicsRootDescriptorTable);
             commands.Write(@RootParameterIndex);
@@ -105,9 +192,14 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SetComputeRootConstantBufferView(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, uint @RootParameterIndex, ulong @BufferLocation)
+    internal static void SetComputeRootConstantBufferView(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        uint @RootParameterIndex,
+        ulong @BufferLocation
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.SetComputeRootConstantBufferView);
             commands.Write(@RootParameterIndex);
@@ -119,9 +211,14 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SetGraphicsRootConstantBufferView(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, uint @RootParameterIndex, ulong @BufferLocation)
+    internal static void SetGraphicsRootConstantBufferView(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        uint @RootParameterIndex,
+        ulong @BufferLocation
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.SetGraphicsRootConstantBufferView);
             commands.Write(@RootParameterIndex);
@@ -133,9 +230,16 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SetComputeRoot32BitConstants(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, uint @RootParameterIndex, uint @Num32BitValuesToSet, void* @pSrcData, uint @DestOffsetIn32BitValues)
+    internal static void SetComputeRoot32BitConstants(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        uint @RootParameterIndex,
+        uint @Num32BitValuesToSet,
+        void* @pSrcData,
+        uint @DestOffsetIn32BitValues
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.SetComputeRoot32BitConstants);
             commands.Write(@RootParameterIndex);
@@ -149,9 +253,16 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SetGraphicsRoot32BitConstants(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, uint @RootParameterIndex, uint @Num32BitValuesToSet, void* @pSrcData, uint @DestOffsetIn32BitValues)
+    internal static void SetGraphicsRoot32BitConstants(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        uint @RootParameterIndex,
+        uint @Num32BitValuesToSet,
+        void* @pSrcData,
+        uint @DestOffsetIn32BitValues
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.SetGraphicsRoot32BitConstants);
             commands.Write(@RootParameterIndex);
@@ -165,9 +276,15 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SetPredication(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, global::Silk.NET.Direct3D12.ID3D12Resource* @pBuffer, ulong @AlignedBufferOffset, global::Silk.NET.Direct3D12.PredicationOp @Operation)
+    internal static void SetPredication(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        global::Silk.NET.Direct3D12.ID3D12Resource* @pBuffer,
+        ulong @AlignedBufferOffset,
+        global::Silk.NET.Direct3D12.PredicationOp @Operation
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.SetPredication);
             commands.Write((nint)@pBuffer);
@@ -180,9 +297,15 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SetMarker(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, uint @Metadata, void* @pData, uint @Size)
+    internal static void SetMarker(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        uint @Metadata,
+        void* @pData,
+        uint @Size
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.SetMarker);
             commands.Write(@Metadata);
@@ -195,31 +318,95 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SetProgram(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, global::Silk.NET.Direct3D12.SetProgramDesc* @pDesc)
+    internal static void SetWorkGraph(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        global::Silk.NET.Direct3D12.SetProgramDesc* @pDesc
+    )
     {
-        target = D3D12Backend.RequireNativeRecording(target);
-        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(global::SomeEngine.Graphics.Direct3D12.CommandBindingTrace.NativeID3D12GraphicsCommandList10SetProgram);
+        target = D3D12Backend.GetNativeRecording(context, target);
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(global::SomeEngine.Graphics.Direct3D12.CommandBindingTrace.NativeWorkGraphSelection);
         target->SetProgram(@pDesc);
     }
 
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10IASetPrimitiveTopology = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.IASetPrimitiveTopology), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10RSSetViewports = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.RSSetViewports), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10RSSetScissorRects = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.RSSetScissorRects), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10OMSetRenderTargets = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.OMSetRenderTargets), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10IASetVertexBuffers = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.IASetVertexBuffers), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10IASetIndexBuffer = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.IASetIndexBuffer), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SOSetTargets = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SOSetTargets), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10OMSetBlendFactor = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.OMSetBlendFactor), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10OMSetStencilRef = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.OMSetStencilRef), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10OMSetDepthBounds = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.OMSetDepthBounds), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10RSSetDepthBias = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.RSSetDepthBias), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10IASetIndexBufferStripCutValue = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.IASetIndexBufferStripCutValue), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10RSSetShadingRate = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.RSSetShadingRate), detail: true);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10RSSetShadingRateImage = new("native", nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.RSSetShadingRateImage), detail: true);
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10IASetPrimitiveTopology = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.IASetPrimitiveTopology),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10RSSetViewports = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.RSSetViewports),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10RSSetScissorRects = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.RSSetScissorRects),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10OMSetRenderTargets = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.OMSetRenderTargets),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10IASetVertexBuffers = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.IASetVertexBuffers),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10IASetIndexBuffer = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.IASetIndexBuffer),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10SOSetTargets = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.SOSetTargets),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10OMSetBlendFactor = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.OMSetBlendFactor),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10OMSetStencilRef = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.OMSetStencilRef),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10OMSetDepthBounds = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.OMSetDepthBounds),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10RSSetDepthBias = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.RSSetDepthBias),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10IASetIndexBufferStripCutValue = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.IASetIndexBufferStripCutValue),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10RSSetShadingRate = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.RSSetShadingRate),
+        detail: true
+    );
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite NativeID3D12GraphicsCommandList10RSSetShadingRateImage = new(
+        "native",
+        nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10) + "." + nameof(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10.RSSetShadingRateImage),
+        detail: true
+    );
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void IASetPrimitiveTopology(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, global::Silk.NET.Core.Native.D3DPrimitiveTopology @PrimitiveTopology)
+    internal static void IASetPrimitiveTopology(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        global::Silk.NET.Core.Native.D3DPrimitiveTopology @PrimitiveTopology
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.IASetPrimitiveTopology);
             commands.Write(@PrimitiveTopology);
@@ -230,9 +417,14 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void RSSetViewports(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, uint @NumViewports, global::Silk.NET.Direct3D12.Viewport* @pViewports)
+    internal static void RSSetViewports(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        uint @NumViewports,
+        global::Silk.NET.Direct3D12.Viewport* @pViewports
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.RSSetViewports);
             commands.Write(@NumViewports);
@@ -244,9 +436,14 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void RSSetScissorRects(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, uint @NumRects, global::Silk.NET.Maths.Box2D<int>* @pRects)
+    internal static void RSSetScissorRects(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        uint @NumRects,
+        global::Silk.NET.Maths.Box2D<int>* @pRects
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.RSSetScissorRects);
             commands.Write(@NumRects);
@@ -258,15 +455,28 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void OMSetRenderTargets(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, uint @NumRenderTargetDescriptors, global::Silk.NET.Direct3D12.CpuDescriptorHandle* @pRenderTargetDescriptors, global::Silk.NET.Core.Bool32 @RTsSingleHandleToDescriptorRange, global::Silk.NET.Direct3D12.CpuDescriptorHandle* @pDepthStencilDescriptor)
+    internal static void OMSetRenderTargets(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        uint @NumRenderTargetDescriptors,
+        global::Silk.NET.Direct3D12.CpuDescriptorHandle* @pRenderTargetDescriptors,
+        global::Silk.NET.Core.Bool32 @RTsSingleHandleToDescriptorRange,
+        global::Silk.NET.Direct3D12.CpuDescriptorHandle* @pDepthStencilDescriptor
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.OMSetRenderTargets);
             commands.Write(@NumRenderTargetDescriptors);
-            commands.WriteArray(@pRenderTargetDescriptors, checked((int)((RTsSingleHandleToDescriptorRange ? (NumRenderTargetDescriptors == 0 ? 0u : 1u) : NumRenderTargetDescriptors) * sizeof(global::Silk.NET.Direct3D12.CpuDescriptorHandle))));
+            commands.WriteArray(
+                @pRenderTargetDescriptors,
+                checked((int)((RTsSingleHandleToDescriptorRange ? (NumRenderTargetDescriptors == 0 ? 0u : 1u) : NumRenderTargetDescriptors) * sizeof(global::Silk.NET.Direct3D12.CpuDescriptorHandle)))
+            );
             commands.Write(@RTsSingleHandleToDescriptorRange);
-            commands.WriteArray(@pDepthStencilDescriptor, checked((int)(pDepthStencilDescriptor == null ? 0 : sizeof(global::Silk.NET.Direct3D12.CpuDescriptorHandle))));
+            commands.WriteArray(
+                @pDepthStencilDescriptor,
+                checked((int)(pDepthStencilDescriptor == null ? 0 : sizeof(global::Silk.NET.Direct3D12.CpuDescriptorHandle)))
+            );
             return;
         }
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(global::SomeEngine.Graphics.Direct3D12.CommandBindingTrace.NativeID3D12GraphicsCommandList10OMSetRenderTargets);
@@ -274,24 +484,34 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void IASetVertexBuffers(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, uint @StartSlot, uint @NumViews, global::Silk.NET.Direct3D12.VertexBufferView* @pViews)
+    internal static void IASetVertexBuffers(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        uint @FirstBinding,
+        uint @NumViews,
+        global::Silk.NET.Direct3D12.VertexBufferView* @pViews
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.IASetVertexBuffers);
-            commands.Write(@StartSlot);
+            commands.Write(@FirstBinding);
             commands.Write(@NumViews);
             commands.WriteArray(@pViews, checked((int)(NumViews * sizeof(global::Silk.NET.Direct3D12.VertexBufferView))));
             return;
         }
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(global::SomeEngine.Graphics.Direct3D12.CommandBindingTrace.NativeID3D12GraphicsCommandList10IASetVertexBuffers);
-        target->IASetVertexBuffers(@StartSlot, @NumViews, @pViews);
+        target->IASetVertexBuffers(@FirstBinding, @NumViews, @pViews);
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void IASetIndexBuffer(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, global::Silk.NET.Direct3D12.IndexBufferView* @pView)
+    internal static void IASetIndexBuffer(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        global::Silk.NET.Direct3D12.IndexBufferView* @pView
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.IASetIndexBuffer);
             commands.WriteArray(@pView, checked((int)(pView == null ? 0 : sizeof(global::Silk.NET.Direct3D12.IndexBufferView))));
@@ -302,24 +522,34 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void SOSetTargets(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, uint @StartSlot, uint @NumViews, global::Silk.NET.Direct3D12.StreamOutputBufferView* @pViews)
+    internal static void SOSetTargets(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        uint @FirstBinding,
+        uint @NumViews,
+        global::Silk.NET.Direct3D12.StreamOutputBufferView* @pViews
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.SOSetTargets);
-            commands.Write(@StartSlot);
+            commands.Write(@FirstBinding);
             commands.Write(@NumViews);
             commands.WriteArray(@pViews, checked((int)(NumViews * sizeof(global::Silk.NET.Direct3D12.StreamOutputBufferView))));
             return;
         }
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(global::SomeEngine.Graphics.Direct3D12.CommandBindingTrace.NativeID3D12GraphicsCommandList10SOSetTargets);
-        target->SOSetTargets(@StartSlot, @NumViews, @pViews);
+        target->SOSetTargets(@FirstBinding, @NumViews, @pViews);
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void OMSetBlendFactor(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, float* @BlendFactor)
+    internal static void OMSetBlendFactor(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        float* @BlendFactor
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.OMSetBlendFactor);
             commands.WriteArray(@BlendFactor, checked((int)(4 * sizeof(float))));
@@ -330,9 +560,13 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void OMSetStencilRef(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, uint @StencilRef)
+    internal static void OMSetStencilRef(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        uint @StencilRef
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.OMSetStencilRef);
             commands.Write(@StencilRef);
@@ -343,9 +577,14 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void OMSetDepthBounds(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, float @Min, float @Max)
+    internal static void OMSetDepthBounds(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        float @Min,
+        float @Max
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.OMSetDepthBounds);
             commands.Write(@Min);
@@ -357,9 +596,15 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void RSSetDepthBias(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, float @DepthBias, float @DepthBiasClamp, float @SlopeScaledDepthBias)
+    internal static void RSSetDepthBias(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        float @DepthBias,
+        float @DepthBiasClamp,
+        float @SlopeScaledDepthBias
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.RSSetDepthBias);
             commands.Write(@DepthBias);
@@ -372,9 +617,13 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void IASetIndexBufferStripCutValue(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, global::Silk.NET.Direct3D12.IndexBufferStripCutValue @IBStripCutValue)
+    internal static void IASetIndexBufferStripCutValue(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        global::Silk.NET.Direct3D12.IndexBufferStripCutValue @IBStripCutValue
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.IASetIndexBufferStripCutValue);
             commands.Write(@IBStripCutValue);
@@ -385,9 +634,14 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void RSSetShadingRate(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, global::Silk.NET.Direct3D12.ShadingRate @baseShadingRate, global::Silk.NET.Direct3D12.ShadingRateCombiner* @combiners)
+    internal static void RSSetShadingRate(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        global::Silk.NET.Direct3D12.ShadingRate @baseShadingRate,
+        global::Silk.NET.Direct3D12.ShadingRateCombiner* @combiners
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.RSSetShadingRate);
             commands.Write(@baseShadingRate);
@@ -399,9 +653,13 @@ internal static unsafe class CommandBindingTrace
     }
 
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    internal static void RSSetShadingRateImage(global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target, global::Silk.NET.Direct3D12.ID3D12Resource* @shadingRateImage)
+    internal static void RSSetShadingRateImage(
+        CommandContext? context,
+        global::Silk.NET.Direct3D12.ID3D12GraphicsCommandList10* target,
+        global::Silk.NET.Direct3D12.ID3D12Resource* @shadingRateImage
+    )
     {
-        if (D3D12Backend.CollectCommandData(ref target) is { } commands)
+        if (D3D12Backend.GetCommandData(context, ref target) is { } commands)
         {
             commands.Write(NativeCommandType.RSSetShadingRateImage);
             commands.Write((nint)@shadingRateImage);

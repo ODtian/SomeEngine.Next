@@ -118,14 +118,14 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
     public async Task AddedTessellatedMaterialMatchesStartingWithThatMaterial(string backend)
     {
         SceneImage? before = null, changed = null, expected = null;
-        await SceneImages.RunAsync(backend, new SceneScript(content.Tessellation, 12,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Tessellation, 12,
         [
             new(7, edit => edit.CaptureImage(image => before = image)),
             new(8, edit => { Entity red = edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "red sphere");
                 edit.ReplaceMaterial(red, edit.GetMaterial(edit.MeshEntities.Single(entity => edit.GetMaterial(entity).Name == "green sphere"))); }),
             new(11, edit => edit.CaptureImage(image => changed = image)),
         ]), "--no-taa", "--no-vsm");
-        await SceneImages.RunAsync(backend, new SceneScript(content.Tessellation, 12,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Tessellation, 12,
         [
             new(0, edit =>
             {
@@ -147,7 +147,7 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
         SceneImage? before = null, changed = null, expected = null;
         UnlitMaterial? linear = null;
         Entity first = default, second = default;
-        await SceneImages.RunAsync(backend, new SceneScript(content.Tessellation, 12,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Tessellation, 12,
         [
             new(0, edit =>
             {
@@ -162,7 +162,7 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
             new(8, edit => { edit.ReplaceMaterial(first, linear!); edit.ReplaceMaterial(second, linear!); }),
             new(11, edit => edit.CaptureImage(image => changed = image)),
         ]), "--no-taa", "--no-vsm");
-        await SceneImages.RunAsync(backend, new SceneScript(content.Tessellation, 12,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Tessellation, 12,
         [
             new(0, edit =>
             {
@@ -185,7 +185,7 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
     public async Task ManyMaterialsSharingOneTextureMatchStartingWithAllMaterials(string backend)
     {
         SceneImage? before = null, changed = null, expected = null;
-        await SceneImages.RunAsync(backend, new SceneScript(content.ShaderReplacement, 16,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.ShaderReplacement, 16,
         [
             new(7, edit => edit.CaptureImage(image => before = image)),
             new(8, edit =>
@@ -205,7 +205,7 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
             }),
             new(15, edit => edit.CaptureImage(image => changed = image)),
         ]), "--no-taa", "--no-vsm");
-        await SceneImages.RunAsync(backend, new SceneScript(content.ShaderReplacement, 16,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.ShaderReplacement, 16,
         [
             new(0, edit =>
             {
@@ -283,7 +283,7 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
     public async Task ShaderContentReplacementMatchesStartingWithTheReplacementShader(string backend)
     {
         SceneImage? before = null, changed = null, expected = null;
-        await SceneImages.RunAsync(backend, new SceneScript(content.ShaderReplacement, 12,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.ShaderReplacement, 12,
         [
             new(7, edit => edit.CaptureImage(image => before = image)),
             new(8, edit =>
@@ -293,7 +293,7 @@ public sealed class MaterialRenderingTests(RenderingContentFixture content)
             }),
             new(11, edit => edit.CaptureImage(image => changed = image)),
         ]), "--no-taa", "--no-vsm");
-        await SceneImages.RunAsync(backend, new SceneScript(content.ShaderReplacement, 12,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.ShaderReplacement, 12,
         [
             new(0, edit =>
             {

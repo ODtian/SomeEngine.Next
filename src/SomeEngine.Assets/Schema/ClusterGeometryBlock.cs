@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Numerics;
 using SomeEngine.Serialization;
-using SomeEngine.Assets.Pipeline;
 using SomeEngine.Resources;
 
 namespace SomeEngine.Assets.Schema;
@@ -78,49 +77,4 @@ public sealed partial class ClusterGeometryBlock : AssetBlock
         PositionEncoding = EncodingCompatibility;
     }
 
-    private MeshData _meshData = new();
-    private sealed class MeshData { internal ClusterMeshData? Value; }
-    partial void CopyFrom(ClusterGeometryBlock source) => _meshData = source._meshData;
-
-    private Mesh GetMeshData(ClusterVertexAttributesBlock attributes)
-    {
-        lock (SyncRoot)
-            lock (_meshData)
-            {
-                RequireIdle();
-                if (_meshData.Value is null || !_meshData.Value.Matches(this, attributes))
-                    _meshData.Value = ClusterMeshData.Build(this, attributes);
-                return _meshData.Value.Mesh;
-            }
-    }
-
-    /// <summary>Retains the two Block representations as opaque page data for GPU streaming.</summary>
-    public ValueTask<MeshPayloadSource> OpenPayloadSourceAsync(ClusterVertexAttributesBlock attributes, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.FromResult(MeshPayloadSource.FromMesh(GetMeshData(attributes)));
-    }
-
-    /// <summary>Creates RenderWorld geometry with its lowest-detail pages ready.</summary>
-    public ValueTask<Mesh> CreateAsync(MeshBlock shape, ClusterVertexAttributesBlock attributes, string name, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        Mesh data = GetMeshData(attributes);
-        var ready = new ReadOnlyMemory<byte>[data.PageCount];
-        foreach (uint index in data.LowestDetailPageIndices) data.TryGetPage((int)index, out ready[index]);
-        return ValueTask.FromResult(Mesh.Create(name, data.VertexEncoding, data.PageDigests, data.Bvh, ready,
-            shape.Bounds, shape.Regions.ToArray(), data.LowestDetailPageIndices, data.ClusterGeometryIndices, data.ClusterGroups));
-    }
-
-    public async ValueTask LoadPagesAsync(Mesh mesh, ClusterVertexAttributesBlock attributes, IEnumerable<int> pageIndices, CancellationToken cancellationToken = default)
-    {
-        using MeshPayloadSource source = await OpenPayloadSourceAsync(attributes, cancellationToken).ConfigureAwait(false);
-        if (!source.Matches(mesh)) throw new InvalidOperationException("The mesh and selected Blocks describe different geometry.");
-        ulong version = mesh.Revision;
-        List<(int Index, ReadOnlyMemory<byte> Bytes)> pages = [];
-        foreach (int index in pageIndices.Distinct())
-            if (!mesh.TryGetPage(index, out _)) pages.Add((index, await source.ReadPageAsync(index, cancellationToken).ConfigureAwait(false)));
-        cancellationToken.ThrowIfCancellationRequested();
-        mesh.AddPages(pages, version);
-    }
 }

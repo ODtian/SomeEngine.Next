@@ -24,7 +24,7 @@ internal sealed unsafe partial class D3D12Backend
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         NativeResourceDesc native = CreateBufferDescription(desc);
-        ValidateBufferMemoryType(desc, memoryType);
+
         (_, uint visibleNodeMask) = nativeDevice.ResolveResourcePlacement(
             desc.NodePlacement,
             nameof(desc));
@@ -71,27 +71,11 @@ nativeDevice.Native, visibleNodeMask,
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
-        if ((requestedBufferOffset & 511) != 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(requestedBufferOffset),
-                "A Texture footprint base offset must be 512-byte aligned.");
-        }
+
         NativeResourceDesc native = CreateTextureDescription(desc);
         (uint creationNodeMask, uint visibleNodeMask) = nativeDevice.ResolveResourcePlacement(
             desc.NodePlacement,
             nameof(desc));
-        ValidateTextureRegion(
-            CreateTextureInfo(desc, 0, 0, creationNodeMask, visibleNodeMask),
-            copy.MipLevel,
-            copy.ArrayLayer,
-            copy.Aspect,
-            copy.X,
-            copy.Y,
-            copy.Z,
-            copy.Width,
-            copy.Height,
-            copy.Depth);
         uint plane = FormatMappings.PlaneIndex(desc.Format, copy.Aspect);
 
         PlacedSubresourceFootprint footprint = GetNativeCopyFootprint(
@@ -164,7 +148,7 @@ nativeDevice.Native, visibleNodeMask,
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
-        ValidateHeapDescription(nativeDevice, desc);
+
         NativeHeapDesc nativeDescription = new()
         {
             SizeInBytes = desc.Size,
@@ -224,7 +208,7 @@ nativeDevice.Native, visibleNodeMask,
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         NativeResourceDesc nativeDescription = CreateBufferDescription(desc);
-        ValidateBufferMemoryType(desc, memoryType);
+
         (uint creationNodeMask, uint visibleNodeMask) = nativeDevice.ResolveResourcePlacement(
             desc.NodePlacement,
             nameof(desc));
@@ -239,7 +223,7 @@ nativeDevice.Native, visibleNodeMask,
             creationNodeMask,
             visibleNodeMask);
         bool shareable = (desc.Usages & BufferUsages.Shareable) != 0;
-        NativeLease? pooled = TryCreatePooledResource(
+        NativeResourceData? pooled = TryCreatePooledResource(
             nativeDevice,
             memoryType,
             ResourceHeapClass.Buffers,
@@ -256,7 +240,7 @@ nativeDevice.Native, visibleNodeMask,
             {
                 buffer = new D3D12Buffer(
                     nativeDevice,
-                    pooled,
+                    pooled.Value,
                     info,
                     sync,
                     access,
@@ -264,7 +248,7 @@ nativeDevice.Native, visibleNodeMask,
             }
             catch
             {
-                pooled.Release();
+                pooled.Value.Release();
                 throw;
             }
         }
@@ -309,12 +293,10 @@ nativeDevice.Native, visibleNodeMask,
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12Heap nativeHeap = RequireHeap(heap);
-        RequireSameDevice(nativeDevice, nativeHeap, nameof(heap));
         nativeDevice.ThrowIfUnavailable();
-        nativeHeap.ThrowIfDisposed();
+
         NativeResourceDesc nativeDescription = CreateBufferDescription(desc);
-        ValidateBufferMemoryType(desc, nativeHeap.Info.MemoryType);
-        ValidatePlacedResourceNodePlacement(desc.NodePlacement, nativeHeap.Info, nameof(desc));
+
         ResourceAllocationInfo allocation = DeviceQueryTrace.GetResourceAllocationInfo(
 nativeDevice.Native, nativeHeap.Info.VisibleNodeMask,
             1,
@@ -327,12 +309,7 @@ nativeDevice.Native, nativeHeap.Info.VisibleNodeMask,
             ((desc.Usages & BufferUsages.Shareable) != 0
                 ? SomeEngine.Graphics.HeapFlags.Shareable
                 : SomeEngine.Graphics.HeapFlags.None));
-        ValidatePlacement(
-            nativeHeap,
-            offset,
-            requirements,
-            SomeEngine.Graphics.HeapFlags.Buffers,
-            (desc.Usages & BufferUsages.Shareable) != 0);
+
         (PipelineSync sync, ResourceAccess access) = InitialBufferAccess(nativeHeap.Info.MemoryType);
         NativeResource* native = CreatePlacedResource(
             nativeDevice,
@@ -392,7 +369,7 @@ nativeDevice.Native, nativeHeap.Info.VisibleNodeMask,
                             TextureUsages.DepthStencilAttachment)) != 0
                 ? ResourceHeapClass.Attachments
                 : ResourceHeapClass.Textures;
-        NativeLease? pooled = TryCreatePooledResource(
+        NativeResourceData? pooled = TryCreatePooledResource(
             nativeDevice,
             MemoryType.DeviceLocal,
             heapClass,
@@ -409,13 +386,13 @@ nativeDevice.Native, nativeHeap.Info.VisibleNodeMask,
             {
                 texture = new D3D12Texture(
                     nativeDevice,
-                    pooled,
+                    pooled.Value,
                     info,
                     desc.Label);
             }
             catch
             {
-                pooled.Release();
+                pooled.Value.Release();
                 throw;
             }
         }
@@ -458,17 +435,10 @@ nativeDevice.Native, nativeHeap.Info.VisibleNodeMask,
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12Heap nativeHeap = RequireHeap(heap);
-        RequireSameDevice(nativeDevice, nativeHeap, nameof(heap));
         nativeDevice.ThrowIfUnavailable();
-        nativeHeap.ThrowIfDisposed();
-        if (nativeHeap.Info.MemoryType != MemoryType.DeviceLocal)
-        {
-            throw new ArgumentException(
-                "Textures require a DeviceLocal Heap.",
-                nameof(heap));
-        }
+
         NativeResourceDesc nativeDescription = CreateTextureDescription(desc);
-        ValidatePlacedResourceNodePlacement(desc.NodePlacement, nativeHeap.Info, nameof(desc));
+
         ResourceAllocationInfo allocation = DeviceQueryTrace.GetResourceAllocationInfo(
 nativeDevice.Native, nativeHeap.Info.VisibleNodeMask,
             1,
@@ -489,12 +459,7 @@ nativeDevice.Native, nativeHeap.Info.VisibleNodeMask,
                             TextureUsages.DepthStencilAttachment)) != 0
                 ? SomeEngine.Graphics.HeapFlags.Attachments
                 : SomeEngine.Graphics.HeapFlags.Textures;
-        ValidatePlacement(
-            nativeHeap,
-            offset,
-            requirements,
-            requiredClass,
-            (desc.Usages & TextureUsages.Shareable) != 0);
+
         TextureInfo info = CreateTextureInfo(
             desc,
             offset,
@@ -532,11 +497,10 @@ nativeDevice.Native, nativeHeap.Info.VisibleNodeMask,
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Buffer nativeBuffer = RequireBuffer(buffer);
-        BufferRange resolved = range.Resolve(nativeBuffer.Info.Size);
-        if (resolved.Size > int.MaxValue)
-            throw new ArgumentOutOfRangeException(nameof(range), "A mapped Span cannot exceed Int32.MaxValue.");
+        BufferRange resolved = range.Expand(nativeBuffer.Info.Size);
+        NativeMemoryChecks.Range(nativeBuffer.Info.Size, resolved.Offset, resolved.Size);
 
-        return nativeBuffer.Map(type, resolved, (int)resolved.Size);
+        return nativeBuffer.Map(type, resolved, NativeMemoryChecks.SpanLength(resolved.Size));
     }
 
     private static NativeResource* CreateCommittedResource(
@@ -682,25 +646,6 @@ device.Native, heap,
 
     private static NativeResourceDesc CreateBufferDescription(in BufferDesc desc)
     {
-        if (desc.Size == 0)
-            throw new ArgumentOutOfRangeException(nameof(desc), "A Buffer size must be nonzero.");
-        const BufferUsages knownUsages =
-            BufferUsages.CopySource |
-            BufferUsages.CopyDestination |
-            BufferUsages.Constant |
-            BufferUsages.ShaderRead |
-            BufferUsages.ShaderWrite |
-            BufferUsages.Vertex |
-            BufferUsages.Index |
-            BufferUsages.Indirect |
-            BufferUsages.AccelerationStructure |
-            BufferUsages.AccelerationStructureInput |
-            BufferUsages.Predication |
-            BufferUsages.StreamOutput |
-            BufferUsages.QueryResolve |
-            BufferUsages.Shareable;
-        if ((desc.Usages & ~knownUsages) != 0)
-            throw new ArgumentOutOfRangeException(nameof(desc), "The Buffer usage contains unknown bits.");
         return new NativeResourceDesc(
             NativeResourceDimension.Buffer,
             0,
@@ -716,13 +661,13 @@ device.Native, heap,
 
     private static NativeResourceDesc CreateTextureDescription(in TextureDesc desc)
     {
-        ValidateTextureDescription(desc);
+
         NativeResourceDimension dimension = desc.Dimension switch
         {
             TextureDimension.Texture1D => NativeResourceDimension.Texture1D,
             TextureDimension.Texture2D => NativeResourceDimension.Texture2D,
             TextureDimension.Texture3D => NativeResourceDimension.Texture3D,
-            _ => throw new ArgumentOutOfRangeException(nameof(desc)),
+            _ => default,
         };
         ushort depthOrArray = checked((ushort)(
             desc.Dimension == TextureDimension.Texture3D
@@ -739,217 +684,6 @@ device.Native, heap,
             new NativeSampleDesc(desc.SampleCount, 0),
             NativeTextureLayout.LayoutUnknown,
             ToResourceFlags(desc.Usages));
-    }
-
-    private static void ValidateHeapDescription(D3D12Device device, in HeapDesc desc)
-    {
-        if (desc.Size == 0)
-            throw new ArgumentOutOfRangeException(nameof(desc), "A Heap size must be nonzero.");
-        if (desc.Alignment is not (0 or 65_536 or 4_194_304))
-            throw new ArgumentOutOfRangeException(nameof(desc), "The Heap alignment is not supported by D3D12.");
-        if (!Enum.IsDefined(desc.MemoryType))
-            throw new ArgumentOutOfRangeException(nameof(desc), "The Heap memory type is unknown.");
-        const SomeEngine.Graphics.HeapFlags knownFlags =
-            SomeEngine.Graphics.HeapFlags.Buffers |
-            SomeEngine.Graphics.HeapFlags.Textures |
-            SomeEngine.Graphics.HeapFlags.Attachments |
-            SomeEngine.Graphics.HeapFlags.Shareable;
-        if ((desc.Flags & ~knownFlags) != 0)
-            throw new ArgumentOutOfRangeException(nameof(desc), "The Heap flags contain unknown bits.");
-        uint enabled = device.EnabledNodeMask;
-        if (desc.CreationNodeMask == 0 ||
-            !BitOperations.IsPow2(desc.CreationNodeMask) ||
-            desc.VisibleNodeMask == 0 ||
-            (desc.CreationNodeMask & ~enabled) != 0 ||
-            (desc.VisibleNodeMask & ~enabled) != 0 ||
-            (desc.CreationNodeMask & desc.VisibleNodeMask) != desc.CreationNodeMask)
-        {
-            throw new ArgumentException(
-                "A Heap requires exactly one enabled creation node, a nonempty enabled visibility set, " +
-                "and visibility of its creation node.",
-                nameof(desc));
-        }
-    }
-
-    private static void ValidateBufferMemoryType(in BufferDesc desc, MemoryType memoryType)
-    {
-        const BufferUsages uploadUsages =
-            BufferUsages.CopySource |
-            BufferUsages.Constant |
-            BufferUsages.ShaderRead |
-            BufferUsages.Vertex |
-            BufferUsages.Index |
-            BufferUsages.Indirect |
-            BufferUsages.AccelerationStructureInput |
-            BufferUsages.Predication |
-            BufferUsages.Shareable;
-        const BufferUsages readbackUsages =
-            BufferUsages.CopyDestination |
-            BufferUsages.QueryResolve |
-            BufferUsages.Shareable;
-        bool valid = memoryType switch
-        {
-            MemoryType.DeviceLocal => true,
-            MemoryType.Upload => (desc.Usages & ~uploadUsages) == 0,
-            MemoryType.Readback => (desc.Usages & ~readbackUsages) == 0,
-            _ => throw new ArgumentOutOfRangeException(nameof(memoryType)),
-        };
-        if (!valid)
-        {
-            throw new ArgumentException(
-                $"The Buffer usage is incompatible with {memoryType} memory.",
-                nameof(desc));
-        }
-    }
-
-    private static void ValidateTextureDescription(in TextureDesc desc)
-    {
-        if (!Enum.IsDefined(desc.Dimension))
-            throw new ArgumentOutOfRangeException(nameof(desc), "The Texture dimension is unknown.");
-        const TextureUsages knownUsages =
-            TextureUsages.CopySource |
-            TextureUsages.CopyDestination |
-            TextureUsages.Sampled |
-            TextureUsages.Storage |
-            TextureUsages.ColorAttachment |
-            TextureUsages.DepthStencilAttachment |
-            TextureUsages.ShadingRate |
-            TextureUsages.SamplerFeedback |
-            TextureUsages.Shareable;
-        if ((desc.Usages & ~knownUsages) != 0)
-            throw new ArgumentOutOfRangeException(nameof(desc), "The Texture usage contains unknown bits.");
-        if ((desc.Usages & TextureUsages.SamplerFeedback) != 0)
-        {
-            throw new ArgumentException(
-                "TextureUsages.SamplerFeedback is reserved for CreateSamplerFeedbackTexture.",
-                nameof(desc));
-        }
-
-        ValidateTextureShape(desc);
-        ValidateTextureMipCount(desc);
-        ValidateMultisampling(desc);
-        ValidateTextureFormatUsage(desc);
-        ValidatePermittedViewFormats(desc);
-    }
-
-    private static void ValidateTextureShape(in TextureDesc desc)
-    {
-        if (desc.Width == 0 || desc.Height == 0 || desc.Depth == 0 ||
-            desc.MipLevelCount == 0 || desc.ArrayLayerCount == 0 || desc.SampleCount == 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(desc), "Texture dimensions, counts and sample count must be nonzero.");
-        }
-        if (desc.Dimension == TextureDimension.Texture1D &&
-            (desc.Height != 1 || desc.Depth != 1))
-            throw new ArgumentException("A 1D Texture has Height=1 and Depth=1.", nameof(desc));
-        if (desc.Dimension == TextureDimension.Texture2D && desc.Depth != 1)
-            throw new ArgumentException("A 2D Texture has Depth=1.", nameof(desc));
-        if (desc.Dimension == TextureDimension.Texture3D && desc.ArrayLayerCount != 1)
-            throw new ArgumentException("A 3D Texture has exactly one array layer.", nameof(desc));
-        uint depthOrArray = desc.Dimension == TextureDimension.Texture3D
-            ? desc.Depth
-            : desc.ArrayLayerCount;
-        if (depthOrArray > ushort.MaxValue || desc.MipLevelCount > ushort.MaxValue)
-            throw new ArgumentOutOfRangeException(nameof(desc), "Texture depth/array and mip counts must fit D3D12 fields.");
-    }
-
-    private static void ValidateTextureMipCount(in TextureDesc desc)
-    {
-        uint largestDimension = desc.Dimension switch
-        {
-            TextureDimension.Texture1D => desc.Width,
-            TextureDimension.Texture2D => Math.Max(desc.Width, desc.Height),
-            TextureDimension.Texture3D => Math.Max(desc.Width, Math.Max(desc.Height, desc.Depth)),
-            _ => throw new ArgumentOutOfRangeException(nameof(desc)),
-        };
-        uint maximumMipCount = checked((uint)BitOperations.Log2(largestDimension) + 1);
-        if (desc.MipLevelCount > maximumMipCount)
-            throw new ArgumentOutOfRangeException(nameof(desc), "The Texture has more mip levels than its dimensions permit.");
-    }
-
-    private static void ValidateMultisampling(in TextureDesc desc)
-    {
-        bool multisampled = desc.SampleCount != 1;
-        if (multisampled &&
-            (!BitOperations.IsPow2(desc.SampleCount) ||
-             desc.Dimension != TextureDimension.Texture2D ||
-             desc.MipLevelCount != 1 ||
-             (desc.Usages & TextureUsages.Storage) != 0 ||
-             FormatMappings.IsBlockCompressed(desc.Format)))
-        {
-            throw new ArgumentException("The multisampled Texture description is not representable by D3D12.", nameof(desc));
-        }
-    }
-
-    private static void ValidateTextureFormatUsage(in TextureDesc desc)
-    {
-        bool depthStencil = FormatMappings.IsDepthStencil(desc.Format);
-        if (depthStencil && (desc.Usages & TextureUsages.ColorAttachment) != 0)
-            throw new ArgumentException("A depth/stencil format cannot be a color attachment.", nameof(desc));
-        if (!depthStencil && (desc.Usages & TextureUsages.DepthStencilAttachment) != 0)
-            throw new ArgumentException("A color format cannot be a depth/stencil attachment.", nameof(desc));
-        if (depthStencil && (desc.Usages & TextureUsages.Storage) != 0)
-            throw new ArgumentException("D3D12 depth/stencil formats cannot be storage textures.", nameof(desc));
-        if (depthStencil &&
-            desc.Dimension == TextureDimension.Texture3D &&
-            (desc.Usages & TextureUsages.DepthStencilAttachment) != 0)
-            throw new ArgumentException("D3D12 does not support 3D depth/stencil attachments.", nameof(desc));
-        if (FormatMappings.IsBlockCompressed(desc.Format) &&
-            (desc.Usages & (TextureUsages.Storage |
-                            TextureUsages.ColorAttachment |
-                            TextureUsages.DepthStencilAttachment |
-                            TextureUsages.ShadingRate |
-                            TextureUsages.SamplerFeedback)) != 0)
-        {
-            throw new ArgumentException("A block-compressed format has an incompatible Texture usage.", nameof(desc));
-        }
-    }
-
-    private static void ValidatePermittedViewFormats(in TextureDesc desc)
-    {
-        DxgiFormat family = FormatMappings.ToTypelessFamily(desc.Format);
-        for (int index = 0; index < desc.PermittedViewFormats.Length; index++)
-        {
-            Format permitted = desc.PermittedViewFormats[index];
-            if (FormatMappings.ToTypelessFamily(permitted) != family)
-            {
-                throw new ArgumentException(
-                    "Every permitted view format must belong to the Texture format family.",
-                    nameof(desc));
-            }
-            for (int previous = 0; previous < index; previous++)
-            {
-                if (desc.PermittedViewFormats[previous] == permitted)
-                    throw new ArgumentException("Permitted view formats must be unique.", nameof(desc));
-            }
-        }
-    }
-
-    private static void ValidatePlacement(
-        D3D12Heap heap,
-        ulong offset,
-        in MemoryRequirements requirements,
-        SomeEngine.Graphics.HeapFlags requiredClass,
-        bool shareable)
-    {
-        if (offset % requirements.Alignment != 0 ||
-            offset > heap.Info.Size ||
-            requirements.Size > heap.Info.Size - offset)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(offset),
-                "The placed resource range is misaligned or escapes the Heap.");
-        }
-        SomeEngine.Graphics.HeapFlags classes = heap.Info.Flags &
-            (SomeEngine.Graphics.HeapFlags.Buffers |
-             SomeEngine.Graphics.HeapFlags.Textures |
-             SomeEngine.Graphics.HeapFlags.Attachments);
-        bool unrestricted = classes == SomeEngine.Graphics.HeapFlags.None ||
-            BitOperations.PopCount((uint)classes) > 1;
-        if (!unrestricted && (classes & requiredClass) == 0)
-            throw new ArgumentException("The Heap class is incompatible with the placed resource.", nameof(heap));
-        if (shareable && (heap.Info.Flags & SomeEngine.Graphics.HeapFlags.Shareable) == 0)
-            throw new ArgumentException("A shareable resource requires a shareable Heap.", nameof(heap));
     }
 
     private static ResourceFlags ToResourceFlags(BufferUsages usages)
@@ -989,7 +723,7 @@ device.Native, heap,
                 MemoryType.DeviceLocal => HeapType.Default,
                 MemoryType.Upload => HeapType.Upload,
                 MemoryType.Readback => HeapType.Readback,
-                _ => throw new ArgumentOutOfRangeException(nameof(memoryType)),
+                _ => default,
             },
             CpuPageProperty.Unknown,
             MemoryPool.Unknown,
@@ -1043,7 +777,7 @@ device.Native, heap,
             MemoryType.Upload => BarrierLayout.GenericRead,
             MemoryType.Readback => BarrierLayout.CopyDest,
             MemoryType.DeviceLocal => BarrierLayout.Undefined,
-            _ => throw new ArgumentOutOfRangeException(nameof(memoryType)),
+            _ => default,
         };
     }
 
@@ -1052,7 +786,7 @@ device.Native, heap,
         MemoryType.DeviceLocal => ResourceStates.Common,
         MemoryType.Upload => ResourceStates.GenericRead,
         MemoryType.Readback => ResourceStates.CopyDest,
-        _ => throw new ArgumentOutOfRangeException(nameof(memoryType)),
+        _ => default,
     };
 
     private static (PipelineSync Sync, ResourceAccess Access) InitialBufferAccess(
@@ -1062,7 +796,7 @@ device.Native, heap,
             MemoryType.DeviceLocal => (PipelineSync.None, ResourceAccess.NoAccess),
             MemoryType.Upload => (PipelineSync.None, ResourceAccess.NoAccess),
             MemoryType.Readback => (PipelineSync.Copy, ResourceAccess.CopyDestination),
-            _ => throw new ArgumentOutOfRangeException(nameof(memoryType)),
+            _ => default,
         };
 
     private static TextureInfo CreateTextureInfo(
@@ -1087,22 +821,6 @@ device.Native, heap,
             allocationSize,
             creationNodeMask,
             visibleNodeMask);
-
-    private static void ValidatePlacedResourceNodePlacement(
-        in ResourceNodePlacement placement,
-        in HeapInfo heap,
-        string parameterName)
-    {
-        if (placement.CreationNodeMask == 0 && placement.VisibleNodeMask == 0)
-            return;
-        if (placement.CreationNodeMask != heap.CreationNodeMask ||
-            placement.VisibleNodeMask != heap.VisibleNodeMask)
-        {
-            throw new ArgumentException(
-                "A placed resource inherits the creation and visibility masks of its Heap.",
-                parameterName);
-        }
-    }
 
     private static DxgiFormat[] CreateCastableFormats(in TextureDesc desc)
     {
@@ -1129,7 +847,7 @@ device.Native, heap,
     private sealed partial class D3D12Heap : Heap
     {
         private readonly D3D12Device _device;
-        private readonly NativeLease _native;
+        private readonly NativeResourceData _native;
 
         internal D3D12Heap(
             D3D12Device device,
@@ -1140,11 +858,11 @@ device.Native, heap,
             : base(device, info, label)
         {
             _device = device;
-            _native = new NativeLease((IUnknown*)native, ownsReference);
+            _native = new NativeResourceData((IUnknown*)native, ownsReference);
         }
 
         internal ID3D12Heap* Native => (ID3D12Heap*)_native.Pointer;
-        internal NativeLease NativeLifetime => _native;
+        internal NativeResourceData NativeData => _native;
         internal D3D12Device NativeDevice => _device;
 
         internal override void Release(bool fromParent)
@@ -1157,17 +875,17 @@ device.Native, heap,
     private sealed class D3D12Buffer : Buffer
     {
         private readonly Lock _constantBufferGate = new();
-        private Dictionary<BufferRange, DescriptorLease>? _constantBufferDescriptors;
+        private Dictionary<BufferRange, DescriptorAllocation>? _constantBufferDescriptors;
 
-        internal DescriptorLease GetConstantBufferDescriptor(in BufferRange requested)
+        internal DescriptorAllocation GetConstantBufferDescriptor(in BufferRange requested)
         {
             BufferRange range = requested.IsWhole ? new BufferRange(0, Info.Size) : requested;
             lock (_constantBufferGate)
             {
                 if (_constantBufferDescriptors is { } descriptors &&
-                    descriptors.TryGetValue(range, out DescriptorLease? existing))
+                    descriptors.TryGetValue(range, out DescriptorAllocation? existing))
                     return existing;
-                DescriptorLease descriptor = _device.GetResourceDescriptors(
+                DescriptorAllocation descriptor = _device.GetResourceDescriptors(
                     _device.ResolveResourceHomeNodeIndex(Info.CreationNodeMask)).Allocate();
                 try
                 {
@@ -1188,14 +906,16 @@ device.Native, heap,
             lock (_constantBufferGate)
             {
                 if (_constantBufferDescriptors is null) return;
-                foreach (DescriptorLease descriptor in _constantBufferDescriptors.Values) descriptor.Release();
+                foreach (DescriptorAllocation descriptor in _constantBufferDescriptors.Values) descriptor.Release();
                 _constantBufferDescriptors.Clear();
             }
         }
 
         private readonly D3D12Device _device;
-        private readonly NativeLease _native;
-        private readonly D3D12MappingLease _mapping;
+        private readonly NativeResourceData _native;
+        private D3D12SparseState? _sparseState;
+        private readonly D3D12MappingHandle _mapping;
+        internal override MappingHandle? Mapping => _mapping;
 
         internal D3D12Buffer(
             D3D12Device device,
@@ -1210,16 +930,16 @@ device.Native, heap,
             : base(device, heap, info, initialSync, initialAccess, label, initialQueueType)
         {
             _device = device;
-            _mapping = new D3D12MappingLease(this);
-            _native = new NativeLease(
+            _mapping = new D3D12MappingHandle(this);
+            _native = new NativeResourceData(
                 (IUnknown*)native,
                 ownsReference,
-                heap?.NativeLifetime);
+                heap?.NativeData);
         }
 
         internal D3D12Buffer(
             D3D12Device device,
-            NativeLease native,
+            NativeResourceData native,
             in BufferInfo info,
             PipelineSync initialSync,
             ResourceAccess initialAccess,
@@ -1227,22 +947,22 @@ device.Native, heap,
             : base(device, heap: null, info, initialSync, initialAccess, label)
         {
             _device = device;
-            _mapping = new D3D12MappingLease(this);
+            _mapping = new D3D12MappingHandle(this);
             _native = native;
         }
 
         internal NativeResource* Native => (NativeResource*)_native.Pointer;
-        internal NativeLease NativeLifetime => _native;
+        internal NativeResourceData NativeData => _native;
         internal D3D12MemoryAllocation? MemoryAllocation => _native.MemoryAllocation;
         internal D3D12SparseState? SparseState
         {
-            get => _native.SparseState;
-            set => _native.SparseState = value;
+            get => _sparseState;
+            set => _sparseState = value;
         }
 
         internal MappedBuffer Map(MapType type, BufferRange range, int length)
         {
-            ThrowIfDisposed();
+
             _device.ThrowIfUnavailable();
 
             ulong rangeEnd = checked(range.Offset + range.Size);
@@ -1268,7 +988,9 @@ device.Native, heap,
                     writtenRange = completeRange;
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(type));
+                    readRange = default;
+                    writtenRange = default;
+                    break;
             }
 
             ulong sequence = _mapping.PrepareNextSequence();
@@ -1323,6 +1045,7 @@ device.Native, heap,
         internal override void Release(bool fromParent)
         {
             _mapping.DisposeCurrent();
+            _sparseState?.Dispose();
             ReleaseConstantBufferDescriptors();
             _native.Release();
             _device.UnregisterChild(this);
@@ -1364,7 +1087,7 @@ device.Native, heap,
 
         internal D3D12Texture(
             D3D12Device device,
-            NativeLease native,
+            NativeResourceData native,
             TextureInfo info,
             string? label)
             : base(
@@ -1381,7 +1104,7 @@ device.Native, heap,
 
         internal D3D12TextureResource NativeResource => _resource;
         internal NativeResource* Native => _resource.Native;
-        internal NativeLease NativeLifetime => _resource.NativeLifetime;
+        internal NativeResourceData NativeData => _resource.NativeData;
         internal D3D12SparseState? SparseState
         {
             get => _resource.SparseState;
@@ -1393,59 +1116,61 @@ device.Native, heap,
     private sealed partial class D3D12TextureResource
     {
         private readonly D3D12Device _device;
-        private readonly NativeLease _native;
+        private readonly NativeResourceData _native;
+        private D3D12SparseState? _sparseState;
 
         internal D3D12TextureResource(
-            Texture owner,
+            Texture texture,
             D3D12Device device,
             D3D12Heap? heap,
             NativeResource* native,
             bool ownsReference = true,
-            NativeLease? dependency = null)
+            NativeResourceData? dependency = null)
         {
-            Owner = owner;
+            Texture = texture;
             _device = device;
-            _native = new NativeLease(
+            _native = new NativeResourceData(
                 (IUnknown*)native,
                 ownsReference,
-                dependency ?? heap?.NativeLifetime);
+                dependency ?? heap?.NativeData);
         }
 
         internal D3D12TextureResource(
-            Texture owner,
+            Texture texture,
             D3D12Device device,
-            NativeLease native)
+            NativeResourceData native)
         {
-            Owner = owner;
+            Texture = texture;
             _device = device;
             _native = native;
         }
 
-        internal Texture Owner { get; }
+        internal Texture Texture { get; }
         internal D3D12Device Device => _device;
-        internal TextureInfo Info => Owner.Info;
+        internal TextureInfo Info => Texture.Info;
         internal NativeResource* Native => (NativeResource*)_native.Pointer;
-        internal NativeLease NativeLifetime => _native;
+        internal NativeResourceData NativeData => _native;
         internal D3D12MemoryAllocation? MemoryAllocation => _native.MemoryAllocation;
         internal D3D12SparseState? SparseState
         {
-            get => _native.SparseState;
-            set => _native.SparseState = value;
+            get => _sparseState;
+            set => _sparseState = value;
         }
 
         internal void Release()
         {
+            _sparseState?.Dispose();
             _native.Release();
-            _device.UnregisterChild(Owner);
+            _device.UnregisterChild(Texture);
         }
     }
 
-    private sealed class D3D12MappingLease : MappingLease
+    private sealed class D3D12MappingHandle : MappingHandle
     {
         private readonly D3D12Buffer _buffer;
         private NativeRange _writtenRange;
 
-        internal D3D12MappingLease(D3D12Buffer buffer)
+        internal D3D12MappingHandle(D3D12Buffer buffer)
             : base(buffer)
         {
             _buffer = buffer;
@@ -1468,126 +1193,58 @@ device.Native, heap,
         protected override void UnmapCore() => _buffer.EndMapping(_writtenRange);
     }
 
-    private sealed class NativeLease
+    private readonly struct NativeResourceData : IEquatable<NativeResourceData>
     {
-        private nint _pointer;
         private readonly bool _ownsReference;
-        private NativeLease? _dependency;
-        private NativeLease[]? _dependencies;
-        private D3D12MemoryAllocation? _allocation;
-        private int _references = 1;
+        private readonly NativeResourceData[] _dependencies;
+        private readonly D3D12MemoryAllocation? _allocation;
+        internal nint Pointer { get; }
+        internal D3D12MemoryAllocation? MemoryAllocation => _allocation;
 
-        internal NativeLease(
-            IUnknown* pointer,
-            bool ownsReference,
-            NativeLease? dependency = null,
-            D3D12MemoryAllocation? allocation = null)
-        {
-            _pointer = (nint)pointer;
-            _ownsReference = ownsReference;
-            try
-            {
-                dependency?.Retain();
-                _dependency = dependency;
-                _allocation = allocation;
-            }
-            catch
-            {
-                if (ownsReference && pointer is not null)
-                    _ = ResourceTrace.Release(pointer);
-                _pointer = 0;
-                allocation?.Release();
-                throw;
-            }
-        }
+        internal NativeResourceData(IUnknown* pointer, bool ownsReference,
+            NativeResourceData? dependency = null, D3D12MemoryAllocation? allocation = null)
+            : this(pointer, ownsReference, dependency is { } value ? [value] : [], allocation) { }
 
-        internal NativeLease(
-            IUnknown* pointer,
-            bool ownsReference,
-            NativeLease[] dependencies)
+        internal NativeResourceData(IUnknown* pointer, bool ownsReference, NativeResourceData[] dependencies)
+            : this(pointer, ownsReference, dependencies, null) { }
+
+        private NativeResourceData(IUnknown* pointer, bool ownsReference,
+            NativeResourceData[] dependencies, D3D12MemoryAllocation? allocation)
         {
-            _pointer = (nint)pointer;
+            Pointer = (nint)pointer;
             _ownsReference = ownsReference;
-            int retained = 0;
-            try
-            {
-                for (; retained < dependencies.Length; retained++)
-                    dependencies[retained].Retain();
-            }
-            catch
-            {
-                if (ownsReference && pointer is not null)
-                    _ = ResourceTrace.Release(pointer);
-                _pointer = 0;
-                while (retained > 0)
-                    dependencies[--retained].Release();
-                throw;
-            }
             _dependencies = dependencies;
+            _allocation = allocation;
+            foreach (NativeResourceData dependency in dependencies) dependency.Retain();
         }
 
-        internal D3D12SparseState? SparseState { get; set; }
-
-        internal nint Pointer => Volatile.Read(ref _pointer);
-        internal D3D12MemoryAllocation? MemoryAllocation => Volatile.Read(ref _allocation);
+        public bool Equals(NativeResourceData other) => Pointer == other.Pointer;
+        public override bool Equals(object? value) => value is NativeResourceData other && Equals(other);
+        public override int GetHashCode() => Pointer.GetHashCode();
+        public static bool operator ==(NativeResourceData left, NativeResourceData right) => left.Equals(right);
+        public static bool operator !=(NativeResourceData left, NativeResourceData right) => !left.Equals(right);
 
         internal void Retain()
         {
-            int current = Volatile.Read(ref _references);
-            while (current > 0)
-            {
-                int exchanged = Interlocked.CompareExchange(
-                    ref _references,
-                    checked(current + 1),
-                    current);
-                if (exchanged == current)
-                    return;
-                current = exchanged;
-            }
-            throw new ObjectDisposedException(nameof(NativeLease));
+            if (_ownsReference && Pointer != 0) _ = ((IUnknown*)Pointer)->AddRef();
+            _allocation?.Retain();
+            foreach (NativeResourceData dependency in _dependencies) dependency.Retain();
         }
 
         internal void Release()
         {
-            if (Interlocked.Decrement(ref _references) != 0)
-                return;
-            nint pointer = Interlocked.Exchange(ref _pointer, 0);
-            if (_ownsReference && pointer != 0)
-                _ = ResourceTrace.Release(((IUnknown*)pointer));
-            SparseState?.Dispose();
-            SparseState = null;
-            Interlocked.Exchange(ref _allocation, null)?.Release();
-            Interlocked.Exchange(ref _dependency, null)?.Release();
-            NativeLease[]? dependencies = Interlocked.Exchange(ref _dependencies, null);
-            if (dependencies is not null)
-            {
-                for (int index = dependencies.Length - 1; index >= 0; index--)
-                    dependencies[index].Release();
-            }
+            if (_ownsReference && Pointer != 0) _ = ResourceTrace.Release((IUnknown*)Pointer);
+            _allocation?.Release();
+            foreach (NativeResourceData dependency in _dependencies) dependency.Release();
         }
     }
 
     private static partial class RequireD3D12
     {
-        internal static D3D12Heap Heap(Heap value) =>
-            value as D3D12Heap ??
-            throw new ArgumentException(
-                "The Heap was not created by the Direct3D 12 backend.",
-                nameof(value));
+        internal static D3D12Heap Heap(Heap value) =>(D3D12Heap)value;
 
-        internal static D3D12Buffer Buffer(Buffer value) =>
-            value as D3D12Buffer ??
-            throw new ArgumentException(
-                "The Buffer was not created by the Direct3D 12 backend.",
-                nameof(value));
+        internal static D3D12Buffer Buffer(Buffer value) =>(D3D12Buffer)value;
 
-        internal static D3D12TextureResource Texture(Texture value) => value switch
-        {
-            D3D12Texture texture => texture.NativeResource,
-            D3D12SamplerFeedbackTexture feedback => feedback.NativeResource,
-            _ => throw new ArgumentException(
-                "The Texture was not created by the Direct3D 12 backend.",
-                nameof(value)),
-        };
+        internal static D3D12TextureResource Texture(Texture value) =>value is D3D12SamplerFeedbackTexture feedback ? feedback.NativeResource : ((D3D12Texture)value).NativeResource;
     }
 }

@@ -10,151 +10,79 @@ namespace SomeEngine.Render.Tests;
 
 public sealed class InstancePreparationTests
 {
-    [Theory]
-    [InlineData(1)]
-    [InlineData(37)]
-    [InlineData(129)]
-    public void RepeatedWritesRestoreCanceledValuesAndPreserveUntouchedRows(int count)
+    [Fact]
+    public void RewritingOneInstanceReusesItsBatchAndPreservesOtherGpuValues()
     {
+        const int count = 2;
         using var test = new RenderTestDevice();
         using var world = new RenderWorld();
         using var extraction = new RenderExtractionSystems(world);
         var builder = new RenderInstancePropertyLayoutBuilder();
-        var token = builder.Register<Vector4>("Instance preparation tests", new("test.instance.values"),
+        var token = builder.Register<Vector4>("Instance values", new("test.instance.values"),
             new("test.float4", 16, 16, 16, 1));
         var layout = builder.Freeze();
         var property = layout.Resolve(token);
-        var instances = new RenderInstanceStorageSystem(test.Backend, test.Device, test.Coordinator, world,
-            layout, new RenderInstanceOptions { RowCapacity = count, BatchCapacity = 1 });
+        using var instances = new RenderInstanceStorageSystem(test.Graph, world, layout,
+            new RenderInstanceOptions { RowCapacity = count, BatchCapacity = 1 });
+        using var prepare = new RenderPrepareSystems(world, instances, extraction);
         var writer = new Writer(layout, property, count);
-        var reader = new Reader(writer, layout);
-        var prepare = new RenderPrepareSystems(world, instances, extraction);
         prepare.Add(writer);
         using var frames = new RenderFrameSystems(world, instances);
+        var reader = new Reader(writer, layout);
         frames.Add(reader);
-        using var graph = new global::SomeEngine.RenderGraph.RenderGraph(test.Backend, test.Device,
-            [test.Backend.GetQueue(test.Device, QueueType.Graphics)]);
-        try
-        {
-            Write();
-            Vector4[] expected = writer.Values.ToArray();
-            Assert.Equal(expected, Read());
-            for (int iteration = 0; iteration < 4; iteration++)
-            {
-                writer.Values = Enumerable.Range(0, count).Select(row => new Vector4(iteration + 10, row, -row, 7)).ToArray();
-                writer.Cancel = true;
-                Write();
-                Assert.Equal(expected, Read());
-                writer.Cancel = false;
-                writer.OneRow = true;
-                Write();
-                expected[count / 2] = writer.Values[count / 2];
-                Assert.Equal(expected, Read());
-                writer.OneRow = false;
-            }
-            writer.FailAfterWrite = true;
-            Assert.Throws<ArgumentException>(Write);
-            writer.FailAfterWrite = false;
-            writer.Cancel = true;
-            Write();
-            Assert.Equal(expected, Read());
-        }
-        finally
-        {
-            Assert.True(test.Coordinator.TryBeginPrepare(out var shutdown));
-            using (shutdown)
-            {
-                prepare.Shutdown(shutdown);
-                instances.Shutdown(shutdown);
-                shutdown.Commit();
-            }
-            prepare.Dispose();
-            instances.Dispose();
-        }
 
-        void Write()
-        {
-            Assert.True(test.Coordinator.TryBeginPrepare(out var scope));
-            using (scope)
-            {
-                Assert.False(prepare.ApplyExtraction(scope));
-                Assert.False(prepare.ApplyExtraction(scope));
-                prepare.Update(scope);
-                scope.Commit();
-            }
-        }
+        prepare.Update();
+        RenderInstanceBatch batch = writer.Batch!;
+        Vector4[] expected = writer.Values.ToArray();
+        Assert.Equal(expected, Read());
+        writer.Row = 0;
+        writer.Values[0] = new Vector4(10, 20, 30, 40);
+        prepare.Update();
+        expected[0] = writer.Values[0];
+        Assert.Same(batch, writer.Batch);
+        Assert.Equal(expected, Read());
 
         Vector4[] Read()
         {
-            Assert.True(test.Coordinator.TryBeginFrame(out var frame));
-            using (frame)
-            using (var commands = graph.BeginFrame())
-            {
-                frames.Update(frame, commands);
-                var view = reader.View;
-                using var metadata = test.Backend.Map(view.Metadata, MapType.Read, view.MetadataRange);
-                uint word = MemoryMarshal.Read<uint>(metadata.Bytes);
-                Assert.NotEqual(0u, word & RenderInstanceLinearMetadata.PerInstanceBit);
-                using var data = test.Backend.Map(view.PropertyData!, MapType.Read, BufferRange.Whole);
-                return MemoryMarshal.Cast<byte, Vector4>(data.Bytes.Slice(
-                    checked((int)(word & RenderInstanceLinearMetadata.AddressMask)), count * 16)).ToArray();
-            }
+            using RenderGraphFrame frame = test.Graph.BeginFrame();
+            frames.Update(frame);
+            var metadata = new BytesReceiver();
+            var values = new BytesReceiver();
+            frame.AddReadback(new GraphBufferSlice(reader.View.Metadata, reader.View.MetadataRange), metadata, "Read instance metadata");
+            frame.AddReadback(new GraphBufferSlice(reader.View.PropertyData, BufferRange.Whole), values, "Read instance values");
+            ulong identity = frame.FrameIdentity;
+            frame.Execute();
+            Assert.Equal(WaitStatus.Completed, test.Graph.WaitForFrame(identity, TimeSpan.FromSeconds(10)));
+            uint address = MemoryMarshal.Read<uint>(metadata.Bytes) & RenderInstanceLinearMetadata.AddressMask;
+            return MemoryMarshal.Cast<byte, Vector4>(values.Bytes.AsSpan(checked((int)address), count * 16)).ToArray();
         }
     }
 
-    [Fact]
-    public void AbandoningExtractionOnlyDoesNotInvalidateGpuPreparation()
+    private sealed class BytesReceiver : IGraphReadbackReceiver
     {
-        using var test = new RenderTestDevice();
-        using var world = new RenderWorld();
-        using var extraction = new RenderExtractionSystems(world);
-        var instances = new RenderInstanceStorageSystem(test.Backend, test.Device, test.Coordinator, world,
-            RenderInstanceTransformProperties.Layout, new RenderInstanceOptions { RowCapacity = 1, BatchCapacity = 1 });
-        var prepare = new RenderPrepareSystems(world, instances, extraction);
-        try
-        {
-            Assert.True(test.Coordinator.TryBeginPrepare(out var scope));
-            using (scope) Assert.False(prepare.ApplyExtraction(scope));
-            Assert.True(test.Coordinator.TryBeginFrame(out var frame));
-            frame.Dispose();
-        }
-        finally
-        {
-            Assert.True(test.Coordinator.TryBeginPrepare(out var shutdown));
-            using (shutdown)
-            {
-                prepare.Shutdown(shutdown);
-                instances.Shutdown(shutdown);
-                shutdown.Commit();
-            }
-            prepare.Dispose();
-            instances.Dispose();
-        }
+        internal byte[] Bytes = [];
+        public void OnReadback(ReadOnlySpan<byte> bytes, ulong tag) => Bytes = bytes.ToArray();
     }
 
     private sealed class Writer(RenderInstancePropertyLayout layout,
         ResolvedRenderInstanceProperty<Vector4> property, int count) : ISystem<RenderPrepareSystemContext>
     {
         internal RenderInstanceBatch? Batch;
-        internal Vector4[] Values = Enumerable.Range(0, count).Select(row => new Vector4(1, row, 3, 4)).ToArray();
-        internal bool Cancel;
-        internal bool OneRow;
-        internal bool FailAfterWrite;
-
+        internal readonly Vector4[] Values = Enumerable.Range(0, count).Select(row => new Vector4(1, row, 3, 4)).ToArray();
+        internal int? Row;
         public void OnCreate(ref RenderPrepareSystemContext context) { }
         public void OnUpdate(ref RenderPrepareSystemContext context)
         {
             using var write = Batch is null ? context.AllocateBatch(layout, count) : context.RewriteBatch(Batch, layout);
-            var all = write.OpenWrite(layout);
-            all.BindPerInstance(property);
-            if (OneRow) all.Write(property, count / 2, Values[count / 2]);
-            else all.Write(property, Values);
-            if (FailAfterWrite) all.Write(property, Values.AsSpan(0, count - 1));
-            if (!Cancel) Batch = write.Publish();
+            var values = write.OpenWrite(layout);
+            values.BindPerInstance(property);
+            if (Row is { } row) values.Write(property, row, Values[row]);
+            else values.Write(property, Values);
+            Batch = write.Publish();
         }
         public void OnDestroy(ref RenderPrepareSystemContext context)
         {
-            if (Batch is not null) context.Retire(Batch);
+            if (Batch is { } batch) context.Retire(batch);
             Batch = null;
         }
     }

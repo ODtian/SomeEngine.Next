@@ -48,6 +48,11 @@ internal sealed class VoxelGpuRequest<TBrush>(long sequence, JobHandle dependenc
     VoxelGrid grid, float initialValue, VoxelFieldData source, VoxelRegion range, VoxelPageWrite[] outputs, TBrush brush)
     : TerrainGpuRequest(sequence, dependency, completion) where TBrush : struct, IVoxelBrushGpu
 {
+    internal override void Prepare(RenderTerrainData data)
+    {
+        foreach (TerrainFieldPage page in source.Pages.Values) data.PreparePage(page);
+        foreach (VoxelPageWrite output in outputs) data.PreparePage(output.Page);
+    }
     internal override GraphPassId Record(RenderTerrainData data, ref RenderGraphFrame frame,
         ref TerrainFrameCommands extension)
     {

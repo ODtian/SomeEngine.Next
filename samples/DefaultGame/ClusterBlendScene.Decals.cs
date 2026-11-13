@@ -12,13 +12,12 @@ internal sealed partial class ClusterBlendScene
     private void AddDecalLayers(SceneEdit edit)
     {
         _decals.Clear();
-        StandardMaterial wall = Standard(new(.25f, .3f, .35f, 1));
-        wall.State = wall.State with { Surface = SurfaceMode.Opaque };
+        StandardMaterial wall = OpaqueStandard(new(.25f, .3f, .35f, 1));
         StandardMaterial glass = Standard(new(.5f, .75f, 1, .25f));
         var layers = new StandardMaterial[16];
         for (int layer = 0; layer < layers.Length; layer++)
         {
-            layers[layer] = Standard(new(.25f + layer % 3 * .3f, .7f - layer % 4 * .13f, .2f + layer % 5 * .14f, .18f));
+            layers[layer] = OpaqueStandard(new(.25f + layer % 3 * .3f, .7f - layer % 4 * .13f, .2f + layer % 5 * .14f, .18f));
             layers[layer].AlbedoMap = assets.Smoke;
             layers[layer].NormalMap = assets.CoatingNormal;
             layers[layer].Roughness = .1f + layer * .05f;
@@ -42,12 +41,11 @@ internal sealed partial class ClusterBlendScene
     private void AddDecalSparse(SceneEdit edit)
     {
         _decals.Clear();
-        StandardMaterial wall = Standard(new(.45f, .48f, .5f, 1));
-        wall.State = wall.State with { Surface = SurfaceMode.Opaque };
+        StandardMaterial wall = OpaqueStandard(new(.45f, .48f, .5f, 1));
         Add(edit, assets.Panel, wall, new(new Vector3(0, 0, 3.6f), Quaternion.Identity, 1.2f) { Stretch = new(1, .8f, 1) });
         Add(edit, assets.Panel, Standard(new(.5f, .75f, 1, .2f)),
             new(new Vector3(-.3f, 0, 2.8f), Quaternion.CreateFromAxisAngle(Vector3.UnitY, .15f), .65f));
-        StandardMaterial hole = Standard(new(.12f, .06f, .025f, .85f));
+        StandardMaterial hole = OpaqueStandard(new(.12f, .06f, .025f, .85f));
         hole.AlbedoMap = assets.Smoke; hole.NormalMap = assets.CoatingNormal; hole.Roughness = .9f;
         for (int index = 0; index < 64; index++)
         {

@@ -1,3 +1,5 @@
+__exported import cluster_view;
+
 #ifndef CLUSTER_HIZ_SHARED_SLANG
 #define CLUSTER_HIZ_SHARED_SLANG
 

@@ -1,4 +1,4 @@
-using SomeEngine.ECS.Queries;
+﻿using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Render.Components;
@@ -25,7 +25,7 @@ public sealed class VirtualShadowFeatureSystem : ISystem<RenderFrameSystemContex
     }
 
     public void OnCreate(ref RenderFrameSystemContext context) =>
-        _viewQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>());
+        _viewQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>().Optional<RenderViewTarget>(QueryAccess.Read));
 
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
@@ -36,7 +36,7 @@ public sealed class VirtualShadowFeatureSystem : ISystem<RenderFrameSystemContex
         context.World.ExecuteQuery(
             _viewQuery,
             ref collector,
-            static (QueryCursor cursor, ref ReceiverCollector value) => value.Collect(cursor));
+            static (QueryCursor rows, ref ReceiverCollector value) => value.Collect(rows));
         receiver = collector.View;
         count = collector.Count;
         if (count != 1)
@@ -59,10 +59,11 @@ public sealed class VirtualShadowFeatureSystem : ISystem<RenderFrameSystemContex
         internal Entity Entity;
         internal int Count;
 
-        internal void Collect(QueryCursor cursor)
+        internal void Collect(QueryCursor rows)
         {
-            foreach (QueryRow row in cursor.Rows)
+            foreach (QueryRow row in rows.Rows)
             {
+                if (row.TryRead<RenderViewTarget>(out var target) && target.Kind != ViewTargetKind.Screen) continue;
                 if (++Count > 1)
                     return;
                 View = row.Read<RenderView>();

@@ -40,7 +40,7 @@ struct ClusterViewUniforms
 
     float4x4 ClipToWorld;
 
-    uint TargetPolicy;
+    uint ViewPadding;
     uint TargetViewIndex;
     // Zero disables reuse. Within one target policy, equal nonzero indices identify
     // identical ViewProj, CameraPos, CullingRadius and CullingEnabled values.
@@ -113,7 +113,7 @@ float ClusterProjectedError(
 
 bool ClusterViewClipsDepth(ClusterViewUniforms view)
 {
-    return view.TargetPolicy == 0u || view.DepthClipEnabled != 0u;
+    return view.DepthClipEnabled != 0u;
 }
 
 float CalculateClusterViewPixelScale(ClusterViewUniforms view)

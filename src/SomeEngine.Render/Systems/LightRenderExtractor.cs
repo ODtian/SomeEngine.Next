@@ -1,4 +1,4 @@
-using SomeEngine.Resources;
+﻿using SomeEngine.Resources;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -10,9 +10,9 @@ namespace SomeEngine.Render.Systems;
 /// <summary>Extracts all light variants and their optional cookie semantics.</summary>
 public sealed class LightRenderExtractor : IRenderExtractionSystem
 {
-    private readonly List<DirectionalSnapshot> _directional = [];
-    private readonly List<PointSnapshot> _points = [];
-    private readonly List<SpotSnapshot> _spots = [];
+    private readonly List<DirectionalLightValues> _directional = [];
+    private readonly List<PointLightValues> _points = [];
+    private readonly List<SpotLightValues> _spots = [];
     private readonly HashSet<Entity> _directionalSources = [];
     private readonly HashSet<Entity> _pointSources = [];
     private readonly HashSet<Entity> _spotSources = [];
@@ -59,7 +59,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
                 ? ExtractCookie(cookies[row]) : default;
             if (hasDirectional)
             {
-                _directional.Add(new DirectionalSnapshot(
+                _directional.Add(new DirectionalLightValues(
                     source,
                     ExtractDirectional(directional[row]),
                     hasCookies,
@@ -70,7 +70,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
             }
             if (hasPoints)
             {
-                _points.Add(new PointSnapshot(
+                _points.Add(new PointLightValues(
                     source,
                     ExtractPoint(points[row]),
                     hasCookies,
@@ -81,7 +81,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
             }
             if (hasSpots)
             {
-                _spots.Add(new SpotSnapshot(
+                _spots.Add(new SpotLightValues(
                     source,
                     ExtractSpot(spots[row]),
                     hasCookies,
@@ -142,7 +142,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
 
             if (directionalChanged)
             {
-                _directional.Add(new DirectionalSnapshot(
+                _directional.Add(new DirectionalLightValues(
                     source,
                     ExtractDirectional(directional[row]),
                     HasCookie: false,
@@ -152,7 +152,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
             }
             if (pointChanged)
             {
-                _points.Add(new PointSnapshot(
+                _points.Add(new PointLightValues(
                     source,
                     ExtractPoint(points[row]),
                     HasCookie: false,
@@ -162,7 +162,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
             }
             if (spotChanged)
             {
-                _spots.Add(new SpotSnapshot(
+                _spots.Add(new SpotLightValues(
                     source,
                     ExtractSpot(spots[row]),
                     HasCookie: false,
@@ -176,7 +176,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
             RenderLightCookie cookie = ExtractCookie(cookies[row]);
             if (hasDirectional)
             {
-                _directional.Add(new DirectionalSnapshot(
+                _directional.Add(new DirectionalLightValues(
                     source,
                     default,
                     HasCookie: true,
@@ -186,7 +186,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
             }
             else if (hasPoints)
             {
-                _points.Add(new PointSnapshot(
+                _points.Add(new PointLightValues(
                     source,
                     default,
                     HasCookie: true,
@@ -196,7 +196,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
             }
             else
             {
-                _spots.Add(new SpotSnapshot(
+                _spots.Add(new SpotLightValues(
                     source,
                     default,
                     HasCookie: true,
@@ -213,7 +213,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
     {
         for (int index = 0; index < _directional.Count; index++)
         {
-            DirectionalSnapshot snapshot = _directional[index];
+            DirectionalLightValues snapshot = _directional[index];
             Entity entity = context.RetainMirror(snapshot.Source);
             context.Upsert(entity, snapshot.Light);
             if (snapshot.HasCookie)
@@ -221,7 +221,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
         }
         for (int index = 0; index < _points.Count; index++)
         {
-            PointSnapshot snapshot = _points[index];
+            PointLightValues snapshot = _points[index];
             Entity entity = context.RetainMirror(snapshot.Source);
             context.Upsert(entity, snapshot.Light);
             if (snapshot.HasCookie)
@@ -229,7 +229,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
         }
         for (int index = 0; index < _spots.Count; index++)
         {
-            SpotSnapshot snapshot = _spots[index];
+            SpotLightValues snapshot = _spots[index];
             Entity entity = context.RetainMirror(snapshot.Source);
             context.Upsert(entity, snapshot.Light);
             if (snapshot.HasCookie)
@@ -255,7 +255,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
     {
         for (int index = 0; index < _directional.Count; index++)
         {
-            DirectionalSnapshot snapshot = _directional[index];
+            DirectionalLightValues snapshot = _directional[index];
             Entity entity = context.RequireMirror(snapshot.Source);
             if (snapshot.LightChanged)
                 context.UpdateExisting(entity, snapshot.Light);
@@ -264,7 +264,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
         }
         for (int index = 0; index < _points.Count; index++)
         {
-            PointSnapshot snapshot = _points[index];
+            PointLightValues snapshot = _points[index];
             Entity entity = context.RequireMirror(snapshot.Source);
             if (snapshot.LightChanged)
                 context.UpdateExisting(entity, snapshot.Light);
@@ -273,7 +273,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
         }
         for (int index = 0; index < _spots.Count; index++)
         {
-            SpotSnapshot snapshot = _spots[index];
+            SpotLightValues snapshot = _spots[index];
             Entity entity = context.RequireMirror(snapshot.Source);
             if (snapshot.LightChanged)
                 context.UpdateExisting(entity, snapshot.Light);
@@ -286,7 +286,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
     {
         for (int index = 0; index < _directional.Count; index++)
         {
-            DirectionalSnapshot snapshot = _directional[index];
+            DirectionalLightValues snapshot = _directional[index];
             Entity entity = context.RequireMirror(snapshot.Source);
             if (snapshot.LightChanged)
                 context.RequireExisting<RenderDirectionalLight>(entity);
@@ -295,7 +295,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
         }
         for (int index = 0; index < _points.Count; index++)
         {
-            PointSnapshot snapshot = _points[index];
+            PointLightValues snapshot = _points[index];
             Entity entity = context.RequireMirror(snapshot.Source);
             if (snapshot.LightChanged)
                 context.RequireExisting<RenderPointLight>(entity);
@@ -304,7 +304,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
         }
         for (int index = 0; index < _spots.Count; index++)
         {
-            SpotSnapshot snapshot = _spots[index];
+            SpotLightValues snapshot = _spots[index];
             Entity entity = context.RequireMirror(snapshot.Source);
             if (snapshot.LightChanged)
                 context.RequireExisting<RenderSpotLight>(entity);
@@ -334,7 +334,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
     private static RenderLightCookie ExtractCookie(in LightCookie source)
         => new(source.Texture, source.Strength, source.ScaleOffset, source.WorldToCookie);
 
-    private readonly record struct DirectionalSnapshot(
+    private readonly record struct DirectionalLightValues(
         Entity Source,
         RenderDirectionalLight Light,
         bool HasCookie,
@@ -342,7 +342,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
         bool LightChanged,
         bool CookieChanged);
 
-    private readonly record struct PointSnapshot(
+    private readonly record struct PointLightValues(
         Entity Source,
         RenderPointLight Light,
         bool HasCookie,
@@ -350,7 +350,7 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
         bool LightChanged,
         bool CookieChanged);
 
-    private readonly record struct SpotSnapshot(
+    private readonly record struct SpotLightValues(
         Entity Source,
         RenderSpotLight Light,
         bool HasCookie,

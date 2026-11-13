@@ -1,8 +1,8 @@
 #ifndef CLUSTER_BIN_COMMON_SLANG
 #define CLUSTER_BIN_COMMON_SLANG
 
-#include "cluster_structures.slang"
-#include "cluster_bin_io.slang"
+__exported import cluster_structures;
+__exported import cluster_bin_io;
 
 struct RasterBinningUniforms
 {
@@ -14,7 +14,7 @@ struct RasterBinningUniforms
     uint ScreenWidth;
     uint ScreenHeight;
     uint ViewCount;
-    uint BinnedEntriesPerCluster;
+    uint BatchCapacity;
     uint DepthBucketsEnabled;
     uint Padding1;
     uint Padding2;
@@ -171,7 +171,7 @@ uint RasterKey(
     uint localMaterialIndex)
 {
     uint stage = GetStageSlot(slots, slotOffset, localMaterialIndex, uniforms.SlotCapacity);
-    if (uniforms.PolicyTarget == 0u && (stage & 0x08000000u) != 0u) return BIN_INVALID;
+    if (uniforms.PolicyTarget != 1u && (((stage & 0x08000000u) != 0u) != (uniforms.PolicyTarget == 2u))) return BIN_INVALID;
     return SlotBin(
         slots,
         slotOffset,

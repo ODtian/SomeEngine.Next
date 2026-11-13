@@ -1,6 +1,6 @@
 namespace SomeEngine.RenderGraph;
 
-internal sealed partial class FrameExecutor
+internal sealed partial class FrameRecording
 {
     private void ChangeSynchronization((GraphAccessTargetKind Kind, int Index) resource, bool bindingOnly = false)
     {
@@ -67,7 +67,7 @@ internal sealed partial class FrameExecutor
             for (int item = 0; item < releases.Length; item++) releases[item] = releases[item] with { Resource = resource };
             _changedSynchronizationPasses.Add(index);
         }
-        Span<PendingQueueRelease> late = CollectionsMarshal.AsSpan(synchronization.LateReleases);
+        Span<QueueReleaseRequest> late = CollectionsMarshal.AsSpan(synchronization.LateReleases);
         for (int item = 0; item < late.Length; item++)
         {
             _lateReleases.Remove(late[item]);

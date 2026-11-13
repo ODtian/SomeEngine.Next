@@ -33,10 +33,13 @@ public sealed class GlyphDrawingTests
 
     private static void CheckFailedSampler(IGraphicsBackend backend, Device device)
     {
+        using var pipelines = new global::SomeEngine.Render.RenderPipelines(backend, device);
         using var graph = new RenderGraph(backend, device, [backend.GetQueue(device, QueueType.Graphics)]);
         using var world = new RenderWorld();
-        using SurfaceMaterial surface = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
-        using GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
+        using var shaderLibrary = new SomeEngine.Resources.ShaderLibrary(device.Capabilities.CompileTarget);
+        using var shaderFiles = new SomeEngine.Tests.EngineShaderFiles();
+        SurfaceMaterial surface = SurfaceMaterial.Create(shaderLibrary, shaderFiles.Files);
+        GlyphsMaterial glyphs = GlyphsMaterial.Create(shaderLibrary, shaderFiles.Files);
         using CommandContext commands = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Graphics, 0, 1));
         var allocation = new SamplerFailureBackend(backend);
         backend.Begin(commands);
@@ -45,7 +48,7 @@ public sealed class GlyphDrawingTests
             for (int attempt = 0; attempt < 3; attempt++)
             {
                 Assert.Same(allocation.Error, Assert.Throws<InvalidOperationException>(() =>
-                    new CanvasRenderer(allocation, device, graph, world, surface, Format.R8G8B8A8UNorm, glyphs)));
+                    new CanvasRenderer(allocation, device, pipelines, graph, world, surface, Format.R8G8B8A8UNorm, glyphs)));
                 Pipeline pipeline = Assert.IsAssignableFrom<Pipeline>(allocation.GlyphPipeline);
                 try
                 {
@@ -61,7 +64,7 @@ public sealed class GlyphDrawingTests
         {
             backend.Discard(commands);
         }
-        using var renderer = new CanvasRenderer(backend, device, graph, world, surface, Format.R8G8B8A8UNorm, glyphs);
+        using var renderer = new CanvasRenderer(backend, device, pipelines, graph, world, surface, Format.R8G8B8A8UNorm, glyphs);
     }
 
     [Theory]
@@ -107,11 +110,14 @@ public sealed class GlyphDrawingTests
         using Font font = Font.Load(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fonts", "Latin.ttf")));
         var atlas = new GlyphAtlas(regionsAndTree ? 96 : 128, regionsAndTree ? 64 : 128);
         GlyphLocation glyph = atlas.Get(font, 34);
+        using var pipelines = new global::SomeEngine.Render.RenderPipelines(backend, device);
         using var graph = new RenderGraph(backend, device, [backend.GetQueue(device, QueueType.Graphics)]);
         using var world = new RenderWorld();
-        using SurfaceMaterial surface = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
-        using GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
-        using var renderer = new CanvasRenderer(backend, device, graph, world, surface, Format.R8G8B8A8UNorm, glyphs);
+        using var shaderLibrary = new SomeEngine.Resources.ShaderLibrary(device.Capabilities.CompileTarget);
+        using var shaderFiles = new SomeEngine.Tests.EngineShaderFiles();
+        SurfaceMaterial surface = SurfaceMaterial.Create(shaderLibrary, shaderFiles.Files);
+        GlyphsMaterial glyphs = GlyphsMaterial.Create(shaderLibrary, shaderFiles.Files);
+        using var renderer = new CanvasRenderer(backend, device, pipelines, graph, world, surface, Format.R8G8B8A8UNorm, glyphs);
         Entity atlasEntity = world.CreateEntity(new RenderGlyphAtlas(
             new[] { new GlyphPagePixels(atlas.Pages[0].Width, atlas.Pages[0].Height, atlas.Pages[0].Pixels.ToArray()) },
             new[] { glyph.Region }, atlas.DistanceSpread, 1));
@@ -136,8 +142,7 @@ public sealed class GlyphDrawingTests
                 static (ref PassDefinition pass, ref GraphColorAttachmentViewId view) =>
                     pass.ColorAttachment(0, view, LoadType.Clear, StoreType.Store, WriteCoverage.Complete, default),
                 static (ref RasterPassCommandScope _, in GraphColorAttachmentViewId _) => { });
-            GraphBufferId output = edit.RegisterExternalBuffer(readback,
-                [new(BufferRange.Whole, readback.InitialSync, readback.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId output = edit.RegisterExternalBuffer(readback);
             copy = edit.AddCopyFramePass("Read glyph pixels", PassQueueSelection.AnyOfType(QueueType.Graphics),
                 (target, output), new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition pass, ref (GraphTextureId Texture, GraphBufferId Buffer) data) =>

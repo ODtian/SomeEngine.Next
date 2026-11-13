@@ -43,7 +43,7 @@ public sealed class DirectSlangShaderTests
         Assert.Single(compiled.SerializedSources);
         block.SetSerializedSource(0, compiled.SerializedSources[0].Span);
         File.Delete(path);
-        Shader restored = await block.CreateAsync(SlangShaderImporter.GlobalSession,
+        Shader restored = await SomeEngine.Resources.ShaderLibrary.CreateAsync(block, SlangShaderImporter.GlobalSession,
             new SessionDesc { Targets = CreateTargets() }, "restored");
         Assert.True(restored.TryGetSlangEntry(0, "Compute", SlangStage.Compute, out _));
     }
@@ -162,8 +162,7 @@ public sealed class DirectSlangShaderTests
         using (ShaderSourceBlock block = built.GetBlock<ShaderSourceBlock>().Duplicate())
         {
             File.Delete(sourcePath);
-            shader = await block.CreateAsync(
-                SlangShaderImporter.GlobalSession,
+            shader = await SomeEngine.Resources.ShaderLibrary.CreateAsync(block, SlangShaderImporter.GlobalSession,
                 new SessionDesc { Targets = CreateTargets() },
                 "on-demand");
         }
@@ -194,8 +193,7 @@ public sealed class DirectSlangShaderTests
         File.Delete(sourcePath);
         using ShaderAsset reopened = await ShaderAsset.OpenAsync(assetPath);
         ShaderSourceBlock source = await reopened.GetBlockAsync<ShaderSourceBlock>();
-        Shader shader = await source.CreateAsync(
-            SlangShaderImporter.GlobalSession,
+        Shader shader = await SomeEngine.Resources.ShaderLibrary.CreateAsync(source, SlangShaderImporter.GlobalSession,
             new SessionDesc { Targets = CreateTargets() },
             definitionPath);
 
@@ -254,13 +252,11 @@ public sealed class DirectSlangShaderTests
 
         using var block = new ShaderSourceBlock { SourceNames = ["SpecializedSourceBlock.slang"] };
         block.SetSerializedSource(0, serialized.Buffer);
-        Shader high = await block.CreateAsync(
-            slang,
+        Shader high = await SomeEngine.Resources.ShaderLibrary.CreateAsync(block, slang,
             sessionDescription,
             "high",
             new[] { SpecializationArg.FromExpression("HighQuality") });
-        Shader low = await block.CreateAsync(
-            slang,
+        Shader low = await SomeEngine.Resources.ShaderLibrary.CreateAsync(block, slang,
             sessionDescription,
             "low",
             new[] { SpecializationArg.FromExpression("LowQuality") });
@@ -280,13 +276,13 @@ public sealed class DirectSlangShaderTests
         Assert.False(highCode.AsSpan().SequenceEqual(lowCode));
 
         using var savedCode = new ShaderBlock();
-        Shader savedBlockHigh = await savedCode.CreateAsync(
+        Shader savedBlockHigh = await SomeEngine.Resources.ShaderLibrary.CreateAsync(savedCode,
             block,
             slang,
             sessionDescription,
             "saved-high",
             new[] { SpecializationArg.FromExpression("HighQuality") });
-        Shader savedBlockLow = await savedCode.CreateAsync(
+        Shader savedBlockLow = await SomeEngine.Resources.ShaderLibrary.CreateAsync(savedCode,
             block,
             slang,
             sessionDescription,

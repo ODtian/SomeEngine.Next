@@ -160,7 +160,7 @@ public sealed class ScalarLayout
         return FromFields(name, fields, payloadSize);
     }
 
-    internal static ScalarLayout FromSlangByteAddress(
+    public static ScalarLayout FromSlangByteAddress(
         string name,
         TypeLayoutReflection typeLayout)
     {
@@ -200,7 +200,7 @@ public sealed class ScalarLayout
         return FromFields(name, fields, byteOffset);
     }
 
-    internal bool HasSameContract(ScalarLayout other)
+    internal bool Matches(ScalarLayout other)
     {
         ArgumentNullException.ThrowIfNull(other);
         if (!string.Equals(Name, other.Name, StringComparison.Ordinal)
@@ -268,7 +268,7 @@ public sealed class ScalarLayout
             WriteFloatField(fieldBytes, field.ComponentCount, value);
     }
 
-    internal ScalarMaterialLayout Resolve(Material material)
+    public ScalarMaterialLayout Resolve(Material material)
     {
         ArgumentNullException.ThrowIfNull(material);
         IReadOnlyList<MaterialPropertyDefinition> definitions = material.Properties;
@@ -309,27 +309,27 @@ public sealed class ScalarLayout
             Type type = binding.PropertyType;
             if (type == typeof(float) || type == typeof(Vector2) ||
                 type == typeof(Vector3) || type == typeof(Vector4))
-                WriteFloatField(fieldBytes, field.ComponentCount, material.GetFloatComponents(binding.MaterialSlot));
+                WriteFloatField(fieldBytes, field.ComponentCount, material.GetFloatComponents(binding.MaterialProperty));
             else if (type == typeof(int) || type == typeof(uint) || type == typeof(bool))
-                WriteIntegerField(fieldBytes, field, unchecked((int)material.GetInteger(binding.MaterialSlot)));
+                WriteIntegerField(fieldBytes, field, unchecked((int)material.GetInteger(binding.MaterialProperty)));
             else if (typeof(SomeEngine.Resources.Texture).IsAssignableFrom(type))
             {
                 if (textureIndex is null || field.Size != sizeof(uint) ||
                     field.ScalarType != (byte)SlangScalarType.UInt32)
                     throw new InvalidDataException($"Indexed texture '{field.Name}' requires a uint scalar field.");
-                uint index = textureIndex(material.GetTexture(binding.MaterialSlot));
+                uint index = textureIndex(material.GetTexture(binding.MaterialProperty));
                 BinaryPrimitives.WriteUInt32LittleEndian(fieldBytes, index);
             }
             else if (type == typeof(SomeEngine.Graphics.SamplerDesc))
-                BinaryPrimitives.WriteUInt32LittleEndian(fieldBytes, samplerIndex!(material.GetSampler(binding.MaterialSlot)));
+                BinaryPrimitives.WriteUInt32LittleEndian(fieldBytes, samplerIndex!(material.GetSampler(binding.MaterialProperty)));
             else
                 throw new InvalidDataException(
-                    $"Material slot {binding.MaterialSlot} cannot be encoded as scalar data.");
+                    $"Material slot {binding.MaterialProperty} cannot be encoded as scalar data.");
         }
         return result;
     }
 
-    internal sealed class ScalarMaterialLayout
+    public sealed class ScalarMaterialLayout
     {
         private readonly ScalarLayout _layout;
         private readonly ScalarMaterialBinding[] _bindings;
@@ -340,21 +340,21 @@ public sealed class ScalarLayout
             _bindings = bindings;
         }
 
-        internal IEnumerable<uint> TextureProperties => _bindings
+        public IEnumerable<uint> TextureProperties => _bindings
             .Where(binding => typeof(SomeEngine.Resources.Texture).IsAssignableFrom(binding.PropertyType))
-            .Select(binding => binding.MaterialSlot);
+            .Select(binding => binding.MaterialProperty);
 
         internal int ByteSize => _layout.ByteSize;
         internal uint LayoutHash => _layout.LayoutHash;
         internal uint PayloadByteSize => _layout.PayloadByteSize;
 
-        internal byte[] Encode(Material material, Func<SomeEngine.Resources.Texture?, uint>? textureIndex = null,
+        public byte[] Encode(Material material, Func<SomeEngine.Resources.Texture?, uint>? textureIndex = null,
             Func<SomeEngine.Graphics.SamplerDesc, uint>? samplerIndex = null)
             => _layout.Encode(material, _bindings, textureIndex, samplerIndex);
     }
 
     internal readonly record struct ScalarMaterialBinding(
-        uint MaterialSlot,
+        uint MaterialProperty,
         ScalarFieldLayout Field,
         Type PropertyType);
 

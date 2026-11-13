@@ -1,4 +1,4 @@
-#include "visbuffer_encoding.slang"
+__exported import visbuffer_encoding;
 
 struct ResolveUniforms
 {

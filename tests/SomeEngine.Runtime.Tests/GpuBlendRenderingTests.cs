@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using SomeEngine.Animation;
 using SomeEngine.Animation.Pose;
 using SomeEngine.Core.ECS.Components;
@@ -61,7 +61,7 @@ public sealed partial class SkinningRenderingTests
             cpuAnimations[character] = builder.Play();
         }
         Entity[] targets = new Entity[2], animations = new Entity[2];
-        var reads = new List<GpuPoseReadback>();
+        var reads = new List<GpuPoseReadbackResult>();
         var expectedCurrent = new List<Matrix4x4[][]>();
         var expectedPrevious = new List<Matrix4x4[][]>();
         var expectedLocal = new List<BoneTransform[][]>();
@@ -123,7 +123,7 @@ public sealed partial class SkinningRenderingTests
         for (int character = 0; character < 2; character++)
         for (int bone = 0; bone < 2; bone++)
         {
-            GpuPoseReadback result = reads[sample * 2 + character];
+            GpuPoseReadbackResult result = reads[sample * 2 + character];
             GpuPoseExamples.Near(expectedCurrent[frames[sample]][character][bone], result.Current.Span[bone]);
             if (frames[sample] > 0)
                 GpuPoseExamples.Near(expectedPrevious[frames[sample]][character][bone], result.Previous.Span[bone]);

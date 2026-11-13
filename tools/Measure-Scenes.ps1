@@ -1,4 +1,11 @@
-param([switch]$Trace, [string]$ApplicationPath)
+param(
+    [switch]$Trace,
+    [string]$ApplicationPath,
+    [string[]]$ApplicationArguments = @(),
+    [string]$ScenePlayback,
+    [string]$Scene,
+    [string]$ShadingPath
+)
 $ErrorActionPreference = 'Stop'
 $application = if ($ApplicationPath) { [IO.Path]::GetFullPath($ApplicationPath) }
     else { [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../samples/DefaultGame/bin/game/Release/net10.0/DefaultGame.exe')) }
@@ -28,9 +35,9 @@ if ($ShadingPath) {
     $start.ArgumentList.Add('--shading-path')
     $start.ArgumentList.Add($ShadingPath)
 }
-if ($playback) {
+if ($ScenePlayback) {
     $start.ArgumentList.Add('--scene-playback')
-    $start.ArgumentList.Add($playback)
+    $start.ArgumentList.Add($ScenePlayback)
 }
 if ($Trace) {
     $startupTraces = Join-Path ([IO.Path]::GetDirectoryName($application)) 'Performance'

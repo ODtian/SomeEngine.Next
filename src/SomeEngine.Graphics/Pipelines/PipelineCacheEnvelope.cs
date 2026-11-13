@@ -77,7 +77,7 @@ internal static class PipelineCacheEnvelope
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ValidateLimits(limits);
+
             if (data.IsEmpty)
                 return new ParsedPipelineCache([]);
             if (data.Length < EmptyEnvelopeByteCount)
@@ -179,7 +179,7 @@ internal static class PipelineCacheEnvelope
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ValidateLimits(limits);
+
         if (entries.Length > limits.MaximumEntryCount || entries.Length > HardEntryCountLimit)
             throw new ArgumentException("The pipeline-cache entries exceed the configured entry-count limit.", nameof(entries));
 
@@ -278,8 +278,6 @@ internal static class PipelineCacheEnvelope
         Span<byte> destination,
         CancellationToken cancellationToken)
     {
-        if (destination.Length < HashByteCount)
-            throw new ArgumentException("A SHA-256 destination must contain at least 32 bytes.", nameof(destination));
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         for (int offset = 0; offset < source.Length;)
         {
@@ -302,14 +300,6 @@ internal static class PipelineCacheEnvelope
             CopyBytes(entry.Key, cancellationToken),
             CopyBytes(entry.Compatibility, cancellationToken),
             CopyBytes(entry.Payload, cancellationToken));
-
-    private static void ValidateLimits(PipelineCacheLimits limits)
-    {
-        if (limits.MaximumEntryCount < 0 ||
-            limits.MaximumByteCount < EmptyEnvelopeByteCount ||
-            limits.MaximumDecodedByteCount < 0)
-            throw new ArgumentOutOfRangeException(nameof(limits));
-    }
 
     private static void ValidateEntry(PipelineCacheEntry entry)
     {
@@ -357,8 +347,6 @@ internal static class PipelineCacheEnvelope
         Span<byte> destination,
         CancellationToken cancellationToken)
     {
-        if (source.Length != destination.Length)
-            throw new ArgumentException("Pipeline-cache copy spans must have equal lengths.");
         for (int offset = 0; offset < source.Length;)
         {
             cancellationToken.ThrowIfCancellationRequested();

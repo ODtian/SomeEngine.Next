@@ -90,31 +90,23 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             File.Copy(file, destination, overwrite: true);
         }
-        string surface = File.ReadAllText(Path.Combine(engine, "assets", "Shaders", "standard_material.slang"));
-        surface = Replace(surface, "float3 EmissiveFactor;", "float3 EmissiveFactor;\n    float NormalScale;\n    float OcclusionStrength;");
-        surface = Replace(surface, "Texture2D ARMMap;", "Texture2D ARMMap;\n    Texture2D OcclusionMap;\n    Texture2D EmissiveMap;");
-        surface = Replace(surface, "float3 N_geom =", "normalTS.xy *= scalars.NormalScale;\n        float3 N_geom =");
-        surface = Replace(surface, "float3 baseColor = albedoSample.rgb", "float3 baseColor = SceneSrgbToLinear(albedoSample.rgb)");
-        surface = Replace(surface, "float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;",
-            "float ao = lerp(1.0, OcclusionMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).r, scalars.OcclusionStrength);\n" +
-            "        float3 emission = SceneSrgbToLinear(EmissiveMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb) * scalars.EmissiveFactor;\n" +
-            "        float3 finalColor = baseColor * ao * 0.03 + emission;");
-        surface = "float3 SceneSrgbToLinear(float3 color) { return select(color <= 0.04045, color / 12.92, pow((color + 0.055) / 1.055, 2.4)); }\n" + surface;
-        WriteIfChanged(Path.Combine(directory, "scene_material.slang"), surface);
+        WriteSceneMaterial(directory, engine);
         var shaderIds = new List<Guid>();
+        var definitions = new List<string>();
         foreach (float cutoff in model.LogicalMaterials.Where(static material => !material.Unlit).Select(Cutoff).Distinct())
         {
             string shaderName = ShaderName(cutoff);
             WriteIfChanged(Path.Combine(directory, shaderName + ".slang"),
-                CreateSurfaceShader(defaults, shaderName, cutoff, false));
-            WriteSurfaceEntries(directory, shaderName);
+                CreateSurfaceShader(cutoff, false));
+            File.Delete(Path.Combine(directory, shaderName + "_transparency.slang"));
             string definitionPath = Path.Combine(directory, shaderName + ".shader");
-            JsonNode definition = CreateSurfaceDefinition(definitionPath, defaults, shaderName, cutoff);
+            JsonNode definition = CreateSurfaceDefinition(definitionPath, defaults, shaderName);
             Guid shaderId = Guid.Parse(definition["Fields"]!["Id"]!.GetValue<string>());
             WriteIfChanged(definitionPath, definition.ToJsonString());
-            await project.BuildAsync(definitionPath);
+            definitions.Add(definitionPath);
             shaderIds.Add(shaderId);
         }
+        await project.BuildAllAsync(definitions, 8);
         string templatePath = Path.Combine(project.RootPath, "assets/Materials/Standard.material.asset");
         using var standard = await MaterialAsset.OpenAsync(templatePath);
         using var template = standard.CreateCopy(SampleSceneMaterials.ImportedTemplate.Value);
@@ -126,8 +118,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
 
     internal static void WriteSurfaceSources(string directory, string engineRoot)
     {
-        WriteIfChanged(Path.Combine(directory, "cluster_transparency.slang"),
-            File.ReadAllText(Path.Combine(engineRoot, "assets/Shaders/cluster_transparency.slang")));
+        WriteSceneMaterial(directory, engineRoot);
         foreach (string definitionPath in Directory.EnumerateFiles(directory, "scene_*.shader"))
         {
             string shaderName = Path.GetFileNameWithoutExtension(definitionPath);
@@ -137,55 +128,77 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             string surface = twoSided ? suffix[..^"_both".Length] : suffix;
             float cutoff = surface == "opaque" ? -1 : BitConverter.Int32BitsToSingle(
                 int.Parse(surface["mask_".Length..], NumberStyles.HexNumber, CultureInfo.InvariantCulture));
-            string source = CreateSurfaceShader(Path.Combine(engineRoot, "samples/DefaultGame/assets/Shaders"),
-                shaderName, cutoff, twoSided);
+            string source = CreateSurfaceShader(cutoff, twoSided);
             WriteIfChanged(sourcePath, source);
-            WriteSurfaceEntries(directory, shaderName);
+            File.Delete(Path.Combine(directory, shaderName + "_transparency.slang"));
             JsonNode definition = CreateSurfaceDefinition(definitionPath,
-                Path.Combine(engineRoot, "samples/DefaultGame/assets/Shaders"), shaderName, cutoff);
+                Path.Combine(engineRoot, "samples/DefaultGame/assets/Shaders"), shaderName);
             WriteIfChanged(definitionPath, definition.ToJsonString());
         }
     }
 
-    private static JsonNode CreateSurfaceDefinition(string path, string defaults, string name, float cutoff)
+    private static void WriteSceneMaterial(string directory, string engineRoot)
+    {
+        string surface = File.ReadAllText(Path.Combine(engineRoot, "assets", "Shaders", "standard_material.slang"));
+        surface = Replace(surface, "float3 EmissiveFactor;", "float3 EmissiveFactor;\n    float NormalScale;\n    float OcclusionStrength;");
+        surface = Replace(surface, "Texture2D ARMMap;", "Texture2D ARMMap;\n    Texture2D OcclusionMap;\n    Texture2D EmissiveMap;");
+        surface = Replace(surface, "float3 N_geom =", "normalTS.xy *= scalars.NormalScale;\n        float3 N_geom =");
+        surface = Replace(surface, "float3 baseColor = albedoSample.rgb", "float3 baseColor = SceneSrgbToLinear(albedoSample.rgb)");
+        surface = Replace(surface, "float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;",
+            "float ao = lerp(1.0, OcclusionMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).r, scalars.OcclusionStrength);\n" +
+            "        float3 emission = SceneSrgbToLinear(EmissiveMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb) * scalars.EmissiveFactor;\n" +
+            "        float3 finalColor = baseColor * ao * 0.03 + emission;");
+        surface = "float3 SceneSrgbToLinear(float3 color) { return select(color <= 0.04045, color / 12.92, pow((color + 0.055) / 1.055, 2.4)); }\n" + surface;
+        WriteIfChanged(Path.Combine(directory, "scene_material.slang"), surface);
+    }
+
+    private static JsonNode CreateSurfaceDefinition(string path, string defaults, string name)
     {
         var definition = JsonNode.Parse(File.ReadAllText(Path.Combine(defaults, "standard.shader")))!;
         Guid id = File.Exists(path)
             ? Guid.Parse(JsonNode.Parse(File.ReadAllText(path))!["Fields"]!["Id"]!.GetValue<string>()) : Guid.NewGuid();
         definition["Fields"]!["Id"] = id.ToString();
         definition["Fields"]!["Name"] = name;
-        definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray("cluster_transparency.slang", name + ".slang", name + "_transparency.slang");
-        var specializations = new JsonArray();
-        string depth = cutoff >= 0 ? "1" : "0";
-        foreach (string mode in new[] { "0", "8" })
-        {
-            specializations.Add(new JsonObject { ["EntryPoint"] = "ClusterShadeMode", ["Arguments"] = new JsonArray(mode) });
-            specializations.Add(new JsonObject { ["EntryPoint"] = "ClusterShadowRequests", ["Arguments"] = new JsonArray(depth, mode) });
-            specializations.Add(new JsonObject { ["EntryPoint"] = "ClusterForwardShade", ["Arguments"] = new JsonArray(depth, mode) });
-        }
-        foreach (string entry in new[] { "BuildTransparentGeometry", "RequestTransparentPages", "ResolveTransparentColor", "ResolveProjectedTransparentColor" })
-            foreach (string tessellated in new[] { "false", "true" })
-                specializations.Add(new JsonObject { ["EntryPoint"] = entry, ["Arguments"] = new JsonArray(depth, tessellated) });
-        definition["Blocks"]![0]!["Fields"]!["Specializations"] = specializations;
+        definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray(name + ".slang");
+        definition["Blocks"]![0]!["Fields"]!["Specializations"] = new JsonArray();
         return definition;
     }
 
-    private static void WriteSurfaceEntries(string directory, string name) =>
-        WriteIfChanged(Path.Combine(directory, name + "_transparency.slang"),
-            "import \"" + name + "\";\n#define TRANSPARENCY_MATERIAL_TYPE SceneTransparencyMaterial_" + name +
-            "\n#include \"cluster_transparency_entries.slang\"\n");
-
-    private static string CreateSurfaceShader(string defaults, string shaderName, float cutoff, bool twoSided)
+    private static string CreateSurfaceShader(float cutoff, bool twoSided)
     {
-        string source = File.ReadAllText(Path.Combine(defaults, "standard.slang"))
-            .Replace("\"standard_material.slang\"", "\"scene_material.slang\"")
-            .Replace("StandardTransparencyMaterial", "SceneTransparencyMaterial_" + shaderName);
-        if (twoSided) source = "#define CLUSTER_RASTER_TWO_SIDED 1\n" + source;
-        if (cutoff >= 0)
-            source = Replace(source, "typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;",
-                MaskShader.Replace("ALPHA_CUTOFF", cutoff.ToString("R", CultureInfo.InvariantCulture)) +
-                "\ntypedef SceneMask VisibilityEvaluate;");
-        return source;
+        string mask = cutoff >= 0 ? MaskShader.Replace("ALPHA_CUTOFF", cutoff.ToString("R", CultureInfo.InvariantCulture)) : "";
+        string visibility = cutoff >= 0 ? "SceneMask" : "OpaqueVisibilityEvaluate<Vertex.Vertex>";
+        string faces = twoSided ? "both" : "front";
+        return $$"""
+        import material_interfaces;
+        import triangle_surface;
+        #include "scene_material.slang"
+
+        {{mask}}
+        [VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+        [ConservativeBounds("finite")]
+        [RasterFaces("{{faces}}","{{faces}}")]
+        struct ImportedSceneMaterial : IMaterial
+        {
+            typedef StaticVertexEval Vertex;
+            typedef LinearSurface Domain;
+            typedef {{visibility}} Visibility;
+
+            StandardMaterial Surface;
+
+            void evaluateSurface<TOutput : ISurfaceOutput>(SurfacePixelInput input,
+                Domain.Surface surface, float3 bary, Domain.TriangleData triangle, TOutput output)
+            {
+                Surface.evaluateSurface<TOutput>(input, surface, bary, triangle, output);
+            }
+
+            void evaluateDebug<TOutput : ISurfaceOutput>(uint debugMode, SurfacePixelInput input,
+                Domain.Surface surface, float3 bary, Domain.TriangleData triangle, TOutput output)
+            {
+                Surface.evaluateDebug<TOutput>(debugMode, input, surface, bary, triangle, output);
+            }
+        };
+        """;
     }
 
     protected override ValueTask AddSceneContentAsync(World world, Scene scene, ImportContext context,

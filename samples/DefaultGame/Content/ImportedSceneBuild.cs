@@ -40,38 +40,23 @@ public static class ImportedSceneBuild
                     GltfSettingsJson.Default.GltfImporterSettings)));
             SourceMeta.Save(copiedSource, sourceMetadata);
         }
-        var sceneImporter = new ImportedSceneImporter();
-        var services = new ServiceCollection();
-        SomeEngine.Assets.Importers.EngineAssetCapabilities.AddAssetCapabilities(services);
-        ImportedSceneCapabilities.AddAssetCapabilities(services);
-        services.AddSingleton(sceneImporter);
-        services.AddSingleton<IClusterVertexEncoder, SceneVertexEncoder>();
-        var importer = new GltfSourceImporter(services, "imported-scenes-4;" + ImportedSceneCapabilities.BuildVersion,
-            ImportedSceneImporter.ImporterId);
-        var project = new AssetProject(projectRoot, [importer],
-            shaderIncludeDirectories: [Path.Combine(engineRoot, "assets/Shaders")]);
+        var (project, sceneImporter) = CreateProject(projectRoot, engineRoot);
+        await EngineShaderContent.BuildAsync(engineRoot, project.ShaderTargets);
+        EngineShaderContent.SetContentDirectory(project, engineRoot);
         AssetManifest applicationAssets = AssetManifest.Load(Path.Combine(applicationDirectory, "Library", "AssetManifest"));
         foreach (AssetEntry entry in applicationAssets.Assets.Values)
         {
             if (!entry.Path.StartsWith("assets/Shaders/", StringComparison.OrdinalIgnoreCase)
                 && !entry.Path.StartsWith("assets/Pipelines/", StringComparison.OrdinalIgnoreCase)) continue;
+            if (entry.AssetType == ShaderAsset.FileType &&
+                File.Exists(Path.Combine(engineRoot, "assets", "Shaders", Path.GetFileName(entry.Path)[..^6]))) continue;
             string destination = Path.Combine(projectRoot, entry.Path);
             CopyIfChanged(Path.Combine(applicationDirectory, entry.Path), destination);
             project.RegisterAsset(entry);
         }
-        ModelRoot model = ModelRoot.Load(copiedSource);
-        foreach (var material in model.LogicalMaterials)
-            foreach (var channel in material.Channels)
-                if (channel.Texture is not null && channel.TextureCoordinate != 0)
-                    throw new NotSupportedException($"Material {material.Name} uses UV{channel.TextureCoordinate}; this scene shader consumes UV0.");
-        await sceneImporter.BuildAsync(project, model, engineRoot);
-
-        var timer = Stopwatch.StartNew();
-        await project.ImportAsync(copiedSource);
-        double importSeconds = timer.Elapsed.TotalSeconds;
-        SourceMeta metadata = SourceMeta.Load(copiedSource);
+        var (model, metadata, importSeconds) = await ImportSceneAsync(project, sceneImporter, copiedSource, engineRoot);
         var previous = metadata.Outputs.ToDictionary(value => value.AssetGuid, value => (value.Version, value.ContentHash));
-        timer.Restart();
+        var timer = Stopwatch.StartNew();
         await project.ImportAsync(copiedSource);
         double cachedSeconds = timer.Elapsed.TotalSeconds;
         SourceMeta repeated = SourceMeta.Load(copiedSource);
@@ -79,15 +64,7 @@ public static class ImportedSceneBuild
                 !previous.TryGetValue(value.AssetGuid, out var old) || old != (value.Version, value.ContentHash)))
             throw new InvalidDataException("Unchanged reimport changed generated assets.");
 
-        string sceneKey = model.DefaultScene.Extras?["someengine_id"]?.GetValue<string>() is { Length: > 0 } id
-            ? $"scene:id:{id}" : $"scene:index:{model.DefaultScene.LogicalIndex}";
-        Guid sceneId = metadata.ElementIds[sceneKey];
-        string settingsPath = Path.Combine(projectRoot, "assets", "Runtime", "default.runtime.asset");
-        using (ApplicationSettingsAsset settings = await ApplicationSettingsAsset.OpenAsync(settingsPath))
-        {
-            settings.GetBlock<ApplicationSettingsBlock>().Scene = new(sceneId);
-            project.RegisterAsset(await settings.SaveAsync(settingsPath));
-        }
+        SampleContent.BuildApplicationSettings(project, engineRoot, GetSceneId(model, metadata));
         int instances = Node.Flatten(model.DefaultScene).Count(static node => node.Mesh is not null);
         File.WriteAllText(Path.Combine(projectRoot, "scene-import.json"), JsonSerializer.Serialize(new
         {
@@ -97,6 +74,57 @@ public static class ImportedSceneBuild
             assets = metadata.Outputs.Count, importSeconds, cachedSeconds, unchangedReimport = true,
         }, new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"Imported {name}: {instances} mesh instances, {metadata.Outputs.Count} assets in {importSeconds:F2}s. {projectRoot}");
+    }
+
+    public static async Task ReimportAsync(string projectRoot, string engineRoot)
+    {
+        projectRoot = Path.GetFullPath(projectRoot);
+        engineRoot = Path.GetFullPath(engineRoot);
+        string sourcePath = Directory.EnumerateFiles(Path.Combine(projectRoot, "assets", "Imported"), "*", SearchOption.AllDirectories)
+            .Single(path => Path.GetExtension(path).Equals(".gltf", StringComparison.OrdinalIgnoreCase)
+                || Path.GetExtension(path).Equals(".glb", StringComparison.OrdinalIgnoreCase));
+        var (project, sceneImporter) = CreateProject(projectRoot, engineRoot);
+        EngineShaderContent.SetContentDirectory(project, engineRoot);
+        var (model, metadata, _) = await ImportSceneAsync(project, sceneImporter, sourcePath, engineRoot);
+        SampleContent.BuildApplicationSettings(project, engineRoot, GetSceneId(model, metadata));
+        Console.WriteLine($"Reimported {Path.GetFileNameWithoutExtension(sourcePath)}: {metadata.Outputs.Count} assets. {projectRoot}");
+    }
+
+    private static AssetId<WorldAsset> GetSceneId(ModelRoot model, SourceMeta metadata)
+    {
+        string key = model.DefaultScene.Extras?["someengine_id"]?.GetValue<string>() is { Length: > 0 } id
+            ? $"scene:id:{id}" : $"scene:index:{model.DefaultScene.LogicalIndex}";
+        return new(metadata.ElementIds[key]);
+    }
+
+    private static (AssetProject Project, ImportedSceneImporter SceneImporter) CreateProject(string projectRoot, string engineRoot)
+    {
+        var sceneImporter = new ImportedSceneImporter();
+        var services = new ServiceCollection();
+        SomeEngine.Assets.Importers.EngineAssetCapabilities.AddAssetCapabilities(services);
+        ImportedSceneCapabilities.AddAssetCapabilities(services);
+        services.AddSingleton(sceneImporter);
+        services.AddSingleton<IClusterVertexEncoder, SceneVertexEncoder>();
+        var importer = new GltfSourceImporter(services, "imported-scenes-4;" + ImportedSceneCapabilities.BuildVersion,
+            ImportedSceneImporter.ImporterId);
+        var project = new AssetProject(projectRoot, [importer],
+            shaderIncludeDirectories: [Path.Combine(engineRoot, "assets/Shaders")],
+            shaderTargets: [SlangShaderSharp.SlangCompileTarget.Dxil]);
+        return (project, sceneImporter);
+    }
+
+    private static async Task<(ModelRoot Model, SourceMeta Metadata, double Seconds)> ImportSceneAsync(
+        AssetProject project, ImportedSceneImporter sceneImporter, string sourcePath, string engineRoot)
+    {
+        ModelRoot model = ModelRoot.Load(sourcePath);
+        foreach (var material in model.LogicalMaterials)
+            foreach (var channel in material.Channels)
+                if (channel.Texture is not null && channel.TextureCoordinate != 0)
+                    throw new NotSupportedException($"Material {material.Name} uses UV{channel.TextureCoordinate}; this scene shader consumes UV0.");
+        await sceneImporter.BuildAsync(project, model, engineRoot);
+        var timer = Stopwatch.StartNew();
+        await project.ImportAsync(sourcePath);
+        return (model, SourceMeta.Load(sourcePath), timer.Elapsed.TotalSeconds);
     }
 
     private static void CopyFiles(string source, string destination)

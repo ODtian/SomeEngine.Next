@@ -1,4 +1,8 @@
+using System.Collections.Frozen;
+using SomeEngine.Assets;
+using SomeEngine.Assets.Importers;
 using System.Numerics;
+using SomeEngine.Resources;
 using System.Runtime.InteropServices;
 using SomeEngine.Animation.Pose;
 using SomeEngine.ECS.Entities;
@@ -15,6 +19,28 @@ namespace SomeEngine.Render.Features.Skinning;
 public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposable,
     ISystem<RenderPrepareSystemContext>, ISystem<RenderFrameSystemContext>, IRenderGraphFrameExecutionObserver
 {
+    private static readonly System.Collections.Frozen.FrozenDictionary<string, Resource> ResourceNames =
+        new Dictionary<string, Resource>
+        {
+            ["GpuPoseControls"] = Resource.Controls,
+            ["GpuPoseSections"] = Resource.Sections,
+            ["GpuPoseWork"] = Resource.Work,
+            ["GpuPoseClips"] = Resource.Clips,
+            ["GpuPoseInputs"] = Resource.Values,
+            ["GpuPosePlaybackStates"] = Resource.Playback,
+            ["GpuBlendStates"] = Resource.BlendStates,
+            ["GpuBlendLocals"] = Resource.BlendLocals,
+            ["GpuPoseGoals"] = Resource.Goals,
+            ["GpuPoseOffsets"] = Resource.Offsets,
+            ["GpuPoseRoots"] = Resource.Roots,
+            ["GpuPoseModels"] = Resource.Models,
+            ["GpuPosePrevious"] = Resource.Previous,
+            ["GpuPoseHistoryCurrent"] = Resource.HistoryCurrent,
+            ["GpuPoseHistoryPrevious"] = Resource.HistoryPrevious,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+
+    private readonly RenderPipelines _renderPipelines;
     private const BufferUsages PoseUsages = BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination;
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
@@ -41,6 +67,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private readonly List<Matrix4x4> _cpuValues = [];
     private readonly List<CpuCopy> _cpuCopies = [];
     private readonly List<GraphPassId> _posePasses = [];
+    private readonly Dictionary<GraphPassId, LinkedComputePipeline> _kernelPipelines = [];
     private readonly List<GraphPassId> _samplePasses = [];
     private readonly List<BufferRange> _workLevels = [];
     private Section[] _sectionOrder = [];
@@ -57,17 +84,24 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     public GraphBufferInput PreviousBones => _previousBones;
     public GraphPassId CompletePass { get; }
 
-    public SkinningFeature(IGraphicsBackend backend, Device device, global::SomeEngine.RenderGraph.RenderGraph graph)
-    {
+    public SkinningFeature(
+        IGraphicsBackend backend,
+        Device device,
+        RenderPipelines pipelines,
+        global::SomeEngine.RenderGraph.RenderGraph graph,
+        ShaderLibrary shaders,
+        AssetLoader files)    {
+
+        _renderPipelines = pipelines;
         (_backend, _device, _graph) = (backend, device, graph);
-        var shader = GpuPoseShaders.Get(device.Capabilities.CompileTarget);
-        _advancePipeline = LinkedComputePipeline.Create(backend, device, shader, "AdvancePoseStates", "Advance GPU pose states");
-        _loadPipeline = LinkedComputePipeline.Create(backend, device, shader, "LoadPoseHistory", "Load pose history");
-        _samplePipeline = LinkedComputePipeline.Create(backend, device, shader, "SamplePoseLevel", "Sample GPU pose level");
-        _storePipeline = LinkedComputePipeline.Create(backend, device, shader, "StorePoseHistory", "Store pose history");
-        _translatePipeline = LinkedComputePipeline.Create(backend, device, shader, "TranslatePose", "Translate model pose");
-        _twoBonePipeline = LinkedComputePipeline.Create(backend, device, shader, "SolveTwoBone", "Solve two-bone pose");
-        _aimPipeline = LinkedComputePipeline.Create(backend, device, shader, "SolveAim", "Solve aim pose");
+        var shader = shaders.GetAsync(files, EngineShaderAssets.GpuPose).AsTask().GetAwaiter().GetResult();
+        _advancePipeline = LinkedComputePipeline.Create(_renderPipelines, shader, "AdvancePoseStates", "Advance GPU pose states");
+        _loadPipeline = LinkedComputePipeline.Create(_renderPipelines, shader, "LoadPoseHistory", "Load pose history");
+        _samplePipeline = LinkedComputePipeline.Create(_renderPipelines, shader, "SamplePoseLevel", "Sample GPU pose level");
+        _storePipeline = LinkedComputePipeline.Create(_renderPipelines, shader, "StorePoseHistory", "Store pose history");
+        _translatePipeline = LinkedComputePipeline.Create(_renderPipelines, shader, "TranslatePose", "Translate model pose");
+        _twoBonePipeline = LinkedComputePipeline.Create(_renderPipelines, shader, "SolveTwoBone", "Solve two-bone pose");
+        _aimPipeline = LinkedComputePipeline.Create(_renderPipelines, shader, "SolveAim", "Solve aim pose");
         using RenderGraphEdit edit = graph.BeginEdit();
         _currentBones = edit.CreateBufferInput(PoseUsages);
         _previousBones = edit.CreateBufferInput(PoseUsages);
@@ -92,6 +126,24 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         CompletePass = edit.AddCopyFramePass("Model poses complete", PassQueueSelection.AnyOfType(QueueType.Graphics), 0,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
             static (ref PassDefinition _, ref int _) => { }, static (ref CopyPassCommandScope _, in int _) => { });
+        edit.Commit();
+    }
+
+    public void ReplaceShader(Shader previous, Shader next)
+    {
+        var changed = new HashSet<LinkedComputePipeline>();
+        foreach (LinkedComputePipeline pipeline in new[] { _advancePipeline, _loadPipeline, _samplePipeline,
+            _storePipeline, _translatePipeline, _twoBonePipeline, _aimPipeline })
+            if (pipeline.ReplaceShader(_renderPipelines, previous, next)) changed.Add(pipeline);
+        if (changed.Count == 0) return;
+        using RenderGraphEdit edit = _graph.BeginEdit();
+        foreach ((GraphPassId id, LinkedComputePipeline pipeline) in _kernelPipelines)
+        {
+            if (!changed.Contains(pipeline)) continue;
+            PassDefinition pass = edit.GetPass(id);
+            pass.SetPipeline(pipeline.Pipeline);
+            pass.SetParameterBlock(pipeline.ParameterLayout);
+        }
         edit.Commit();
     }
 
@@ -149,7 +201,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
 
         if (_definitionsChanged) Rebuild(context.World);
         else RetireHistories();
-        PrepareEvaluations();
+        ReadFrameInputs();
         context.World.ExecuteQuery(_sectionQuery, ref feature, static (QueryCursor rows, ref SkinningFeature feature) =>
         {
             foreach (QueryRow row in rows.Rows)
@@ -206,6 +258,11 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                     }
             }
         }
+        if (_controls.Count == 0) _controls.Add(default);
+        if (_controlValues.Count == 0) _controlValues.Add(0);
+        if (_goalValues.Count == 0) _goalValues.Add(default);
+        if (_modelOffsets.Count == 0) _modelOffsets.Add(default);
+        if (_rootCorrections.Count == 0) _rootCorrections.Add(default);
     }
 
     private void PrepareEvaluations()
@@ -324,6 +381,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         using RenderGraphEdit edit = _graph.BeginEdit();
         foreach (GraphPassId pass in _posePasses) edit.Remove(pass);
         _posePasses.Clear(); _samplePasses.Clear();
+        _kernelPipelines.Clear();
         foreach (GraphBufferId buffer in _retiredHistories) edit.Remove(buffer);
         _retiredHistories.Clear();
         edit.SetBufferDescription(_definitions, new BufferDesc((ulong)_definitionBytes.Length,
@@ -407,18 +465,9 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             pipeline.Pipeline, pipeline.ParameterLayout, default,
             static (ref PassDefinition _, ref DispatchArguments _) => { },
             static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch));
+        _kernelPipelines.Add(id, pipeline);
         PassDefinition pass = edit.GetPass(id);
-        Resource[] resources = ShaderResourceLayout.Resolve<Resource>(pipeline.ParameterLayout, static (name, _) => name switch
-        {
-            "GpuPoseControls" => Resource.Controls, "GpuPoseSections" => Resource.Sections,
-            "GpuPoseWork" => Resource.Work, "GpuPoseClips" => Resource.Clips,
-            "GpuPoseInputs" => Resource.Values, "GpuPosePlaybackStates" => Resource.Playback,
-            "GpuBlendStates" => Resource.BlendStates, "GpuBlendLocals" => Resource.BlendLocals,
-            "GpuPoseGoals" => Resource.Goals, "GpuPoseOffsets" => Resource.Offsets,
-            "GpuPoseRoots" => Resource.Roots,
-            "GpuPoseModels" => Resource.Models, "GpuPosePrevious" => Resource.Previous,
-            "GpuPoseHistoryCurrent" => Resource.HistoryCurrent, "GpuPoseHistoryPrevious" => Resource.HistoryPrevious, _ => null,
-        });
+        Resource[] resources = ShaderResourceLayout.Resolve<Resource>(pipeline.ParameterLayout, static (name, _) => ResourceNames.TryGetValue(name, out Resource resource) ? resource : null);
         foreach (Resource resource in resources)
         {
             switch (resource)
@@ -466,12 +515,6 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
         RenderGraphFrame frame = context.Graph;
-        ReadFrameInputs();
-        if (_controls.Count == 0) _controls.Add(default);
-        if (_controlValues.Count == 0) _controlValues.Add(0);
-        if (_goalValues.Count == 0) _goalValues.Add(default);
-        if (_modelOffsets.Count == 0) _modelOffsets.Add(default);
-        if (_rootCorrections.Count == 0) _rootCorrections.Add(default);
         frame.SetBufferInput(_currentBones, new(frame.CreateBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Current model bones")), BufferRange.Whole));
         frame.SetBufferInput(_previousBones, new(frame.CreateBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Previous model bones")), BufferRange.Whole));
         frame.SetBufferInput(_historyCurrentInput, new(_historyCurrent, BufferRange.Whole));
@@ -509,9 +552,9 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         RecordReadbacks(ref frame);
     }
 
-    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+    void IRenderGraphFrameExecutionObserver.OnFrameSubmitted(in RenderGraphSubmission submission)
     {
-        if (result.TryGetPassCompletion(_uploadPass, out _))
+        if (_uploadRequired)
         {
             _uploadRequired = false;
             if (_migrationRequired)
@@ -530,7 +573,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 _migrationRequired = false;
             }
         }
-        if (result.TryGetPassCompletion(_storePass, out _))
+        if (_sectionOrder.Length != 0)
             foreach (Section section in _sectionOrder)
             {
                 section.AcceptedInput = section.FrameInput;
@@ -557,7 +600,6 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 section.StoredBlendStart = section.BlendStart;
                 section.StoredBlend = section.Data.Blend;
             }
-        AcceptReadbacks(result);
     }
 
     private void RetireHistories()
@@ -600,12 +642,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
 
     public void Dispose()
     {
-        CompleteReadbacks(wait: true);
-        foreach (Readback readback in _readbacks)
-        {
-            readback.Buffer?.Dispose();
-            readback.Request?.Cancel();
-        }
+        if (!_graph.IsDisposed && _device.Status == DeviceStatus.Active) CompleteReadbacks(wait: true);
+        PoseFeedback.Clear();
         _readbacks.Clear();
         _advancePipeline.Dispose(); _loadPipeline.Dispose(); _samplePipeline.Dispose(); _storePipeline.Dispose();
         _translatePipeline.Dispose(); _twoBonePipeline.Dispose(); _aimPipeline.Dispose();

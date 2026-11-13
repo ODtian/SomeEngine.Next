@@ -1,3 +1,5 @@
+__exported import cluster_view;
+
 #ifndef VSM_RECEIVER_PIXEL_SLANG
 #define VSM_RECEIVER_PIXEL_SLANG
 
@@ -32,7 +34,6 @@ float VirtualShadowReceiverDepthStep(
 }
 
 VirtualShadowReceiverPixel ReconstructVirtualShadowReceiverPixel(
-    Texture2DArray<float> depthImage,
     uint3 pixel,
     uint2 screenSize,
     float depth,
@@ -49,6 +50,13 @@ VirtualShadowReceiverPixel ReconstructVirtualShadowReceiverPixel(
     result.PositionDx = worldDx.xyz / max(abs(worldDx.w), 1e-8);
     result.PositionDy = worldDy.xyz / max(abs(worldDy.w), 1e-8);
     return result;
+}
+
+VirtualShadowReceiverPixel ReconstructVirtualShadowReceiverPixel(
+    Texture2DArray<float> depthImage, uint3 pixel, uint2 screenSize,
+    float depth, float4x4 clipToWorld)
+{
+    return ReconstructVirtualShadowReceiverPixel(pixel, screenSize, depth, clipToWorld);
 }
 
 

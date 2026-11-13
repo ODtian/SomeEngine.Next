@@ -1,7 +1,7 @@
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
-#include "vsm_prefilter_common.slang"
-#include "resource_effects.slang"
+__exported import vsm_prefilter_common;
+__exported import resource_effects;
 
 ConstantBuffer<VirtualShadowPrefilterUniforms> Prefilter;
 StructuredBuffer<VirtualShadowMapParameters> FilterViews;

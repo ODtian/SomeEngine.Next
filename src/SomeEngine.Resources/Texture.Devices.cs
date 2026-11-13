@@ -178,7 +178,10 @@ public sealed partial class Texture
             if (!data.TryAttach(this, _replacement))
                 throw new ObjectDisposedException(nameof(Device));
             if (_devices.Data.TryGetValue(device, out ITextureDeviceData? previous))
+            {
+                if (ReferenceEquals(previous, data)) return;
                 previous.ClearUpdateReferences();
+            }
             else _updateDevices?.Add(device);
             _devices.Data[device] = data;
             _allocationRevision++;

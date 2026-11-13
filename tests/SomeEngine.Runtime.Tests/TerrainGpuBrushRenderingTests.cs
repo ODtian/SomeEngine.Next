@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using DefaultGame;
 using SomeEngine.Job;
 using SomeEngine.Resources;
@@ -27,7 +27,7 @@ public sealed class TerrainGpuBrushRenderingTests(SceneContentFixture content)
         TerrainEdit finalEdit = default;
         var application = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "27"]),
             UpdateFrame = frame =>
             {
@@ -52,7 +52,7 @@ public sealed class TerrainGpuBrushRenderingTests(SceneContentFixture content)
 
         var reference = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "27"]),
             UpdateFrame = frame =>
             {
@@ -96,7 +96,7 @@ public sealed class TerrainGpuBrushRenderingTests(SceneContentFixture content)
         TerrainEdit finalEdit = default;
         var application = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "27"]),
             UpdateFrame = frame =>
             {
@@ -120,7 +120,7 @@ public sealed class TerrainGpuBrushRenderingTests(SceneContentFixture content)
 
         var reference = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "27"]),
             UpdateFrame = frame =>
             {

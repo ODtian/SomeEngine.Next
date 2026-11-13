@@ -72,13 +72,14 @@ try
         throw new InvalidOperationException("A geometry edit changed another branch or reader.");
     AssetEntry meshEntry = await meshCopy.SaveAsync(Path.Combine(directory, "mesh.mesh.asset"));
     using var meshFile = await MeshAsset.OpenAsync(meshEntry.Path);
-    ClusterGeometryBlock loadedGeometry = meshFile.GetBlock<ClusterGeometryBlock>();
+    ClusterGeometryBlock loadedGeometry = await meshFile.GetBlockAsync<ClusterGeometryBlock>();
     ClusterVertexAttributesBlock loadedAttributes = await meshFile.GetBlockAsync<ClusterVertexAttributesBlock>();
-    var readyMesh = await loadedGeometry.CreateAsync(meshFile.GetBlock<MeshBlock>(), loadedAttributes, meshFile.Name);
+    using var packed = SomeEngine.Assets.Importers.ClusterBuilder.BuildMeshBlock(loadedGeometry, loadedAttributes);
+    var readyMesh = await packed.CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
     if (!readyMesh.TryGetPage(0, out _))
         throw new InvalidOperationException("Mesh creation must acquire minimum drawable geometry.");
-    await loadedGeometry.LoadPagesAsync(readyMesh, loadedAttributes, [0]);
-    using var pages = await loadedGeometry.OpenPayloadSourceAsync(loadedAttributes);
+    await packed.LoadPagesAsync(readyMesh, [0]);
+    using var pages = await packed.OpenPayloadSourceAsync();
     if (loadedGeometry.Clusters[0].DecodePosition(0).X != 9 || loadedGeometry.Clusters[0].PositionStep != 2
         || loadedGeometry.Clusters[0].DecodePosition(1).X != 11)
         throw new InvalidOperationException("Saved geometry must retain the branch edit.");
@@ -194,13 +195,13 @@ try
     coatingAsset.GetBlock<MaterialBlock>().SetParameter(new(nameof(SmokeCoatingMaterial.Thickness), MaterialParameterKind.Float) { Float = .75f });
     AssetEntry coatingEntry = await coatingAsset.SaveAsync(Path.Combine(directory, "coating.material.asset"));
     using MaterialAsset coatingRead = await MaterialAsset.OpenAsync(coatingEntry.Path);
-    var shaderValues = new WeakValues<AssetResourceKey<ShaderAsset>, Shader>();
-    Shader shader = await ShaderAsset.GetAsync(coatingLoader, shaderFile.Reference, shaderValues, slang, sessionDescription);
+    using var shaderLibrary = new ShaderLibrary(slang, sessionDescription);
+    Shader shader = await shaderLibrary.GetAsync(coatingLoader, shaderFile.Reference);
     shaders.Add(shaderFile.Reference, shader);
     SmokeCoatingMaterial coating = await coatingRead.CreateAsync<SmokeCoatingMaterial>(coatingLoader, shaders, textures);
     long coatingIdentity = coating.MaterialId;
     if (coating.Thickness != .75f || coating.Roughness != .4f
-        || !ReferenceEquals(shader, await ShaderAsset.GetAsync(coatingLoader, shaderFile.Reference, shaderValues, slang, sessionDescription))
+        || !ReferenceEquals(shader, await shaderLibrary.GetAsync(coatingLoader, shaderFile.Reference))
         || !shader.TryGetSlangEntry(0, "CoatingShade", SlangStage.Compute, out _)
         || shader.SlangTargetCount != 2)
         throw new InvalidOperationException("Custom static material creation or shared shader loading failed.");

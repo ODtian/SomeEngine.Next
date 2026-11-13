@@ -1,4 +1,4 @@
-using SomeEngine.ECS.Systems;
+﻿using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Render.Instances;
 
@@ -28,7 +28,7 @@ public interface IRenderInstanceProducer
 }
 
 /// <summary>
-/// Neutral producer used when a pipeline's own producer already covers the exact shader layout.
+/// Neutral producer used when a pipeline's own producer already covers the layout shader layout.
 /// It declares and writes no properties; it is a value type and carries no retained state.
 /// </summary>
 public readonly struct EmptyRenderInstanceProducer : IRenderInstanceProducer
@@ -94,7 +94,7 @@ public readonly struct RenderInstanceComponentProducer<T> : IRenderInstanceProdu
 /// <summary>
 /// Zero-business-logic composition of two producer bundles. More components are represented by
 /// nesting bundles; each child receives only its own property subset while the composed layout
-/// remains the exact shader ABI.
+/// remains the layout shader ABI.
 /// </summary>
 public readonly struct RenderInstanceProducerBundle<TFirst, TSecond> : IRenderInstanceProducer
     where TFirst : struct, IRenderInstanceProducer
@@ -110,18 +110,18 @@ public readonly struct RenderInstanceProducerBundle<TFirst, TSecond> : IRenderIn
 
     /// <summary>
     /// Uses an already linked pipeline/material/pass layout. This is the steady-state path: the
-    /// exact layout is validated without rebuilding it on every batch update.
+    /// layout layout is validated without rebuilding it on every batch update.
     /// </summary>
     public RenderInstanceProducerBundle(
-        RenderInstancePropertyLayout exactLayout,
+        RenderInstancePropertyLayout compositionLayout,
         TFirst first,
         TSecond second)
     {
-        ArgumentNullException.ThrowIfNull(exactLayout);
-        ValidateExactLayout(exactLayout, first.Properties, second.Properties);
+        ArgumentNullException.ThrowIfNull(compositionLayout);
+        ValidateCompositionLayout(compositionLayout, first.Properties, second.Properties);
         _first = first;
         _second = second;
-        Properties = exactLayout;
+        Properties = compositionLayout;
     }
 
     public RenderInstancePropertyLayout Properties { get; }
@@ -148,15 +148,15 @@ public readonly struct RenderInstanceProducerBundle<TFirst, TSecond> : IRenderIn
         _second.Write(destination.Restrict(_second.Properties), packet);
     }
 
-    private static void ValidateExactLayout(
-        RenderInstancePropertyLayout exact,
+    private static void ValidateCompositionLayout(
+        RenderInstancePropertyLayout layout,
         RenderInstancePropertyLayout first,
         RenderInstancePropertyLayout second)
     {
         ArgumentNullException.ThrowIfNull(first);
         ArgumentNullException.ThrowIfNull(second);
         foreach (RenderInstancePropertyDescriptor property in first.Properties)
-            _ = exact.RequireCompatible(property, nameof(exact));
+            _ = layout.RequireCompatible(property, nameof(layout));
         foreach (RenderInstancePropertyDescriptor property in second.Properties)
         {
             if (first.Contains(property.Key))
@@ -165,13 +165,13 @@ public readonly struct RenderInstanceProducerBundle<TFirst, TSecond> : IRenderIn
                     $"More than one producer owns render-instance property '{property.Key}'.",
                     nameof(second));
             }
-            _ = exact.RequireCompatible(property, nameof(exact));
+            _ = layout.RequireCompatible(property, nameof(layout));
         }
-        if (exact.Properties.Count != first.Properties.Count + second.Properties.Count)
+        if (layout.Properties.Count != first.Properties.Count + second.Properties.Count)
         {
             throw new ArgumentException(
-                "The exact layout contains a property that neither producer owns.",
-                nameof(exact));
+                "The layout layout contains a property that neither producer owns.",
+                nameof(layout));
         }
     }
 

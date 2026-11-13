@@ -2,7 +2,7 @@ namespace SomeEngine.RenderGraph;
 
 using System.Runtime.ExceptionServices;
 
-internal sealed partial class FrameExecutor
+internal sealed partial class FrameRecording
 {
     private static readonly Action<object?, int> RecordLatencyBatchAction = RecordLatencyBatch;
     private static readonly global::SomeEngine.Diagnostics.TraceSite RecordSetupProbe =
@@ -35,7 +35,7 @@ internal sealed partial class FrameExecutor
     private readonly HashSet<int> _recordingConfigurationPasses = [];
     private RenderGraphDebugOptions _recordingDebug;
     private bool[] _recordingParallel = [];
-    private readonly Dictionary<CommandContext, CommandContextPool.CommandContextLease> _recordingContexts = [];
+    private readonly Dictionary<CommandContext, CommandContextPool.CommandContextHandle> _recordingContexts = [];
     private RecordingBatch[] _parallelBatches = [];
     private RecordingBatch[] _encodingBatches = [];
     private RecordingBatch[] _allCallingBatches = [];
@@ -54,7 +54,7 @@ internal sealed partial class FrameExecutor
     private void InvalidateCommands(int pass)
     {
         if ((uint)pass < (uint)_recordingBatchByPass.Length && _recordingBatchByPass[pass] is { } batch)
-            batch.CommandsChanged = true;
+            batch.CommandVersion++;
     }
 
     internal ReadOnlySpan<QueueCompletion> SubmittedCompletions =>
@@ -94,7 +94,6 @@ internal sealed partial class FrameExecutor
         int workerCount = JobSystem.WorkerCount;
         using (global::SomeEngine.Diagnostics.EngineTrace.Begin(RecordSetupProbe))
         {
-            _reuseRecording = !_recordingChanged && _recordingWorkerCount == workerCount;
             PrepareArray(ref _renderingColorDescriptions, _passes.Count);
             PrepareArray(ref _rasterRenderingCache, _passes.Count);
             PrepareArray(ref _submittedQueues, _frame.Graph.MaximumQueueCompletionCount);
@@ -107,7 +106,7 @@ internal sealed partial class FrameExecutor
             int waveCount;
             using (global::SomeEngine.Diagnostics.EngineTrace.Begin(RecordTopologyProbe))
             {
-                if (_reuseRecording)
+                if (ReuseRecording)
                 {
                     waveCount = _waveCount;
                 }
@@ -156,12 +155,12 @@ internal sealed partial class FrameExecutor
             }
 
             ResolveGpuTimes(destination);
-            _recordingChanged = false;
+            _recordedVersion = _recordingVersion;
             int count = 0;
-            for (int queueSlot = 0; queueSlot < _submittedQueues.Length; queueSlot++)
+            for (int queueIndex = 0; queueIndex < _submittedQueues.Length; queueIndex++)
             {
-                if (!_submittedQueues[queueSlot]) continue;
-                destination[count++] = destination[queueSlot];
+                if (!_submittedQueues[queueIndex]) continue;
+                destination[count++] = destination[queueIndex];
             }
             destination.Slice(count, _submittedQueues.Length - count).Clear();
             return count;
@@ -196,7 +195,7 @@ internal sealed partial class FrameExecutor
     {
         InvalidateCommands(pass);
         _changedRecordingPasses.Add(pass);
-        _recordingChanged = true;
+        _recordingVersion++;
     }
 
     private int BuildInitialWaves()
@@ -210,7 +209,7 @@ internal sealed partial class FrameExecutor
         {
             _incomingSubmissions.Clear();
             AddSubmissionDependencies(_predecessors[pass]);
-            AddSubmissionDependencies(_physicalPredecessors[pass]);
+            AddSubmissionDependencies(_queuePredecessors[pass]);
             int predecessor = _sameQueuePredecessor[pass];
             int previous = predecessor >= 0 ? _submissionByPass[predecessor] : -1;
             int current = previous;
@@ -301,7 +300,7 @@ internal sealed partial class FrameExecutor
         return submission;
     }
 
-    private void AddSubmissionDependencies(List<int> predecessors)
+    private void AddSubmissionDependencies(IEnumerable<int> predecessors)
     {
         foreach (int predecessor in predecessors)
         {
@@ -499,14 +498,14 @@ internal sealed partial class FrameExecutor
             _frame.Backend.Begin(context, new CommandRecordingDesc(
                 InitialResourceDescriptorCapacity: (uint)Math.Min(resourceDescriptors, limits.ResourceDescriptorCapacity),
                 InitialSamplerDescriptorCapacity: (uint)Math.Min(samplerDescriptors, limits.SamplerDescriptorCapacity),
-                Label: _passes[batch.Passes[0]].Label));
+                Label: _passes[batch.Passes[0]].Label, Repeatable: batch.Repeatable));
             begun = true;
             foreach (int pass in batch.Passes)
                 RecordPassCommands(pass, _passes[pass].Kind, context);
             RecordedCommands recorded = _frame.Backend.End(context);
             begun = false;
             batch.Commands = recorded;
-            batch.CommandsChanged = false;
+            batch.RecordedVersion = batch.CommandVersion;
         }
         catch
         {
@@ -698,7 +697,7 @@ internal sealed partial class FrameExecutor
     {
         if (reusable is not null) return new RecordingBatch(passes, reusable, repeatable);
         Queue queue = _passes[passes[0]].Queue!;
-        var storage = _frame.Graph.CommandContexts.Acquire(queue, false, _passes[passes[0]].Label, initialSlotCount: 1);
+        var storage = _frame.Graph.CommandContexts.Acquire(queue, false, _passes[passes[0]].Label, initialCommandCount: 1);
         CommandContext context = storage.Context;
         try
         {
@@ -714,7 +713,7 @@ internal sealed partial class FrameExecutor
 
     private bool TryRepeatBatch(RecordingBatch batch)
     {
-        if (!batch.Repeatable || batch.CommandsChanged) return false;
+        if (!batch.Repeatable || batch.CommandVersion != batch.RecordedVersion) return false;
         if (!_frame.Backend.TryRepeatCommands(batch.Context, out RecordedCommands commands)) return false;
         batch.Commands = commands;
         return true;
@@ -725,7 +724,7 @@ internal sealed partial class FrameExecutor
 
     private static void RecordLatencyBatch(object? state, int index)
     {
-        FrameExecutor executor = (FrameExecutor)state!;
+        FrameRecording executor = (FrameRecording)state!;
         executor.RecordBatch(executor._parallelBatches[index]);
     }
 
@@ -871,7 +870,7 @@ internal sealed partial class FrameExecutor
             _frame.Backend.Barrier(context, batch);
     }
 
-    private readonly Dictionary<Queue, List<PendingQueueRelease>> _lateReleaseBatches = [];
+    private readonly Dictionary<Queue, List<QueueReleaseRequest>> _lateReleaseBatches = [];
     private readonly List<Queue> _lateReleaseQueues = [];
     private readonly List<QueueRelease> _lateReleaseBarriers = [];
     private readonly List<QueueAcquire> _lateAcquireBarriers = [];
@@ -881,7 +880,7 @@ internal sealed partial class FrameExecutor
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.LateReleases);
         foreach (Queue queue in _lateReleaseQueues) _lateReleaseBatches[queue].Clear();
         _lateReleaseQueues.Clear();
-        foreach (PendingQueueRelease release in _lateReleases)
+        foreach (QueueReleaseRequest release in _lateReleases)
         {
             if (!_lateReleaseBatches.TryGetValue(release.SourceQueue, out var releases))
             {
@@ -894,10 +893,10 @@ internal sealed partial class FrameExecutor
         _submittedCompletions.EnsureCapacity(_frame.Graph.MaximumQueueCompletionCount + _lateReleaseQueues.Count);
         foreach (Queue queue in _lateReleaseQueues)
         {
-            List<PendingQueueRelease> releases = _lateReleaseBatches[queue];
+            List<QueueReleaseRequest> releases = _lateReleaseBatches[queue];
             _lateReleaseBarriers.Clear();
             _lateAcquireBarriers.Clear();
-            foreach (PendingQueueRelease release in releases)
+            foreach (QueueReleaseRequest release in releases)
             {
                 if (release.AcquireFrom is { } source)
                     _lateAcquireBarriers.Add(new QueueAcquire(release.Resource, release.TextureRange,
@@ -906,9 +905,9 @@ internal sealed partial class FrameExecutor
                     _lateReleaseBarriers.Add(new QueueRelease(release.Resource, release.TextureRange,
                         release.Sync, release.Access, release.Layout, release.DestinationQueue.Type));
             }
-            using CommandContextPool.CommandContextLease lease =
+            using CommandContextPool.CommandContextHandle handle =
                 _frame.Graph.CommandContexts.Acquire(queue, false, "RenderGraph late releases");
-            CommandContext context = lease.Context;
+            CommandContext context = handle.Context;
             bool begun = false;
             RecordedCommands commands;
             try
@@ -950,13 +949,13 @@ internal sealed partial class FrameExecutor
                     new QueueSubmitDesc(CollectionsMarshal.AsSpan(_submitWaits), [], _submitCommands.AsSpan(0, 1), [], []));
                 AddCompletion(_submittedCompletions, completion);
                 CommitLateReleaseState(completion);
-                int queueIndex = QueueSlot(queue);
+                int queueIndex = QueueIndex(queue);
                 if (queueIndex >= 0)
                 {
                     destination[queueIndex] = completion;
                     _submittedQueues[queueIndex] = true;
                 }
-                foreach (PendingQueueRelease release in releases)
+                foreach (QueueReleaseRequest release in releases)
                 {
                     if (release.ConsumerPass >= 0)
                         AddCompletion(_submissionWaits[_submissionByPass[release.ConsumerPass]], completion);
@@ -972,7 +971,7 @@ internal sealed partial class FrameExecutor
             }
             finally
             {
-                _submitCommands[0] = default;
+                _submitCommands[0] = null!;
                 commands.Dispose();
             }
             void AddWait(QueueCompletion? completion)
@@ -998,7 +997,7 @@ internal sealed partial class FrameExecutor
         if (_submitCommands.Length < batches.Length)
             Array.Resize(ref _submitCommands, batches.Length);
         for (int item = 0; item < batches.Length; item++)
-            _submitCommands[item] = batches[item].Commands!.Value;
+            _submitCommands[item] = batches[item].Commands!;
         foreach (int dependency in _submissionDependencies[submission])
         {
             if (!ReferenceEquals(_submissionQueues[dependency], queue))
@@ -1019,19 +1018,18 @@ internal sealed partial class FrameExecutor
                     _submitCommands.AsSpan(0, batches.Length),
                     CollectionsMarshal.AsSpan(_submitImages),
                     []));
-            int queueSlot = QueueSlot(queue);
-            destination[queueSlot] = completion;
-            _submittedQueues[queueSlot] = true;
+            int queueIndex = QueueIndex(queue);
+            destination[queueIndex] = completion;
+            _submittedQueues[queueIndex] = true;
             AddCompletion(_submittedCompletions, completion);
             _submissionCompletions[submission] = completion;
             _submissionFrames[submission] = _frame.Identity;
             CommitSubmissionState(submission, completion);
-            _frame.NotifySubmitted();
         }
         finally
         {
             for (int item = 0; item < batches.Length; item++)
-                _submitCommands[item] = default;
+                _submitCommands[item] = null!;
             foreach (RecordingBatch batch in batches) batch.DisposeCommands();
         }
     }
@@ -1047,7 +1045,7 @@ internal sealed partial class FrameExecutor
                 _submitImages.Add(image);
         }
     }
-    private int QueueSlot(Queue queue)
+    private int QueueIndex(Queue queue)
     {
         ReadOnlySpan<Queue> queues = _frame.Graph.Queues;
         for (int i = 0; i < queues.Length; i++)
@@ -1068,7 +1066,7 @@ internal sealed partial class FrameExecutor
         int expectedOrdinal)
     {
         GraphIdentity passIdentity = _passes[pass].Identity;
-        if (region.Pass != passIdentity || region.Value.Slot != expectedOrdinal)
+        if (region.Pass != passIdentity || region.Value.Index != expectedOrdinal)
             throw new InvalidOperationException("The rendering region is invalid or out of order.");
         RenderingDesc description = BuildGeneralRendering(pass, expectedOrdinal);
         _frame.Backend.BeginRendering(context, description);
@@ -1169,11 +1167,11 @@ internal sealed partial class FrameExecutor
         uint height = renderRegion?.Height ??
             (row.Options.RasterHeight != 0 ? row.Options.RasterHeight : uint.MaxValue);
         int colorDestination = 0;
-        for (uint slot = 0; slot < 8 && colorDestination < selectedColorCount; slot++)
+        for (uint index = 0; index < 8 && colorDestination < selectedColorCount; index++)
         {
             foreach (GraphColorAttachment attachment in colors)
             {
-                if (attachment.RenderingRegionIndex != region || attachment.Slot != slot)
+                if (attachment.RenderingRegionIndex != region || attachment.Index != index)
                     continue;
                 ColorAttachmentView view = GetColorAttachmentView(pass,
                     new GraphColorAttachmentViewId(attachment.View));
@@ -1195,7 +1193,7 @@ internal sealed partial class FrameExecutor
             }
         }
         DevelopmentCheck.Require(colorDestination == selectedColorCount,
-            "A rendering region has an invalid Color Attachment slot.");
+            "A rendering region has an invalid Color Attachment index.");
 
         DepthStencilAttachmentDesc? depthDescription = null;
         if (depth.HasValue && depth.Value.RenderingRegionIndex == region)
@@ -1263,7 +1261,8 @@ internal sealed partial class FrameExecutor
         internal readonly int[] Passes = passes;
         internal readonly CommandContext Context = context;
         internal readonly bool Repeatable = repeatable;
-        internal bool CommandsChanged = true;
+        internal ulong CommandVersion = 1;
+        internal ulong RecordedVersion;
         internal RecordedCommands? Commands;
         internal int Count => Passes.Length;
 
@@ -1284,12 +1283,12 @@ internal sealed partial class FrameExecutor
 
     private readonly struct RecordBatchJob : IJobParallelFor
     {
-        private readonly FrameExecutor _executor;
+        private readonly FrameRecording _executor;
         private readonly RecordingBatch[] _batches;
         private readonly int _offset;
 
         internal RecordBatchJob(
-            FrameExecutor executor,
+            FrameRecording executor,
             RecordingBatch[] batches,
             int offset)
         {
@@ -1372,6 +1371,13 @@ internal sealed partial class FrameExecutor
                 parameters.Pipeline = row.Pipeline;
             }
             foreach (ParameterConnection connection in parameters.Connections) DisconnectParameter(connection);
+            if (!row.Enabled)
+            {
+                foreach (ParameterBlock value in parameters.Blocks) ReleaseParameterBlock(value);
+                parameters.Blocks.Clear();
+                parameters.Connections.Clear();
+                continue;
+            }
             int blockIndex = 0;
             int connectionIndex = 0;
             ParameterBlock block = GetParameterBlock(parameters, pass, blockIndex++, row.ParameterLayout, row.ParameterOrdinaryData);
@@ -1521,7 +1527,7 @@ internal sealed partial class FrameExecutor
         // when an edit moves dense resource rows, just as for bound parameters.
         if (_resourceAccessLists.TryGetValue(resource, out List<int>? accesses))
             foreach (int access in accesses)
-                if (_accesses[access].Identity.Owner == _frame.Graph.Identity)
+                if (_accesses[access].Identity.ScopeId == _frame.Graph.Identity)
                     _rowChanges.Accesses.Add(_accesses[access].Identity);
         if (_resourceParameterConnections.TryGetValue(resource, out HashSet<ParameterConnection>? connections))
             foreach (ParameterConnection connection in connections) _parameterPassChanges.Add(connection.Pass);
@@ -1598,7 +1604,7 @@ internal sealed partial class FrameExecutor
             // Frame resources and temporal histories can rotate at different rates.
             // Retain a bounded set of observed bindings, and materialize only reused values.
             ParameterBindingData next;
-            if (block.BindingData.Count < _frame.Graph.FrameSlotCount + 1) next = new();
+            if (block.BindingData.Count < _frame.Graph.FrameResourceCount + 1) next = new();
             else
             {
                 next = block.BindingData[0];

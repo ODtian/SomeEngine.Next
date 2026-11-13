@@ -1,6 +1,9 @@
 #ifndef DOMAIN_INTERFACES_SLANG
 #define DOMAIN_INTERFACES_SLANG
 
+[__AttributeUsage(_AttributeTargets.Struct)]
+struct TessellatedSurfaceAttribute { };
+
 struct SurfaceBarycentrics
 {
     float3 Value;

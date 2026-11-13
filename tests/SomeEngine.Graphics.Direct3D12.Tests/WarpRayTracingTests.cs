@@ -111,7 +111,7 @@ public sealed class WarpRayTracingTests(D3D12TestCompiler shaderCompiler)
 
         using CommandContext context = backend.CreateCommandContext(device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(8, 8, 128));
+        backend.Begin(context, new CommandRecordingDesc(8, 8));
         backend.SetPipeline(context, pipeline);
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.None,
             PipelineSync.RayTracing, ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
@@ -164,7 +164,7 @@ public sealed class WarpRayTracingTests(D3D12TestCompiler shaderCompiler)
             "dxr_local_ordinary_codegen_limit", ordinarySource, entries, "lib_6_5");
         D3D12TestShader descriptors = shaderCompiler.Compile(
             "dxr_local_descriptor_codegen_limit", descriptorSource, entries, "lib_6_5");
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline ordinaryPipeline = backend.CreateRayTracingPipeline(device,
             new RayTracingPipelineDesc(ordinary.SlangCode, ordinary.Reflection, ordinary.TargetCode, [ordinary.GetEntryPoint(0)], [],
@@ -194,7 +194,7 @@ public sealed class WarpRayTracingTests(D3D12TestCompiler shaderCompiler)
         EntryPointReflection rayGenerationA = shader.GetEntryPoint(0);
         VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
             ?? VariableLayoutReflection.Null;
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateRayTracingPipeline(device,
             new RayTracingPipelineDesc(shader.SlangCode, shader.Reflection, shader.TargetCode, [rayGenerationA], [],
@@ -219,7 +219,7 @@ public sealed class WarpRayTracingTests(D3D12TestCompiler shaderCompiler)
         ];
         using CommandContext context = backend.CreateCommandContext(device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(4, 0, 16));
+        backend.Begin(context, new CommandRecordingDesc(4, 0));
         backend.SetPipeline(context, pipeline);
         Assert.Throws<ArgumentException>(() => backend.UpdateRayTracingShaderTable(context, table,
             new RayTracingShaderTableUpdate(
@@ -285,7 +285,7 @@ public sealed class WarpRayTracingTests(D3D12TestCompiler shaderCompiler)
         D3D12TestShader shader = shaderCompiler.Compile(
             "dxr_hit_group_layout_identity", source, entries, "sm_6_5");
         Assert.NotEqual(shader.GetEntryPoint(1).VarLayout, shader.GetEntryPoint(2).VarLayout);
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         RayTracingHitGroup[] hitGroups =
         [
@@ -339,7 +339,7 @@ public sealed class WarpRayTracingTests(D3D12TestCompiler shaderCompiler)
     [Fact]
     public void Acceleration_structure_build_update_clone_compact_serialize_and_deserialize_run_on_WARP()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out RayTracing? capability));
         Assert.NotNull(capability);
@@ -687,7 +687,7 @@ public sealed class WarpRayTracingTests(D3D12TestCompiler shaderCompiler)
             source,
             [new D3D12TestEntry("rayGenerationMain", SlangStage.RayGeneration)]);
         EntryPointReflection rayGeneration = shader.GetEntryPoint(0);
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         Assert.Throws<ArgumentException>(() => backend.CreateRayTracingPipeline(
@@ -747,7 +747,7 @@ public sealed class WarpRayTracingTests(D3D12TestCompiler shaderCompiler)
     [Fact]
     public void Stable_BLAS_build_encoding_reuses_grown_command_slot_geometry_scratch_without_allocating()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out RayTracing? capability));
         Assert.NotNull(capability);

@@ -14,7 +14,7 @@ public sealed class WarpPresentationTests
     public void Hdr10_metadata_is_rejected_for_non_hdr10_color_space_before_native_creation()
     {
         using D3D12TestWindow window = new();
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Surface surface = backend.CreateSurface(new SurfaceDesc(
             NativeWindowType.Win32,
@@ -38,7 +38,7 @@ public sealed class WarpPresentationTests
     public void Invalid_hdr10_transport_values_are_rejected_before_native_creation()
     {
         using D3D12TestWindow window = new();
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Surface surface = backend.CreateSurface(new SurfaceDesc(
             NativeWindowType.Win32,
@@ -62,7 +62,7 @@ public sealed class WarpPresentationTests
     [Fact]
     public void Acquire_submit_present_and_reconfigure_enforce_sequence_and_commit_boundaries_DoesNotThrow()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         ExercisePresentationLifecycle(backend);
     }
 
@@ -78,7 +78,7 @@ public sealed class WarpPresentationTests
     public void Dxgi_presentation_telemetry_tracks_configuration_latency_and_completion()
     {
         using D3D12TestWindow window = new();
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Surface surface = backend.CreateSurface(new SurfaceDesc(
             NativeWindowType.Win32,
@@ -512,7 +512,7 @@ public sealed class WarpPresentationTests
     public void Final_drain_waits_for_maximum_target_and_collects_all_payload_families_DoesNotThrow()
     {
         using D3D12TestWindow window = new();
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Queue queue = backend.GetQueue(device, QueueType.Graphics, 0);
         _ = backend.Submit(queue, new QueueSubmitDesc([], [], [], [], []));

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using DefaultGame;
 using SomeEngine.Job;
 using SomeEngine.Resources;
@@ -28,7 +28,7 @@ public sealed class TerrainGpuVoxelGeometryTests(SceneContentFixture content)
         var application = new ApplicationScene(content.DirectoryPath)
         {
             SceneCompleted = value => completed = value,
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "9"]),
             UpdateFrame = frame =>
             {
@@ -68,7 +68,7 @@ public sealed class TerrainGpuVoxelGeometryTests(SceneContentFixture content)
 
         var reference = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "9"]),
             UpdateFrame = frame =>
             {

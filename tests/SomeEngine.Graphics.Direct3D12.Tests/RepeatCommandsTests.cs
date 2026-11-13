@@ -1,4 +1,5 @@
 using Xunit;
+using SomeEngine.Graphics.Validation;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
@@ -27,7 +28,7 @@ public sealed class RepeatCommandsTests
             RecordedCommands commands;
             if (frame == 0)
             {
-                backend.Begin(context);
+                backend.Begin(context, new(Repeatable: true));
                 backend.CopyBuffer(context, new(source, 0, destination, 0, 64));
                 commands = backend.End(context);
             }
@@ -42,7 +43,7 @@ public sealed class RepeatCommandsTests
             result.Invalidate(result.Range);
             Assert.All(result.Bytes.ToArray(), item => Assert.Equal(value, item));
         }
-        backend.Begin(context);
+        backend.Begin(context, new(Repeatable: true));
         backend.CopyBuffer(context, new(source, 0, destination, 0, 32));
         backend.Discard(context);
         Assert.False(backend.TryRepeatCommands(context, out _));
@@ -51,7 +52,7 @@ public sealed class RepeatCommandsTests
     [Fact]
     public void ExpiredResourcesDeclineWithoutPreventingTheNextRecording()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using IGraphicsBackend backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer destination = backend.CreateBuffer(device,
             new BufferDesc(64, BufferUsages.CopyDestination), MemoryType.Readback);
@@ -59,7 +60,7 @@ public sealed class RepeatCommandsTests
         using (Buffer source = backend.CreateBuffer(device,
             new BufferDesc(64, BufferUsages.CopySource), MemoryType.Upload))
         {
-            backend.Begin(context);
+            backend.Begin(context, new(Repeatable: true));
             backend.CopyBuffer(context, new(source, 0, destination, 0, 64));
             using RecordedCommands commands = backend.End(context);
             QueueCompletion completion = backend.Submit(backend.GetQueue(device, QueueType.Copy),
@@ -68,7 +69,7 @@ public sealed class RepeatCommandsTests
         }
         backend.CollectCompleted(device);
         Assert.False(backend.TryRepeatCommands(context, out _));
-        backend.Begin(context);
+        backend.Begin(context, new(Repeatable: true));
         using RecordedCommands empty = backend.End(context);
     }
 }

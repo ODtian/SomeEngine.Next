@@ -85,8 +85,8 @@ public sealed partial class ValidationLayer
 
         nint reflectedCount = contents.GetBindingRangeBindingCount(rangeIndex);
         nuint reflectedCountMarker = unchecked((nuint)reflectedCount);
-        bool logicalUnbounded = reflectedCountMarker == Slang.UnboundedSize;
-        if (!logicalUnbounded &&
+        bool shaderUnbounded = reflectedCountMarker == Slang.UnboundedSize;
+        if (!shaderUnbounded &&
             (reflectedCountMarker == Slang.UnknownSize || reflectedCount <= 0 ||
              reflectedCountMarker > uint.MaxValue))
         {
@@ -118,7 +118,7 @@ public sealed partial class ValidationLayer
             if ((!nativeUnbounded &&
                  (nativeCount <= 0 || nativeCountMarker == Slang.UnknownSize ||
                   nativeCountMarker > uint.MaxValue)) ||
-                nativeUnbounded != logicalUnbounded)
+                nativeUnbounded != shaderUnbounded)
             {
                 throw new GraphicsException(
                     GraphicsError.NativeFailure,
@@ -265,6 +265,8 @@ public sealed partial class ValidationLayer
                 };
                 if (!valid)
                     return $"Resource binding {ordinal} for Slang field '{fieldName}' does not contain a {expected} resource.";
+                if (expected == ResourceBindingType.ConstantBuffer && actual.Value is Buffer buffer)
+                    ValidateConstantBufferRange(buffer.Device, buffer, actual.BufferRange);
             }
             ordinal++;
         }
@@ -284,11 +286,44 @@ public sealed partial class ValidationLayer
 
         internal ShaderReflection Reflection => _reflection;
 
-        internal void AddStaticSamplers(ReadOnlySpan<StaticSamplerBinding> samplers)
+        internal void AddStaticSamplers(Device device, ReadOnlySpan<StaticSamplerBinding> samplers)
         {
             _staticSamplers.EnsureCapacity(checked(_staticSamplers.Count + samplers.Length));
             foreach (ref readonly StaticSamplerBinding sampler in samplers)
-                _staticSamplers.Add(sampler.Sampler);
+            {
+                ValidateSampler(sampler.Description);
+                if (sampler.Sampler == VariableReflection.Null || !_staticSamplers.Add(sampler.Sampler))
+                    ThrowStaticSamplerError(device, "Static sampler declarations must be initialized and distinct.");
+                if (!ContainsSampler(sampler.Sampler))
+                    ThrowStaticSamplerError(device, "A static sampler must identify one scalar sampler binding in the pipeline.");
+                if (device.Capabilities.CompileTarget == SlangCompileTarget.Dxil &&
+                    sampler.Description.BorderColor is not ({ X: 0, Y: 0, Z: 0, W: 0 } or
+                        { X: 0, Y: 0, Z: 0, W: 1 } or { X: 1, Y: 1, Z: 1, W: 1 }))
+                    ThrowStaticSamplerError(device, "A Direct3D 12 static sampler requires transparent black, opaque black or opaque white.");
+            }
+        }
+
+        [System.Diagnostics.CodeAnalysis.DoesNotReturn]
+        private static void ThrowStaticSamplerError(Device device, string text)
+        {
+            if (device.Capabilities.CompileTarget == SlangCompileTarget.Dxil)
+                throw new GraphicsException(GraphicsError.PipelineCreation, text);
+            throw new ArgumentException(text, "samplers");
+        }
+
+        private bool ContainsSampler(VariableReflection sampler)
+        {
+            foreach (VariableLayoutReflection layout in _layouts)
+            {
+                TypeLayoutReflection contents = GetParameterContentsLayout(layout.TypeLayout);
+                for (nint range = 0; range < contents.BindingRangeCount; range++)
+                    if ((contents.GetBindingRangeType(range) & SlangBindingType.BaseMask) == SlangBindingType.Sampler &&
+                        contents.GetBindingRangeLeafVariable(range) == sampler &&
+                        contents.GetBindingRangeBindingCount(range) == 1 &&
+                        contents.GetBindingRangeDescriptorRangeCount(range) == 1)
+                        return true;
+            }
+            return false;
         }
 
         internal void Add(VariableLayoutReflection layout)

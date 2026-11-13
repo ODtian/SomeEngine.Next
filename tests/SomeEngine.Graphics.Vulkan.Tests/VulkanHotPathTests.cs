@@ -58,7 +58,7 @@ public sealed class VulkanHotPathTests(VulkanTestCompiler shaderCompiler)
 
         void RecordAndSubmit()
         {
-            backend.Begin(context, new CommandRecordingDesc(4, 4, 4));
+            backend.Begin(context, new CommandRecordingDesc(4,4));
             backend.SetPipeline(context, pipeline);
             backend.SetPersistentParameterBindings(context, persistent);
             backend.SetTransientParameterBindings(

@@ -1,4 +1,4 @@
-using SomeEngine.Assets;
+﻿using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Core.ECS.Components;
@@ -13,7 +13,7 @@ namespace SomeEngine.Render.Systems;
 /// <summary>Extracts mesh, transform, and material-binding semantics.</summary>
 public sealed class MeshRenderExtractor : IRenderExtractionSystem
 {
-    private readonly List<MeshSnapshot> _snapshots = [];
+    private readonly List<MeshRenderValues> _meshValues = [];
     private readonly List<Material> _materials = [];
     private readonly HashSet<Entity> _meshSources = [];
     private readonly Dictionary<Entity, Material[]> _sourceMaterials = [];
@@ -22,7 +22,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
     private readonly HashSet<Entity> _collectedMeshSources = [];
 
     public bool CanApplyChangesDirect =>
-        _snapshots.Count == 0;
+        _meshValues.Count == 0;
 
     public void DeclareReads(RenderExtractionQuery query)
     {
@@ -34,7 +34,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
 
     public void Reset()
     {
-        _snapshots.Clear();
+        _meshValues.Clear();
         _materials.Clear();
         _meshSources.Clear();
         _collectedMaterialSources.Clear();
@@ -91,7 +91,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             float expansion = GetBoundsExpansion(source, instance.BoundsExpansion);
             if (current.Mesh.Revision == instance.Mesh.Revision && current.BoundsExpansion == expansion) continue;
             Mesh data = instance.Mesh.CaptureData();
-            _snapshots.Add(new MeshSnapshot(source, default, data, expansion,
+            _meshValues.Add(new MeshRenderValues(source, default, data, expansion,
                 false, 0, 0, MeshChanged: true, MaterialsChanged: false, instance.PageSource,
                 instance.DepthCacheClass, instance.FirstPerson));
             _meshSources.Add(source);
@@ -132,7 +132,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     _materials.Add(bindings[index].Material);
             }
 
-            _snapshots.Add(new MeshSnapshot(
+            _meshValues.Add(new MeshRenderValues(
                 source,
                 new RenderTransform(transforms[row].Qvvs),
                 TrackMesh(source, meshes[row]),
@@ -168,7 +168,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         if (!meshChunkChanged && !materialChunkChanged)
             return false;
 
-        int firstSnapshot = _snapshots.Count;
+        int firstValue = _meshValues.Count;
         ReadOnlySpan<Entity> entities = chunk.Entities;
         for (int row = 0; row < entities.Length; row++)
         {
@@ -194,7 +194,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
 
                 bool geometryChanged = meshChanged || materialsChanged;
                 MeshInstance mesh = meshes[row];
-                _snapshots.Add(new MeshSnapshot(
+                _meshValues.Add(new MeshRenderValues(
                     entities[row],
                     default,
                     geometryChanged ? TrackMesh(entities[row], mesh) : null!,
@@ -210,24 +210,24 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             }
         }
 
-        return _snapshots.Count != firstSnapshot;
+        return _meshValues.Count != firstValue;
     }
 
     public void Apply(RenderExtractionContext context)
     {
-        for (int index = 0; index < _snapshots.Count; index++)
+        for (int index = 0; index < _meshValues.Count; index++)
         {
-            MeshSnapshot snapshot = _snapshots[index];
-            Entity entity = context.RetainMirror(snapshot.Source);
-            if (snapshot.Transform is { } transform) context.RetainTransform(entity, transform);
+            MeshRenderValues meshData = _meshValues[index];
+            Entity entity = context.RetainMirror(meshData.Source);
+            if (meshData.Transform is { } transform) context.RetainTransform(entity, transform);
             context.Upsert(entity, new RenderInstance());
             context.Upsert(entity, new RenderMesh(
-                snapshot.Mesh,
-                snapshot.BoundsExpansion,
-                snapshot.PageSource,
-                snapshot.DepthCacheClass,
-                snapshot.FirstPerson));
-            if (snapshot.MaterialsChanged) SyncMaterials(context, snapshot, entity, allowStructuralChanges: true);
+                meshData.Mesh,
+                meshData.BoundsExpansion,
+                meshData.PageSource,
+                meshData.DepthCacheClass,
+                meshData.FirstPerson));
+            if (meshData.MaterialsChanged) SyncMaterials(context, meshData, entity, allowStructuralChanges: true);
         }
 
         ReadOnlySpan<RenderMirror> mirrors = context.Mirrors;
@@ -246,26 +246,26 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
 
     public void ApplyChanges(RenderExtractionContext context)
     {
-        for (int index = 0; index < _snapshots.Count; index++)
+        for (int index = 0; index < _meshValues.Count; index++)
         {
-            MeshSnapshot snapshot = _snapshots[index];
-            Entity entity = context.RequireMirror(snapshot.Source);
-            if (snapshot.MeshChanged)
+            MeshRenderValues meshData = _meshValues[index];
+            Entity entity = context.RequireMirror(meshData.Source);
+            if (meshData.MeshChanged)
             {
                 context.UpdateExisting(
                     entity,
                     new RenderMesh(
-                        snapshot.Mesh,
-                        snapshot.BoundsExpansion,
-                        snapshot.PageSource,
-                        snapshot.DepthCacheClass,
-                        snapshot.FirstPerson));
+                        meshData.Mesh,
+                        meshData.BoundsExpansion,
+                        meshData.PageSource,
+                        meshData.DepthCacheClass,
+                        meshData.FirstPerson));
             }
-            if (snapshot.MaterialsChanged)
+            if (meshData.MaterialsChanged)
             {
                 SyncMaterials(
                     context,
-                    snapshot,
+                    meshData,
                     entity,
                     allowStructuralChanges: false);
             }
@@ -274,45 +274,45 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
 
     public void ValidateChanges(RenderExtractionContext context)
     {
-        for (int index = 0; index < _snapshots.Count; index++)
+        for (int index = 0; index < _meshValues.Count; index++)
         {
-            MeshSnapshot snapshot = _snapshots[index];
-            Entity entity = context.RequireMirror(snapshot.Source);
-            if (snapshot.MeshChanged)
+            MeshRenderValues meshData = _meshValues[index];
+            Entity entity = context.RequireMirror(meshData.Source);
+            if (meshData.MeshChanged)
                 context.RequireExisting<RenderMesh>(entity);
-            if (snapshot.MaterialsChanged &&
+            if (meshData.MaterialsChanged &&
                 !context.World.HasBuffer<RenderMaterialBinding>(entity))
             {
                 throw new InvalidOperationException(
                     $"Render mirror {entity} has no material buffer for changed source " +
-                    $"{snapshot.Source}.");
+                    $"{meshData.Source}.");
             }
         }
     }
 
     private void SyncMaterials(
         RenderExtractionContext context,
-        in MeshSnapshot snapshot,
+        in MeshRenderValues meshData,
         Entity renderEntity,
         bool allowStructuralChanges)
     {
         RenderWorld world = context.World;
-        if (!snapshot.HasMaterialBuffer)
+        if (!meshData.HasMaterialBuffer)
         {
             if (!allowStructuralChanges)
             {
                 throw new InvalidOperationException(
-                    $"A changed material row for {snapshot.Source} no longer has its source buffer.");
+                    $"A changed material row for {meshData.Source} no longer has its source buffer.");
             }
             world.RemoveMaterials(renderEntity);
             return;
         }
 
         context.SetMaterials(renderEntity, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_materials)
-            .Slice(snapshot.MaterialOffset, snapshot.MaterialCount));
+            .Slice(meshData.MaterialOffset, meshData.MaterialCount));
     }
 
-    private readonly record struct MeshSnapshot(
+    private readonly record struct MeshRenderValues(
         Entity Source,
         RenderTransform? Transform,
         Mesh Mesh,

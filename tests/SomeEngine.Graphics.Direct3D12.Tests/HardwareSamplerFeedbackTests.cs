@@ -1,5 +1,6 @@
 using System.Reflection;
 using SomeEngine.Graphics.Direct3D12;
+using SomeEngine.Graphics.Validation;
 using Xunit;
 using Xunit.Sdk;
 
@@ -14,7 +15,7 @@ public sealed class HardwareSamplerFeedbackTests
         bool hardwareAvailable)
     {
         Assert.True(hardwareAvailable);
-        var backend = D3D12GraphicsBackend.Create();
+        var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         Device device = D3D12TestSupport.CreateSamplerFeedbackHardwareDevice(backend);
         Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
         AssertClearDecodeAndParentCascade(backend, device);

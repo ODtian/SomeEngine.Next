@@ -2,6 +2,8 @@ using System.Collections;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text.Json;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace SomeEngine.Tools;
 
@@ -26,6 +28,9 @@ internal static class BenchmarkCommands
         if (settings.CpuCoreCount <= 0 || settings.MemoryMiB <= 0 || settings.OutputMiB is < 1 or > 8)
             throw new ArgumentOutOfRangeException(nameof(settings));
         int timeoutSeconds = settings.TimeoutSeconds;
+        string? samplePattern = null, diagnosticScope = null;
+        double? sampleTarget = null;
+        bool higherIsBetter = false;
         string directory = Directory.GetCurrentDirectory();
         string sessionId = Environment.GetEnvironmentVariable("SOMEENGINE_BENCHMARK_SESSION")
             ?? Environment.GetEnvironmentVariable("CODEX_THREAD_ID")
@@ -48,6 +53,13 @@ internal static class BenchmarkCommands
                 case "--gpu":
                 case "--exclusive": kind = CommandKind.Gpu; break;
                 case "--session": sessionId = args[executableIndex++]; break;
+                case "--sample-pattern": samplePattern = args[executableIndex++]; break;
+                case "--sample-max":
+                case "--sample-min":
+                    sampleTarget = double.Parse(args[executableIndex++], CultureInfo.InvariantCulture);
+                    higherIsBetter = option == "--sample-min";
+                    break;
+                case "--diagnostic": diagnosticScope = args[executableIndex++]; break;
                 case "--timeout":
                     if (executableIndex == args.Length)
                         throw new ArgumentException("--timeout requires a value in seconds.");
@@ -61,13 +73,19 @@ internal static class BenchmarkCommands
 
         string executable = args[executableIndex];
         string[] arguments = args[(executableIndex + 1)..];
+        SampleLimit? sampleLimit = null;
+        if (sampleTarget is { } target)
+        {
+            if (!double.IsFinite(target) || samplePattern is null
+                || !new Regex(samplePattern).GetGroupNames().Contains("value"))
+                throw new ArgumentException("A sample target requires a finite value and --sample-pattern with a named value group.");
+            sampleLimit = new(samplePattern, target, higherIsBetter);
+        }
+        else if (samplePattern is not null) throw new ArgumentException("--sample-pattern requires --sample-max or --sample-min.");
+        if (diagnosticScope is not null && string.IsNullOrWhiteSpace(diagnosticScope))
+            throw new ArgumentException("--diagnostic requires the scope of the diagnostic run.");
 
         string id = Guid.NewGuid().ToString("N");
-        string results = Path.Combine(QueueSettings.DataDirectory, "results");
-        if (Directory.Exists(results))
-            foreach (var previous in new DirectoryInfo(results).EnumerateDirectories()
-                .Where(path => File.Exists(Path.Combine(path.FullName, "result.json")))
-                .OrderByDescending(path => path.LastWriteTimeUtc).Skip(8)) previous.Delete(recursive: true);
         string output = Path.Combine(QueueSettings.DataDirectory, "results", id);
         var environment = Environment.GetEnvironmentVariables().Cast<DictionaryEntry>()
             .ToDictionary(entry => (string)entry.Key, entry => (string)entry.Value!);
@@ -76,12 +94,19 @@ internal static class BenchmarkCommands
         {
             TimeoutSeconds = timeoutSeconds,
             Settings = settings,
+            SampleLimit = sampleLimit,
+            DiagnosticScope = diagnosticScope,
         };
 
         using var submission = new Mutex(false, MutexName(QueueName + ".Submit"));
         Wait(submission);
         try
         {
+            string results = Path.Combine(QueueSettings.DataDirectory, "results");
+            if (Directory.Exists(results))
+                foreach (var previous in new DirectoryInfo(results).EnumerateDirectories()
+                    .Where(path => File.Exists(Path.Combine(path.FullName, "result.json")))
+                    .OrderByDescending(path => path.LastWriteTimeUtc).Skip(8)) previous.Delete(recursive: true);
             using var worker = new Mutex(false, MutexName(QueueName + ".Worker"));
             bool startWorker;
             try { startWorker = worker.WaitOne(0); }
@@ -155,6 +180,7 @@ internal static class BenchmarkCommands
             command.Id, command.Executable, command.Arguments, command.Directory, command.SessionId,
             Kind = command.Kind.ToString(), Host = command.Settings.RemoteHost, ExitCode = 1,
             FailureStage = "RemoteDispatch", ErrorType = error.GetType().Name,
+            command.SampleLimit, command.DiagnosticScope,
             command.SubmittedAtUtc, FinishedAtUtc = DateTimeOffset.UtcNow,
         }));
     }
@@ -164,6 +190,7 @@ internal static class BenchmarkCommands
         Directory.CreateDirectory(command.OutputDirectory);
         int exitCode = 1;
         bool timedOut = false;
+        var sample = new SampleCheck(command.SampleLimit, command.DiagnosticScope);
         LocalGpuDevice[] gpus = [];
         DateTimeOffset started = DateTimeOffset.UtcNow;
         try
@@ -190,13 +217,13 @@ internal static class BenchmarkCommands
             started = DateTimeOffset.UtcNow;
             using var deadline = new CancellationTokenSource(timeoutSeconds * 1000);
             using var copying = new CancellationTokenSource();
-            Task outputCopy = CopyOutput(process.StandardOutput, output, command.Settings.OutputMiB, copying.Token);
-            Task errorCopy = CopyOutput(process.StandardError, errors, command.Settings.OutputMiB, copying.Token);
+            Task outputCopy = CopyOutput(process.StandardOutput, output, command.Settings.OutputMiB, copying.Token, sample, commandCpu, false);
+            Task errorCopy = CopyOutput(process.StandardError, errors, command.Settings.OutputMiB, copying.Token, sample, commandCpu, true);
             Task completion = Task.WhenAll(process.WaitForExitAsync(copying.Token), outputCopy, errorCopy);
             try
             {
                 completion.WaitAsync(deadline.Token).GetAwaiter().GetResult();
-                exitCode = process.ExitCode;
+                exitCode = sample.Failed ? 1 : process.ExitCode;
             }
             catch (OperationCanceledException) when (deadline.IsCancellationRequested)
             {
@@ -227,6 +254,9 @@ internal static class BenchmarkCommands
         if (timedOut)
             File.AppendAllText(Path.Combine(command.OutputDirectory, "stderr.log"),
                 $"\nBenchmark queue execution timed out after {command.TimeoutSeconds} seconds; process-tree termination was requested.\n");
+        if (sample.Failed)
+            File.AppendAllText(Path.Combine(command.OutputDirectory, "stderr.log"),
+                $"\nSample {sample.Sample} failed target {command.SampleLimit!.Target}; the process tree was terminated.\n");
         var cpu = commandCpu.Complete();
         WriteResult(command, JsonSerializer.Serialize(new
         {
@@ -243,6 +273,8 @@ internal static class BenchmarkCommands
             DispatchReason = command.DispatchReason ?? (command.Settings.Local ? "RequestedLocal" : "RemoteResourcesBusy"),
             command.RemoteError,
             command.TimeoutSeconds, TimedOut = timedOut,
+            command.SampleLimit, command.DiagnosticScope, sample.FirstSample, FailedSample = sample.Failed ? sample.Sample : null,
+            SampleTargetExceeded = sample.Failed, StopReason = sample.Failed ? "SampleTarget" : timedOut ? "Timeout" : "ProcessExit",
             StartedAtUtc = started, FinishedAtUtc = DateTimeOffset.UtcNow,
         }));
     }
@@ -255,12 +287,17 @@ internal static class BenchmarkCommands
         File.Move(temporary, file);
     }
 
-    private static async Task CopyOutput(StreamReader input, Stream output, int limitMiB, CancellationToken cancellation)
+    private static async Task CopyOutput(StreamReader input, Stream output, int limitMiB, CancellationToken cancellation,
+        SampleCheck sample, CommandCpu process, bool error)
     {
         char[] buffer = new char[4096];
         int length;
         while ((length = await input.ReadAsync(buffer, cancellation)) > 0)
-            RemoteCommands.WriteOutput(output, new string(buffer, 0, length), limitMiB);
+        {
+            string text = new(buffer, 0, length);
+            RemoteCommands.WriteOutput(output, text, limitMiB);
+            if (sample.Observe(text, error)) process.Terminate();
+        }
     }
 
     private static int ExecuteCommand()
@@ -272,6 +309,8 @@ internal static class BenchmarkCommands
             RedirectStandardOutput = true, RedirectStandardError = true,
         };
         foreach (string argument in command.Arguments) start.ArgumentList.Add(argument);
+        if (command.DiagnosticScope is { } scope)
+            start.Environment["SOMEENGINE_BENCHMARK_DIAGNOSTIC_SCOPE"] = scope;
         using var process = Process.Start(start)!;
         Task output = process.StandardOutput.BaseStream.CopyToAsync(Console.OpenStandardOutput());
         Task errors = process.StandardError.BaseStream.CopyToAsync(Console.OpenStandardError());

@@ -1,8 +1,12 @@
+__exported import vsm_types;
+__exported import vsm_addressing;
+__exported import vsm_receiver_mask_common;
+
 #ifndef VSM_PAGE_REQUEST_COMMON_SLANG
 #define VSM_PAGE_REQUEST_COMMON_SLANG
 
-#include "resource_effects.slang"
-#include "wave_aggregation.slang"
+__exported import resource_effects;
+__exported import wave_aggregation;
 
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> RequestedPageFlags;

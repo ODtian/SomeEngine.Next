@@ -13,25 +13,27 @@ namespace SomeEngine.Render.Terrain;
 
 /// <summary>Device terrain pages, extracted compute requests and their GPU completions.</summary>
 public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemContext>, ISystem<RenderFrameSystemContext>,
-    IRenderGraphFrameExecutionObserver, IDisposable
+    IDisposable
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
+    private readonly RenderPipelines _renderPipelines;
+    private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly GraphRegionId _extensionPoint;
     private readonly ConditionalWeakTable<TerrainFieldPage, DevicePage> _pageData = new();
     private readonly List<DevicePage> _pages = [];
     private readonly Dictionary<(Shader Shader, string Entry), LinkedComputePipeline> _pipelines = [];
     private readonly HashSet<TerrainGpuRequest> _requests = [];
-    private readonly List<RecordedRequest> _recorded = [];
-    private readonly Dictionary<TerrainGpuRequest, ReadbackData> _readbacks = [];
-    private readonly HashSet<DevicePage> _framePages = [];
     private readonly List<Task> _completions = [];
     private QueryHandle _query;
 
-    public RenderTerrainData(IGraphicsBackend backend, Device device, global::SomeEngine.RenderGraph.RenderGraph graph)
+    public RenderTerrainData(IGraphicsBackend backend, Device device, global::SomeEngine.RenderGraph.RenderGraph graph,
+        RenderPipelines pipelines)
     {
         _backend = backend;
         _device = device;
+        _renderPipelines = pipelines;
+        _graph = graph;
         using RenderGraphEdit edit = graph.BeginEdit();
         _extensionPoint = edit.AddFrameRegion("Terrain field work");
         edit.Commit();
@@ -51,6 +53,15 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
                 if (request is TerrainGpuRequest gpu && !gpu.IsSubmitted) _requests.Add(gpu);
         });
         _completions.RemoveAll(static task => task.IsCompletedSuccessfully);
+        foreach (TerrainGpuRequest request in _requests) request.Prepare(this);
+        for (int index = _pages.Count - 1; index >= 0; index--)
+            if (!_pages[index].Source.TryGetTarget(out _))
+            {
+                using RenderGraphEdit edit = _graph.BeginEdit();
+                edit.Remove(_pages[index].Buffer);
+                edit.Commit();
+                _pages.RemoveAt(index);
+            }
     }
 
     public void OnDestroy(ref RenderPrepareSystemContext context)
@@ -63,15 +74,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
         RenderGraphFrame frame = context.Graph;
-        _recorded.Clear();
-        _framePages.Clear();
-        for (int index = _pages.Count - 1; index >= 0; index--)
-            if (!_pages[index].Source.TryGetTarget(out _))
-            {
-                frame.RetireAfterSubmittedFrames(_pages[index].Buffer);
-                _pages.RemoveAt(index);
-            }
-
+        TerrainFrame work = GetFrame(ref frame);
         TerrainFrameCommands extension = new TerrainFrameCommands(frame, _extensionPoint);
         foreach (TerrainGpuRequest request in _requests)
         {
@@ -86,7 +89,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
                     request.CheckResult();
                     request.Completion.Complete();
                 }
-                else _recorded.Add(new(request, pass));
+                else work.Requests.Add(request);
             }
             catch (Exception failure)
             {
@@ -101,39 +104,47 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
     {
         var key = (shader, entry);
         if (!_pipelines.TryGetValue(key, out LinkedComputePipeline? pipeline))
-            _pipelines.Add(key, pipeline = LinkedComputePipeline.Create(_backend, _device, shader, entry, "Terrain field brush"));
+            _pipelines.Add(key, pipeline = LinkedComputePipeline.Create(_renderPipelines, shader, entry, "Terrain field brush"));
         return pipeline;
     }
 
-    private DevicePage GetPage(TerrainFieldPage page)
+    internal void PreparePage(TerrainFieldPage page)
     {
-        if (_pageData.TryGetValue(page, out DevicePage? devicePage)) return devicePage;
-        Buffer buffer = _backend.CreateBuffer(_device,
-            new BufferDesc((ulong)page.SampleCount * sizeof(float), BufferUsages.CopySource | BufferUsages.CopyDestination
-                | BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Terrain field page"));
-        devicePage = new DevicePage(page, buffer);
-        _pageData.Add(page, devicePage);
-        _pages.Add(devicePage);
-        return devicePage;
+        if (_pageData.TryGetValue(page, out _)) return;
+        using RenderGraphEdit edit = _graph.BeginEdit();
+        GraphBufferId buffer = edit.CreatePersistentBuffer(new((ulong)page.SampleCount * sizeof(float),
+            BufferUsages.CopySource | BufferUsages.CopyDestination | BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
+            "Terrain field page"));
+        edit.Commit();
+        var data = new DevicePage(page, buffer);
+        _pageData.Add(page, data);
+        _pages.Add(data);
+    }
+
+    private TerrainFrame GetFrame(ref RenderGraphFrame frame)
+    {
+        TerrainFrame data = frame.GetFrameData(this, () => new TerrainFrame(this));
+        frame.ObserveExecution(data);
+        return data;
     }
 
     private GraphBufferId ImportPage(ref RenderGraphFrame frame, DevicePage page)
     {
-        _framePages.Add(page);
-        return frame.Import(page.Buffer, page.States);
+        GetFrame(ref frame).Pages.Add(page);
+        return page.Buffer;
     }
 
-    internal GraphBufferId GetOutput(ref RenderGraphFrame frame, TerrainFieldPage page) => ImportPage(ref frame, GetPage(page));
+    internal GraphBufferId GetOutput(ref RenderGraphFrame frame, TerrainFieldPage page) =>
+        ImportPage(ref frame, _pageData.GetValue(page, static _ => throw new InvalidOperationException()));
 
     private GraphBufferId GetInput(ref RenderGraphFrame frame, ref TerrainFrameCommands extension, TerrainFieldPage page)
     {
-        DevicePage devicePage = GetPage(page);
-        GraphBufferId buffer = ImportPage(ref frame, devicePage);
-        if (!devicePage.HasContents && devicePage.UploadFrame != frame.FrameIdentity && page.CpuContents is { } samples)
+        DevicePage data = _pageData.GetValue(page, static _ => throw new InvalidOperationException());
+        GraphBufferId buffer = ImportPage(ref frame, data);
+        if (!data.HasContents && GetFrame(ref frame).Uploads.Add(data) && page.CpuContents is { } samples)
         {
             GraphBufferSlice upload = frame.Upload<float>(samples, BufferUsages.CopySource, "Terrain CPU page");
             Copy(ref extension, "Upload terrain page", upload, buffer, 0, (ulong)page.SampleCount * sizeof(float));
-            devicePage.UploadFrame = frame.FrameIdentity;
         }
         return buffer;
     }
@@ -187,13 +198,13 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
     internal GraphPassId RecordReadback(TerrainGpuRequest request, GraphBufferSlice source, float[] samples,
         ref RenderGraphFrame frame, ref TerrainFrameCommands extension)
     {
-        ulong bytes = (ulong)samples.Length * sizeof(float);
-        Buffer readback = _backend.CreateBuffer(_device,
-            new BufferDesc(bytes, BufferUsages.CopyDestination, "Terrain page readback"), MemoryType.Readback);
-        _readbacks.Add(request, new(readback, samples));
-        GraphBufferId destination = frame.Import(readback,
-            [new(BufferRange.Whole, readback.InitialSync, readback.InitialAccess, ResourceContentState.Undefined)]);
-        return Copy(ref extension, "Read terrain data", source, destination, 0, bytes);
+        var receiver = new TerrainReadback(samples);
+        GraphReadbackId readback = frame.AddReadback(source, receiver, "Terrain page readback", region: _extensionPoint);
+        GraphPassId completion = extension.AddCopyPass("Complete terrain readback", PassQueueSelection.AnyCompatible(), 0,
+            new PassOptions(Culling: PassCullingMode.NeverCull), static (ref PassDefinition _, ref int _) => { },
+            static (ref CopyPassCommandScope _, in int _) => { });
+        frame.OrderAfter(completion, readback);
+        return completion;
     }
 
     private static GraphPassId Copy(ref TerrainFrameCommands extension, string label, GraphBufferSlice source,
@@ -210,130 +221,85 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
                 commands.CopyBuffer(new(commands.GetBuffer(data.Source.Buffer), data.Source.Range.Offset,
                     commands.GetBuffer(data.Destination), data.Offset, data.Bytes)));
 
-    public void OnRenderGraphSubmitted(RenderGraphFrameResult result)
-    {
-        foreach (DevicePage page in _framePages)
-        {
-            ReadOnlySpan<BufferBoundaryState> states = result.GetBufferStates(page.Buffer);
-            if (states.IsEmpty) continue;
-            page.States = states.ToArray();
-            page.HasContents = true;
-            foreach (BufferBoundaryState state in states)
-                page.HasContents &= state.Contents == ResourceContentState.Defined;
-        }
-        foreach (RecordedRequest work in _recorded)
-        {
-            TerrainGpuRequest request = work.Request;
-            if (request.IsSubmitted || !result.TryGetPassCompletion(work.Pass, out QueueCompletion completion)) continue;
-            request.AcceptSubmission();
-            _readbacks.TryGetValue(request, out ReadbackData? readback);
-            _completions.Add(Task.Run(() => Complete(request, completion, readback)));
-        }
-    }
-
-    private void Complete(TerrainGpuRequest request, QueueCompletion completion, ReadbackData? readback)
+    private void Complete(TerrainGpuRequest request, ulong identity)
     {
         try
         {
-            WaitStatus status = _backend.WaitCpu(completion, Timeout.InfiniteTimeSpan);
-            if (status != WaitStatus.Completed) throw new InvalidOperationException($"Terrain GPU work ended with {status}.");
-            if (readback is not null)
-            {
-                using MappedBuffer mapping = _backend.Map(readback.Buffer, MapType.Read, BufferRange.Whole);
-                mapping.Invalidate(mapping.Range);
-                MemoryMarshal.Cast<byte, float>(mapping.Bytes).CopyTo(readback.Samples);
-            }
+            if (!_graph.IsDisposed) _graph.WaitForFrame(identity, Timeout.InfiniteTimeSpan);
             request.CheckResult();
             request.Completion.Complete();
         }
         catch (Exception failure) { request.Completion.Fail(failure); }
-        finally { readback?.Buffer.Dispose(); }
-    }
-
-    public void OnRenderGraphFrameFinished(RenderGraphFrameResult result)
-    {
-        OnRenderGraphSubmitted(result);
-        foreach (var pair in _readbacks.ToArray())
-            if (pair.Key.IsSubmitted) _readbacks.Remove(pair.Key);
-            else
-            {
-                pair.Value.Buffer.Dispose();
-                _readbacks.Remove(pair.Key);
-            }
     }
 
     public void Dispose()
     {
         Task.WhenAll(_completions).GetAwaiter().GetResult();
         foreach (TerrainGpuRequest request in _requests) request.Cancel();
-        try { PreserveCpuContents(); }
-        finally
+        if (!_graph.IsDisposed && !_graph.IsLost)
         {
-            foreach (ReadbackData readback in _readbacks.Values) readback.Buffer.Dispose();
-            foreach (DevicePage page in _pages) page.Buffer.Dispose();
-            foreach (LinkedComputePipeline pipeline in _pipelines.Values) pipeline.Dispose();
+            PreserveCpuContents();
+            using RenderGraphEdit edit = _graph.BeginEdit();
+            edit.Remove(_extensionPoint);
+            foreach (DevicePage page in _pages) edit.Remove(page.Buffer);
+            edit.Commit();
         }
+        foreach (LinkedComputePipeline pipeline in _pipelines.Values) pipeline.Dispose();
+        _pipelines.Clear();
+        _pages.Clear();
+        _pageData.Clear();
+        _requests.Clear();
+        _completions.Clear();
     }
 
     private void PreserveCpuContents()
     {
-        var pages = new List<(TerrainFieldPage Source, DevicePage Device, ulong Offset)>();
-        ulong bytes = 0;
-        foreach (DevicePage page in _pages)
-            if (page.HasContents && page.Source.TryGetTarget(out TerrainFieldPage? source) && source.CpuContents is null)
-            {
-                pages.Add((source, page, bytes));
-                bytes += (ulong)source.SampleCount * sizeof(float);
-            }
-        if (pages.Count == 0) return;
-
-        using Buffer readback = _backend.CreateBuffer(_device,
-            new BufferDesc(bytes, BufferUsages.CopyDestination, "Terrain retained samples"), MemoryType.Readback);
-        using var graph = new global::SomeEngine.RenderGraph.RenderGraph(_backend, _device,
-            [_backend.GetQueue(_device, QueueType.Graphics)], new RenderGraphDesc(MaximumFramesInFlight: 1));
-        GraphRegionId point;
-        using (RenderGraphEdit edit = graph.BeginEdit())
+        DevicePage[] pages = _pages.Where(page => page.HasContents &&
+            page.Source.TryGetTarget(out TerrainFieldPage? source) && source.CpuContents is null).ToArray();
+        if (pages.Length == 0) return;
+        ulong identity;
+        using (RenderGraphFrame frame = _graph.BeginFrame())
         {
-            point = edit.AddFrameRegion("Retain terrain samples");
-            edit.Commit();
+            foreach (DevicePage page in pages)
+                if (page.Source.TryGetTarget(out TerrainFieldPage? source))
+                    frame.AddReadback(new(page.Buffer, new(0, (ulong)source.SampleCount * sizeof(float))),
+                        new RetainedTerrainReadback(source), "Retain terrain page", region: _extensionPoint);
+            identity = frame.FrameIdentity;
+            frame.Execute();
         }
-        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
-        using (RenderGraphFrame frame = graph.BeginFrame())
-        {
-            TerrainFrameCommands extension = new TerrainFrameCommands(frame, point);
-            GraphBufferId destination = frame.Import(readback,
-                [new(BufferRange.Whole, readback.InitialSync, readback.InitialAccess, ResourceContentState.Undefined)]);
-            foreach (var page in pages)
-            {
-                GraphBufferId source = frame.Import(page.Device.Buffer, page.Device.States);
-                Copy(ref extension, "Retain terrain page", new(source, BufferRange.Whole), destination,
-                    page.Offset, (ulong)page.Source.SampleCount * sizeof(float));
-            }
-                int count = frame.Execute(completions);
-            foreach (QueueCompletion completion in completions.AsSpan(0, count))
-            {
-                WaitStatus status = _backend.WaitCpu(completion, Timeout.InfiniteTimeSpan);
-                if (status != WaitStatus.Completed) throw new InvalidOperationException($"Terrain sample readback ended with {status}.");
-            }
-        }
-        using MappedBuffer mapping = _backend.Map(readback, MapType.Read, BufferRange.Whole);
-        mapping.Invalidate(mapping.Range);
-        foreach (var page in pages)
-            page.Source.SetCpuContents(MemoryMarshal.Cast<byte, float>(mapping.Bytes)
-                .Slice((int)(page.Offset / sizeof(float)), page.Source.SampleCount).ToArray());
+        _graph.WaitForFrame(identity, Timeout.InfiniteTimeSpan);
     }
 
-    private sealed class DevicePage(TerrainFieldPage source, Buffer buffer)
+    private sealed class TerrainFrame(RenderTerrainData data) : IRenderGraphFrameExecutionObserver
+    {
+        internal readonly HashSet<DevicePage> Pages = [];
+        internal readonly HashSet<DevicePage> Uploads = [];
+        internal readonly List<TerrainGpuRequest> Requests = [];
+        public void OnFrameSubmitted(in RenderGraphSubmission submission)
+        {
+            foreach (DevicePage page in Pages) page.HasContents = true;
+            ulong identity = submission.FrameIdentity;
+            foreach (TerrainGpuRequest request in Requests)
+            {
+                request.AcceptSubmission();
+                data._completions.Add(Task.Run(() => data.Complete(request, identity)));
+            }
+        }
+    }
+
+    private sealed class TerrainReadback(float[] samples) : IGraphReadbackReceiver
+    {
+        public void OnReadback(ReadOnlySpan<byte> bytes, ulong tag) => MemoryMarshal.Cast<byte, float>(bytes).CopyTo(samples);
+    }
+    private sealed class RetainedTerrainReadback(TerrainFieldPage source) : IGraphReadbackReceiver
+    {
+        public void OnReadback(ReadOnlySpan<byte> bytes, ulong tag) => source.SetCpuContents(MemoryMarshal.Cast<byte, float>(bytes).ToArray());
+    }
+    private sealed class DevicePage(TerrainFieldPage source, GraphBufferId buffer)
     {
         internal WeakReference<TerrainFieldPage> Source { get; } = new(source);
-        internal Buffer Buffer { get; } = buffer;
-        internal BufferBoundaryState[] States =
-            [new(BufferRange.Whole, buffer.InitialSync, buffer.InitialAccess, ResourceContentState.Undefined)];
+        internal GraphBufferId Buffer { get; } = buffer;
         internal bool HasContents;
-        internal ulong UploadFrame;
     }
-
-    private readonly record struct RecordedRequest(TerrainGpuRequest Request, GraphPassId Pass);
-    private sealed record ReadbackData(Buffer Buffer, float[] Samples);
     private readonly record struct CopyData(GraphBufferSlice Source, GraphBufferId Destination, ulong Offset, ulong Bytes);
 }

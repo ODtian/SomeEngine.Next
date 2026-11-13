@@ -10,14 +10,14 @@ internal sealed unsafe partial class D3D12Backend
             D3D12Device device,
             D3D12Buffer buffer,
             in BufferCbvDesc description,
-            DescriptorLease descriptor)
+            DescriptorAllocation descriptor)
             : base(device, description)
         {
             NativeDescriptor = descriptor;
-            _references = new ViewReferences(device, descriptor, buffer.NativeLifetime);
+            _references = new ViewReferences(device, descriptor, buffer.NativeData);
         }
 
-        public DescriptorLease NativeDescriptor { get; }
+        public DescriptorAllocation NativeDescriptor { get; }
         internal override void Release(bool fromParent) => _references.Release(this);
     }
 
@@ -29,14 +29,14 @@ internal sealed unsafe partial class D3D12Backend
             D3D12Device device,
             D3D12Buffer buffer,
             in BufferSrvDesc description,
-            DescriptorLease descriptor)
+            DescriptorAllocation descriptor)
             : base(device, description)
         {
             NativeDescriptor = descriptor;
-            _references = new ViewReferences(device, descriptor, buffer.NativeLifetime);
+            _references = new ViewReferences(device, descriptor, buffer.NativeData);
         }
 
-        public DescriptorLease NativeDescriptor { get; }
+        public DescriptorAllocation NativeDescriptor { get; }
         internal override void Release(bool fromParent) => _references.Release(this);
     }
 
@@ -49,18 +49,18 @@ internal sealed unsafe partial class D3D12Backend
             D3D12Buffer buffer,
             D3D12Buffer? counter,
             in BufferUavDesc description,
-            DescriptorLease descriptor)
+            DescriptorAllocation descriptor)
             : base(device, description)
         {
             NativeDescriptor = descriptor;
             _references = new ViewReferences(
                 device,
                 descriptor,
-                buffer.NativeLifetime,
-                counter?.NativeLifetime);
+                buffer.NativeData,
+                counter?.NativeData);
         }
 
-        public DescriptorLease NativeDescriptor { get; }
+        public DescriptorAllocation NativeDescriptor { get; }
         internal override void Release(bool fromParent) => _references.Release(this);
     }
 
@@ -72,14 +72,14 @@ internal sealed unsafe partial class D3D12Backend
             D3D12Device device,
             D3D12TextureResource texture,
             in TextureSrvDesc description,
-            DescriptorLease descriptor)
+            DescriptorAllocation descriptor)
             : base(device, description)
         {
             NativeDescriptor = descriptor;
-            _references = new ViewReferences(device, descriptor, texture.NativeLifetime);
+            _references = new ViewReferences(device, descriptor, texture.NativeData);
         }
 
-        public DescriptorLease NativeDescriptor { get; }
+        public DescriptorAllocation NativeDescriptor { get; }
         internal override void Release(bool fromParent) => _references.Release(this);
     }
 
@@ -91,14 +91,14 @@ internal sealed unsafe partial class D3D12Backend
             D3D12Device device,
             D3D12TextureResource texture,
             in TextureUavDesc description,
-            DescriptorLease descriptor)
+            DescriptorAllocation descriptor)
             : base(device, description)
         {
             NativeDescriptor = descriptor;
-            _references = new ViewReferences(device, descriptor, texture.NativeLifetime);
+            _references = new ViewReferences(device, descriptor, texture.NativeData);
         }
 
-        public DescriptorLease NativeDescriptor { get; }
+        public DescriptorAllocation NativeDescriptor { get; }
         internal override void Release(bool fromParent) => _references.Release(this);
     }
 
@@ -110,15 +110,15 @@ internal sealed unsafe partial class D3D12Backend
             D3D12Device device,
             D3D12TextureResource texture,
             in ColorAttachmentViewDesc description,
-            DescriptorLease descriptor)
+            DescriptorAllocation descriptor)
             : base(device, description)
         {
             NativeDescriptor = descriptor;
             NativeResource = texture;
-            _references = new ViewReferences(device, descriptor, texture.NativeLifetime);
+            _references = new ViewReferences(device, descriptor, texture.NativeData);
         }
 
-        public DescriptorLease NativeDescriptor { get; }
+        public DescriptorAllocation NativeDescriptor { get; }
         internal D3D12TextureResource NativeResource { get; }
         internal override void Release(bool fromParent) => _references.Release(this);
     }
@@ -131,15 +131,15 @@ internal sealed unsafe partial class D3D12Backend
             D3D12Device device,
             D3D12TextureResource texture,
             in DepthStencilViewDesc description,
-            DescriptorLease descriptor)
+            DescriptorAllocation descriptor)
             : base(device, description)
         {
             NativeDescriptor = descriptor;
             NativeResource = texture;
-            _references = new ViewReferences(device, descriptor, texture.NativeLifetime);
+            _references = new ViewReferences(device, descriptor, texture.NativeData);
         }
 
-        public DescriptorLease NativeDescriptor { get; }
+        public DescriptorAllocation NativeDescriptor { get; }
         internal D3D12TextureResource NativeResource { get; }
         internal override void Release(bool fromParent) => _references.Release(this);
     }
@@ -151,14 +151,14 @@ internal sealed unsafe partial class D3D12Backend
         internal D3D12Sampler(
             D3D12Device device,
             in SamplerDesc description,
-            DescriptorLease descriptor)
+            DescriptorAllocation descriptor)
             : base(device, description)
         {
             NativeDescriptor = descriptor;
             _references = new ViewReferences(device, descriptor);
         }
 
-        public DescriptorLease NativeDescriptor { get; }
+        public DescriptorAllocation NativeDescriptor { get; }
         internal override void Release(bool fromParent) => _references.Release(this);
     }
 

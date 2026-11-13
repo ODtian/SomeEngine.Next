@@ -1,16 +1,13 @@
 #ifndef SOMEENGINE_RENDER_INSTANCE_LAYOUT_INCLUDED
 #define SOMEENGINE_RENDER_INSTANCE_LAYOUT_INCLUDED
 
-// Exact dense metadata layout for the currently cooked Cluster shader variant. ShaderAsset-cook
-// integration must emit one such document for each pipeline/material composition.
-static const uint RENDER_INSTANCE_METADATA_WORD_COUNT = 11u;
+// Dense metadata layout generated from the registered Cluster feature.
+static const uint RENDER_INSTANCE_METADATA_WORD_COUNT = 9u;
 static const uint RENDER_INSTANCE_METADATA_VECTOR_COUNT =
     (RENDER_INSTANCE_METADATA_WORD_COUNT + 3u) / 4u;
 
 struct RenderInstancePropertyMetadata
 {
-    // Constant-buffer scalar arrays have a 16-byte element stride. Packing into uint4
-    // vectors preserves the CPU-side dense uint-word ABI.
     uint4 PackedWords[RENDER_INSTANCE_METADATA_VECTOR_COUNT];
 };
 
@@ -21,16 +18,15 @@ uint LoadRenderInstanceMetadata(
     return metadata.PackedWords[wordIndex >> 2u][wordIndex & 3u];
 }
 
-static const uint CLUSTER_BLEND_OCCLUSION_METADATA_WORD = 0u;
-static const uint CLUSTER_BOUNDS_EXPANSION_METADATA_WORD = 1u;
-static const uint CLUSTER_BVH_ROOT_METADATA_WORD = 2u;
-static const uint CLUSTER_DEFORM_BOUNDS_METADATA_WORD = 3u;
-static const uint CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD = 4u;
-static const uint RENDER_CURRENT_TRANSFORM_METADATA_WORD = 5u;
-static const uint RENDER_PREVIOUS_TRANSFORM_METADATA_WORD = 6u;
-static const uint RENDER_DEPTH_CACHE_CLASS_METADATA_WORD = 7u;
-static const uint RENDER_FIRST_PERSON_METADATA_WORD = 8u;
-static const uint SKIN_BINDING_METADATA_WORD = 9u;
-static const uint RENDER_XRAY_METADATA_WORD = 10u;
+static const uint CLUSTER_BOUNDS_EXPANSION_METADATA_WORD = 0u;
+static const uint CLUSTER_BVH_ROOT_METADATA_WORD = 1u;
+static const uint CLUSTER_DEFORM_BOUNDS_METADATA_WORD = 2u;
+static const uint CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD = 3u;
+static const uint RENDER_CURRENT_TRANSFORM_METADATA_WORD = 4u;
+static const uint RENDER_PREVIOUS_TRANSFORM_METADATA_WORD = 5u;
+static const uint RENDER_DEPTH_CACHE_CLASS_METADATA_WORD = 6u;
+static const uint RENDER_FIRST_PERSON_METADATA_WORD = 7u;
+
+static const uint SKIN_BINDING_METADATA_WORD = 8u;
 
 #endif

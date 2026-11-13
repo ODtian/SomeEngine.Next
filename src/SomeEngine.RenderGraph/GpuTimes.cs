@@ -44,9 +44,9 @@ internal sealed class FrameGpuTimes(RenderGraph graph) : IDisposable
         foreach (QueueTimeQueries queue in _queues.Values)
         {
             if (queue.Count == 0) continue;
-            using CommandContextPool.CommandContextLease lease =
+            using CommandContextPool.CommandContextHandle handle =
                 graph.CommandContexts.Acquire(queue.Queue, false, "GPU time readback");
-            CommandContext context = lease.Context;
+            CommandContext context = handle.Context;
             graph.Backend.Begin(context);
             graph.Backend.ResolveQueries(context, queue.Pool!, 0, queue.Count,
                 queue.Readback!, new(0, queue.Count * queue.Pool!.ResultInfo.ResultStride));
@@ -58,7 +58,7 @@ internal sealed class FrameGpuTimes(RenderGraph graph) : IDisposable
         _receive = receive;
     }
 
-    // Called by the frame slot after every accepted submission, including resolves, completes.
+    // Called by the frame index after every accepted submission, including resolves, completes.
     internal void Collect()
     {
         Action<RenderGraphGpuTimes>? receive = _receive;
@@ -150,7 +150,7 @@ internal sealed class FrameGpuTimes(RenderGraph graph) : IDisposable
     }
 }
 
-internal sealed partial class FrameExecutor
+internal sealed partial class FrameRecording
 {
     private FrameGpuTimes? _gpuTimes;
     private FrameGpuTimes.PassTimeQueries[] _passTimes = [];
@@ -173,7 +173,7 @@ internal sealed partial class FrameExecutor
             _passTimes[pass] = _gpuTimes.Add(new(row.Identity), row.Label, row.Options.TimeGroup, row.Queue!);
         }
         _releaseTimes.Clear();
-        foreach (PendingQueueRelease release in _lateReleases)
+        foreach (QueueReleaseRequest release in _lateReleases)
             if (!_releaseTimes.ContainsKey(release.SourceQueue))
                 _releaseTimes.Add(release.SourceQueue,
                     _gpuTimes.Add(default, "Queue resource transfers", null, release.SourceQueue));
@@ -193,7 +193,7 @@ internal sealed partial class FrameExecutor
         _gpuTimes!.Resolve(completion => AddCompletion(_submittedCompletions, completion), _frame.Options.GpuTimes!);
         foreach (QueueCompletion completion in _submittedCompletions)
         {
-            int index = QueueSlot(completion.Queue);
+            int index = QueueIndex(completion.Queue);
             if (index < 0) continue;
             destination[index] = completion;
             _submittedQueues[index] = true;

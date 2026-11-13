@@ -6,11 +6,9 @@ internal sealed unsafe partial class VulkanBackend
 {
     private RhiSurface CreateSurfaceCore(in SurfaceDesc desc)
     {
-        ThrowIfDisposed();
+
         if (!OperatingSystem.IsWindows() || desc.Type != NativeWindowType.Win32)
             throw new PlatformNotSupportedException("The Vulkan backend currently requires a Win32 Surface.");
-        if (desc.WindowHandle == 0)
-            throw new ArgumentOutOfRangeException(nameof(desc));
         Win32SurfaceCreateInfoKHR createInfo = new()
         {
             SType = StructureType.Win32SurfaceCreateInfoKhr,
@@ -39,8 +37,6 @@ internal sealed unsafe partial class VulkanBackend
     private Swapchain CreateSwapchainCore(RhiDevice device, in SwapchainDesc desc)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
-        if (!nativeDevice.TryGetCapability(out Presentation? presentation) || presentation is null)
-            throw new NotSupportedException("The Device was not created with Presentation support.");
         VulkanSurface surface = RequireSurface(desc.Surface, nameof(desc));
         VulkanSwapchain swapchain = VulkanSwapchain.Create(nativeDevice, surface, desc);
         try
@@ -68,10 +64,8 @@ internal sealed unsafe partial class VulkanBackend
     private PresentStatus PresentCore(RhiQueue queue, in SwapchainImage image)
     {
         VulkanQueue nativeQueue = RequireQueue(queue, nameof(queue));
-        if (image.Lease is not VulkanSwapchainImageLease lease ||
-            !ReferenceEquals(lease.Swapchain.Device, nativeQueue.Device))
-            throw new ArgumentException("The SwapchainImage belongs to a different Vulkan Device.", nameof(image));
-        return lease.Present(nativeQueue, image.Sequence);
+        VulkanSwapchainImageUse handle = (VulkanSwapchainImageUse)image.ImageUse!;
+        return handle.Present(nativeQueue, image.Sequence);
     }
 
     private ReconfigureStatus ReconfigureCore(
@@ -83,29 +77,13 @@ internal sealed unsafe partial class VulkanBackend
     }
 
     private VulkanSurface RequireSurface(RhiSurface surface, string parameterName)
-    {
-        ArgumentNullException.ThrowIfNull(surface, parameterName);
-        if (surface is not VulkanSurface native || !ReferenceEquals(native.Backend, this))
-            throw new ArgumentException("The Surface belongs to a different graphics backend.", parameterName);
-        native.ThrowIfDisposed();
-        return native;
-    }
+=>(VulkanSurface)surface;
 
     private VulkanSwapchain RequireSwapchain(Swapchain swapchain, string parameterName)
-    {
-        ArgumentNullException.ThrowIfNull(swapchain, parameterName);
-        if (swapchain is not VulkanSwapchain native ||
-            native.Device is not VulkanDevice device ||
-            !ReferenceEquals(device.Backend, this))
-            throw new ArgumentException("The Swapchain belongs to a different graphics backend.", parameterName);
-        native.ThrowIfDisposed();
-        return native;
-    }
+=>(VulkanSwapchain)swapchain;
 
     private sealed class VulkanSurface : RhiSurface, IVulkanRetained
     {
-        private static readonly InvalidOperationException SwapchainDetachFailure =
-            new("A Vulkan Swapchain did not detach during Surface teardown.");
 
         private readonly VulkanBackend _backend;
         private readonly VulkanLifetime _lifetime;
@@ -128,7 +106,7 @@ internal sealed unsafe partial class VulkanBackend
         public void ReleaseNative() => _lifetime.Release();
         internal void RegisterSwapchain(VulkanSwapchain swapchain)
         {
-            ThrowIfDisposed();
+
             _swapchains.Add(swapchain);
         }
 
@@ -145,7 +123,7 @@ internal sealed unsafe partial class VulkanBackend
                 swapchain.SecondaryRegistryDrainNext = null;
                 swapchain.DisposeFromParent();
                 if (_swapchains.CompleteDrain(swapchain))
-                    swapchain.Device.RecordReleaseFailure(SwapchainDetachFailure);
+                    swapchain.Device.RecordReleaseFailure(new GraphicsException(GraphicsError.NativeFailure, "A Vulkan Swapchain did not detach during Surface teardown."));
             }
 
             if (_swapchains.HasRetainedFailures)
@@ -166,7 +144,9 @@ internal sealed unsafe partial class VulkanBackend
         private readonly uint _requestedImageCount;
         private VkSwapchain _native;
         private VulkanImageState[] _images = [];
-        private VulkanSwapchainImageLease[] _leases = [];
+        internal override IReadOnlyList<SwapchainImageUse> ImageUses => _imageUses;
+        internal override bool IsOutOfDate => Volatile.Read(ref _outOfDate);
+        private VulkanSwapchainImageUse[] _imageUses = [];
         private ulong _nextSequence;
         private bool _outOfDate;
 
@@ -187,7 +167,7 @@ internal sealed unsafe partial class VulkanBackend
             _surface.RetainNative();
             try
             {
-                _leases = CreateLeases(device, this, images.Length);
+                _imageUses = CreateImageUses(device, this, images.Length);
             }
             catch
             {
@@ -207,7 +187,7 @@ internal sealed unsafe partial class VulkanBackend
             VulkanSurface surface,
             in SwapchainDesc desc)
         {
-            ValidateDescription(desc);
+
             SwapchainSupport[] support = QuerySupport(device, surface);
             RequireConfiguration(desc.Config, support);
             VkSwapchain native = CreateNative(
@@ -255,23 +235,22 @@ internal sealed unsafe partial class VulkanBackend
                 image = default;
                 if (_outOfDate)
                     return SwapchainAcquireStatus.OutOfDate;
-                if (options.Timeout < TimeSpan.Zero && options.Timeout != Timeout.InfiniteTimeSpan)
-                    throw new ArgumentOutOfRangeException(nameof(options));
-                VulkanSwapchainImageLease? lease = FindAvailableLease();
-                if (lease is null)
+
+                VulkanSwapchainImageUse? handle = FindAvailableUse();
+                if (handle is null)
                     return SwapchainAcquireStatus.Timeout;
                 ulong timeout = options.Timeout == Timeout.InfiniteTimeSpan
                     ? ulong.MaxValue
                     : checked((ulong)options.Timeout.Ticks * 100);
                 if (_nextSequence == ulong.MaxValue)
-                    throw new OverflowException("Swapchain acquisition sequence exhausted.");
+                    throw new GraphicsException(GraphicsError.NativeFailure, "Swapchain acquisition sequence exhausted.");
                 ulong sequence = _nextSequence + 1;
                 uint imageIndex = 0;
                 Result result = _device.SwapchainApi.AcquireNextImage(
                     _device.Native,
                     _native,
                     timeout,
-                    lease.AcquireSemaphore,
+                    handle.AcquireSemaphore,
                     default,
                     &imageIndex);
                 if (result == Result.Timeout || result == Result.NotReady)
@@ -289,12 +268,12 @@ internal sealed unsafe partial class VulkanBackend
                         "vkAcquireNextImageKHR returned an invalid image index.");
                 }
                 _nextSequence = sequence;
-                lease.Begin(
+                handle.Begin(
                     sequence,
                     Info.Generation,
                     _images[checked((int)imageIndex)],
                     options.PreserveContents);
-                image = new SwapchainImage(lease, sequence);
+                image = new SwapchainImage(handle, sequence);
                 return SwapchainAcquireStatus.Success;
             }
         }
@@ -328,8 +307,8 @@ internal sealed unsafe partial class VulkanBackend
         {
             lock (_gate)
             {
-                foreach (VulkanSwapchainImageLease lease in _leases)
-                    lease.Invalidate(deviceLost: true);
+                foreach (VulkanSwapchainImageUse handle in _imageUses)
+                    handle.Invalidate(deviceLost: true);
             }
         }
 
@@ -339,21 +318,21 @@ internal sealed unsafe partial class VulkanBackend
                 _outOfDate = true;
         }
 
-        private VulkanSwapchainImageLease? FindAvailableLease()
+        private VulkanSwapchainImageUse? FindAvailableUse()
         {
-            foreach (VulkanSwapchainImageLease lease in _leases)
-                if (lease.CanAcquire)
-                    return lease;
+            foreach (VulkanSwapchainImageUse handle in _imageUses)
+                if (handle.CanAcquire)
+                    return handle;
             return null;
         }
 
         private void ReleaseGeneration()
         {
-            foreach (VulkanSwapchainImageLease lease in _leases)
-                lease.Release();
+            foreach (VulkanSwapchainImageUse handle in _imageUses)
+                handle.Release();
             foreach (VulkanImageState image in _images)
                 image.Release();
-            _leases = [];
+            _imageUses = [];
             _images = [];
         }
 
@@ -370,7 +349,7 @@ internal sealed unsafe partial class VulkanBackend
             SurfaceCapabilitiesKHR capabilities;
             ThrowIfFailed(
                 surfaceApi.GetPhysicalDeviceSurfaceCapabilities(
-                    device.PhysicalDevice,
+                    device.AdapterDevice,
                     surface.Native,
                     &capabilities),
                 "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
@@ -383,19 +362,17 @@ internal sealed unsafe partial class VulkanBackend
                     Math.Clamp(config.Width, capabilities.MinImageExtent.Width, capabilities.MaxImageExtent.Width),
                     Math.Clamp(config.Height, capabilities.MinImageExtent.Height, capabilities.MaxImageExtent.Height));
             ImageUsageFlags nativeUsages = ToNative(usages);
-            if ((nativeUsages & capabilities.SupportedUsageFlags) != nativeUsages)
-                throw new NotSupportedException("The Surface does not support the requested swapchain image usages.");
+
             uint family = device.GetQueue(QueueType.Graphics, 0).FamilyIndex;
             Silk.NET.Core.Bool32 presentSupported = false;
             ThrowIfFailed(
                 surfaceApi.GetPhysicalDeviceSurfaceSupport(
-                    device.PhysicalDevice,
+                    device.AdapterDevice,
                     family,
                     surface.Native,
                     &presentSupported),
                 "vkGetPhysicalDeviceSurfaceSupportKHR");
-            if (!presentSupported)
-                throw new NotSupportedException("The Device Graphics Queue cannot present to this Surface.");
+
             CompositeAlphaFlagsKHR composite = SelectCompositeAlpha(capabilities.SupportedCompositeAlpha);
             SwapchainCreateInfoKHR createInfo = new()
             {
@@ -488,16 +465,16 @@ internal sealed unsafe partial class VulkanBackend
             }
         }
 
-        private static VulkanSwapchainImageLease[] CreateLeases(
+        private static VulkanSwapchainImageUse[] CreateImageUses(
             VulkanDevice device,
             VulkanSwapchain swapchain,
             int count)
         {
-            var result = new VulkanSwapchainImageLease[count];
+            var result = new VulkanSwapchainImageUse[count];
             try
             {
                 for (int index = 0; index < result.Length; index++)
-                    result[index] = new VulkanSwapchainImageLease(
+                    result[index] = new VulkanSwapchainImageUse(
                         device,
                         swapchain,
                         CreateBinarySemaphore(device));
@@ -505,8 +482,8 @@ internal sealed unsafe partial class VulkanBackend
             }
             catch
             {
-                foreach (VulkanSwapchainImageLease? lease in result)
-                    lease?.Release();
+                foreach (VulkanSwapchainImageUse? handle in result)
+                    handle?.Release();
                 throw;
             }
         }
@@ -529,18 +506,24 @@ internal sealed unsafe partial class VulkanBackend
             KhrSurface api = device.Backend._surfaceApi!;
             uint formatCount = 0;
             ThrowIfFailed(
-                api.GetPhysicalDeviceSurfaceFormats(device.PhysicalDevice, surface.Native, &formatCount, null),
+                api.GetPhysicalDeviceSurfaceFormats(device.AdapterDevice, surface.Native, &formatCount, null),
                 "vkGetPhysicalDeviceSurfaceFormatsKHR(count)");
             SurfaceFormatKHR[] formats = new SurfaceFormatKHR[formatCount];
             fixed (SurfaceFormatKHR* pointer = formats)
-                ThrowIfFailed(api.GetPhysicalDeviceSurfaceFormats(device.PhysicalDevice, surface.Native, &formatCount, pointer), "vkGetPhysicalDeviceSurfaceFormatsKHR(data)");
+                ThrowIfFailed(
+                    api.GetPhysicalDeviceSurfaceFormats(device.AdapterDevice, surface.Native, &formatCount, pointer),
+                    "vkGetPhysicalDeviceSurfaceFormatsKHR(data)"
+                );
             uint modeCount = 0;
             ThrowIfFailed(
-                api.GetPhysicalDeviceSurfacePresentModes(device.PhysicalDevice, surface.Native, &modeCount, null),
+                api.GetPhysicalDeviceSurfacePresentModes(device.AdapterDevice, surface.Native, &modeCount, null),
                 "vkGetPhysicalDeviceSurfacePresentModesKHR(count)");
             PresentModeKHR[] modes = new PresentModeKHR[modeCount];
             fixed (PresentModeKHR* pointer = modes)
-                ThrowIfFailed(api.GetPhysicalDeviceSurfacePresentModes(device.PhysicalDevice, surface.Native, &modeCount, pointer), "vkGetPhysicalDeviceSurfacePresentModesKHR(data)");
+                ThrowIfFailed(
+                    api.GetPhysicalDeviceSurfacePresentModes(device.AdapterDevice, surface.Native, &modeCount, pointer),
+                    "vkGetPhysicalDeviceSurfacePresentModesKHR(data)"
+                );
             var result = new List<SwapchainSupport>();
             foreach (SurfaceFormatKHR format in formats)
             {
@@ -561,29 +544,19 @@ internal sealed unsafe partial class VulkanBackend
             return result.ToArray();
         }
 
-        private static void ValidateDescription(in SwapchainDesc desc)
-        {
-            ArgumentNullException.ThrowIfNull(desc.Surface);
-            if (desc.ImageCount < 2 || desc.ImageUsages == TextureUsages.None)
-                throw new ArgumentOutOfRangeException(nameof(desc));
-        }
-
         private static void RequireConfiguration(
             in SwapchainConfig config,
             ReadOnlySpan<SwapchainSupport> support)
         {
-            if (config.Width == 0 || config.Height == 0 || config.MaximumFrameLatency == 0)
-                throw new ArgumentOutOfRangeException(nameof(config));
+
             if (!Supports(config, support))
-                throw new NotSupportedException("The Surface does not support the requested swapchain configuration.");
+                throw new GraphicsException(GraphicsError.NativeFailure, "The surface does not support the requested swapchain configuration.");
         }
 
         internal uint IndexOf(VulkanImageState? image)
         {
             int index = Array.IndexOf(_images, image);
-            return index >= 0
-                ? checked((uint)index)
-                : throw new InvalidOperationException("The acquired image is no longer part of the swapchain.");
+            return unchecked((uint)index);
         }
 
         private static bool Supports(
@@ -612,19 +585,19 @@ internal sealed unsafe partial class VulkanBackend
             foreach (CompositeAlphaFlagsKHR value in preference)
                 if ((supported & value) != 0)
                     return value;
-            throw new NotSupportedException("The Surface exposes no supported composite-alpha mode.");
+            throw new GraphicsException(GraphicsError.NativeFailure, "The surface exposes no supported composite-alpha mode.");
         }
     }
 
     private readonly record struct VulkanSwapchainUse(
-        VulkanSwapchainImageLease Lease,
+        VulkanSwapchainImageUse Handle,
         ulong Sequence,
         ulong Generation);
 
     private sealed class VulkanImageState(VulkanTexture texture, VkSemaphore renderComplete)
     {
         private readonly object _gate = new();
-        private VulkanSwapchainImageLease? _currentLease;
+        private VulkanSwapchainImageUse? _currentUse;
         private ulong _currentSequence;
         private ulong _currentGeneration;
 
@@ -632,13 +605,13 @@ internal sealed unsafe partial class VulkanBackend
         internal VkSemaphore RenderComplete { get; } = renderComplete;
 
         internal void BeginAcquisition(
-            VulkanSwapchainImageLease lease,
+            VulkanSwapchainImageUse handle,
             ulong sequence,
             ulong generation)
         {
             lock (_gate)
             {
-                _currentLease = lease;
+                _currentUse = handle;
                 _currentSequence = sequence;
                 _currentGeneration = generation;
             }
@@ -648,13 +621,13 @@ internal sealed unsafe partial class VulkanBackend
         {
             lock (_gate)
             {
-                if (_currentLease is null)
+                if (_currentUse is null)
                 {
                     use = default;
                     return false;
                 }
                 use = new VulkanSwapchainUse(
-                    _currentLease,
+                    _currentUse,
                     _currentSequence,
                     _currentGeneration);
                 return true;
@@ -662,17 +635,17 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         internal void EndAcquisition(
-            VulkanSwapchainImageLease lease,
+            VulkanSwapchainImageUse handle,
             ulong sequence)
         {
             lock (_gate)
             {
-                if (!ReferenceEquals(_currentLease, lease) ||
+                if (!ReferenceEquals(_currentUse, handle) ||
                     _currentSequence != sequence)
                 {
                     return;
                 }
-                _currentLease = null;
+                _currentUse = null;
                 _currentSequence = 0;
                 _currentGeneration = 0;
             }
@@ -687,7 +660,7 @@ internal sealed unsafe partial class VulkanBackend
         }
     }
 
-    private sealed class VulkanSwapchainImageLease : SwapchainImageLease
+    private sealed class VulkanSwapchainImageUse : SwapchainImageUse
     {
         private readonly VulkanDevice _device;
         private VulkanImageState? _image;
@@ -695,7 +668,7 @@ internal sealed unsafe partial class VulkanBackend
         private ulong _submissionCompletion;
         private bool _inUse;
 
-        internal VulkanSwapchainImageLease(
+        internal VulkanSwapchainImageUse(
             VulkanDevice device,
             VulkanSwapchain swapchain,
             VkSemaphore acquireSemaphore)
@@ -706,8 +679,7 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         internal VkSemaphore AcquireSemaphore { get; }
-        internal VkSemaphore RenderComplete => _image?.RenderComplete
-            ?? throw new InvalidOperationException("The swapchain lease has no image.");
+        internal VkSemaphore RenderComplete => _image!.RenderComplete;
         internal bool InUse => _inUse;
         internal bool CanAcquire => !_inUse &&
             (_submissionQueue is null || _submissionQueue.GetCompletedValue() >= _submissionCompletion);
@@ -732,8 +704,7 @@ internal sealed unsafe partial class VulkanBackend
 
         internal bool ClaimSubmit(ulong sequence, VulkanQueue queue)
         {
-            if (!ReferenceEquals(queue.Device, _device) || queue.Type != QueueType.Graphics || queue.Index != 0)
-                throw new ArgumentException("Swapchain images require the Device Graphics Queue at index zero.", nameof(queue));
+
             return TryBeginSubmit(sequence);
         }
 
@@ -745,15 +716,13 @@ internal sealed unsafe partial class VulkanBackend
 
         internal PresentStatus Present(VulkanQueue queue, ulong sequence)
         {
-            ValidatePresentQueue(queue);
-            if (GetStatus(sequence) != SwapchainImageStatus.Submitted)
-                throw new InvalidOperationException("The SwapchainImage has not been submitted or was already presented.");
+
             VkSemaphore wait = RenderComplete;
             var owner = (VulkanSwapchain)Swapchain;
             VkSwapchain swapchain = owner.Native;
             uint imageIndex = owner.IndexOf(_image);
-            if (!TryBeginPresent(sequence))
-                throw new InvalidOperationException("The SwapchainImage has not been submitted or was already presented.");
+            _ = TryBeginPresent(sequence);
+
             PresentInfoKHR present = new()
             {
                 SType = StructureType.PresentInfoKhr,
@@ -790,7 +759,7 @@ internal sealed unsafe partial class VulkanBackend
                 case Result.ErrorOutOfDeviceMemory:
                     RestoreSubmittedAfterPresentFailure(sequence);
                     _device.ThrowIfDeviceCallFailed(result, "vkQueuePresentKHR");
-                    throw new InvalidOperationException("Unreachable Vulkan Present result handling path.");
+                    throw new GraphicsException(GraphicsError.NativeFailure, "Vulkan returned an unexpected present result.", nativeCode: (long)result);
                 case Result.ErrorDeviceLost:
                     _inUse = false;
                     Invalidate(deviceLost: true);
@@ -820,11 +789,6 @@ internal sealed unsafe partial class VulkanBackend
             _inUse = false;
         }
 
-        private void ValidatePresentQueue(VulkanQueue queue)
-        {
-            if (!ReferenceEquals(queue.Device, _device) || queue.Type != QueueType.Graphics || queue.Index != 0)
-                throw new ArgumentException("Swapchain presentation requires the Device Graphics Queue at index zero.", nameof(queue));
-        }
     }
 
     private static ColorSpaceKHR ToNative(ColorSpace colorSpace) => colorSpace switch
@@ -832,7 +796,7 @@ internal sealed unsafe partial class VulkanBackend
         ColorSpace.Srgb => ColorSpaceKHR.SpaceSrgbNonlinearKhr,
         ColorSpace.ScRgb => ColorSpaceKHR.SpaceExtendedSrgbLinearExt,
         ColorSpace.Hdr10 => ColorSpaceKHR.SpaceHdr10ST2084Ext,
-        _ => throw new ArgumentOutOfRangeException(nameof(colorSpace)),
+        _ => default,
     };
 
     private static PresentModeKHR ToNative(PresentType present) => present switch
@@ -840,7 +804,7 @@ internal sealed unsafe partial class VulkanBackend
         PresentType.Immediate => PresentModeKHR.ImmediateKhr,
         PresentType.Mailbox => PresentModeKHR.MailboxKhr,
         PresentType.Fifo => PresentModeKHR.FifoKhr,
-        _ => throw new ArgumentOutOfRangeException(nameof(present)),
+        _ => default,
     };
 
     private static bool TryFromNative(ColorSpaceKHR native, out ColorSpace result)

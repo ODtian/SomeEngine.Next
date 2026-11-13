@@ -1,11 +1,19 @@
-#include "cluster_structures.slang"
-#include "common.slang"
+__exported import cluster_structures;
+__exported import common;
 #include "cluster_instance_properties.slang"
-#include "cluster_view_access.slang"
-#include "cluster_target_policy_contract.slang"
-#include "resource_effects.slang"
-#include "wave_aggregation.slang"
-#include "wave_queue.slang"
+__exported import cluster_view_access;
+#include "cluster_target_policy.slang"
+__exported import resource_effects;
+__exported import wave_aggregation;
+__exported import wave_queue;
+__exported import cluster_bin_common;
+
+StructuredBuffer<uint> ClusterRasterStages;
+StructuredBuffer<uint2> LayerCullMaterials;
+struct LayerCullParametersData { uint TileSize; uint HardwareWindowTiles; uint2 Padding; };
+ConstantBuffer<LayerCullParametersData> LayerCullParameters;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWStructuredBuffer<uint4> LayerClusterTileWindows;
 
 #ifndef CLUSTER_PERSISTENT_CULL
 StructuredBuffer<ClusterViewUniforms> Views;
@@ -56,6 +64,31 @@ RWByteAddressBuffer PhaseDrawArgs;
 StructuredBuffer<ClusterViewUniforms> PolicyClusterViews;
 #endif
 
+bool ClusterHasTargetMaterials(uint pageOffset, uint clusterID, uint instanceID,
+    bool shadowPages, bool layerTiles, out bool clipByOpaqueDepth)
+{
+    clipByOpaqueDepth = true;
+    if (shadowPages) return true;
+    uint cluster = pageOffset + PageHeap.Load(pageOffset + 16u) + clusterID * PACKED_CLUSTER_STRIDE_BYTES;
+    uint triangleCount = (PageHeap.Load(cluster + 60u) >> 8u) & 255u;
+    ClusterMaterialRanges materials = LoadClusterMaterialRanges(PageHeap, cluster, pageOffset);
+    uint offset = LoadClusterMaterialSlotOffset(InstanceData,
+        LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD), instanceID);
+    uint capacity, stride;
+    ClusterRasterStages.GetDimensions(capacity, stride);
+    bool accepts = false;
+    uint count = ClusterMaterialRangeCount(materials, triangleCount);
+    for (uint index = 0u; index < count; index++)
+    {
+        uint2 range = ClusterMaterialRange(PageHeap, materials, triangleCount, index);
+        uint stage = GetStageSlot(ClusterRasterStages, offset, range.y, capacity);
+        if (stage == SLOT_INVALID || ((stage & 0x08000000u) != 0u) != layerTiles) continue;
+        accepts = true;
+        if (layerTiles) clipByOpaqueDepth = clipByOpaqueDepth && (LayerCullMaterials[offset + range.y].y & 256u) != 0u;
+    }
+    return accepts;
+}
+
 float3 LoadFloat3(ByteAddressBuffer buffer, uint offset)
 {
     return asfloat(uint3(
@@ -97,7 +130,7 @@ PackedCluster LoadCluster(uint pageOffset, uint clusterIndex)
     return c;
 }
 
-#include "cluster_hiz_shared.slang"
+__exported import cluster_hiz_shared;
 #include "cluster_deform_bounds.slang"
 
 bool PassesLODFilter(
@@ -160,7 +193,7 @@ bool ProjectClusterAabb(
     out float2 maxUv,
     out float nearDepth,
     out uint mipLevel,
-    uint depthCacheClass)
+    uint depthCacheClass, bool shadowPages = false)
 {
     if (worldBounds.VertexCount == 0u)
     {
@@ -171,7 +204,7 @@ bool ProjectClusterAabb(
         return true;
     }
 
-    if (!usePrev && !ClusterTargetPolicyWorldDepthAccepts(worldBounds.Min, worldBounds.Max, view, depthCacheClass))
+    if (!usePrev && shadowPages && !ClusterTargetPolicyWorldDepthAccepts(worldBounds.Min, worldBounds.Max, view, depthCacheClass))
     {
         minUv = 0.0.xx;
         maxUv = 0.0.xx;
@@ -193,24 +226,25 @@ struct ClusterScreenBounds
     float NearDepth;
     uint MipLevel;
     bool DepthAccepted;
+    bool ClipByOpaqueDepth;
 };
 
 ClusterScreenBounds ProjectClusterScreenBounds(ClusterWorldBounds worldBounds,
     bool usePrev, ClusterViewUniforms view,
-    uint depthCacheClass = 1u)
+    uint depthCacheClass = 1u, bool shadowPages = false)
 {
-    ClusterScreenBounds bounds;
+    ClusterScreenBounds bounds = (ClusterScreenBounds)0;
     bounds.DepthAccepted = ProjectClusterAabb(worldBounds, usePrev, view,
-        bounds.MinUv, bounds.MaxUv, bounds.NearDepth, bounds.MipLevel, depthCacheClass);
+        bounds.MinUv, bounds.MaxUv, bounds.NearDepth, bounds.MipLevel, depthCacheClass, shadowPages);
     return bounds;
 }
 
 bool IsOccludedByHiZ(ClusterScreenBounds bounds, bool usePrev, uint viewIndex, ClusterViewUniforms view,
-    uint depthCacheClass)
+    uint depthCacheClass, bool shadowPages = false)
 {
     if (view.CullingEnabled == 0u || view.HiZMipCount == 0u)
         return false;
-    if (view.TargetPolicy != 0u)
+    if (shadowPages)
         return ClusterTargetPolicyScreenBoundsOccluded(bounds.MinUv, bounds.MaxUv, bounds.NearDepth, usePrev, view, depthCacheClass);
     float hizDepth = SampleHiZMax(HiZTexture, bounds.MinUv, bounds.MaxUv, bounds.MipLevel, viewIndex, view);
     float epsilon = (abs(bounds.NearDepth) + abs(hizDepth) + 1.0) * 9.5367431640625e-7;
@@ -259,7 +293,7 @@ void AppendVisibleWindow(
     uint2 rasterWindow,
     uint depthBucket,
     bool isSW,
-    uint maxCandidates, uint flags, bool targetFilters)
+    uint maxCandidates, uint flags, bool targetFilters, bool layerTiles = false, uint4 tileWindow = 0u.xxxx)
 {
     CullDrawArgs base0 = LoadCullDrawArgs(BaseDrawArgs0, 0u);
     CullDrawArgs base1 = LoadCullDrawArgs(BaseDrawArgs1, 0u);
@@ -306,22 +340,24 @@ void AppendVisibleWindow(
     uint outIdx = routeBase + WaveMaskPrefix(routeMask, lane);
     if (isSW)
     {
-        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters).TargetPolicy != 0u)
+        if (targetFilters)
             AddClusterWorkMetric(56u, 1u);
         uint globalIdx = baseSWCount + outIdx;
         if (globalIdx < maxCandidates)
         {
             VisibleClusters[globalIdx] = MakeVisibleCluster(MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex), rasterWindow, depthBucket, 1u | flags);
+            if (layerTiles) LayerClusterTileWindows[globalIdx] = tileWindow;
         }
     }
     else
     {
-        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters).TargetPolicy != 0u)
+        if (targetFilters)
             AddClusterWorkMetric(40u, 1u);
         uint hwIdx = maxCandidates - 1 - baseHWCount - outIdx;
         if (baseHWCount + outIdx < maxCandidates)
         {
             VisibleClusters[hwIdx] = MakeVisibleCluster(MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex), rasterWindow, depthBucket, flags);
+            if (layerTiles) LayerClusterTileWindows[hwIdx] = tileWindow;
         }
     }
 }
@@ -373,8 +409,8 @@ bool LoadAndFilterCandidate(
     out uint2 rasterWindow,
     out ClusterWorldBounds worldBounds,
     out ClusterScreenBounds currentBounds,
-    bool targetFilters = true,
-    bool currentProjection = true)
+    bool targetFilters = false,
+    bool currentProjection = true, bool layerTiles = false)
 {
     pageOffset = 0;
     clusterID = 0;
@@ -394,11 +430,13 @@ bool LoadAndFilterCandidate(
     clusterID = DrawRequestClusterID(candidate);
     instanceID = candidate.InstanceID;
     viewIndex = DrawRequestViewIndex(candidate);
+    bool clipByOpaqueDepth;
+    if (!ClusterHasTargetMaterials(pageOffset, clusterID, instanceID, targetFilters, layerTiles, clipByOpaqueDepth)) return false;
     view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters);
     view = ApplyClusterInstanceBounds(MaterialBounds, InstanceData, InstanceProperties, instanceID, view);
     if (!IsInstanceVisibleToView(LoadInstanceFirstPerson(InstanceData, InstanceProperties, instanceID), view)) return false;
     view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
-    if (view.TargetPolicy != 0u) AddClusterWorkMetric(8u, 1u);
+    if (targetFilters) AddClusterWorkMetric(8u, 1u);
 
     cluster = LoadCluster(pageOffset, clusterID);
     float lodError = ApplyDrawClusterBounds(cluster, (PageHeap.Load(pageOffset + 44u) >> 1u) + clusterID, instanceID, false);
@@ -416,19 +454,19 @@ bool LoadAndFilterCandidate(
     if (!PassesLODFilter(cluster, t, view, lodError))
         return false;
 
-    uint depthCacheClass = view.TargetPolicy != 0u
+    uint depthCacheClass = targetFilters
         ? LoadTargetDepthCacheClass(instanceID) : 1u;
     if (view.CullingEnabled != 0u)
     {
         worldBounds = TransformClusterBounds(cluster, t, boundsExpansion);
         if (currentProjection)
         {
-            currentBounds = ProjectClusterScreenBounds(worldBounds, false, view, depthCacheClass);
+            currentBounds = ProjectClusterScreenBounds(worldBounds, false, view, depthCacheClass, targetFilters);
             if (!currentBounds.DepthAccepted)
                 return false;
         }
     }
-    if (view.TargetPolicy != 0u && !ClusterTargetPolicyRasterBoundsWindow(
+    if (targetFilters && !ClusterTargetPolicyRasterBoundsWindow(
             currentBounds.MinUv, currentBounds.MaxUv, view, rasterWindow,
             depthCacheClass, ClusterTargetPolicyRequiredPageFlags(currentBounds.NearDepth, view)))
         return false;
@@ -437,12 +475,14 @@ bool LoadAndFilterCandidate(
         currentBounds = (ClusterScreenBounds)0;
         currentBounds.MaxUv = 1.0.xx;
     }
+    currentBounds.ClipByOpaqueDepth = clipByOpaqueDepth;
     return true;
 }
 
 #if CLUSTER_CULL_PHASE == 2
 void AppendVisibleWindow(uint pageOffset, uint clusterID, uint instanceID,
-    uint viewIndex, uint2 rasterWindow, uint depthBucket, bool isSW, uint maxCandidates, uint flags, bool targetFilters);
+    uint viewIndex, uint2 rasterWindow, uint depthBucket, bool isSW, uint maxCandidates, uint flags, bool targetFilters,
+    bool layerTiles = false, uint4 tileWindow = 0u.xxxx);
 #endif
 
 // Hardware work is bounded by the target's raster window, independently of
@@ -450,15 +490,25 @@ void AppendVisibleWindow(uint pageOffset, uint clusterID, uint instanceID,
 void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
     uint viewIndex, uint2 rasterWindow, bool isSW, uint maxCandidates,
     ClusterScreenBounds currentBounds, PackedCluster cluster, RenderInstanceTransform transform,
-    bool targetFilters = true)
+    bool targetFilters = false, bool layerTiles = false)
 {
     ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters);
     uint depthBucket = ClusterDepthBucket(cluster, transform, view);
-    uint requiredPageFlags = ClusterTargetPolicyRequiredPageFlags(currentBounds.NearDepth, view);
+    uint requiredPageFlags = targetFilters ? ClusterTargetPolicyRequiredPageFlags(currentBounds.NearDepth, view) : 0u;
     uint flags = requiredPageFlags != 0u ? 2u : 0u;
-    if (view.TargetPolicy == 0u)
+    if (layerTiles)
     {
-        if (view.TargetPolicy != 0u) AddClusterWorkMetric(48u, 1u);
+        float2 pixels = float2(view.ScreenWidth, view.ScreenHeight);
+        float tileSize = float(LayerCullParameters.TileSize);
+        uint2 first = uint2(floor(saturate(currentBounds.MinUv) * pixels / tileSize));
+        uint2 last = uint2(ceil(saturate(currentBounds.MaxUv) * pixels / tileSize));
+        AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, 0u.xx, depthBucket,
+            isSW, maxCandidates, 0u, false, true, uint4(first, last));
+        return;
+    }
+    if (!targetFilters)
+    {
+        if (targetFilters) AddClusterWorkMetric(48u, 1u);
         AppendVisibleWindow(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, depthBucket, isSW, maxCandidates, flags, targetFilters);
         return;
     }
@@ -496,11 +546,11 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
 }
 
 #if CLUSTER_CULL_PHASE == 1
-void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters)
+void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters, bool layerTiles)
 {
     // Target windows and the post-HiZ pass consume current bounds immediately.
     // Primary main needs them only after surviving previous-frame occlusion.
-    bool currentProjection = targetFilters;
+    bool currentProjection = targetFilters || layerTiles;
 #ifdef CLUSTER_PERSISTENT_CULL
     currentProjection = currentProjection || TraversalLevel.TraversalMode == 2u;
 #endif
@@ -527,20 +577,20 @@ void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters)
             boundsExpansion,
             rasterWindow,
             worldBounds,
-            currentBounds, targetFilters, currentProjection);
+            currentBounds, targetFilters, currentProjection, layerTiles);
     if (!valid)
         return;
 
 #ifdef CLUSTER_PERSISTENT_CULL
     if (TraversalLevel.TraversalMode == 2u)
     {
-        if (KeepBlendOcclusion(InstanceData, InstanceProperties, instanceID, view) || !IsOccludedByHiZ(currentBounds, false, viewIndex, view,
-                view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u))
+        if ((layerTiles && !currentBounds.ClipByOpaqueDepth) || !IsOccludedByHiZ(currentBounds, false, layerTiles ? view.TargetViewIndex : viewIndex, view,
+                targetFilters ? LoadTargetDepthCacheClass(instanceID) : 1u, targetFilters))
         {
             bool software = ShouldUseSWRaster(currentBounds.MinUv, currentBounds.MaxUv, currentBounds.NearDepth,
                 view, cluster, t, boundsExpansion);
             AppendVisible(pageOffset, clusterID, instanceID, viewIndex, rasterWindow, software,
-                view.MaxCandidates, currentBounds, cluster, t, targetFilters);
+                view.MaxCandidates, currentBounds, cluster, t, targetFilters, layerTiles);
         }
         return;
     }
@@ -548,16 +598,16 @@ void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters)
     ClusterScreenBounds bounds = currentBounds;
     bool occluded = false;
     if (view.HasPrevHistory != 0u && view.CullingEnabled != 0u &&
-        !KeepBlendOcclusion(InstanceData, InstanceProperties, instanceID, view))
+        (!layerTiles || currentBounds.ClipByOpaqueDepth))
     {
         PackedCluster previousCluster = LoadCluster(pageOffset, clusterID);
         ApplyDrawClusterBounds(previousCluster, (PageHeap.Load(pageOffset + 44u) >> 1u) + clusterID, instanceID, true);
         RenderInstanceTransform previous = LoadRenderTransform(InstanceData,
             LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instanceID);
         ClusterWorldBounds previousBounds = TransformClusterBounds(previousCluster, previous, boundsExpansion);
-        bounds = ProjectClusterScreenBounds(previousBounds, true, view);
+        bounds = ProjectClusterScreenBounds(previousBounds, true, view, 1u, targetFilters);
         occluded = IsOccludedByHiZ(bounds, true, viewIndex, view,
-            view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u);
+            targetFilters ? LoadTargetDepthCacheClass(instanceID) : 1u, targetFilters);
     }
     // Missing history cannot occlude geometry. Draw it now; only actual previous-frame
     // occlusion belongs in the second-pass candidate list.
@@ -569,7 +619,7 @@ void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters)
     else
     {
         if (!currentProjection && view.CullingEnabled != 0u)
-            currentBounds = ProjectClusterScreenBounds(worldBounds, false, view);
+            currentBounds = ProjectClusterScreenBounds(worldBounds, false, view, 1u, targetFilters);
         ClusterScreenBounds rasterBounds = currentBounds;
         bool isSW = ShouldUseSWRaster(rasterBounds.MinUv, rasterBounds.MaxUv, rasterBounds.NearDepth, view, cluster, t, boundsExpansion);
         AppendVisible(
@@ -580,16 +630,16 @@ void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters)
             rasterWindow,
             isSW,
             view.MaxCandidates,
-            currentBounds, cluster, t, targetFilters);
+            currentBounds, cluster, t, targetFilters, layerTiles);
     }
 }
 
-void CullClusterCandidate(uint candidateIndex, bool targetFilters = true)
+void CullClusterCandidate(uint candidateIndex, bool targetFilters = true, bool layerTiles = false)
 {
     uint capacity, stride;
     CandidateClusters.GetDimensions(capacity, stride);
     if (candidateIndex >= min(CandidateCount[0], capacity)) return;
-    CullClusterCandidateData(CandidateClusters[candidateIndex], targetFilters);
+    CullClusterCandidateData(CandidateClusters[candidateIndex], targetFilters, layerTiles);
 }
 
 #ifndef CLUSTER_PERSISTENT_CULL
@@ -610,7 +660,7 @@ void AppendVisibleWindow(
     uint2 rasterWindow,
     uint depthBucket,
     bool isSW,
-    uint maxCandidates, uint flags, bool targetFilters)
+    uint maxCandidates, uint flags, bool targetFilters, bool layerTiles, uint4 tileWindow)
 {
     uint localIdx;
     CullDrawArgs base0 = LoadCullDrawArgs(BaseDrawArgs0, 0u);
@@ -653,22 +703,24 @@ void AppendVisibleWindow(
     localIdx = routeBase + WaveMaskPrefix(routeMask, lane);
     if (isSW)
     {
-        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters).TargetPolicy != 0u)
+        if (targetFilters)
             AddClusterWorkMetric(56u, 1u);
         uint globalIdx = baseSWCount + localIdx;
         if (globalIdx < maxCandidates)
         {
             VisibleClusters[globalIdx] = MakeVisibleCluster(MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex), rasterWindow, depthBucket, 1u | flags);
+            if (layerTiles) LayerClusterTileWindows[globalIdx] = tileWindow;
         }
     }
     else
     {
-        if (LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters).TargetPolicy != 0u)
+        if (targetFilters)
             AddClusterWorkMetric(40u, 1u);
         uint hwIdx = maxCandidates - 1 - baseHWCount - localIdx;
         if (localIdx < maxCandidates)
         {
             VisibleClusters[hwIdx] = MakeVisibleCluster(MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex), rasterWindow, depthBucket, flags);
+            if (layerTiles) LayerClusterTileWindows[hwIdx] = tileWindow;
         }
     }
 }
@@ -677,6 +729,7 @@ void AppendVisibleWindow(
 [numthreads(64, 1, 1)]
 void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
 {
+    static const bool targetFilters = false;
     uint capacity, stride;
     CandidateClusters.GetDimensions(capacity, stride);
     if (dispatchThreadID.x >= min(CandidateCount[0], capacity)) return;
@@ -707,9 +760,8 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
     if (!valid)
         return;
 
-    bool occluded = !KeepBlendOcclusion(InstanceData, InstanceProperties, instanceID, view) &&
-        IsOccludedByHiZ(currentBounds, false, viewIndex, view,
-            view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u);
+    bool occluded = IsOccludedByHiZ(currentBounds, false, viewIndex, view,
+            targetFilters ? LoadTargetDepthCacheClass(instanceID) : 1u, targetFilters);
     if (!occluded)
     {
         bool isSW = ShouldUseSWRaster(currentBounds.MinUv, currentBounds.MaxUv, currentBounds.NearDepth, view, cluster, t, boundsExpansion);
@@ -726,4 +778,4 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
 }
 #endif
 
-#include "cluster_work_status.slang"
+__exported import cluster_work_status;

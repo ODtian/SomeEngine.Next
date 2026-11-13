@@ -4,22 +4,17 @@ using NativeTextureBarrier = Silk.NET.Direct3D12.TextureBarrier;
 using NativeResourceBarrier = Silk.NET.Direct3D12.ResourceBarrier;
 
 namespace SomeEngine.Graphics.Direct3D12;
-
 internal sealed unsafe partial class D3D12Backend
 {
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     public void Barrier(CommandContext context, in MemoryBarrier barrier)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiBarriers);
-        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12CommandContext command = ((D3D12CommandContext)context);
+        command.BeginPublicCall();
         if (command.EnhancedBarriers)
         {
-            ResolveBarrierSyncs(
-                barrier.SyncBefore,
-                barrier.SyncAfter,
-                barrier.Phase,
-                out BarrierSync syncBefore,
-                out BarrierSync syncAfter);
+            ResolveBarrierSyncs(barrier.SyncBefore, barrier.SyncAfter, barrier.Phase, out BarrierSync syncBefore, out BarrierSync syncAfter);
             GlobalBarrier native = new()
             {
                 SyncBefore = syncBefore,
@@ -31,49 +26,36 @@ internal sealed unsafe partial class D3D12Backend
             {
                 Type = BarrierType.Global,
                 NumBarriers = 1,
-                Anonymous = new BarrierGroupUnion { PGlobalBarriers = &native },
+                Anonymous = new BarrierGroupUnion
+                {
+                    PGlobalBarriers = &native
+                },
             };
-            D3D12CommandListFastCalls.Barrier(command.List, 1, &group);
+            D3D12CommandListFastCalls.Barrier(command, command.List, 1, &group);
             return;
         }
 
-        if (barrier.Phase != BarrierPhase.Complete)
-        {
-            throw new NotSupportedException(
-                "Split memory barriers require D3D12 enhanced-barrier support.");
-        }
         EncodeLegacyMemoryBarrier(command, barrier);
     }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    private static void EncodeLegacyMemoryBarrier(
-        D3D12CommandContext command,
-        in MemoryBarrier barrier)
+    private static void EncodeLegacyMemoryBarrier(D3D12CommandContext command, in MemoryBarrier barrier)
     {
-        NativeResourceBarrier legacy = NeedsUavOrdering(
-            barrier.AccessBefore,
-            barrier.AccessAfter)
-            ? CreateLegacyUavBarrier(null)
-            : CreateLegacyAliasingBarrier(null, null);
-        D3D12CommandListFastCalls.ResourceBarrier(command.List, 1, &legacy);
+        NativeResourceBarrier legacy = NeedsUavOrdering(barrier.AccessBefore, barrier.AccessAfter) ? CreateLegacyUavBarrier(null) : CreateLegacyAliasingBarrier(null, null);
+        D3D12CommandListFastCalls.ResourceBarrier(command, command.List, 1, &legacy);
     }
 
     public void Barrier(CommandContext context, in BufferBarrier barrier)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiBarriers);
-        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12CommandContext command = ((D3D12CommandContext)context);
+        command.BeginPublicCall();
         D3D12Buffer buffer = RequireBuffer(barrier.Buffer);
-        command.PrepareCaptures(1, 0, 1);
-        command.Capture(buffer);
-        if (command.EnhancedBarriers && BufferBarrierIsImplicit(barrier)) return;
+        if (command.EnhancedBarriers && BufferBarrierIsImplicit(barrier))
+            return;
         if (command.EnhancedBarriers)
         {
-            ResolveBarrierSyncs(
-                barrier.SyncBefore,
-                barrier.SyncAfter,
-                barrier.Phase,
-                out BarrierSync syncBefore,
-                out BarrierSync syncAfter);
+            ResolveBarrierSyncs(barrier.SyncBefore, barrier.SyncAfter, barrier.Phase, out BarrierSync syncBefore, out BarrierSync syncAfter);
             NativeBufferBarrier native = new(
                 syncBefore,
                 syncAfter,
@@ -81,9 +63,10 @@ internal sealed unsafe partial class D3D12Backend
                 ToBarrierAccess(barrier.AccessAfter),
                 buffer.Native,
                 0,
-                buffer.Info.Size);
+                buffer.Info.Size
+            );
             BarrierGroup group = new(BarrierType.Buffer, 1, pBufferBarriers: &native);
-            D3D12CommandListFastCalls.Barrier(command.List, 1, &group);
+            D3D12CommandListFastCalls.Barrier(command, command.List, 1, &group);
             return;
         }
 
@@ -92,26 +75,22 @@ internal sealed unsafe partial class D3D12Backend
             ToLegacyState(command.QueueType, barrier.SyncBefore, barrier.AccessBefore),
             ToLegacyState(command.QueueType, barrier.SyncAfter, barrier.AccessAfter),
             uint.MaxValue,
-            ToLegacyBarrierFlags(barrier.Phase));
-        D3D12CommandListFastCalls.ResourceBarrier(command.List, 1, &legacy);
+            ToLegacyBarrierFlags(barrier.Phase)
+        );
+        D3D12CommandListFastCalls.ResourceBarrier(command, command.List, 1, &legacy);
     }
 
     public void Barrier(CommandContext context, in TextureBarrier barrier)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiBarriers);
-        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12CommandContext command = ((D3D12CommandContext)context);
+        command.BeginPublicCall();
         D3D12TextureResource texture = RequireTexture(barrier.Texture);
-        command.PrepareCaptures(1, 0, 1);
         command.PrepareSwapchainUses(1);
-        command.Capture(texture);
+        command.RecordSwapchainImage(texture);
         if (command.EnhancedBarriers)
         {
-            ResolveBarrierSyncs(
-                barrier.SyncBefore,
-                barrier.SyncAfter,
-                barrier.Phase,
-                out BarrierSync syncBefore,
-                out BarrierSync syncAfter);
+            ResolveBarrierSyncs(barrier.SyncBefore, barrier.SyncAfter, barrier.Phase, out BarrierSync syncBefore, out BarrierSync syncAfter);
             EncodeEnhancedTextureBarriers(
                 command,
                 texture,
@@ -122,7 +101,8 @@ internal sealed unsafe partial class D3D12Backend
                 ToBarrierAccess(barrier.AccessAfter),
                 barrier.LayoutBefore,
                 barrier.LayoutAfter,
-                TextureBarrierFlags.None);
+                TextureBarrierFlags.None
+            );
             command.RecordSwapchainState(texture, barrier.LayoutAfter, barrier.AccessAfter);
             return;
         }
@@ -131,36 +111,20 @@ internal sealed unsafe partial class D3D12Backend
             command,
             texture,
             barrier.Range,
-            ToLegacyState(
-                command.QueueType,
-                barrier.SyncBefore,
-                barrier.LayoutBefore,
-                barrier.AccessBefore),
-            ToLegacyState(
-                command.QueueType,
-                barrier.SyncAfter,
-                barrier.LayoutAfter,
-                barrier.AccessAfter),
-            ToLegacyBarrierFlags(barrier.Phase));
+            ToLegacyState(command.QueueType, barrier.SyncBefore, barrier.LayoutBefore, barrier.AccessBefore),
+            ToLegacyState(command.QueueType, barrier.SyncAfter, barrier.LayoutAfter, barrier.AccessAfter),
+            ToLegacyBarrierFlags(barrier.Phase)
+        );
         command.RecordSwapchainState(texture, barrier.LayoutAfter, barrier.AccessAfter);
     }
 
     public void Barrier(CommandContext context, in AliasingBarrier barrier)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiBarriers);
-        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
-        if (barrier.Before.IsEmpty && barrier.After.IsEmpty)
-            throw new ArgumentException(
-                "AliasingBarrier requires at least one resource.",
-                nameof(barrier));
-        foreach (ref readonly AliasingResource resource in barrier.Before)
-            RequireValidAliasingResource(resource);
-        foreach (ref readonly AliasingResource resource in barrier.After)
-            RequireValidAliasingResource(resource);
+        D3D12CommandContext command = ((D3D12CommandContext)context);
+        command.BeginPublicCall();
         int aliasCount = checked(barrier.Before.Length + barrier.After.Length);
-        command.PrepareCaptures(aliasCount, 0, aliasCount);
         command.PrepareSwapchainUses(aliasCount);
-
         if (command.EnhancedBarriers)
         {
             // Complete memory visibility at the resource switch; subsequent accesses
@@ -168,7 +132,7 @@ internal sealed unsafe partial class D3D12Backend
             EncodeEnhancedAliasingBatches(command, barrier.Before, barrier.After);
             GlobalBarrier aliasMemory = new(BarrierSync.All, BarrierSync.All, BarrierAccess.Common, BarrierAccess.Common);
             BarrierGroup aliasGroup = new(BarrierType.Global, 1, pGlobalBarriers: &aliasMemory);
-            D3D12CommandListFastCalls.Barrier(command.List, 1, &aliasGroup);
+            D3D12CommandListFastCalls.Barrier(command, command.List, 1, &aliasGroup);
             return;
         }
 
@@ -188,46 +152,42 @@ internal sealed unsafe partial class D3D12Backend
             if (!barrier.After.IsEmpty)
                 after = GetAliasingNativeResource(barrier.After[0].Resource, command);
         }
+
         NativeResourceBarrier native = CreateLegacyAliasingBarrier(before, after);
-        D3D12CommandListFastCalls.ResourceBarrier(command.List, 1, &native);
+        D3D12CommandListFastCalls.ResourceBarrier(command, command.List, 1, &native);
     }
 
     // SYNC_NONE/NO_ACCESS identifies an initial use in the execution scope.
     // D3D12 buffers can be accessed initially without an enhanced barrier.
-    private static bool BufferBarrierIsImplicit(in BufferBarrier barrier) =>
-        barrier.Phase == BarrierPhase.Complete && barrier.SyncBefore == PipelineSync.None &&
-        barrier.AccessBefore == ResourceAccess.NoAccess;
-
+    private static bool BufferBarrierIsImplicit(in BufferBarrier barrier) => barrier.Phase == BarrierPhase.Complete && barrier.SyncBefore == PipelineSync.None && barrier.AccessBefore == ResourceAccess.NoAccess;
     public void Barrier(CommandContext context, in QueueRelease barrier)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiBarriers);
-        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12CommandContext command = ((D3D12CommandContext)context);
+        command.BeginPublicCall();
         if (barrier.Resource is Buffer publicBuffer)
         {
             D3D12Buffer buffer = RequireBuffer(publicBuffer);
             // Buffer access is implicitly finished/flushed at ExecuteCommandLists
             // completion, and there is no queue-specific buffer layout to transfer.
-            command.PrepareCaptures(1, 0, 1);
-            command.Capture(buffer);
-            if (command.EnhancedBarriers) return;
+            if (command.EnhancedBarriers)
+                return;
             NativeResourceBarrier native = CreateLegacyTransition(
                 buffer.Native,
                 ToLegacyState(command.QueueType, barrier.Sync, barrier.Access),
                 ResourceStates.Common,
                 uint.MaxValue,
-                ResourceBarrierFlags.None);
-            D3D12CommandListFastCalls.ResourceBarrier(command.List, 1, &native);
+                ResourceBarrierFlags.None
+            );
+            D3D12CommandListFastCalls.ResourceBarrier(command, command.List, 1, &native);
             return;
         }
 
         D3D12TextureResource texture = RequireTexture((Texture)barrier.Resource);
-        TextureSubresourceRange range = barrier.TextureRange
-            ?? throw new ArgumentException("A Texture release requires a subresource range.", nameof(barrier));
-        TextureLayout layout = barrier.Layout
-            ?? throw new ArgumentException("A Texture release requires a layout.", nameof(barrier));
-        command.PrepareCaptures(1, 0, 1);
+        TextureSubresourceRange range = barrier.TextureRange!.Value;
+        TextureLayout layout = barrier.Layout!.Value;
         command.PrepareSwapchainUses(1);
-        command.Capture(texture);
+        command.RecordSwapchainImage(texture);
         if (command.EnhancedBarriers)
         {
             EncodeEnhancedTextureBarriers(
@@ -240,11 +200,10 @@ internal sealed unsafe partial class D3D12Backend
                 BarrierAccess.NoAccess,
                 layout,
                 TextureLayout.General,
-                TextureBarrierFlags.None, layoutAfterOverride: BarrierLayout.Common);
-            command.RecordSwapchainState(
-                texture,
-                TextureLayout.General,
-                ResourceAccess.NoAccess);
+                TextureBarrierFlags.None,
+                layoutAfterOverride: BarrierLayout.Common
+            );
+            command.RecordSwapchainState(texture, TextureLayout.General, ResourceAccess.NoAccess);
         }
         else
         {
@@ -253,44 +212,40 @@ internal sealed unsafe partial class D3D12Backend
                 texture,
                 range,
                 ToLegacyState(command.QueueType, barrier.Sync, layout, barrier.Access),
-                ResourceStates.Common);
-            command.RecordSwapchainState(
-                texture,
-                TextureLayout.General,
-                ResourceAccess.NoAccess);
+                ResourceStates.Common
+            );
+            command.RecordSwapchainState(texture, TextureLayout.General, ResourceAccess.NoAccess);
         }
     }
 
     public void Barrier(CommandContext context, in QueueAcquire barrier)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiBarriers);
-        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12CommandContext command = ((D3D12CommandContext)context);
+        command.BeginPublicCall();
         if (barrier.Resource is Buffer publicBuffer)
         {
             D3D12Buffer buffer = RequireBuffer(publicBuffer);
             // Buffer access is implicitly finished/flushed at ExecuteCommandLists
             // completion, and there is no queue-specific buffer layout to transfer.
-            command.PrepareCaptures(1, 0, 1);
-            command.Capture(buffer);
-            if (command.EnhancedBarriers) return;
+            if (command.EnhancedBarriers)
+                return;
             NativeResourceBarrier native = CreateLegacyTransition(
                 buffer.Native,
                 ResourceStates.Common,
                 ToLegacyState(command.QueueType, barrier.Sync, barrier.Access),
                 uint.MaxValue,
-                ResourceBarrierFlags.None);
-            D3D12CommandListFastCalls.ResourceBarrier(command.List, 1, &native);
+                ResourceBarrierFlags.None
+            );
+            D3D12CommandListFastCalls.ResourceBarrier(command, command.List, 1, &native);
             return;
         }
 
         D3D12TextureResource texture = RequireTexture((Texture)barrier.Resource);
-        TextureSubresourceRange range = barrier.TextureRange
-            ?? throw new ArgumentException("A Texture acquire requires a subresource range.", nameof(barrier));
-        TextureLayout layout = barrier.Layout
-            ?? throw new ArgumentException("A Texture acquire requires a layout.", nameof(barrier));
-        command.PrepareCaptures(1, 0, 1);
+        TextureSubresourceRange range = barrier.TextureRange!.Value;
+        TextureLayout layout = barrier.Layout!.Value;
         command.PrepareSwapchainUses(1);
-        command.Capture(texture);
+        command.RecordSwapchainImage(texture);
         if (command.EnhancedBarriers)
         {
             EncodeEnhancedTextureBarriers(
@@ -303,7 +258,9 @@ internal sealed unsafe partial class D3D12Backend
                 ToBarrierAccess(barrier.Access),
                 TextureLayout.General,
                 layout,
-                TextureBarrierFlags.None, layoutBeforeOverride: BarrierLayout.Common);
+                TextureBarrierFlags.None,
+                layoutBeforeOverride: BarrierLayout.Common
+            );
             command.RecordSwapchainState(texture, layout, barrier.Access);
         }
         else
@@ -313,7 +270,8 @@ internal sealed unsafe partial class D3D12Backend
                 texture,
                 range,
                 ResourceStates.Common,
-                ToLegacyState(command.QueueType, barrier.Sync, layout, barrier.Access));
+                ToLegacyState(command.QueueType, barrier.Sync, layout, barrier.Access)
+            );
             command.RecordSwapchainState(texture, layout, barrier.Access);
         }
     }
@@ -330,7 +288,8 @@ internal sealed unsafe partial class D3D12Backend
         TextureLayout layoutAfter,
         TextureBarrierFlags flags,
         BarrierLayout? layoutBeforeOverride = null,
-        BarrierLayout? layoutAfterOverride = null)
+        BarrierLayout? layoutAfterOverride = null
+    )
     {
         ResolveEnhancedTextureLayouts(
             command.QueueType,
@@ -340,7 +299,8 @@ internal sealed unsafe partial class D3D12Backend
             accessBefore,
             accessAfter,
             out BarrierLayout nativeLayoutBefore,
-            out BarrierLayout nativeLayoutAfter);
+            out BarrierLayout nativeLayoutAfter
+        );
         nativeLayoutBefore = layoutBeforeOverride ?? nativeLayoutBefore;
         nativeLayoutAfter = layoutAfterOverride ?? nativeLayoutAfter;
         Span<TextureAspects> aspects = stackalloc TextureAspects[3];
@@ -357,13 +317,12 @@ internal sealed unsafe partial class D3D12Backend
                 accessAfter,
                 nativeLayoutBefore,
                 nativeLayoutAfter,
-                flags);
+                flags
+            );
         }
-        BarrierGroup group = new(
-            BarrierType.Texture,
-            checked((uint)aspectCount),
-            pTextureBarriers: native);
-        D3D12CommandListFastCalls.Barrier(command.List, 1, &group);
+
+        BarrierGroup group = new(BarrierType.Texture, checked((uint)aspectCount), pTextureBarriers: native);
+        D3D12CommandListFastCalls.Barrier(command, command.List, 1, &group);
     }
 
     private static void EncodeLegacyTextureTransitions(
@@ -372,85 +331,36 @@ internal sealed unsafe partial class D3D12Backend
         in TextureSubresourceRange range,
         ResourceStates before,
         ResourceStates after,
-        ResourceBarrierFlags flags = ResourceBarrierFlags.None)
+        ResourceBarrierFlags flags = ResourceBarrierFlags.None
+    )
     {
         Span<TextureAspects> aspects = stackalloc TextureAspects[3];
         int aspectCount = ExpandBarrierAspects(texture.Info, range, aspects);
         for (int aspectIndex = 0; aspectIndex < aspectCount; aspectIndex++)
-            for (uint layer = range.FirstArrayLayer;
-                 layer < range.FirstArrayLayer + range.ArrayLayerCount;
-                 layer++)
-                for (uint mip = range.FirstMipLevel;
-                     mip < range.FirstMipLevel + range.MipLevelCount;
-                     mip++)
+            for (uint layer = range.FirstArrayLayer; layer < range.FirstArrayLayer + range.ArrayLayerCount; layer++)
+                for (uint mip = range.FirstMipLevel; mip < range.FirstMipLevel + range.MipLevelCount; mip++)
                 {
-                    NativeResourceBarrier native = CreateLegacyTransition(
-                        texture.Native,
-                        before,
-                        after,
-                        NativeSubresource(texture.Info, mip, layer, aspects[aspectIndex]),
-                        flags);
-                    D3D12CommandListFastCalls.ResourceBarrier(command.List, 1, &native);
+                    NativeResourceBarrier native = CreateLegacyTransition(texture.Native, before, after, NativeSubresource(texture.Info, mip, layer, aspects[aspectIndex]), flags);
+                    D3D12CommandListFastCalls.ResourceBarrier(command, command.List, 1, &native);
                 }
     }
 
-    internal static int ExpandBarrierAspects(
-        TextureInfo info,
-        in TextureSubresourceRange range,
-        Span<TextureAspects> destination)
+    internal static int ExpandBarrierAspects(TextureInfo info, in TextureSubresourceRange range, Span<TextureAspects> destination)
     {
-        if (range.MipLevelCount == 0 ||
-            range.FirstMipLevel >= info.MipLevelCount ||
-            range.MipLevelCount > info.MipLevelCount - range.FirstMipLevel ||
-            range.ArrayLayerCount == 0 ||
-            range.FirstArrayLayer >= info.ArrayLayerCount ||
-            range.ArrayLayerCount > info.ArrayLayerCount - range.FirstArrayLayer)
-        {
-            throw new ArgumentOutOfRangeException(nameof(range));
-        }
-
         TextureAspects requested = range.Aspects;
-        TextureAspects named = requested & (
-            TextureAspects.Color |
-            TextureAspects.Depth |
-            TextureAspects.Stencil);
-        TextureAspects planes = requested & (
-            TextureAspects.Plane0 |
-            TextureAspects.Plane1 |
-            TextureAspects.Plane2);
-        if (requested == TextureAspects.None ||
-            (named != TextureAspects.None && planes != TextureAspects.None))
-        {
-            throw new ArgumentException(
-                "A Texture barrier must use either named aspects or plane aspects.",
-                nameof(range));
-        }
-
+        TextureAspects named = requested & (TextureAspects.Color | TextureAspects.Depth | TextureAspects.Stencil);
+        TextureAspects planes = requested & (TextureAspects.Plane0 | TextureAspects.Plane1 | TextureAspects.Plane2);
         int count = 0;
         if (!FormatMappings.IsDepthStencil(info.Format))
         {
-            if (requested is not (TextureAspects.Color or TextureAspects.Plane0))
-            {
-                throw new ArgumentException(
-                    $"Texture format {info.Format} exposes Color/Plane0, not {requested}.",
-                    nameof(range));
-            }
             destination[count++] = requested;
             return count;
         }
 
         uint planeCount = FormatMappings.PlaneCount(info.Format);
-        TextureAspects allowed = named != TextureAspects.None
-            ? TextureAspects.Depth | (planeCount > 1 ? TextureAspects.Stencil : TextureAspects.None)
-            : TextureAspects.Plane0 | (planeCount > 1 ? TextureAspects.Plane1 : TextureAspects.None);
-        if ((requested & ~allowed) != 0)
-            throw new ArgumentException("The Texture barrier selects an unavailable aspect.", nameof(range));
-        TextureAspects first = named != TextureAspects.None
-            ? TextureAspects.Depth
-            : TextureAspects.Plane0;
-        TextureAspects second = named != TextureAspects.None
-            ? TextureAspects.Stencil
-            : TextureAspects.Plane1;
+        TextureAspects allowed = named != TextureAspects.None ? TextureAspects.Depth | (planeCount > 1 ? TextureAspects.Stencil : TextureAspects.None) : TextureAspects.Plane0 | (planeCount > 1 ? TextureAspects.Plane1 : TextureAspects.None);
+        TextureAspects first = named != TextureAspects.None ? TextureAspects.Depth : TextureAspects.Plane0;
+        TextureAspects second = named != TextureAspects.None ? TextureAspects.Stencil : TextureAspects.Plane1;
         if ((requested & first) != 0)
             destination[count++] = first;
         if ((requested & second) != 0)
@@ -458,13 +368,7 @@ internal sealed unsafe partial class D3D12Backend
         return count;
     }
 
-    private static TextureAspects DefaultBarrierAspects(Format format) =>
-        !FormatMappings.IsDepthStencil(format)
-            ? TextureAspects.Color
-            : FormatMappings.PlaneCount(format) == 1
-                ? TextureAspects.Depth
-                : TextureAspects.Depth | TextureAspects.Stencil;
-
+    private static TextureAspects DefaultBarrierAspects(Format format) => !FormatMappings.IsDepthStencil(format) ? TextureAspects.Color : FormatMappings.PlaneCount(format) == 1 ? TextureAspects.Depth : TextureAspects.Depth | TextureAspects.Stencil;
     private static NativeTextureBarrier CreateEnhancedTextureBarrier(
         D3D12TextureResource texture,
         in TextureSubresourceRange range,
@@ -474,7 +378,8 @@ internal sealed unsafe partial class D3D12Backend
         BarrierAccess accessAfter,
         BarrierLayout layoutBefore,
         BarrierLayout layoutAfter,
-        TextureBarrierFlags flags)
+        TextureBarrierFlags flags
+    )
     {
         uint plane = FormatMappings.PlaneIndex(texture.Info.Format, range.Aspects);
         return new NativeTextureBarrier(
@@ -485,14 +390,9 @@ internal sealed unsafe partial class D3D12Backend
             layoutBefore,
             layoutAfter,
             texture.Native,
-            new BarrierSubresourceRange(
-                range.FirstMipLevel,
-                range.MipLevelCount,
-                range.FirstArrayLayer,
-                range.ArrayLayerCount,
-                plane,
-                1),
-            flags);
+            new BarrierSubresourceRange(range.FirstMipLevel, range.MipLevelCount, range.FirstArrayLayer, range.ArrayLayerCount, plane, 1),
+            flags
+        );
     }
 
     private static void ResolveEnhancedTextureLayouts(
@@ -503,14 +403,13 @@ internal sealed unsafe partial class D3D12Backend
         BarrierAccess accessBefore,
         BarrierAccess accessAfter,
         out BarrierLayout nativeLayoutBefore,
-        out BarrierLayout nativeLayoutAfter)
+        out BarrierLayout nativeLayoutAfter
+    )
     {
         if (queueType != QueueType.Copy)
         {
-            nativeLayoutBefore = queueSpecificCommonLayouts
-                ? ToQueueSpecificBarrierLayout(queueType, layoutBefore) : ToBarrierLayout(layoutBefore);
-            nativeLayoutAfter = queueSpecificCommonLayouts
-                ? ToQueueSpecificBarrierLayout(queueType, layoutAfter) : ToBarrierLayout(layoutAfter);
+            nativeLayoutBefore = queueSpecificCommonLayouts ? ToQueueSpecificBarrierLayout(queueType, layoutBefore) : ToBarrierLayout(layoutBefore);
+            nativeLayoutAfter = queueSpecificCommonLayouts ? ToQueueSpecificBarrierLayout(queueType, layoutAfter) : ToBarrierLayout(layoutAfter);
             // Native generic read permits the depth attachment and sampled view together.
             if (layoutBefore == TextureLayout.DepthStencilRead && (accessBefore & BarrierAccess.ShaderResource) != 0)
                 nativeLayoutBefore = BarrierLayout.DirectQueueGenericRead;
@@ -519,33 +418,18 @@ internal sealed unsafe partial class D3D12Backend
             return;
         }
 
-        if (layoutBefore == TextureLayout.Undefined &&
-            layoutAfter == TextureLayout.Undefined)
+        if (layoutBefore == TextureLayout.Undefined && layoutAfter == TextureLayout.Undefined)
         {
             nativeLayoutBefore = BarrierLayout.Undefined;
             nativeLayoutAfter = BarrierLayout.Undefined;
             return;
         }
 
-        if (IsCopyQueueCommonLayout(layoutBefore) &&
-            IsCopyQueueCommonLayout(layoutAfter))
-        {
-            // Enhanced-barrier Copy queues have exactly one usable Texture
-            // layout: COMMON. COPY_SOURCE/COPY_DEST remain distinct portable
-            // access conditions, but both are encoded in that native layout.
-            nativeLayoutBefore = BarrierLayout.Common;
-            nativeLayoutAfter = BarrierLayout.Common;
-            return;
-        }
-
-        throw new InvalidOperationException(
-            "A Copy CommandContext cannot perform Texture layout transitions. " +
-            "Transfer the Texture through QueueRelease/QueueAcquire so the Copy queue sees COMMON.");
+        nativeLayoutBefore = BarrierLayout.Common;
+        nativeLayoutAfter = BarrierLayout.Common;
     }
 
-    private static BarrierLayout ToQueueSpecificBarrierLayout(
-        QueueType queueType,
-        TextureLayout layout)
+    private static BarrierLayout ToQueueSpecificBarrierLayout(QueueType queueType, TextureLayout layout)
     {
         if (layout != TextureLayout.General)
             return ToBarrierLayout(layout);
@@ -557,22 +441,13 @@ internal sealed unsafe partial class D3D12Backend
         };
     }
 
-    private static bool IsCopyQueueCommonLayout(TextureLayout layout) => layout is
-        TextureLayout.General or
-        TextureLayout.CopySource or
-        TextureLayout.CopyDestination;
-
-    private void EncodeEnhancedAliasing(
-        D3D12CommandContext command,
-        in AliasingResource resource,
-        bool activate)
+    private static bool IsCopyQueueCommonLayout(TextureLayout layout) => layout is TextureLayout.General or TextureLayout.CopySource or TextureLayout.CopyDestination;
+    private void EncodeEnhancedAliasing(D3D12CommandContext command, in AliasingResource resource, bool activate)
     {
-        EnhancedAliasingBarrierState state =
-            GetEnhancedAliasingBarrierState(activate);
+        EnhancedAliasingBarrierState state = GetEnhancedAliasingBarrierState(activate);
         if (resource.Resource is Buffer publicBuffer)
         {
             D3D12Buffer buffer = RequireBuffer(publicBuffer);
-            command.Capture(buffer);
             NativeBufferBarrier native = new(
                 ToBarrierSync(state.SyncBefore),
                 ToBarrierSync(state.SyncAfter),
@@ -580,18 +455,17 @@ internal sealed unsafe partial class D3D12Backend
                 state.AccessAfter,
                 buffer.Native,
                 0,
-                buffer.Info.Size);
+                buffer.Info.Size
+            );
             BarrierGroup group = new(BarrierType.Buffer, 1, pBufferBarriers: &native);
-            D3D12CommandListFastCalls.Barrier(command.List, 1, &group);
+            D3D12CommandListFastCalls.Barrier(command, command.List, 1, &group);
             return;
         }
 
         if (resource.Resource is AccelerationStructure publicStructure)
         {
-            D3D12AccelerationStructure structure =
-                RequireAccelerationStructure(publicStructure);
+            D3D12AccelerationStructure structure = RequireAccelerationStructure(publicStructure);
             D3D12Buffer storage = structure.Storage;
-            command.Capture(structure);
             NativeBufferBarrier native = new(
                 ToBarrierSync(state.SyncBefore),
                 ToBarrierSync(state.SyncAfter),
@@ -599,22 +473,18 @@ internal sealed unsafe partial class D3D12Backend
                 state.AccessAfter,
                 storage.Native,
                 0,
-                storage.Info.Size);
+                storage.Info.Size
+            );
             BarrierGroup group = new(BarrierType.Buffer, 1, pBufferBarriers: &native);
-            D3D12CommandListFastCalls.Barrier(command.List, 1, &group);
+            D3D12CommandListFastCalls.Barrier(command, command.List, 1, &group);
             return;
         }
 
         if (resource.Resource is Texture publicTexture)
         {
             D3D12TextureResource texture = RequireTexture(publicTexture);
-            command.Capture(texture);
-            TextureSubresourceRange range = resource.TextureRange ?? new TextureSubresourceRange(
-                0,
-                texture.Info.MipLevelCount,
-                0,
-                texture.Info.ArrayLayerCount,
-                DefaultBarrierAspects(texture.Info.Format));
+            command.RecordSwapchainImage(texture);
+            TextureSubresourceRange range = resource.TextureRange ?? new TextureSubresourceRange(0, texture.Info.MipLevelCount, 0, texture.Info.ArrayLayerCount, DefaultBarrierAspects(texture.Info.Format));
             EncodeEnhancedTextureBarriers(
                 command,
                 texture,
@@ -625,18 +495,15 @@ internal sealed unsafe partial class D3D12Backend
                 state.AccessAfter,
                 TextureLayout.Undefined,
                 TextureLayout.Undefined,
-                state.Discard ? TextureBarrierFlags.Discard : TextureBarrierFlags.None);
+                state.Discard ? TextureBarrierFlags.Discard : TextureBarrierFlags.None
+            );
         }
     }
 
-    private void EncodeEnhancedAliasingBatch(
-        D3D12CommandContext command,
-        ReadOnlySpan<AliasingResource> resources,
-        bool activate)
+    private void EncodeEnhancedAliasingBatch(D3D12CommandContext command, ReadOnlySpan<AliasingResource> resources, bool activate)
     {
         if (resources.IsEmpty)
             return;
-
         int bufferCount = 0;
         int textureResourceCount = 0;
         foreach (ref readonly AliasingResource resource in resources)
@@ -648,70 +515,41 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         int maximumTextureBarrierCount = checked(textureResourceCount * 3);
-        if (checked(bufferCount + maximumTextureBarrierCount) >
-            MaximumStackBatchedBarrierCount)
+        if (checked(bufferCount + maximumTextureBarrierCount) > MaximumStackBatchedBarrierCount)
         {
             foreach (ref readonly AliasingResource resource in resources)
                 EncodeEnhancedAliasing(command, resource, activate);
             return;
         }
 
-        NativeBufferBarrier* nativeBuffers =
-            stackalloc NativeBufferBarrier[Math.Max(bufferCount, 1)];
-        NativeTextureBarrier* nativeTextures =
-            stackalloc NativeTextureBarrier[Math.Max(maximumTextureBarrierCount, 1)];
+        NativeBufferBarrier* nativeBuffers = stackalloc NativeBufferBarrier[Math.Max(bufferCount, 1)];
+        NativeTextureBarrier* nativeTextures = stackalloc NativeTextureBarrier[Math.Max(maximumTextureBarrierCount, 1)];
         EnhancedAliasingBarrierState state = GetEnhancedAliasingBarrierState(activate);
         BarrierSync syncBefore = ToBarrierSync(state.SyncBefore);
         BarrierSync syncAfter = ToBarrierSync(state.SyncAfter);
-        TextureBarrierFlags flags = state.Discard
-            ? TextureBarrierFlags.Discard
-            : TextureBarrierFlags.None;
+        TextureBarrierFlags flags = state.Discard ? TextureBarrierFlags.Discard : TextureBarrierFlags.None;
         int bufferDestination = 0;
         int textureDestination = 0;
-
         foreach (ref readonly AliasingResource resource in resources)
         {
             if (resource.Resource is Buffer publicBuffer)
             {
                 D3D12Buffer buffer = RequireBuffer(publicBuffer);
-                command.Capture(buffer);
-                nativeBuffers[bufferDestination++] = new NativeBufferBarrier(
-                    syncBefore,
-                    syncAfter,
-                    state.AccessBefore,
-                    state.AccessAfter,
-                    buffer.Native,
-                    0,
-                    buffer.Info.Size);
+                nativeBuffers[bufferDestination++] = new NativeBufferBarrier(syncBefore, syncAfter, state.AccessBefore, state.AccessAfter, buffer.Native, 0, buffer.Info.Size);
                 continue;
             }
 
             if (resource.Resource is AccelerationStructure publicStructure)
             {
-                D3D12AccelerationStructure structure =
-                    RequireAccelerationStructure(publicStructure);
+                D3D12AccelerationStructure structure = RequireAccelerationStructure(publicStructure);
                 D3D12Buffer storage = structure.Storage;
-                command.Capture(structure);
-                nativeBuffers[bufferDestination++] = new NativeBufferBarrier(
-                    syncBefore,
-                    syncAfter,
-                    state.AccessBefore,
-                    state.AccessAfter,
-                    storage.Native,
-                    0,
-                    storage.Info.Size);
+                nativeBuffers[bufferDestination++] = new NativeBufferBarrier(syncBefore, syncAfter, state.AccessBefore, state.AccessAfter, storage.Native, 0, storage.Info.Size);
                 continue;
             }
 
             D3D12TextureResource texture = RequireTexture((Texture)resource.Resource);
-            command.Capture(texture);
-            TextureSubresourceRange range = resource.TextureRange ??
-                new TextureSubresourceRange(
-                    0,
-                    texture.Info.MipLevelCount,
-                    0,
-                    texture.Info.ArrayLayerCount,
-                    DefaultBarrierAspects(texture.Info.Format));
+            command.RecordSwapchainImage(texture);
+            TextureSubresourceRange range = resource.TextureRange ?? new TextureSubresourceRange(0, texture.Info.MipLevelCount, 0, texture.Info.ArrayLayerCount, DefaultBarrierAspects(texture.Info.Format));
             textureDestination = AppendEnhancedTextureBarriers(
                 command,
                 texture,
@@ -724,44 +562,34 @@ internal sealed unsafe partial class D3D12Backend
                 TextureLayout.Undefined,
                 flags,
                 nativeTextures,
-                textureDestination);
+                textureDestination
+            );
         }
 
-        EmitEnhancedBarrierGroups(
-            command,
-            null,
-            0,
-            nativeBuffers,
-            bufferDestination,
-            nativeTextures,
-            textureDestination);
+        EmitEnhancedBarrierGroups(command, null, 0, nativeBuffers, bufferDestination, nativeTextures, textureDestination);
     }
 
     private void EncodeEnhancedAliasingBatches(
         D3D12CommandContext command,
         ReadOnlySpan<AliasingResource> before,
-        ReadOnlySpan<AliasingResource> after)
+        ReadOnlySpan<AliasingResource> after
+    )
     {
         CountEnhancedAliasingResources(before, out int beforeBuffers, out int beforeTextures);
         CountEnhancedAliasingResources(after, out int afterBuffers, out int afterTextures);
         int beforeMaximumTextures = checked(beforeTextures * 3);
         int afterMaximumTextures = checked(afterTextures * 3);
-        if (checked(beforeBuffers + beforeMaximumTextures + afterBuffers + afterMaximumTextures) >
-            MaximumStackBatchedBarrierCount)
+        if (checked(beforeBuffers + beforeMaximumTextures + afterBuffers + afterMaximumTextures) > MaximumStackBatchedBarrierCount)
         {
             EncodeEnhancedAliasingBatch(command, before, activate: false);
             EncodeEnhancedAliasingBatch(command, after, activate: true);
             return;
         }
 
-        NativeBufferBarrier* nativeBeforeBuffers =
-            stackalloc NativeBufferBarrier[Math.Max(beforeBuffers, 1)];
-        NativeTextureBarrier* nativeBeforeTextures =
-            stackalloc NativeTextureBarrier[Math.Max(beforeMaximumTextures, 1)];
-        NativeBufferBarrier* nativeAfterBuffers =
-            stackalloc NativeBufferBarrier[Math.Max(afterBuffers, 1)];
-        NativeTextureBarrier* nativeAfterTextures =
-            stackalloc NativeTextureBarrier[Math.Max(afterMaximumTextures, 1)];
+        NativeBufferBarrier* nativeBeforeBuffers = stackalloc NativeBufferBarrier[Math.Max(beforeBuffers, 1)];
+        NativeTextureBarrier* nativeBeforeTextures = stackalloc NativeTextureBarrier[Math.Max(beforeMaximumTextures, 1)];
+        NativeBufferBarrier* nativeAfterBuffers = stackalloc NativeBufferBarrier[Math.Max(afterBuffers, 1)];
+        NativeTextureBarrier* nativeAfterTextures = stackalloc NativeTextureBarrier[Math.Max(afterMaximumTextures, 1)];
         AppendEnhancedAliasingResources(
             command,
             before,
@@ -769,7 +597,8 @@ internal sealed unsafe partial class D3D12Backend
             nativeBeforeBuffers,
             out int beforeBufferCount,
             nativeBeforeTextures,
-            out int beforeTextureCount);
+            out int beforeTextureCount
+        );
         AppendEnhancedAliasingResources(
             command,
             after,
@@ -777,48 +606,18 @@ internal sealed unsafe partial class D3D12Backend
             nativeAfterBuffers,
             out int afterBufferCount,
             nativeAfterTextures,
-            out int afterTextureCount);
-
+            out int afterTextureCount
+        );
         BarrierGroup* groups = stackalloc BarrierGroup[4];
         int groupCount = 0;
-        AppendEnhancedAliasingGroup(
-            groups,
-            ref groupCount,
-            BarrierType.Buffer,
-            nativeBeforeBuffers,
-            beforeBufferCount,
-            null);
-        AppendEnhancedAliasingGroup(
-            groups,
-            ref groupCount,
-            BarrierType.Texture,
-            null,
-            beforeTextureCount,
-            nativeBeforeTextures);
-        AppendEnhancedAliasingGroup(
-            groups,
-            ref groupCount,
-            BarrierType.Buffer,
-            nativeAfterBuffers,
-            afterBufferCount,
-            null);
-        AppendEnhancedAliasingGroup(
-            groups,
-            ref groupCount,
-            BarrierType.Texture,
-            null,
-            afterTextureCount,
-            nativeAfterTextures);
-        D3D12CommandListFastCalls.Barrier(
-            command.List,
-            checked((uint)groupCount),
-            groups);
+        AppendEnhancedAliasingGroup(groups, ref groupCount, BarrierType.Buffer, nativeBeforeBuffers, beforeBufferCount, null);
+        AppendEnhancedAliasingGroup(groups, ref groupCount, BarrierType.Texture, null, beforeTextureCount, nativeBeforeTextures);
+        AppendEnhancedAliasingGroup(groups, ref groupCount, BarrierType.Buffer, nativeAfterBuffers, afterBufferCount, null);
+        AppendEnhancedAliasingGroup(groups, ref groupCount, BarrierType.Texture, null, afterTextureCount, nativeAfterTextures);
+        D3D12CommandListFastCalls.Barrier(command, command.List, checked((uint)groupCount), groups);
     }
 
-    private static void CountEnhancedAliasingResources(
-        ReadOnlySpan<AliasingResource> resources,
-        out int bufferCount,
-        out int textureCount)
+    private static void CountEnhancedAliasingResources(ReadOnlySpan<AliasingResource> resources, out int bufferCount, out int textureCount)
     {
         bufferCount = 0;
         textureCount = 0;
@@ -838,14 +637,13 @@ internal sealed unsafe partial class D3D12Backend
         NativeBufferBarrier* nativeBuffers,
         out int bufferDestination,
         NativeTextureBarrier* nativeTextures,
-        out int textureDestination)
+        out int textureDestination
+    )
     {
         EnhancedAliasingBarrierState state = GetEnhancedAliasingBarrierState(activate);
         BarrierSync syncBefore = ToBarrierSync(state.SyncBefore);
         BarrierSync syncAfter = ToBarrierSync(state.SyncAfter);
-        TextureBarrierFlags flags = state.Discard
-            ? TextureBarrierFlags.Discard
-            : TextureBarrierFlags.None;
+        TextureBarrierFlags flags = state.Discard ? TextureBarrierFlags.Discard : TextureBarrierFlags.None;
         bufferDestination = 0;
         textureDestination = 0;
         foreach (ref readonly AliasingResource resource in resources)
@@ -853,44 +651,21 @@ internal sealed unsafe partial class D3D12Backend
             if (resource.Resource is Buffer publicBuffer)
             {
                 D3D12Buffer buffer = RequireBuffer(publicBuffer);
-                command.Capture(buffer);
-                nativeBuffers[bufferDestination++] = new NativeBufferBarrier(
-                    syncBefore,
-                    syncAfter,
-                    state.AccessBefore,
-                    state.AccessAfter,
-                    buffer.Native,
-                    0,
-                    buffer.Info.Size);
+                nativeBuffers[bufferDestination++] = new NativeBufferBarrier(syncBefore, syncAfter, state.AccessBefore, state.AccessAfter, buffer.Native, 0, buffer.Info.Size);
                 continue;
             }
 
             if (resource.Resource is AccelerationStructure publicStructure)
             {
-                D3D12AccelerationStructure structure =
-                    RequireAccelerationStructure(publicStructure);
+                D3D12AccelerationStructure structure = RequireAccelerationStructure(publicStructure);
                 D3D12Buffer storage = structure.Storage;
-                command.Capture(structure);
-                nativeBuffers[bufferDestination++] = new NativeBufferBarrier(
-                    syncBefore,
-                    syncAfter,
-                    state.AccessBefore,
-                    state.AccessAfter,
-                    storage.Native,
-                    0,
-                    storage.Info.Size);
+                nativeBuffers[bufferDestination++] = new NativeBufferBarrier(syncBefore, syncAfter, state.AccessBefore, state.AccessAfter, storage.Native, 0, storage.Info.Size);
                 continue;
             }
 
             D3D12TextureResource texture = RequireTexture((Texture)resource.Resource);
-            command.Capture(texture);
-            TextureSubresourceRange range = resource.TextureRange ??
-                new TextureSubresourceRange(
-                    0,
-                    texture.Info.MipLevelCount,
-                    0,
-                    texture.Info.ArrayLayerCount,
-                    DefaultBarrierAspects(texture.Info.Format));
+            command.RecordSwapchainImage(texture);
+            TextureSubresourceRange range = resource.TextureRange ?? new TextureSubresourceRange(0, texture.Info.MipLevelCount, 0, texture.Info.ArrayLayerCount, DefaultBarrierAspects(texture.Info.Format));
             textureDestination = AppendEnhancedTextureBarriers(
                 command,
                 texture,
@@ -903,7 +678,8 @@ internal sealed unsafe partial class D3D12Backend
                 TextureLayout.Undefined,
                 flags,
                 nativeTextures,
-                textureDestination);
+                textureDestination
+            );
         }
     }
 
@@ -913,146 +689,88 @@ internal sealed unsafe partial class D3D12Backend
         BarrierType type,
         NativeBufferBarrier* buffers,
         int count,
-        NativeTextureBarrier* textures)
+        NativeTextureBarrier* textures
+    )
     {
         if (count == 0)
             return;
-        groups[groupCount++] = type == BarrierType.Buffer
-            ? new BarrierGroup(
-                BarrierType.Buffer,
-                checked((uint)count),
-                pBufferBarriers: buffers)
-            : new BarrierGroup(
-                BarrierType.Texture,
-                checked((uint)count),
-                pTextureBarriers: textures);
+        groups[groupCount++] = type == BarrierType.Buffer ? new BarrierGroup(BarrierType.Buffer, checked((uint)count), pBufferBarriers: buffers) : new BarrierGroup(BarrierType.Texture, checked((uint)count), pTextureBarriers: textures);
     }
 
-    internal static EnhancedAliasingBarrierState GetEnhancedAliasingBarrierState(
-        bool activate) => new(
-            PipelineSync.All,
-            PipelineSync.All,
-            activate ? BarrierAccess.NoAccess : BarrierAccess.Common,
-            BarrierAccess.NoAccess,
-            activate);
-
+    internal static EnhancedAliasingBarrierState GetEnhancedAliasingBarrierState(bool activate) => new(
+        PipelineSync.All,
+        PipelineSync.All,
+        activate ? BarrierAccess.NoAccess : BarrierAccess.Common,
+        BarrierAccess.NoAccess,
+        activate
+    );
     internal readonly record struct EnhancedAliasingBarrierState(
         PipelineSync SyncBefore,
         PipelineSync SyncAfter,
         BarrierAccess AccessBefore,
         BarrierAccess AccessAfter,
-        bool Discard);
-
-    private void RequireValidAliasingResource(in AliasingResource resource)
-    {
-        ArgumentNullException.ThrowIfNull(resource.Resource);
-        if (resource.Resource is Buffer buffer)
-        {
-            _ = RequireBuffer(buffer);
-            if (resource.TextureRange is not null)
-                throw new ArgumentException(
-                    "A Buffer aliasing entry cannot contain a Texture subresource range.",
-                    nameof(resource));
-            return;
-        }
-        if (resource.Resource is AccelerationStructure structure)
-        {
-            _ = RequireAccelerationStructure(structure);
-            if (resource.TextureRange is not null)
-                throw new ArgumentException(
-                    "An AccelerationStructure aliasing entry cannot contain a Texture subresource range.",
-                    nameof(resource));
-            return;
-        }
-        if (resource.Resource is Texture publicTexture)
-        {
-            _ = RequireTexture(publicTexture);
-            TextureSubresourceRange range = resource.TextureRange ?? new TextureSubresourceRange(
-                0,
-                publicTexture.Info.MipLevelCount,
-                0,
-                publicTexture.Info.ArrayLayerCount,
-                DefaultBarrierAspects(publicTexture.Info.Format));
-            Span<TextureAspects> aspects = stackalloc TextureAspects[3];
-            _ = ExpandBarrierAspects(publicTexture.Info, range, aspects);
-            return;
-        }
-        throw new ArgumentException(
-            "AliasingBarrier requires a Buffer, Texture, or AccelerationStructure.",
-            nameof(resource));
-    }
-
-    private void CaptureAliasingResource(
-        D3D12CommandContext command,
-        Resource resource)
+        bool Discard
+    );
+    private void CaptureAliasingResource(D3D12CommandContext command, Resource resource)
     {
         if (resource is Buffer publicBuffer)
         {
-            command.Capture(RequireBuffer(publicBuffer));
             return;
         }
+
         if (resource is Texture publicTexture)
         {
-            command.Capture(RequireTexture(publicTexture));
+            command.RecordSwapchainImage(RequireTexture(publicTexture));
             return;
         }
+
         if (resource is AccelerationStructure publicStructure)
         {
-            command.Capture(RequireAccelerationStructure(publicStructure));
             return;
         }
-        throw new System.Diagnostics.UnreachableException(
-            "Aliasing resource kind was validated before capture.");
+
+        throw new System.Diagnostics.UnreachableException("Aliasing resource kind was validated before capture.");
     }
 
-    private ID3D12Resource* GetAliasingNativeResource(
-        Resource resource,
-        D3D12CommandContext command)
+    private ID3D12Resource* GetAliasingNativeResource(Resource resource, D3D12CommandContext command)
     {
         if (resource is Buffer publicBuffer)
         {
             D3D12Buffer buffer = RequireBuffer(publicBuffer);
-            command.Capture(buffer);
             return buffer.Native;
         }
+
         if (resource is Texture publicTexture)
         {
             D3D12TextureResource texture = RequireTexture(publicTexture);
-            command.Capture(texture);
+            command.RecordSwapchainImage(texture);
             return texture.Native;
         }
+
         if (resource is AccelerationStructure publicStructure)
         {
-            D3D12AccelerationStructure structure =
-                RequireAccelerationStructure(publicStructure);
-            command.Capture(structure);
+            D3D12AccelerationStructure structure = RequireAccelerationStructure(publicStructure);
             return structure.Storage.Native;
         }
-        throw new System.Diagnostics.UnreachableException(
-            "Aliasing resource kind was validated before native mapping.");
+
+        throw new System.Diagnostics.UnreachableException("Aliasing resource kind was validated before native mapping.");
     }
 
-    internal static bool RequiresGlobalLegacyAliasingBarrier(
-        int beforeCount,
-        int afterCount) => beforeCount > 1 || afterCount > 1;
-
+    internal static bool RequiresGlobalLegacyAliasingBarrier(int beforeCount, int afterCount) => beforeCount > 1 || afterCount > 1;
     private static NativeResourceBarrier CreateLegacyTransition(
         ID3D12Resource* resource,
         ResourceStates before,
         ResourceStates after,
         uint subresource,
-        ResourceBarrierFlags flags)
+        ResourceBarrierFlags flags
+    )
     {
         NativeResourceBarrier result = new()
         {
             Type = ResourceBarrierType.Transition,
             Flags = flags,
         };
-        result.Transition = new ResourceTransitionBarrier(
-            resource,
-            subresource,
-            before,
-            after);
+        result.Transition = new ResourceTransitionBarrier(resource, subresource, before, after);
         return result;
     }
 
@@ -1067,9 +785,7 @@ internal sealed unsafe partial class D3D12Backend
         return result;
     }
 
-    private static NativeResourceBarrier CreateLegacyAliasingBarrier(
-        ID3D12Resource* before,
-        ID3D12Resource* after)
+    private static NativeResourceBarrier CreateLegacyAliasingBarrier(ID3D12Resource* before, ID3D12Resource* after)
     {
         NativeResourceBarrier result = new()
         {
@@ -1080,39 +796,27 @@ internal sealed unsafe partial class D3D12Backend
         return result;
     }
 
-    internal static bool NeedsUavOrdering(ResourceAccess before, ResourceAccess after) =>
-        ((before | after) & (
-            ResourceAccess.UnorderedAccess |
-            ResourceAccess.RayTracingAccelerationStructureRead |
-            ResourceAccess.RayTracingAccelerationStructureWrite)) != 0;
-
+    internal static bool NeedsUavOrdering(ResourceAccess before, ResourceAccess after) => ((before | after) & (ResourceAccess.UnorderedAccess | ResourceAccess.RayTracingAccelerationStructureRead | ResourceAccess.RayTracingAccelerationStructureWrite)) != 0;
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     private static void ResolveBarrierSyncs(
         PipelineSync syncBefore,
         PipelineSync syncAfter,
         BarrierPhase phase,
         out BarrierSync nativeSyncBefore,
-        out BarrierSync nativeSyncAfter)
+        out BarrierSync nativeSyncAfter
+    )
     {
-        if ((uint)phase > (uint)BarrierPhase.End)
-            throw new ArgumentOutOfRangeException(nameof(phase));
-        nativeSyncBefore = phase == BarrierPhase.End
-            ? BarrierSync.Split
-            : ToBarrierSync(syncBefore);
-        nativeSyncAfter = phase == BarrierPhase.Begin
-            ? BarrierSync.Split
-            : ToBarrierSync(syncAfter);
+        nativeSyncBefore = phase == BarrierPhase.End ? BarrierSync.Split : ToBarrierSync(syncBefore);
+        nativeSyncAfter = phase == BarrierPhase.Begin ? BarrierSync.Split : ToBarrierSync(syncAfter);
     }
 
-    private static ResourceBarrierFlags ToLegacyBarrierFlags(BarrierPhase phase) =>
-        phase switch
-        {
-            BarrierPhase.Complete => ResourceBarrierFlags.None,
-            BarrierPhase.Begin => ResourceBarrierFlags.BeginOnly,
-            BarrierPhase.End => ResourceBarrierFlags.EndOnly,
-            _ => throw new ArgumentOutOfRangeException(nameof(phase)),
-        };
-
+    private static ResourceBarrierFlags ToLegacyBarrierFlags(BarrierPhase phase) => phase switch
+    {
+        BarrierPhase.Complete => ResourceBarrierFlags.None,
+        BarrierPhase.Begin => ResourceBarrierFlags.BeginOnly,
+        BarrierPhase.End => ResourceBarrierFlags.EndOnly,
+        _ => default!,
+    };
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     internal static BarrierSync ToBarrierSync(PipelineSync value)
     {
@@ -1148,12 +852,9 @@ internal sealed unsafe partial class D3D12Backend
             PipelineSync.NonPixelShading => BarrierSync.NonPixelShading,
             PipelineSync.Clear => BarrierSync.ClearUnorderedAccessView,
             PipelineSync.AccelerationStructureCopy => BarrierSync.CopyRaytracingAccelerationStructure,
-            PipelineSync.EmitAccelerationStructurePostBuildInfo =>
-                BarrierSync.EmitRaytracingAccelerationStructurePostbuildInfo,
-            PipelineSync.BuildRayTracingAccelerationStructure =>
-                BarrierSync.BuildRaytracingAccelerationStructure,
-            PipelineSync.CopyRayTracingAccelerationStructure =>
-                BarrierSync.CopyRaytracingAccelerationStructure,
+            PipelineSync.EmitAccelerationStructurePostBuildInfo => BarrierSync.EmitRaytracingAccelerationStructurePostbuildInfo,
+            PipelineSync.BuildRayTracingAccelerationStructure => BarrierSync.BuildRaytracingAccelerationStructure,
+            PipelineSync.CopyRayTracingAccelerationStructure => BarrierSync.CopyRaytracingAccelerationStructure,
             PipelineSync.All => BarrierSync.All,
             _ => BarrierSync.None,
         };
@@ -1182,20 +883,11 @@ internal sealed unsafe partial class D3D12Backend
         Add(PipelineSync.AllShading, BarrierSync.AllShading);
         Add(PipelineSync.NonPixelShading, BarrierSync.NonPixelShading);
         Add(PipelineSync.Clear, BarrierSync.ClearUnorderedAccessView);
-        Add(
-            PipelineSync.EmitAccelerationStructurePostBuildInfo,
-            BarrierSync.EmitRaytracingAccelerationStructurePostbuildInfo);
-        Add(
-            PipelineSync.BuildRayTracingAccelerationStructure,
-            BarrierSync.BuildRaytracingAccelerationStructure);
-        Add(
-            PipelineSync.CopyRayTracingAccelerationStructure,
-            BarrierSync.CopyRaytracingAccelerationStructure);
+        Add(PipelineSync.EmitAccelerationStructurePostBuildInfo, BarrierSync.EmitRaytracingAccelerationStructurePostbuildInfo);
+        Add(PipelineSync.BuildRayTracingAccelerationStructure, BarrierSync.BuildRaytracingAccelerationStructure);
+        Add(PipelineSync.CopyRayTracingAccelerationStructure, BarrierSync.CopyRaytracingAccelerationStructure);
         Add(PipelineSync.AccelerationStructureCopy, BarrierSync.CopyRaytracingAccelerationStructure);
-        if (remaining != PipelineSync.None)
-            throw new ArgumentOutOfRangeException(nameof(value));
         return result;
-
         void Add(PipelineSync source, BarrierSync destination)
         {
             if ((remaining & source) == 0)
@@ -1215,12 +907,10 @@ internal sealed unsafe partial class D3D12Backend
         {
             // Common has no native bit. IndirectArgument and Predication
             // share one native bit; every access after them shifts twice.
-            ulong native =
-                ((raw >> 1) & 0x03FF) |
-                ((raw & 0x0800) >> 2) |
-                ((raw & 0x7F000) >> 2);
+            ulong native = ((raw >> 1) & 0x03FF) | ((raw & 0x0800) >> 2) | ((raw & 0x7F000) >> 2);
             return (BarrierAccess)native;
         }
+
         return ToBarrierAccessSlow(value);
     }
 
@@ -1245,10 +935,8 @@ internal sealed unsafe partial class D3D12Backend
             ResourceAccess.CopySource => BarrierAccess.CopySource,
             ResourceAccess.ResolveDestination => BarrierAccess.ResolveDest,
             ResourceAccess.ResolveSource => BarrierAccess.ResolveSource,
-            ResourceAccess.RayTracingAccelerationStructureRead =>
-                BarrierAccess.RaytracingAccelerationStructureRead,
-            ResourceAccess.RayTracingAccelerationStructureWrite =>
-                BarrierAccess.RaytracingAccelerationStructureWrite,
+            ResourceAccess.RayTracingAccelerationStructureRead => BarrierAccess.RaytracingAccelerationStructureRead,
+            ResourceAccess.RayTracingAccelerationStructureWrite => BarrierAccess.RaytracingAccelerationStructureWrite,
             ResourceAccess.ShadingRateSource => BarrierAccess.ShadingRateSource,
             _ => BarrierAccess.Common,
         };
@@ -1280,17 +968,10 @@ internal sealed unsafe partial class D3D12Backend
         Add(ResourceAccess.CopySource, BarrierAccess.CopySource);
         Add(ResourceAccess.ResolveDestination, BarrierAccess.ResolveDest);
         Add(ResourceAccess.ResolveSource, BarrierAccess.ResolveSource);
-        Add(
-            ResourceAccess.RayTracingAccelerationStructureRead,
-            BarrierAccess.RaytracingAccelerationStructureRead);
-        Add(
-            ResourceAccess.RayTracingAccelerationStructureWrite,
-            BarrierAccess.RaytracingAccelerationStructureWrite);
+        Add(ResourceAccess.RayTracingAccelerationStructureRead, BarrierAccess.RaytracingAccelerationStructureRead);
+        Add(ResourceAccess.RayTracingAccelerationStructureWrite, BarrierAccess.RaytracingAccelerationStructureWrite);
         Add(ResourceAccess.ShadingRateSource, BarrierAccess.ShadingRateSource);
-        if (remaining != ResourceAccess.NoAccess)
-            throw new ArgumentOutOfRangeException(nameof(value));
         return result;
-
         void Add(ResourceAccess source, BarrierAccess destination)
         {
             if ((remaining & source) == 0)
@@ -1316,37 +997,26 @@ internal sealed unsafe partial class D3D12Backend
         TextureLayout.ResolveSource => BarrierLayout.ResolveSource,
         TextureLayout.ResolveDestination => BarrierLayout.ResolveDest,
         TextureLayout.ShadingRateSource => BarrierLayout.ShadingRateSource,
-        _ => throw new ArgumentOutOfRangeException(nameof(layout)),
+        _ => default!,
     };
-
-    internal static ResourceStates ToLegacyState(
-        QueueType queueType,
-        PipelineSync sync,
-        TextureLayout layout,
-        ResourceAccess access) => layout switch
-        {
-            TextureLayout.Undefined => ResourceStates.Common,
-            TextureLayout.General =>
-                ToLegacyState(queueType, sync, access),
-            TextureLayout.Present => ResourceStates.Present,
-            TextureLayout.RenderTarget => ResourceStates.RenderTarget,
-            TextureLayout.UnorderedAccess => ResourceStates.UnorderedAccess,
-            TextureLayout.DepthStencilWrite => ResourceStates.DepthWrite,
-            TextureLayout.DepthStencilRead => ResourceStates.DepthRead |
-                ((access & ResourceAccess.ShaderResource) != 0 ? ToLegacyShaderResourceState(queueType, sync) : ResourceStates.Common),
-            TextureLayout.ShaderResource => ToLegacyShaderResourceState(queueType, sync),
-            TextureLayout.CopySource => ResourceStates.CopySource,
-            TextureLayout.CopyDestination => ResourceStates.CopyDest,
-            TextureLayout.ResolveSource => ResourceStates.ResolveSource,
-            TextureLayout.ResolveDestination => ResourceStates.ResolveDest,
-            TextureLayout.ShadingRateSource => ResourceStates.ShadingRateSource,
-            _ => throw new ArgumentOutOfRangeException(nameof(layout)),
-        };
-
-    internal static ResourceStates ToLegacyState(
-        QueueType queueType,
-        PipelineSync sync,
-        ResourceAccess value)
+    internal static ResourceStates ToLegacyState(QueueType queueType, PipelineSync sync, TextureLayout layout, ResourceAccess access) => layout switch
+    {
+        TextureLayout.Undefined => ResourceStates.Common,
+        TextureLayout.General => ToLegacyState(queueType, sync, access),
+        TextureLayout.Present => ResourceStates.Present,
+        TextureLayout.RenderTarget => ResourceStates.RenderTarget,
+        TextureLayout.UnorderedAccess => ResourceStates.UnorderedAccess,
+        TextureLayout.DepthStencilWrite => ResourceStates.DepthWrite,
+        TextureLayout.DepthStencilRead => ResourceStates.DepthRead | ((access & ResourceAccess.ShaderResource) != 0 ? ToLegacyShaderResourceState(queueType, sync) : ResourceStates.Common),
+        TextureLayout.ShaderResource => ToLegacyShaderResourceState(queueType, sync),
+        TextureLayout.CopySource => ResourceStates.CopySource,
+        TextureLayout.CopyDestination => ResourceStates.CopyDest,
+        TextureLayout.ResolveSource => ResourceStates.ResolveSource,
+        TextureLayout.ResolveDestination => ResourceStates.ResolveDest,
+        TextureLayout.ShadingRateSource => ResourceStates.ShadingRateSource,
+        _ => default!,
+    };
+    internal static ResourceStates ToLegacyState(QueueType queueType, PipelineSync sync, ResourceAccess value)
     {
         if (value == ResourceAccess.NoAccess)
             return ResourceStates.Common;
@@ -1364,6 +1034,7 @@ internal sealed unsafe partial class D3D12Backend
             remaining &= ~ResourceAccess.ShaderResource;
             result |= ToLegacyShaderResourceState(queueType, sync);
         }
+
         Add(ResourceAccess.StreamOutput, ResourceStates.StreamOut);
         Add(ResourceAccess.IndirectArgument, ResourceStates.IndirectArgument);
         Add(ResourceAccess.Predication, ResourceStates.Predication);
@@ -1371,17 +1042,10 @@ internal sealed unsafe partial class D3D12Backend
         Add(ResourceAccess.CopySource, ResourceStates.CopySource);
         Add(ResourceAccess.ResolveDestination, ResourceStates.ResolveDest);
         Add(ResourceAccess.ResolveSource, ResourceStates.ResolveSource);
-        Add(
-            ResourceAccess.RayTracingAccelerationStructureRead,
-            ResourceStates.RaytracingAccelerationStructure);
-        Add(
-            ResourceAccess.RayTracingAccelerationStructureWrite,
-            ResourceStates.RaytracingAccelerationStructure);
+        Add(ResourceAccess.RayTracingAccelerationStructureRead, ResourceStates.RaytracingAccelerationStructure);
+        Add(ResourceAccess.RayTracingAccelerationStructureWrite, ResourceStates.RaytracingAccelerationStructure);
         Add(ResourceAccess.ShadingRateSource, ResourceStates.ShadingRateSource);
-        if (remaining != ResourceAccess.NoAccess)
-            throw new ArgumentOutOfRangeException(nameof(value));
         return result;
-
         void Add(ResourceAccess source, ResourceStates destination)
         {
             if ((remaining & source) == 0)
@@ -1391,50 +1055,29 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    internal static ResourceStates ToLegacyShaderResourceState(
-        QueueType queueType,
-        PipelineSync sync)
+    internal static ResourceStates ToLegacyShaderResourceState(QueueType queueType, PipelineSync sync)
     {
-        if (queueType == QueueType.Copy)
-        {
-            throw new InvalidOperationException(
-                "A Copy CommandContext cannot use ShaderResource access.");
-        }
-
         ResourceStates result = ResourceStates.Common;
-        if (queueType == QueueType.Graphics &&
-            (sync & (
-                PipelineSync.Draw |
-                PipelineSync.PixelShading |
-                PipelineSync.AllShading)) != 0)
+        if (queueType == QueueType.Graphics && (sync & (PipelineSync.Draw | PipelineSync.PixelShading | PipelineSync.AllShading)) != 0)
         {
             result |= ResourceStates.PixelShaderResource;
         }
 
-        if ((sync & (
-                PipelineSync.Draw |
-                PipelineSync.VertexShading |
-                PipelineSync.ComputeShading |
-                PipelineSync.RayTracing |
-                PipelineSync.AllShading |
-                PipelineSync.NonPixelShading)) != 0)
+        if ((sync & (PipelineSync.Draw | PipelineSync.VertexShading | PipelineSync.ComputeShading | PipelineSync.RayTracing | PipelineSync.AllShading | PipelineSync.NonPixelShading)) != 0)
         {
             result |= ResourceStates.NonPixelShaderResource;
         }
 
         if (result != ResourceStates.Common)
             return result;
-
         // ResourceBarrier has no independent synchronization scope. If the
         // portable scope does not name a shader stage (for example Split),
         // expose every shader-resource state legal on the selected Queue.
         return queueType switch
         {
-            QueueType.Graphics =>
-                ResourceStates.PixelShaderResource |
-                ResourceStates.NonPixelShaderResource,
+            QueueType.Graphics => ResourceStates.PixelShaderResource | ResourceStates.NonPixelShaderResource,
             QueueType.Compute => ResourceStates.NonPixelShaderResource,
-            _ => throw new ArgumentOutOfRangeException(nameof(queueType)),
+            _ => default!,
         };
     }
 }

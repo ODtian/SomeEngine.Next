@@ -80,7 +80,7 @@ public enum IndirectArgumentType : byte
 public readonly record struct IndirectArgumentDesc(
     IndirectArgumentType Type,
     VariableLayoutReflection? Parameters = default,
-    uint VertexBufferSlot = 0,
+    uint VertexBinding = 0,
     uint ByteOffset = 0,
     uint ValueCount = 0);
 

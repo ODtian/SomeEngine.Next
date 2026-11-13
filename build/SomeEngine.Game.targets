@@ -1,4 +1,4 @@
-<Project>
+﻿<Project>
   <PropertyGroup Condition="'$(SomeEngineDevelopment)' == 'true'">
     <DefineConstants>$(DefineConstants);SOMEENGINE_DEVELOPMENT</DefineConstants>
   </PropertyGroup>
@@ -30,6 +30,7 @@
       <_EngineShaders>$([System.String]::Copy('$(SomeEnginePath)/assets/Shaders').Replace('\', '/'))</_EngineShaders>
     </PropertyGroup>
     <ItemGroup>
+      <_GameProjectPathsLine Include="[assembly: SomeEngine.Runtime.ShaderSourceDirectoryAttribute(&quot;$(_GameRoot)&quot;)]" />
       <_GameProjectPathsLine Include="namespace $(RootNamespace)%3B" />
       <_GameProjectPathsLine Include="public static class ProjectPaths" />
       <_GameProjectPathsLine Include="{" />

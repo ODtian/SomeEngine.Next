@@ -12,8 +12,8 @@ void InitializeVirtualShadowPageHiZ(
     uint physicalPage = ActivePhysicalPages[pageIndex].x;
     if (!NeedsVirtualShadowPageHiZUpdate(physicalPage)) return;
     uint2 pixel = VirtualShadowDispatchTile(groupId, tiles) * 8u + groupThreadId.xy;
-    uint2 atlasPage = uint2(physicalPage % PageHiZ.PhysicalPagesPerRow,
-        physicalPage / PageHiZ.PhysicalPagesPerRow) * PageHiZ.PageSize;
+    uint2 atlasPage = uint2(physicalPage % PageHiZ.AtlasPagesPerRow,
+        physicalPage / PageHiZ.AtlasPagesPerRow) * PageHiZ.PageSize;
     uint2 source = min(pixel * 2u, PageHiZ.PageSize - 1u);
     uint2 next = min(source + 1u, PageHiZ.PageSize - 1u);
     uint4 staticDepth = uint4(

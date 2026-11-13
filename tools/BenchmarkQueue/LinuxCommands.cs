@@ -50,6 +50,7 @@ internal static class LinuxCommands
         var environment = command.GetThreadEnvironment();
         foreach (var variable in command.Environment.Where(variable => variable.Key.StartsWith("SOMEENGINE_")))
             environment[variable.Key] = variable.Value;
+        if (command.DiagnosticScope is { } scope) environment["SOMEENGINE_BENCHMARK_DIAGNOSTIC_SCOPE"] = scope;
         environment["HOME"] = home; environment["TMPDIR"] = temporary;
         environment["DOTNET_CLI_HOME"] = home;
         environment["NUGET_PACKAGES"] = Path.Combine(directory.Path, "packages");
@@ -76,11 +77,12 @@ internal static class LinuxCommands
         DateTimeOffset started = DateTimeOffset.UtcNow;
         object outputLock = new();
         int exitCode = 1; string result = "failed"; long? memoryPeak = null; long cpuNanoseconds = 0;
+        var sample = new SampleCheck(command.SampleLimit, command.DiagnosticScope);
         try
         {
             using var process = Process.Start(start)!;
-            Task stdout = Forward(process.StandardOutput, "stdout", outputLock);
-            Task stderr = Forward(process.StandardError, "stderr", outputLock);
+            Task stdout = Forward(process.StandardOutput, "stdout", outputLock, sample, unit);
+            Task stderr = Forward(process.StandardError, "stderr", outputLock, sample, unit);
             var status = ProcessCommands.StartInfo("systemctl", "--user", "show", unit,
                 "-p", "Result", "-p", "SubState", "-p", "ExecMainStatus", "-p", "ControlGroup", "-p", "CPUUsageNSec");
             ConfigureBus(status);
@@ -114,6 +116,7 @@ internal static class LinuxCommands
             var reset = ProcessCommands.StartInfo("systemctl", "--user", "reset-failed", unit); ConfigureBus(reset); ProcessCommands.Run(reset);
             Directory.Delete(temporary, recursive: true);
         }
+        if (sample.Failed) exitCode = 1;
         var details = JsonSerializer.SerializeToElement(new
         {
             command.Id, command.Executable, command.Arguments, command.Directory, command.SessionId,
@@ -126,17 +129,30 @@ internal static class LinuxCommands
             MemoryPeakBytes = memoryPeak, CpuSeconds = cpuNanoseconds / 1e9,
             WorkDirectoryLimitBytes = LinuxWorkDirectory.DirectoryBytes,
             command.TimeoutSeconds, TimedOut = result == "timeout", MemoryLimitExceeded = result == "oom-kill",
+            command.SampleLimit, command.DiagnosticScope, sample.FirstSample, FailedSample = sample.Failed ? sample.Sample : null,
+            SampleTargetExceeded = sample.Failed, StopReason = sample.Failed ? "SampleTarget" : result,
             ExitCode = exitCode, command.SubmittedAtUtc, StartedAtUtc = started, FinishedAtUtc = DateTimeOffset.UtcNow,
         });
         Console.WriteLine(JsonSerializer.Serialize(new RemoteMessage(null, null, details)));
         return 0;
     }
 
-    private static async Task Forward(StreamReader reader, string stream, object outputLock)
+    private static async Task Forward(StreamReader reader, string stream, object outputLock, SampleCheck sample, string unit)
     {
         char[] buffer = new char[4096]; int length;
         while ((length = await reader.ReadAsync(buffer)) > 0)
-            lock (outputLock) Console.WriteLine(JsonSerializer.Serialize(new RemoteMessage(stream, new string(buffer, 0, length), null)));
+        {
+            string text = new(buffer, 0, length);
+            lock (outputLock) Console.WriteLine(JsonSerializer.Serialize(new RemoteMessage(stream, text, null)));
+            if (sample.Observe(text, stream == "stderr"))
+            {
+                lock (outputLock) Console.WriteLine(JsonSerializer.Serialize(new RemoteMessage("stderr",
+                    $"Sample {sample.Sample} failed target {sample.Target}; the process group was terminated.\n", null)));
+                var stop = ProcessCommands.StartInfo("systemctl", "--user", "kill", "--signal=KILL", unit);
+                ConfigureBus(stop);
+                ProcessCommands.Run(stop);
+            }
+        }
     }
 
     private static void ConfigureBus(ProcessStartInfo start)

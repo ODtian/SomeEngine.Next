@@ -15,6 +15,11 @@ public sealed class BufferDataCommandsTests
             new RenderGraphDesc(MaximumFramesInFlight: 3));
         using Buffer result = support.Backend.CreateBuffer(support.Device,
             new BufferDesc(32, BufferUsages.CopyDestination), MemoryType.Readback);
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.RegisterExternalBuffer(result);
+            edit.Commit();
+        }
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         for (int index = 0; index < 9; index++)
         {
@@ -44,8 +49,7 @@ public sealed class BufferDataCommandsTests
                             destination[position] = data[data.Length - 1 - position];
                     });
                 bytes.AsSpan().Fill(255);
-                GraphBufferId destination = frame.Import(result,
-                    [new(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+                GraphBufferId destination = frame.GetImported(result);
                 frame.DeclareBufferCopy("copy written upload", PassQueueSelection.AnyOfType(QueueType.Graphics),
                     source with { Range = new BufferRange(source.Range.Offset, 32) },
                     new GraphBufferSlice(destination, new BufferRange(0, 32)),
@@ -70,6 +74,11 @@ public sealed class BufferDataCommandsTests
         using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue]);
         using Buffer result = support.Backend.CreateBuffer(support.Device,
             new BufferDesc(32, BufferUsages.CopyDestination), MemoryType.Readback);
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.RegisterExternalBuffer(result);
+            edit.Commit();
+        }
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         for (int index = 0; index < 4; index++)
         {
@@ -77,8 +86,7 @@ public sealed class BufferDataCommandsTests
             using (RenderGraphFrame frame = graph.BeginFrame(new(SubmissionMode: mode)))
             {
                 GraphBufferSlice source = frame.Upload(expected, BufferUsages.CopySource);
-                GraphBufferId destination = frame.Import(result,
-                    [new(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+                GraphBufferId destination = frame.GetImported(result);
                 GraphPassId copy = frame.AddCopyPass("copy with later access declarations",
                     PassQueueSelection.AnyOfType(QueueType.Graphics), (Source: source, Destination: destination),
                     new PassOptions(Culling: PassCullingMode.NeverCull),
@@ -115,8 +123,7 @@ public sealed class BufferDataCommandsTests
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
             input = edit.CreateBufferInput(BufferUsages.CopySource);
-            GraphBufferId destination = edit.RegisterExternalBuffer(result,
-                [new(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId destination = edit.RegisterExternalBuffer(result);
             edit.AddCopyFramePass("copy segmented upload", PassQueueSelection.AnyOfType(QueueType.Graphics),
                 new CopyData(input, destination, 0), new PassOptions(RepeatCommands: true),
                 static (ref PassDefinition pass, ref CopyData data) =>
@@ -171,10 +178,8 @@ public sealed class BufferDataCommandsTests
         GraphPassId pass;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            source = edit.DeclareExternalBuffer(new BufferDesc(64, BufferUsages.CopySource), MemoryType.Upload);
-            destination = edit.RegisterExternalBuffer(result,
-                [new BufferBoundaryState(BufferRange.Whole, result.InitialSync, result.InitialAccess,
-                    ResourceContentState.Undefined)]);
+            source = edit.CreateTransientBuffer(new BufferDesc(64, BufferUsages.CopySource), MemoryType.Upload);
+            destination = edit.RegisterExternalBuffer(result);
             input = edit.CreateBufferInput(BufferUsages.CopySource);
             pass = edit.AddCopyFramePass("copy changing data", PassQueueSelection.AnyOfType(QueueType.Graphics),
                 new CopyData(input, destination, 0), new PassOptions(RepeatCommands: true),

@@ -55,7 +55,7 @@ public static class RenderScenarios
         string shaderPath = Path.Combine(destination, "assets", "Shaders", "standard.slang");
         string shader = File.ReadAllText(shaderPath);
         if (mode is "phong" or "factors" or "materials")
-            shader = shader.Replace("#include \"standard_material.slang\"", "#include \"standard_material.slang\"\n#include \"phong_tessellation.slang\"")
+            shader = shader.Replace("__exported import standard_material;", "__exported import standard_material;\n__exported import phong_tessellation;")
                 .Replace("typedef LinearSurface DomainEvaluate;", "typedef PhongTessellation DomainEvaluate;") + "\n#include \"cluster_tessellation_entries.slang\"\n";
         else if (mode == "wpo-alpha")
         {
@@ -201,7 +201,7 @@ public static class RenderScenarios
         AssetProject project = new AssetProject(destination, [SomeEngine.Assets.Importers.StandardGltfSceneImporter.CreateSourceImporter()], shaderIncludeDirectories: [engineShaders]);
         await project.BuildAsync(Path.ChangeExtension(shaderPath, ".shader"));
         IAssetStorage storage = project.CreateStorage();
-        await using var loader = new AssetLoader(storage);
+        await using var loader = SomeEngine.Assets.Importers.EngineShaderContent.OpenFiles(project.RootPath, project.Manifest);
         Guid settingsId = project.Resolve("assets/Runtime/default.runtime.asset")!.Value;
         using ApplicationSettingsAsset application = await ApplicationSettingsAsset.OpenAsync(loader, new(settingsId));
         Guid sceneId = application.GetBlock<ApplicationSettingsBlock>().Scene.Value;

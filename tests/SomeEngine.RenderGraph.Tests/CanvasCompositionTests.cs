@@ -41,16 +41,19 @@ public sealed partial class CanvasCompositionTests
 
     private static void CheckComposition(IGraphicsBackend backend, Device device, bool worldSpace)
     {
-        using var renderDevice = new RenderDevice(backend, device);
+        using var pipelines = new global::SomeEngine.Render.RenderPipelines(backend, device);
         using var graph = new RenderGraph(backend, device, [backend.GetQueue(device, QueueType.Graphics)]);
+        using var renderDevice = new RenderDevice(graph, pipelines);
         using var world = new RenderWorld();
-        using SurfaceMaterial surfaces = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
-        using GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
-        using ImageMaterial images = ImageMaterial.Create(device.Capabilities.CompileTarget);
-        using Texture red = SolidTexture([255, 0, 0, 128]);
-        using Texture magenta = SolidTexture([255, 0, 255, 128]);
-        using Texture yellow = SolidTexture([255, 255, 0, 128]);
-        using var renderer = new CanvasRenderer(backend, device, graph, world, surfaces,
+        using var shaderLibrary = new SomeEngine.Resources.ShaderLibrary(device.Capabilities.CompileTarget);
+        using var shaderFiles = new SomeEngine.Tests.EngineShaderFiles();
+        SurfaceMaterial surfaces = SurfaceMaterial.Create(shaderLibrary, shaderFiles.Files);
+        GlyphsMaterial glyphs = GlyphsMaterial.Create(shaderLibrary, shaderFiles.Files);
+        ImageMaterial images = ImageMaterial.Create(shaderLibrary, shaderFiles.Files);
+        Texture red = SolidTexture([255, 0, 0, 128]);
+        Texture magenta = SolidTexture([255, 0, 255, 128]);
+        Texture yellow = SolidTexture([255, 255, 0, 128]);
+        using var renderer = new CanvasRenderer(backend, device, pipelines, graph, world, surfaces,
             Format.R8G8B8A8UNorm, glyphs, images, renderDevice);
         Entity atlas = world.CreateEntity(new RenderGlyphAtlas(
             new[] { new GlyphPagePixels(4, 4, Enumerable.Repeat((byte)255, 16).ToArray()) },
@@ -128,9 +131,9 @@ public sealed partial class CanvasCompositionTests
             {
                 renderer.UpdateFrame(ref frame);
                 var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
-                int count = frame.Execute(completions);
-                renderDevice.TrackSubmission(completions.AsSpan(0, count));
-                renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+                ulong identity = frame.FrameIdentity;
+                frame.Execute();
+                Assert.Equal(WaitStatus.Completed, graph.WaitForFrame(identity, TimeSpan.FromSeconds(10)));
             }
             finally { frame.Dispose(); }
             using MappedBuffer pixels = backend.Map(readback, MapType.Read, BufferRange.Whole);
@@ -177,8 +180,7 @@ public sealed partial class CanvasCompositionTests
                 pass.DepthStencilAttachment(data.Depth, LoadType.Clear, StoreType.Store, WriteCoverage.Complete, 0.5f,
                     LoadType.Discard, StoreType.Discard, WriteCoverage.Partial, 0);
             }, static (ref RasterPassCommandScope _, in (GraphColorAttachmentViewId, GraphDepthStencilViewId) _) => { });
-        GraphBufferId output = edit.RegisterExternalBuffer(readback,
-            [new(BufferRange.Whole, readback.InitialSync, readback.InitialAccess, ResourceContentState.Undefined)]);
+        GraphBufferId output = edit.RegisterExternalBuffer(readback);
         copy = edit.AddCopyFramePass("Read composed canvas", PassQueueSelection.AnyOfType(QueueType.Graphics),
             (target, output), new PassOptions(Culling: PassCullingMode.NeverCull),
             static (ref PassDefinition pass, ref (GraphTextureId Texture, GraphBufferId Buffer) data) =>

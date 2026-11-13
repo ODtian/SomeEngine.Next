@@ -1,7 +1,7 @@
 #ifndef TERRAIN_HEIGHT_INPUT
 #define TERRAIN_HEIGHT_INPUT
 
-#include "terrain_surface_sources.slang"
+__exported import terrain_surface_sources;
 
 float TerrainHeightAt(TerrainScalarSource source, int x, int z)
 {

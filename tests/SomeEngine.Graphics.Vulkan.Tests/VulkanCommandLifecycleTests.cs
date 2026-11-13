@@ -29,7 +29,7 @@ public sealed class VulkanCommandLifecycleTests
 
             Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(2)));
             Assert.True(backend.IsComplete(completion));
-            Assert.Equal(RecordedCommandsStatus.Completed, commands.Status);
+            Assert.Equal(RecordedCommandsStatus.Submitted, commands.Status);
         }
     }
 
@@ -72,7 +72,7 @@ public sealed class VulkanCommandLifecycleTests
         Assert.Equal(
             WaitStatus.Completed,
             backend.WaitCpu(completion, TimeSpan.FromSeconds(5)));
-        Assert.Equal(RecordedCommandsStatus.Completed, commands.Status);
+        Assert.Equal(RecordedCommandsStatus.Submitted, commands.Status);
     }
 
     [Fact]

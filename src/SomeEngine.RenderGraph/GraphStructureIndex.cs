@@ -1,4 +1,4 @@
-﻿using GraphAdjacency = System.Collections.Immutable.ImmutableDictionary<SomeEngine.RenderGraph.GraphIdentity, SomeEngine.RenderGraph.GraphIdentity[]>.Builder;
+using GraphAdjacency = System.Collections.Immutable.ImmutableDictionary<SomeEngine.RenderGraph.GraphIdentity, SomeEngine.RenderGraph.GraphIdentity[]>.Builder;
 
 namespace SomeEngine.RenderGraph;
 
@@ -335,25 +335,25 @@ internal sealed class GraphStructureIndex
                     throw new ArgumentException("A Pass references removed parameter bindings.");
         }
     }
-    private static void TouchEverything(ulong owner, GraphStructure structure, GraphEditChanges changes)
+    private static void TouchEverything(ulong scopeId, GraphStructure structure, GraphEditChanges changes)
     {
         for (int i = 0; i < structure.Buffers.Count; i++)
-            changes.TouchBuffer(structure.Buffers.IdentityAt(owner, i), membership: true);
+            changes.TouchBuffer(structure.Buffers.IdentityAt(scopeId, i), membership: true);
         for (int i = 0; i < structure.Textures.Count; i++)
-            changes.TouchTexture(structure.Textures.IdentityAt(owner, i), membership: true);
+            changes.TouchTexture(structure.Textures.IdentityAt(scopeId, i), membership: true);
         for (int i = 0; i < structure.PersistentBindings.Count; i++)
-            changes.TouchPersistentBindings(structure.PersistentBindings.IdentityAt(owner, i), membership: true);
+            changes.TouchPersistentBindings(structure.PersistentBindings.IdentityAt(scopeId, i), membership: true);
         for (int i = 0; i < structure.QueryPools.Count; i++)
-            changes.TouchQueryPool(structure.QueryPools.IdentityAt(owner, i), membership: true);
+            changes.TouchQueryPool(structure.QueryPools.IdentityAt(scopeId, i), membership: true);
         for (int i = 0; i < structure.ShaderTables.Count; i++)
-            changes.TouchShaderTable(structure.ShaderTables.IdentityAt(owner, i), membership: true);
+            changes.TouchShaderTable(structure.ShaderTables.IdentityAt(scopeId, i), membership: true);
         for (int i = 0; i < structure.Views.Count; i++)
-            changes.TouchView(structure.Views.IdentityAt(owner, i), membership: true);
+            changes.TouchView(structure.Views.IdentityAt(scopeId, i), membership: true);
         for (int i = 0; i < structure.Passes.Count; i++)
-            changes.TouchPass(structure.Passes.IdentityAt(owner, i), membership: true);
+            changes.TouchPass(structure.Passes.IdentityAt(scopeId, i), membership: true);
         for (int i = 0; i < structure.Accesses.Count; i++)
         {
-            GraphIdentity id = structure.Accesses.IdentityAt(owner, i);
+            GraphIdentity id = structure.Accesses.IdentityAt(scopeId, i);
             PassResourceAccess row = structure.Accesses.Rows[i];
             changes.TouchAccess(id, row.Pass, row.Target, membership: true);
         }
@@ -536,12 +536,12 @@ internal sealed class GraphStructureIndex
         if (structure.Buffers.Contains(resource))
         {
             GraphBuffer row = structure.Buffers.Get(resource);
-            return row.Ownership == RenderGraphResourceOwnership.GraphOwned &&
+            return row.Source == RenderGraphResourceSource.GraphCreated &&
                 row.Lifetime == RenderGraphResourceLifetime.PerFrame;
         }
         if (!structure.Textures.Contains(resource)) return false;
         GraphTexture texture = structure.Textures.Get(resource);
-        return texture.Ownership == RenderGraphResourceOwnership.GraphOwned &&
+        return texture.Source == RenderGraphResourceSource.GraphCreated &&
             texture.Lifetime == RenderGraphResourceLifetime.PerFrame;
     }
 
@@ -586,7 +586,7 @@ internal sealed class GraphStructureIndex
             throw new ArgumentOutOfRangeException(nameof(buffer.Description.Usages));
         if (!Enum.IsDefined(buffer.MemoryType))
             throw new ArgumentOutOfRangeException(nameof(buffer.MemoryType));
-        if (buffer.Ownership == RenderGraphResourceOwnership.GraphOwned &&
+        if (buffer.Source == RenderGraphResourceSource.GraphCreated &&
             buffer.Lifetime == RenderGraphResourceLifetime.PerFrame &&
             buffer.Description.Usages.HasFlag(BufferUsages.Shareable))
             throw new NotSupportedException("Transient shareable buffers are not supported.");
@@ -600,7 +600,7 @@ internal sealed class GraphStructureIndex
             throw new ArgumentOutOfRangeException(nameof(texture));
         if (texture.Usages == TextureUsages.None)
             throw new ArgumentOutOfRangeException(nameof(texture.Usages));
-        if (texture.Ownership == RenderGraphResourceOwnership.GraphOwned &&
+        if (texture.Source == RenderGraphResourceSource.GraphCreated &&
             texture.Lifetime == RenderGraphResourceLifetime.PerFrame &&
             texture.Usages.HasFlag(TextureUsages.Shareable))
             throw new NotSupportedException("Transient shareable textures are not supported.");
@@ -680,7 +680,7 @@ internal sealed class GraphStructureIndex
             throw new ArgumentException("Pass access must name a real synchronization and access scope.");
         if (access.ParameterInput is not null)
         {
-            DevelopmentCheck.Require(access.ParameterInput.Graph == access.Pass.Owner,
+            DevelopmentCheck.Require(access.ParameterInput.Graph == access.Pass.ScopeId,
                 "A parameter input belongs to another graph.");
             ValidateMode(structure, access);
             return;
@@ -690,7 +690,7 @@ internal sealed class GraphStructureIndex
             case GraphAccessTargetKind.Buffer:
                 if (access.BufferInput is not null)
                 {
-                    DevelopmentCheck.Require(access.BufferInput.Graph == access.Pass.Owner,
+                    DevelopmentCheck.Require(access.BufferInput.Graph == access.Pass.ScopeId,
                         "A buffer input belongs to another graph.");
                     ValidateMode(structure, access);
                     break;
@@ -702,7 +702,7 @@ internal sealed class GraphStructureIndex
             case GraphAccessTargetKind.Texture:
                 if (access.TextureInput is not null)
                 {
-                    DevelopmentCheck.Require(access.TextureInput.Graph == access.Pass.Owner,
+                    DevelopmentCheck.Require(access.TextureInput.Graph == access.Pass.ScopeId,
                         "A texture input belongs to another graph.");
                     ValidateMode(structure, access);
                     break;

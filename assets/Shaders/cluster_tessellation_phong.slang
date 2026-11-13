@@ -1,35 +1,21 @@
-#include "vertex_evaluate.slang"
-#include "phong_tessellation.slang"
+__exported import vertex_evaluate_interfaces;
 
 ByteAddressBuffer PageHeap;
+#include "cluster_tessellation_core.slang"
 
-typedef StaticVertexEval VertexEvaluate;
-typedef PhongTessellation DomainEvaluate;
-typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;
-
-#include "cluster_tessellation_entries.slang"
-
-[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("unbounded")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
-void SeedPhongTessellation(
-    uint3 groupId : SV_GroupID,
-    uint groupThreadIndex : SV_GroupThreadID)
+void SeedPhongTessellation<TVE : IVertexEvaluate>(
+    uniform TVE vertex, uint3 groupId : SV_GroupID, uint groupThreadIndex : SV_GroupThreadID)
 {
-    StaticVertexEval vertex;
     SeedTessellationRasterBin(vertex, groupId, groupThreadIndex);
 }
 
-[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
-[ConservativeBounds("unbounded")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
-void SplitPhongTessellation(
-    uint3 groupId : SV_GroupID,
-    uint groupThreadIndex : SV_GroupThreadID)
+void SplitPhongTessellation<TVE : IVertexEvaluate, TDomain : IDomainEvaluate<TVE.Vertex>>(
+    uniform TVE vertex, uniform TDomain domain,
+    uint3 groupId : SV_GroupID, uint groupThreadIndex : SV_GroupThreadID)
 {
-    StaticVertexEval vertex;
-    PhongTessellation domain = MakePhongTessellation();
     SplitTessellationPatches(vertex, domain, groupId, groupThreadIndex);
 }

@@ -3,127 +3,110 @@ using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
-/// <summary>Completed page faults and visible demand awaiting streaming consumption.</summary>
-public sealed class ClusterStreamingFeedbackChannel
+/// <summary>Writes completed geometry observations to the renderer's feedback queue.</summary>
+public static class ClusterStreamingFeedback
 {
-    private static readonly byte[][] EmptyPayloads = [[]];
-    private readonly Queue<ClusterStreamingFeedbackPacket> _packets = new();
-    private ClusterStreamingFeedbackStatistics _statistics;
-    private readonly Dictionary<(ulong Epoch, ulong Frame), ViewFeedback> _viewFeedback = [];
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly record struct GpuPageDemand(uint PageId, uint Priority);
 
-    private sealed class ViewFeedback(int count)
+    internal static void WriteFrame(RenderFeedback<ClusterPageDemand> feedback, ulong epoch, ulong frameIdentity, int readbackCount)
     {
-        internal int Remaining = count;
-        internal ulong ReportedFaults;
-        internal bool Complete = true;
-        internal readonly List<byte[]> Payloads = [];
-        internal readonly Dictionary<uint, uint> Demands = [];
+        if (readbackCount == 0) return;
+        var value = new ClusterPageDemand { Epoch = epoch, Kind = ClusterPageDemandKind.FrameEnd, Count = (uint)readbackCount };
+        feedback.Write(frameIdentity, in value);
     }
 
-    // Readbacks are counted only after RenderGraph has queued their completed-byte delivery.
-    // A single view follows the original path without a per-frame aggregation object.
-    internal void ExpectFrame(ulong epoch, ulong frameIdentity, int readbackCount)
+    internal static void WriteReadback(RenderFeedback<ClusterPageDemand> feedback, ulong epoch, ulong frameIdentity,
+        ReadOnlySpan<byte> payload, ReadOnlySpan<byte> demandPayload)
     {
-        if (readbackCount > 1) _viewFeedback.Add((epoch, frameIdentity), new ViewFeedback(readbackCount));
-    }
-
-    public ClusterStreamingFeedbackStatistics CaptureStatistics() => _statistics;
-
-    internal void Publish(ulong epoch, ulong frameIdentity, ReadOnlySpan<byte> payload, ReadOnlySpan<byte> demandPayload)
-    {
-        uint reportedCount = MemoryMarshal.Read<uint>(payload);
-        int storedCount = checked((int)Math.Min(reportedCount, (uint)((payload.Length - sizeof(uint)) / 16)));
-        byte[] bytes = reportedCount == 0 ? [] : payload[..(sizeof(uint) + storedCount * 16)].ToArray();
+        uint reportedFaults = MemoryMarshal.Read<uint>(payload);
+        int faultCount = (int)Math.Min(reportedFaults, (uint)((payload.Length - sizeof(uint)) / 16));
+        ReadOnlySpan<ClusterPageRequest> faults = MemoryMarshal.Cast<byte, ClusterPageRequest>(payload.Slice(sizeof(uint), faultCount * 16));
         uint reportedDemand = MemoryMarshal.Read<uint>(demandPayload);
-        int storedDemand = checked((int)Math.Min(reportedDemand, (uint)((demandPayload.Length - sizeof(uint)) / 8)));
-        ClusterPageDemand[] demands = MemoryMarshal.Cast<byte, ClusterPageDemand>(
-            demandPayload.Slice(sizeof(uint), storedDemand * 8)).ToArray();
-        if (_viewFeedback.TryGetValue((epoch, frameIdentity), out ViewFeedback? views))
-        {
-            if (bytes.Length != 0) views.Payloads.Add(bytes);
-            views.ReportedFaults += reportedCount;
-            views.Complete &= reportedDemand == (uint)storedDemand;
-            foreach (ClusterPageDemand demand in demands)
-                views.Demands[demand.PageId] = Math.Max(views.Demands.GetValueOrDefault(demand.PageId), demand.Priority);
-            if (--views.Remaining != 0) return;
-            _viewFeedback.Remove((epoch, frameIdentity));
-            Enqueue(epoch, frameIdentity, views.Payloads.Count == 0 ? EmptyPayloads : views.Payloads.ToArray(),
-                views.Demands.Select(static pair => new ClusterPageDemand(pair.Key, pair.Value)).ToArray(),
-                views.Complete, views.ReportedFaults);
-        }
-        else
-        {
-            Enqueue(epoch, frameIdentity, bytes.Length == 0 ? EmptyPayloads : [bytes], demands,
-                reportedDemand == (uint)storedDemand, reportedCount);
-        }
-    }
-
-    private void Enqueue(ulong epoch, ulong frameIdentity, byte[][] payloads, ClusterPageDemand[] demands,
-        bool complete, ulong reportedCount)
-    {
-        var ticket = new ClusterReadbackTicket(new ClusterEpochId(epoch), checked(_statistics.ReceivedFrames + 1));
-        _packets.Enqueue(new ClusterStreamingFeedbackPacket(ticket, payloads, demands, complete, frameIdentity));
-        _statistics = _statistics with
-        {
-            ReceivedFrames = ticket.FeedbackSequence,
-            ReportedPageFaults = _statistics.ReportedPageFaults + reportedCount,
-            LastEpoch = ticket.EpochId.Value,
-        };
-    }
-
-    internal bool TryTake(out ClusterStreamingFeedbackPacket packet) => _packets.TryDequeue(out packet);
-
-    internal void RecordConsumption(ClusterStreamingFeedbackPacket packet)
-    {
-        ulong count = 0;
-        foreach (byte[] payload in packet.Payloads)
-            if (payload.Length != 0) count += MemoryMarshal.Read<uint>(payload);
-        _statistics = _statistics with
-        {
-            ConsumedFrames = _statistics.ConsumedFrames + 1,
-            ConsumedPageFaults = _statistics.ConsumedPageFaults + count,
-        };
+        int demandCount = (int)Math.Min(reportedDemand, (uint)((demandPayload.Length - sizeof(uint)) / 8));
+        ReadOnlySpan<GpuPageDemand> demands = MemoryMarshal.Cast<byte, GpuPageDemand>(demandPayload.Slice(sizeof(uint), demandCount * 8));
+        var values = new ClusterPageDemand[faultCount + demandCount + 1];
+        int index = 0;
+        foreach (ClusterPageRequest fault in faults)
+            values[index++] = new(fault.FirstPageId, fault.Priority)
+            { Epoch = epoch, Kind = ClusterPageDemandKind.Fault, LeafNodeIndex = fault.LeafNodeIndex, PageCount = fault.PageCount };
+        foreach (GpuPageDemand demand in demands)
+            values[index++] = new(demand.PageId, demand.Priority) { Epoch = epoch };
+        values[index] = new() { Epoch = epoch, Kind = ClusterPageDemandKind.ViewEnd, Count = reportedFaults,
+            Complete = reportedDemand == (uint)demandCount };
+        feedback.Write(frameIdentity, values.AsSpan());
     }
 }
 
 public readonly record struct ClusterStreamingFeedbackStatistics(
     ulong ReceivedFrames, ulong ConsumedFrames, ulong ReportedPageFaults, ulong ConsumedPageFaults, ulong LastEpoch);
 
-/// <summary>
-/// Consumes geometry demand and advances reads through the shared feedback channel.
-/// </summary>
+/// <summary>Merges completed view observations and advances the shared geometry page stream.</summary>
 public sealed class ClusterStreamingFeedbackConsumer
 {
     private readonly ClusterRenderResources _resources;
-    private readonly ClusterStreamingFeedbackChannel _channel;
+    private readonly RenderFeedback<ClusterPageDemand> _feedback;
+    private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
+    private readonly Dictionary<(ulong Epoch, ulong Frame), FrameFeedback> _frames = [];
+    private ClusterStreamingFeedbackStatistics _statistics;
 
-    public ClusterStreamingFeedbackConsumer(
-        ClusterRenderResources resources,
-        ClusterStreamingFeedbackChannel channel)
-    {
-        _resources = resources ?? throw new ArgumentNullException(nameof(resources));
-        _channel = channel ?? throw new ArgumentNullException(nameof(channel));
-    }
+    public ClusterStreamingFeedbackConsumer(ClusterRenderResources resources, RenderFeedback<ClusterPageDemand> feedback,
+        global::SomeEngine.RenderGraph.RenderGraph graph) => (_resources, _feedback, _graph) = (resources, feedback, graph);
+
+    public ClusterStreamingFeedbackStatistics CaptureStatistics() => _statistics;
 
     public void Pump()
     {
-        ConsumeFeedback();
+        while (_feedback.TryRead(_graph.LastCompletedFrame, out RenderFeedbackRecord<ClusterPageDemand> record))
+        {
+            ClusterPageDemand value = record.Value;
+            if (value.Epoch != _resources.EpochId.Value) continue;
+            var key = (value.Epoch, record.FrameIdentity);
+            if (!_frames.TryGetValue(key, out FrameFeedback? frame)) _frames.Add(key, frame = new());
+            switch (value.Kind)
+            {
+                case ClusterPageDemandKind.FrameEnd: frame.ExpectedViews = value.Count; break;
+                case ClusterPageDemandKind.Fault:
+                    frame.ViewFaults.Add(new(value.LeafNodeIndex, value.PageId, value.PageCount, value.Priority));
+                    break;
+                case ClusterPageDemandKind.Demand:
+                    frame.Demands[value.PageId] = Math.Max(frame.Demands.GetValueOrDefault(value.PageId), value.Priority);
+                    break;
+                case ClusterPageDemandKind.ViewEnd:
+                    frame.ReportedFaults += value.Count;
+                    frame.Complete &= value.Complete;
+                    frame.EndedViews++;
+                    if (value.Count != 0)
+                    {
+                        byte[] bytes = new byte[sizeof(uint) + frame.ViewFaults.Count * 16];
+                        uint reported = value.Count;
+                        MemoryMarshal.Write(bytes, in reported);
+                        MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(frame.ViewFaults)).CopyTo(bytes.AsSpan(sizeof(uint)));
+                        frame.Payloads.Add(bytes);
+                    }
+                    frame.ViewFaults.Clear();
+                    break;
+            }
+            if (frame.ExpectedViews == 0 || frame.ExpectedViews != frame.EndedViews) continue;
+            var ticket = new ClusterReadbackTicket(new(value.Epoch), _statistics.ReceivedFrames + 1);
+            ClusterPagePriority[] demands = frame.Demands.Select(pair => new ClusterPagePriority(pair.Key, pair.Value)).ToArray();
+            byte[][] payloads = frame.Payloads.Count == 0 ? [[]] : frame.Payloads.ToArray();
+            _resources.IngestStreamingFeedback(ticket, payloads, demands, frame.Complete, record.FrameIdentity);
+            _statistics = new(ticket.FeedbackSequence, _statistics.ConsumedFrames + 1,
+                _statistics.ReportedPageFaults + frame.ReportedFaults,
+                _statistics.ConsumedPageFaults + frame.ReportedFaults, value.Epoch);
+            _frames.Remove(key);
+        }
         _resources.PumpStreaming();
     }
 
-    private void ConsumeFeedback()
+    private sealed class FrameFeedback
     {
-        while (_channel.TryTake(out ClusterStreamingFeedbackPacket packet))
-        {
-            _resources.IngestStreamingFeedback(packet.Ticket, packet.Payloads, packet.Demands, packet.DemandComplete, packet.FrameIdentity);
-            _channel.RecordConsumption(packet);
-        }
+        internal uint ExpectedViews, EndedViews;
+        internal ulong ReportedFaults;
+        internal bool Complete = true;
+        internal readonly List<ClusterPageRequest> ViewFaults = [];
+        internal readonly List<byte[]> Payloads = [];
+        internal readonly Dictionary<uint, uint> Demands = [];
     }
 }
-
-internal readonly record struct ClusterStreamingFeedbackPacket(
-    ClusterReadbackTicket Ticket,
-    byte[][] Payloads,
-    ClusterPageDemand[] Demands,
-    bool DemandComplete,
-    ulong FrameIdentity);

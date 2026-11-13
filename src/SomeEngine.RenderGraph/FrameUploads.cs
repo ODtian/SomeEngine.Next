@@ -27,7 +27,7 @@ public sealed partial class RenderGraph
     internal void ValidateBufferUpload(GraphBufferId buffer, ulong offset, int length, GraphStructure? structure = null)
     {
         structure ??= _editStructure ?? _structure;
-        DevelopmentCheck.Require(buffer.Value.Owner == Identity && structure.Buffers.Contains(buffer.Value),
+        DevelopmentCheck.Require(buffer.Value.ScopeId == Identity && structure.Buffers.Contains(buffer.Value),
             "The upload target must belong to this graph.");
         GraphBuffer data = structure.Buffers.Get(buffer.Value);
         DevelopmentCheck.Require(data.Lifetime == RenderGraphResourceLifetime.Persistent &&
@@ -56,7 +56,7 @@ public ref partial struct RenderGraphEdit
     /// <summary>Installs a persistent upload pass and returns its identity for explicit ordering.</summary>
     public GraphPassId AddBufferUploadPass(GraphBufferId buffer)
     {
-        ValidateOwner(buffer.Value);
+        ValidateScope(buffer.Value);
         GraphPassId existing = Structure.Buffers.Get(buffer.Value).BufferUploadPass;
         if (existing != default) return existing;
         if (Structure.BufferUploadRegion == default)
@@ -71,7 +71,8 @@ public ref partial struct RenderGraphEdit
         GraphPassId pass = AddPersistentFramePass("Upload buffer", GraphPassKind.Copy,
             PassQueueSelection.AnyCompatible(), buffer, new PassOptions(Culling: PassCullingMode.NeverCull),
             null, VariableLayoutReflection.Null, [],
-            static (ref PassDefinition pass, ref GraphBufferId data) => { },
+            static (ref PassDefinition pass, ref GraphBufferId data) =>
+                pass.Write(data, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Partial),
             new BufferUploadCommands(), Structure.BufferUploadRegion);
         Staging.Buffers.GetMutable(buffer.Value).BufferUploadPass = pass;
         Changes.TouchBuffer(buffer.Value);
@@ -97,9 +98,9 @@ internal sealed partial class RenderGraphFrameState
 
     internal Span<byte> GetWriteSpan(GraphBufferId buffer, ulong offset, int length)
     {
-        EnsureAuthoring();
+        EnsureEditable();
         Graph.ValidateBufferUpload(buffer, offset, length, StructureIndex.Structure);
-        return Slot.GetBufferTransfers(Graph).GetWriteSpan(buffer, offset, length);
+        return Resources.GetBufferTransfers(Graph).GetWriteSpan(buffer, offset, length);
     }
 
     internal bool HasBufferUploads(PassCallbackStorage commands) =>
@@ -109,11 +110,11 @@ internal sealed partial class RenderGraphFrameState
 
     internal BufferRangeSet GetBufferUploadRanges(GraphBufferId buffer)
     {
-        EnsureAuthoring();
+        EnsureEditable();
         var ranges = new List<BufferRange>();
         if (_bufferUploads.TryGetValue(buffer, out BufferUploadCopy[]? copies))
             foreach (BufferUploadCopy copy in copies) ranges.Add(copy.Destination);
-        Slot.GetBufferTransfers(Graph).AddUploadRanges(buffer, ranges);
+        Resources.GetBufferTransfers(Graph).AddUploadRanges(buffer, ranges);
         ranges.Sort(static (left, right) => left.Offset.CompareTo(right.Offset));
         var combined = new List<BufferRange>();
         foreach (BufferRange range in ranges)
@@ -215,7 +216,7 @@ internal sealed partial class RenderGraphFrameState
 
     private void PrepareBufferUploads()
     {
-        FrameBufferTransfers transfers = Slot.GetBufferTransfers(Graph);
+        FrameBufferTransfers transfers = Resources.GetBufferTransfers(Graph);
         FrameBufferTransfers.BufferUpload[] uploads = transfers.TakeUploads();
         Graph.EnsureBufferUploadPasses(uploads);
         CollectBufferUploads(uploads);

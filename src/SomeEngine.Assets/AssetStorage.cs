@@ -137,9 +137,9 @@ public sealed class LooseAssetStorage : IAssetStorage
 
     private Guid ComputeVersion(string path)
     {
-        FileRangeSource source = FileRangeSource.Open(ResolveContainedPath(path));
-        try { return BinaryDocument.ReadVersionAsync(source).AsTask().GetAwaiter().GetResult(); }
-        finally { source.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        using var stream = new FileStream(ResolveContainedPath(path), FileMode.Open, FileAccess.Read,
+            FileShare.Read | FileShare.Delete);
+        return BinaryDocument.ReadVersion(stream);
     }
 }
 

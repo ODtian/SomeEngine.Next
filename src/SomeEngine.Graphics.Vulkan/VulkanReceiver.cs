@@ -108,15 +108,21 @@ internal sealed unsafe partial class VulkanBackend
     void IGraphicsBackend.ResolveTexture(CommandContext context, in TextureResolve resolve) => ResolveTexture(context, resolve);
     void IGraphicsBackend.ClearBuffer(CommandContext context, RhiBuffer buffer, in BufferRange range, uint value) => ClearBuffer(context, buffer, range, value);
     void IGraphicsBackend.ClearTexture(CommandContext context, RhiTexture texture, in TextureSubresourceRange range, in Vector4 color) => ClearTexture(context, texture, range, color);
-    void IGraphicsBackend.ClearDepthStencil(CommandContext context, RhiTexture texture, in TextureSubresourceRange range, float depth, byte stencil) => ClearDepthStencil(context, texture, range, depth, stencil);
+    void IGraphicsBackend.ClearDepthStencil(
+        CommandContext context,
+        RhiTexture texture,
+        in TextureSubresourceRange range,
+        float depth,
+        byte stencil
+    ) => ClearDepthStencil(context, texture, range, depth, stencil);
     void IGraphicsBackend.BeginRendering(CommandContext context, in RenderingDesc desc) => BeginRendering(context, desc);
     void IGraphicsBackend.EndRendering(CommandContext context) => EndRendering(context);
     void IGraphicsBackend.SetPipeline(CommandContext context, Pipeline pipeline) => SetPipeline(context, pipeline);
     void IGraphicsBackend.SetPersistentParameterBindings(CommandContext context, PersistentParameterBindings bindings) => SetPersistentParameterBindings(context, bindings);
     void IGraphicsBackend.SetTransientParameterBindings(CommandContext context, in ParameterBlockBindings bindings) => SetTransientParameterBindings(context, bindings);
-    void IGraphicsBackend.SetVertexBuffers(CommandContext context, uint firstSlot, ReadOnlySpan<VertexBufferBinding> bindings) => SetVertexBuffers(context, firstSlot, bindings);
+    void IGraphicsBackend.SetVertexBuffers(CommandContext context, uint firstBinding, ReadOnlySpan<VertexBufferBinding> bindings) => SetVertexBuffers(context, firstBinding, bindings);
     void IGraphicsBackend.SetIndexBuffer(CommandContext context, in IndexBufferBinding binding) => SetIndexBuffer(context, binding);
-    void IGraphicsBackend.SetStreamOutputBuffers(CommandContext context, uint firstSlot, ReadOnlySpan<StreamOutputBufferBinding> bindings) => SetStreamOutputBuffers(context, firstSlot, bindings);
+    void IGraphicsBackend.SetStreamOutputBuffers(CommandContext context, uint firstBinding, ReadOnlySpan<StreamOutputBufferBinding> bindings) => SetStreamOutputBuffers(context, firstBinding, bindings);
     void IGraphicsBackend.SetViewports(CommandContext context, ReadOnlySpan<Viewport> viewports) => SetViewports(context, viewports);
     void IGraphicsBackend.SetScissors(CommandContext context, ReadOnlySpan<ScissorRect> scissors) => SetScissors(context, scissors);
     void IGraphicsBackend.SetBlendConstants(CommandContext context, in Vector4 value) => SetBlendConstants(context, value);
@@ -140,9 +146,15 @@ internal sealed unsafe partial class VulkanBackend
     Pipeline IGraphicsBackend.CreateComputePipeline(RhiDevice device, in ComputePipelineDesc desc, SomeEngine.Graphics.PipelineCache? cache) => CreateComputePipeline(device, desc, cache);
     Task<Pipeline> IGraphicsBackend.CreateComputePipelineAsync(RhiDevice device, in ComputePipelineDesc desc, SomeEngine.Graphics.PipelineCache? cache) => CreateComputePipelineAsync(device, desc, cache);
 
-    DescriptorTable IGraphicsBackend.CreateDescriptorTable(RhiDevice device, ReadOnlySpan<DescriptorSlotDesc> slots, string? label, uint nodeIndex, CancellationToken cancellationToken) => CreateDescriptorTable(device, slots, label, nodeIndex, cancellationToken);
-    DescriptorIndex IGraphicsBackend.GetDescriptorIndex(DescriptorTable table, uint slot) => GetDescriptorIndex(table, slot);
-    void IGraphicsBackend.WriteDescriptor(DescriptorTable table, uint slot, in ResourceBinding value) => WriteDescriptor(table, slot, value);
+    DescriptorTable IGraphicsBackend.CreateDescriptorTable(
+        RhiDevice device,
+        ReadOnlySpan<DescriptorEntryDesc> entries,
+        string? label,
+        uint nodeIndex,
+        CancellationToken cancellationToken
+    ) => CreateDescriptorTable(device, entries, label, nodeIndex, cancellationToken);
+    DescriptorIndex IGraphicsBackend.GetDescriptorIndex(DescriptorTable table, uint entry) => GetDescriptorIndex(table, entry);
+    void IGraphicsBackend.WriteDescriptor(DescriptorTable table, uint entry, in ResourceBinding value) => WriteDescriptor(table, entry, value);
     PersistentParameterBindings IGraphicsBackend.CreatePersistentParameterBindings(RhiDevice device, Pipeline pipeline, in ParameterBlockBindings bindings, string? label) => CreatePersistentParameterBindings(device, pipeline, bindings, label);
     void IGraphicsBackend.UpdatePersistentParameterBindings(PersistentParameterBindings destination, in ParameterBlockBindings bindings) => UpdatePersistentParameterBindings(destination, bindings);
     void IGraphicsBackend.PublishDescriptors(RhiDevice device, uint nodeIndex, CancellationToken cancellationToken) => PublishDescriptors(device, nodeIndex, cancellationToken);

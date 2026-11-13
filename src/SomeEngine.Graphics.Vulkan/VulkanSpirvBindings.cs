@@ -20,7 +20,7 @@ internal sealed unsafe partial class VulkanBackend
         Unknown,
         Pointer,
         Array,
-        RuntimeArray,
+        UnboundedArray,
         Struct,
         Image,
         Sampler,
@@ -44,7 +44,7 @@ internal sealed unsafe partial class VulkanBackend
         string? Name = null,
         uint SourceSet = uint.MaxValue)
     {
-        internal uint LogicalSet => SourceSet == uint.MaxValue ? Set : SourceSet;
+        internal uint ShaderSet => SourceSet == uint.MaxValue ? Set : SourceSet;
     }
 
     private readonly record struct SpirvBindingDecoration(int ValueWord, uint Target);
@@ -54,7 +54,7 @@ internal sealed unsafe partial class VulkanBackend
         int SetValueWord,
         uint Target,
         uint Set,
-        uint LogicalBinding,
+        uint ShaderBinding,
         DescriptorRegisterClass RegisterClass,
         string? Name);
 
@@ -135,8 +135,8 @@ internal sealed unsafe partial class VulkanBackend
                 case 28 when wordCount >= 4: // OpTypeArray
                     SetKind(words[index + 1], SpirvTypeKind.Array, words[index + 2]);
                     break;
-                case 29 when wordCount >= 3: // OpTypeRuntimeArray
-                    SetKind(words[index + 1], SpirvTypeKind.RuntimeArray, words[index + 2]);
+                case 29 when wordCount >= 3: // OpTypeUnboundedArray
+                    SetKind(words[index + 1], SpirvTypeKind.UnboundedArray, words[index + 2]);
                     break;
                 case 30 when wordCount >= 2: // OpTypeStruct
                     SetKind(words[index + 1], SpirvTypeKind.Struct);
@@ -289,7 +289,7 @@ internal sealed unsafe partial class VulkanBackend
             ordered.Add((
                 target,
                 target.Binding,
-                binding.LogicalBinding,
+                binding.ShaderBinding,
                 binding.Target));
         }
         ordered.Sort(static (left, right) =>
@@ -347,7 +347,7 @@ internal sealed unsafe partial class VulkanBackend
             targetGroups =
             targets.ToArray()
                 .GroupBy(static target => (
-                    target.LogicalSet,
+                    target.ShaderSet,
                     DecodeDescriptorRegisterClass(target.Binding)))
                 .ToDictionary(
                     static group => group.Key,
@@ -381,7 +381,7 @@ internal sealed unsafe partial class VulkanBackend
         Dictionary<int, VulkanSpirvBindingTarget> mapped)
     {
         IGrouping<uint, ResolvedSpirvBinding>[] sourceGroups = group
-            .GroupBy(static binding => binding.LogicalBinding)
+            .GroupBy(static binding => binding.ShaderBinding)
             .OrderBy(static values => values.Key)
             .ToArray();
         if (!targetGroups.TryGetValue(
@@ -393,7 +393,7 @@ internal sealed unsafe partial class VulkanBackend
                 $"{group.Key.RegisterClass} has no matching Slang reflection binding.");
         }
         var available = new List<VulkanSpirvBindingTarget>(targets);
-        var pending = new List<IGrouping<uint, ResolvedSpirvBinding>>();
+        var bindingGroups = new List<IGrouping<uint, ResolvedSpirvBinding>>();
         foreach (IGrouping<uint, ResolvedSpirvBinding> sourceGroup in sourceGroups)
         {
             VulkanSpirvBindingTarget[] named = available
@@ -411,7 +411,7 @@ internal sealed unsafe partial class VulkanBackend
                         $"targets=[{string.Join(", ", available.Select(
                             static target => target.Name ?? $"{target.Set}:{target.Binding}"))}].");
                 }
-                pending.Add(sourceGroup);
+                bindingGroups.Add(sourceGroup);
                 continue;
             }
             VulkanSpirvBindingTarget target = named[0];
@@ -424,11 +424,11 @@ internal sealed unsafe partial class VulkanBackend
             .Select(static values => values.First())
             .OrderBy(static target => target.Binding)
             .ToArray();
-        foreach (IGrouping<uint, ResolvedSpirvBinding> sourceGroup in pending)
+        foreach (IGrouping<uint, ResolvedSpirvBinding> sourceGroup in bindingGroups)
         {
             ResolvedSpirvBinding source = sourceGroup.First();
             uint direct = EncodeDescriptorBinding(
-                source.LogicalBinding,
+                source.ShaderBinding,
                 source.RegisterClass);
             VulkanSpirvBindingTarget[] matches = remaining
                 .Where(target => target.Binding == direct)
@@ -440,7 +440,7 @@ internal sealed unsafe partial class VulkanBackend
                     $"{group.Key.RegisterClass} exposes {sourceGroups.Length} bindings, " +
                     $"while Slang reflection exposes {targets.Length} bindings: " +
                     string.Join(", ", group.Select(static value =>
-                        $"{value.Name ?? $"%{value.Target}"}@{value.LogicalBinding}")) + ".");
+                        $"{value.Name ?? $"%{value.Target}"}@{value.ShaderBinding}")) + ".");
             }
             AssignSpirvTarget(words, sourceGroup, matches[0], mapped);
         }
@@ -471,7 +471,7 @@ internal sealed unsafe partial class VulkanBackend
     }
 
     internal static uint NormalizeReflectedDescriptorBinding(
-        uint logicalBinding,
+        uint shaderBinding,
         SlangBindingType source,
         SlangParameterCategory category)
     {
@@ -483,11 +483,11 @@ internal sealed unsafe partial class VulkanBackend
             SlangParameterCategory.ConstantBuffer => DescriptorRegisterClass.ConstantBuffer,
             _ => ResolveReflectedRegisterClass(source),
         };
-        return EncodeDescriptorBinding(logicalBinding, registerClass);
+        return EncodeDescriptorBinding(shaderBinding, registerClass);
     }
 
-    internal static uint NormalizeOrdinaryDescriptorBinding(uint logicalBinding) =>
-        EncodeDescriptorBinding(logicalBinding, DescriptorRegisterClass.ConstantBuffer);
+    internal static uint NormalizeOrdinaryDescriptorBinding(uint shaderBinding) =>
+        EncodeDescriptorBinding(shaderBinding, DescriptorRegisterClass.ConstantBuffer);
 
     private static DescriptorRegisterClass ResolveReflectedRegisterClass(SlangBindingType source)
     {
@@ -585,7 +585,7 @@ internal sealed unsafe partial class VulkanBackend
         {
             if (typeId == 0 || typeId >= kinds.Length)
                 throw InvalidSpirv($"SPIR-V descriptor references invalid type ID {typeId}.");
-            if (kinds[typeId] is not (SpirvTypeKind.Array or SpirvTypeKind.RuntimeArray))
+            if (kinds[typeId] is not (SpirvTypeKind.Array or SpirvTypeKind.UnboundedArray))
                 return typeId;
             typeId = referencedTypes[typeId];
         }
@@ -607,7 +607,7 @@ internal sealed unsafe partial class VulkanBackend
                 return true;
             if (kinds[typeId] is not (
                 SpirvTypeKind.Pointer or SpirvTypeKind.Array or
-                SpirvTypeKind.RuntimeArray or SpirvTypeKind.SampledImage))
+                SpirvTypeKind.UnboundedArray or SpirvTypeKind.SampledImage))
                 return false;
             typeId = referencedTypes[typeId];
         }
@@ -615,17 +615,17 @@ internal sealed unsafe partial class VulkanBackend
     }
 
     private static uint EncodeDescriptorBinding(
-        uint logicalBinding,
+        uint shaderBinding,
         DescriptorRegisterClass registerClass)
     {
-        if (logicalBinding >= DescriptorRegisterClassStride)
+        if (shaderBinding >= DescriptorRegisterClassStride)
         {
             throw new GraphicsException(
                 GraphicsError.PipelineCreation,
-                $"Vulkan logical descriptor binding {logicalBinding} exceeds the " +
+                $"Vulkan logical descriptor binding {shaderBinding} exceeds the " +
                 $"per-register-class limit {DescriptorRegisterClassStride - 1}.");
         }
-        return checked(logicalBinding + (uint)registerClass * DescriptorRegisterClassStride);
+        return checked(shaderBinding + (uint)registerClass * DescriptorRegisterClassStride);
     }
 
     private static DescriptorRegisterClass DecodeDescriptorRegisterClass(uint binding)

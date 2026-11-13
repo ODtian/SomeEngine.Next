@@ -7,26 +7,23 @@ using Buffer = SomeEngine.Graphics.Buffer;
 namespace SomeEngine.Runtime;
 
 /// <summary>Reads the standard presentation target without changing the runtime render path.</summary>
-internal sealed class FrameOutputVerifier : IDisposable
+internal sealed class FrameOutputVerifier : IGraphReadbackReceiver
 {
-    private readonly IGraphicsBackend _backend;
-    private readonly Device _device;
+    private readonly RenderGraph.RenderGraph _graph;
     private readonly int _width;
     private readonly int _height;
     private readonly TextureCopyFootprint _footprint;
-    private readonly Buffer _readback;
     private readonly byte[] _bytes;
-    private bool _disposed;
 
     internal FrameOutputVerifier(
         IGraphicsBackend backend,
         Device device,
+        RenderGraph.RenderGraph graph,
         int width,
         int height,
         Format format)
     {
-        _backend = backend ?? throw new ArgumentNullException(nameof(backend));
-        _device = device ?? throw new ArgumentNullException(nameof(device));
+        _graph = graph;
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
         if (format is not (Format.R8G8B8A8UNorm or Format.R16G16B16A16Float))
@@ -61,13 +58,6 @@ internal sealed class FrameOutputVerifier : IDisposable
             checked((uint)height),
             1);
         _footprint = backend.GetTextureCopyFootprint(device, description, footprintRequest);
-        _readback = backend.CreateBuffer(
-            device,
-            new BufferDesc(
-                _footprint.TotalSize,
-                BufferUsages.CopyDestination,
-                "Runtime frame verification readback"),
-            MemoryType.Readback);
         _bytes = new byte[checked((int)_footprint.TotalSize)];
     }
 
@@ -77,15 +67,9 @@ internal sealed class FrameOutputVerifier : IDisposable
         Queue presentationQueue,
         GraphRegionId region)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(presentationQueue);
-        GraphBufferId destination = graph.Import(
-            _readback,
-            [new BufferBoundaryState(
-                new BufferRange(0, _readback.Info.Size),
-                _readback.InitialSync,
-                _readback.InitialAccess,
-                ResourceContentState.Undefined)]);
+        GraphBufferId destination = graph.CreateBuffer(new BufferDesc(_footprint.TotalSize,
+            BufferUsages.CopySource | BufferUsages.CopyDestination, "Frame output bytes"));
         ReadbackPassData passData = new(
             source,
             destination,
@@ -95,9 +79,9 @@ internal sealed class FrameOutputVerifier : IDisposable
             checked((uint)_width),
             checked((uint)_height),
             _footprint.TotalSize);
-        _ = graph.AddCopyPass(
+        GraphPassId copy = graph.AddCopyPass(
             "Verify runtime frame output",
-            PassQueueSelection.Exact(presentationQueue),
+            PassQueueSelection.OnQueue(presentationQueue),
             passData,
             default,
             static (ref PassDefinition access, ref ReadbackPassData data) =>
@@ -135,16 +119,14 @@ internal sealed class FrameOutputVerifier : IDisposable
                     data.Height,
                     1));
             }, region: region);
+        GraphReadbackId readback = graph.AddReadback(new(destination, new(0, _footprint.TotalSize)),
+            this, "Read frame output", region: region);
+        graph.OrderAfter(readback, copy);
     }
 
-    internal void ReadPixels()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        BufferRange range = new(0, checked((ulong)_bytes.Length));
-        using MappedBuffer mapping = _backend.Map(_readback, MapType.Read, range);
-        mapping.Invalidate(range);
-        mapping.Bytes.CopyTo(_bytes);
-    }
+    internal void ReadPixels() => _graph.CollectCompleted();
+
+    public void OnReadback(ReadOnlySpan<byte> bytes, ulong tag) => bytes.CopyTo(_bytes);
 
     internal SceneLinearImage CopyLinearImage(SceneFrame frame)
     {
@@ -252,14 +234,6 @@ internal sealed class FrameOutputVerifier : IDisposable
     }
 
     internal void SaveImage(string path) => CopyImage(0).SaveBmp(path);
-
-    public void Dispose()
-    {
-        if (_disposed)
-            return;
-        _readback.Dispose();
-        _disposed = true;
-    }
 
     private readonly record struct ReadbackPassData(
         GraphTextureId Source,

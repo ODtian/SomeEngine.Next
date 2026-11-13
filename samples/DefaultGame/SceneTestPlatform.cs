@@ -1,11 +1,15 @@
+﻿using SomeEngine.Transparency.Measurements;
 using ImGuiNET;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using SomeEngine.Diagnostics;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Cluster.Pipeline;
+using SomeEngine.Render.Features.Shadows;
+using SomeEngine.RenderGraph;
 using SomeEngine.Runtime;
 
 namespace DefaultGame;
@@ -53,20 +57,20 @@ public sealed partial class SceneTestPlatform
     public static TestScene[] ReadScenes(string path) =>
         JsonSerializer.Deserialize(File.ReadAllText(path), SceneJsonContext.Default.TestSceneArray)!;
 
-    public SceneTestPlatform(IReadOnlyList<TestScene> scenes, RuntimeStartupOptions? options = null)
+    public SceneTestPlatform(IReadOnlyList<TestScene> scenes, ApplicationOptions? options = null)
     {
         if (scenes.Count == 0) throw new ArgumentException("At least one test scene is required.", nameof(scenes));
         Scenes = scenes.ToArray();
         Application = new ApplicationScene(scenes[0].ContentDirectory)
         {
-            Options = (options ?? RuntimeStartupOptions.Parse([])) with { WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true, SurfacePanel = true, WorldNameplates = true },
+            Options = (options ?? ApplicationOptions.Parse([])) with { WindowVSync = false, DynamicScene = scenes[0].Animate, SurfacePanel = true, WorldNameplates = true },
             InterfaceEnabled = true,
             Initialize = frame => InitializeScene?.Invoke(frame.Scene, Current),
             SceneStarted = BeginScene,
             UpdateFrame = UpdateFrame,
             DrawDebugUi = Draw,
             FrameCompleted = FrameCompleted,
-            BlendFrameCompleted = RecordBlendFrame,
+            CreateFrameFeatures = CreateMeasurementFeatures,
             SceneCompleted = result => EndScene(result.Error?.Message),
         };
         MeasureBlending = Options.MeasureBlending;
@@ -95,12 +99,14 @@ public sealed partial class SceneTestPlatform
     }
     public bool HudOverlayEnabled => Options.HudOverlay;
     public bool HudNumbersChange => Options.HudNumbersChange;
-    private RuntimeStartupOptions Options { get => Application.Options; set => Application.Options = value; }
+    private ApplicationOptions Options { get => Application.Options; set => Application.Options = value; }
     private bool ReloadRequested => Application.ReloadRequested;
     internal TestScene Current => Scenes[SelectedScene];
     private readonly List<SceneTiming> _results = [];
     private readonly List<ApplicationFrameTimes> _frames = [];
-    private readonly Dictionary<int, ClusterBlendMetrics> _blendFrames = [];
+    private readonly Dictionary<int, BlendFrameMetrics> _blendFrames = [];
+    private readonly List<(ulong Frame, float LodBias)> _shadowResolutionFeedback = [];
+    private bool _shadowDynamicResolutionEnabled;
     private readonly List<SceneFrameWindow> _frameWindows = [];
     private int _firstSampleRenderedFrame;
     private bool _fixedWarmupComplete;
@@ -128,7 +134,7 @@ public sealed partial class SceneTestPlatform
     private bool _recordTrace;
     private bool _measureAfterStartup;
     private string? _resultDirectory;
-    private RuntimeStartupOptions? _interactiveOptions;
+    private ApplicationOptions? _interactiveOptions;
     private int _interactiveScene;
     private int _renderWidth;
     private int _renderHeight;
@@ -184,7 +190,7 @@ public sealed partial class SceneTestPlatform
         DevelopmentCheck.Require(!IsMeasuring, "Change the HUD between scene measurements.");
         if (Options.HudOverlay == enabled && Options.HudNumbersChange == changeNumbers) return;
         Options = Options with { HudOverlay = enabled, HudNumbersChange = changeNumbers };
-        Application.Reload();
+        Application.LoadScene(Current.ContentDirectory);
     }
 
     private string ImageDestination()
@@ -240,9 +246,8 @@ public sealed partial class SceneTestPlatform
         ArgumentOutOfRangeException.ThrowIfNegative(index);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Scenes.Count);
         SelectedScene = index;
-        Application.ContentDirectory = Current.ContentDirectory;
         Options = Options with { DynamicScene = Current.Animate };
-        Application.Reload();
+        Application.LoadScene(Current.ContentDirectory);
     }
 
     private void BeginScene(long started)
@@ -261,6 +266,7 @@ public sealed partial class SceneTestPlatform
         _readyFrames = 0;
         _frames.Clear();
         _blendFrames.Clear();
+        _shadowResolutionFeedback.Clear();
         _firstSampleRenderedFrame = 0;
         _fixedWarmupComplete = false;
         _fixedWindowError = null;
@@ -274,9 +280,38 @@ public sealed partial class SceneTestPlatform
                 });
     }
 
-    private void RecordBlendFrame(ClusterBlendMetrics frame)
+    private void RecordBlendFrame(BlendFrameMetrics frame)
     {
         if (IsMeasuring) _blendFrames[frame.SimulationFrame] = frame;
+    }
+
+    private IEnumerable<IApplicationFrameFeature> CreateMeasurementFeatures(ApplicationRendering rendering)
+    {
+        if (rendering.Shadows is { } shadows) yield return new ShadowResolutionMeasurements(shadows, this);
+        if (Options.MeasureBlending) yield return new BlendMeasurementFeature(rendering, RecordBlendFrame);
+    }
+
+    private void RecordShadowResolutionBias(ulong frame, float lodBias)
+    {
+        if (IsMeasuring && _sampleStarted != 0 && !ReloadRequested)
+            _shadowResolutionFeedback.Add((frame, lodBias));
+    }
+
+    private sealed class ShadowResolutionMeasurements : IApplicationFrameFeature
+    {
+        private readonly VirtualShadowFeature _shadows;
+        private readonly SceneTestPlatform _platform;
+
+        internal ShadowResolutionMeasurements(VirtualShadowFeature shadows, SceneTestPlatform platform)
+        {
+            (_shadows, _platform) = (shadows, platform);
+            shadows.ResolutionBiasCompleted += platform.RecordShadowResolutionBias;
+            Reconcile();
+        }
+
+        public void Reconcile() => _platform._shadowDynamicResolutionEnabled = _shadows.Settings.DynamicResolutionEnabled;
+        public void Record(ref RenderGraphFrame frame, int simulationFrame) { }
+        public void Dispose() => _shadows.ResolutionBiasCompleted -= _platform.RecordShadowResolutionBias;
     }
 
     private void RecordFrame(ApplicationFrameTimes frame, ClusterRenderDiagnostics diagnostics)
@@ -291,7 +326,7 @@ public sealed partial class SceneTestPlatform
         var residency = diagnostics.Residency;
         bool ready = diagnostics.Meshes.PublishedMeshes == diagnostics.Meshes.RegisteredMeshes &&
             residency.QueuedPageLoads == 0 && residency.ActivePageLoads == 0 && residency.PageLoadFailures == 0 &&
-            !residency.HasPendingPublication && residency.PendingPageLoads == 0;
+            !residency.HasChanges && residency.UploadingPages == 0;
         // Include the frame that submits the final uploads. Its completed CPU
         // diagnostics can already report ready, while the frame still paid for
         // those uploads and the resulting graph and command work.
@@ -328,6 +363,7 @@ public sealed partial class SceneTestPlatform
                 _sampleStarted = 0;
                 _firstSampleRenderedFrame = 0;
                 _frames.Clear();
+                _shadowResolutionFeedback.Clear();
             }
             sampled = _sampleStarted != 0 && Stopwatch.GetElapsedTime(_sampleStarted).TotalSeconds >= 2;
         }
@@ -353,6 +389,8 @@ public sealed partial class SceneTestPlatform
             residency.PageHeapUsedBytes, residency.PageHeapFreeBytes, residency.BackpressuredPages,
             _renderWidth, _renderHeight, Options.DynamicScene,
             _firstFrameMs, _streamingFrames, _streamingMs, _streamingMaxFrameMs, residency.DroppedPageFaults,
+            ShadowResolutionSummary.FromFeedback(_shadowDynamicResolutionEnabled,
+                CollectionsMarshal.AsSpan(_shadowResolutionFeedback)),
             _frames.Sum(f => (long)f.Views.RebuildCount),
             _frames.Count == 0 ? null : _frames.Average(f => f.Views.RebuildCount),
             _frames.Sum(f => (long)f.Views.ComputationCount),
@@ -371,7 +409,7 @@ public sealed partial class SceneTestPlatform
             LastSimulationFrame = sampleWindow.LastSimulationFrame,
             SampleWallSeconds = sampleWindow.SampleWallSeconds,
         });
-        Application.Reload();
+        Application.LoadScene(Current.ContentDirectory);
 
         void CollectFrame()
         {
@@ -411,7 +449,7 @@ public sealed partial class SceneTestPlatform
         if (MeasureBlending && _sceneSampleFinished)
         {
             SceneFrameWindow window = _frameWindows[^1];
-            ClusterBlendMetrics[] gpu = window.Frames
+            BlendFrameMetrics[] gpu = window.Frames
                 .Where(frame => _blendFrames.ContainsKey(frame.SimulationFrame))
                 .Select(frame => _blendFrames[frame.SimulationFrame]).ToArray();
             _frameWindows[^1] = window with { BlendFrames = gpu };
@@ -428,6 +466,7 @@ public sealed partial class SceneTestPlatform
         {
             ["SchemaVersion"] = 3,
             ["TimingScopes"] = FrameTimingScopes,
+            ["BlendTimingSchemaVersion"] = MeasureBlending ? 2 : null,
             ["BlendTimingScopes"] = MeasureBlending ? BlendTimingScopes : null,
             ["Sampling"] = "Default warmup and wall-clock samples, or the configured zero-based simulation-frame interval.",
             ["Scenes"] = JsonSerializer.SerializeToNode(_frameWindows, SceneJsonContext.Default.ListSceneFrameWindow),
@@ -455,13 +494,16 @@ public sealed partial class SceneTestPlatform
             ["Timing"] = MeasureBlending
                 ? "Presented frame elapsed time, CPU stage times and completed GPU blend phase times"
                 : "Presented frame elapsed time and CPU-side stage elapsed time",
+            ["BlendTimingSchemaVersion"] = MeasureBlending ? 2 : null,
             ["BlendTimingScopes"] = MeasureBlending ? BlendTimingScopes : null,
             ["TraceEnabled"] = _recordTrace,
+            ["ShadowResolutionSampling"] = "Completed asynchronous bias feedback received during the timed sample window; feedback may lag presented frames. No end-of-window GPU wait. Empty feedback has null bias statistics.",
             ["Startup"] = JsonSerializer.SerializeToNode(Startup, SceneJsonContext.Default.ApplicationStartupTimes),
             ["TraceDetail"] = Options.TraceDetail,
             ["TraceAllocations"] = Options.TraceAllocations,
             ["TemporalAntialiasing"] = Options.TemporalAntialiasing,
             ["VirtualShadows"] = Options.VirtualShadows,
+            ["DirectionalDynamicReceiverRefresh"] = Options.DirectionalDynamicReceiverRefresh,
             ["AsyncCompute"] = Options.AsyncCompute,
             ["ForceHardwareRaster"] = Options.ForceHardwareRaster,
             ["UseInstanceGroups"] = Options.UseInstanceGroups,
@@ -565,6 +607,7 @@ public sealed partial class SceneTestPlatform
         uint GeometryUsedBytes, uint GeometryFreeBytes, ulong BackpressuredPages,
         int RenderWidth, int RenderHeight, bool AnimateScene,
         double FirstFrameMs, int StreamingFrames, double StreamingMs, double StreamingMaxFrameMs, ulong DroppedPageFaults,
+        ShadowResolutionSummary ShadowResolution,
         long Rebuilds, double? RebuildsPerFrame, long Computations, double? ComputationsPerFrame,
         double? RebuildMs, double? TextMs, double? LayoutMs, double? ViewMs, double? ExtractionMs,
         double? ViewAllocatedBytes, double? ExtractionAllocatedBytes, double? AnimationMs)
@@ -581,50 +624,80 @@ public sealed partial class SceneTestPlatform
         SimulationFrameWindow? RequestedSimulationWindow, int? FirstSimulationFrame, int? LastSimulationFrame,
         double? SampleWallSeconds, string Status, string? Error)
     {
-        public ClusterBlendMetrics[]? BlendFrames { get; init; }
+        public BlendFrameMetrics[]? BlendFrames { get; init; }
+    }
+
+    internal sealed record ShadowResolutionSummary(
+        bool Enabled, int CompletedFeedbacks, ulong? FirstFeedbackFrame, ulong? LastFeedbackFrame,
+        float? MinimumLodBias, float? MaximumLodBias, double? MeanLodBias, float? LastLodBias)
+    {
+        internal static ShadowResolutionSummary FromFeedback(
+            bool enabled, ReadOnlySpan<(ulong Frame, float LodBias)> feedback)
+        {
+            if (feedback.IsEmpty) return new(enabled, 0, null, null, null, null, null, null);
+            float minimum = feedback[0].LodBias;
+            float maximum = minimum;
+            double sum = 0;
+            foreach (var sample in feedback)
+            {
+                minimum = Math.Min(minimum, sample.LodBias);
+                maximum = Math.Max(maximum, sample.LodBias);
+                sum += sample.LodBias;
+            }
+            return new(enabled, feedback.Length, feedback[0].Frame, feedback[^1].Frame,
+                minimum, maximum, sum / feedback.Length, feedback[^1].LodBias);
+        }
     }
 
     private const string BlendTimingScopes =
-        "GPU milliseconds on the graphics queue, matched to the recorded SimulationFrame. " +
-        "ProjectionIndexMs covers geometry projection and candidate-index construction; " +
-        "CoverageReceiverMs covers hit coverage for shadow-receiver requests; " +
-        "MaterialCompositeMs covers covered-hit selection, user-material evaluation and color/state composition. " +
-        "It extends through declared hardware stencil export, hardware stages and stencil import. " +
-        "DecalIndexMs covers decal Clear, Count, Reserve, Scatter and Sort; " +
-        "OpaqueMaterialMs sums the opaque receiver and color user-evaluation intervals, including the coupled " +
-        "base material, decal attributes and lighting in those passes. " +
-        "These intervals are separate from presented-frame elapsed and CPU stage times. " +
-        "UsedBytes counts active effect records and index/state buffers; CapacityBytes counts their buffer descriptions; " +
-        "AllocationBytes counts their RHI allocation requirements, including the private stencil uniform upload. " +
-        "Decal memory is included in these totals and reported separately; decal references include requested and resident GPU counts. " +
-        "Shared shader parameters use the existing uniform arena, with decal parameter slices attributed by byte range. " +
-        "Shared textures, mesh residency and unified instance storage are reported separately.";
+        "GPU milliseconds on the graphics queue, matched to the recorded SimulationFrame and SubmittedFrame. " +
+        "LayerVisibility includes tile lists and visibility raster with inline shadow-page marking; " +
+        "LayerClassification bins stored fragments; LayerShading evaluates the user materials; " +
+        "LayerComposite sorts and composes complete pixel fragment sets. " +
+        "OpaqueRequests measures depth-based page requests; OpaqueShading measures opaque material evaluation. " +
+        "DecalBinning measures the independent decal grid. " +
+        "RecordBytes and PayloadBytes count stored fragments. BlockPoolPeakBytes counts used complete blocks. " +
+        "FragmentStorage bytes cover block records and headers, payloads, tile heads and frame counters; " +
+        "the other layer work buffers, shader parameters, textures, mesh residency and instance storage retain their own accounting. " +
+        "Decal bytes cover the feature's independent grid, volumes, user data and retained references.";
 
     internal sealed record SceneBlendTiming(
-        int Frames, int BuildFrames, int ReuseFrames,
-        GpuPhaseTiming ProjectionIndex, GpuPhaseTiming CoverageReceiver, GpuPhaseTiming MaterialComposite,
-        double MeanTriangles, double MeanReferences,
-        double MeanUsedBytes, ulong PeakUsedBytes, ulong PeakCapacityBytes, ulong PeakAllocationBytes,
-        GpuPhaseTiming DecalIndex, GpuPhaseTiming OpaqueMaterial,
+        int Frames,
+        GpuPhaseTiming LayerVisibility, GpuPhaseTiming LayerClassification,
+        GpuPhaseTiming LayerShading, GpuPhaseTiming LayerComposite,
+        GpuPhaseTiming OpaqueRequests, GpuPhaseTiming OpaqueShading, GpuPhaseTiming DecalBinning,
+        double MeanFragments, uint PeakFragmentsPerPixel, uint PeakBlocksUsed,
+        uint PeakFragmentOverflow, uint PeakSplitTiles, uint PeakSlowPathPixels,
+        double MeanRecordBytes, double MeanPayloadBytes,
+        ulong PeakRecordBytes, ulong PeakPayloadBytes, ulong PeakBlockPoolBytes, ulong PeakBlockPoolCapacityBytes,
+        double MeanFragmentStorageUsedBytes, ulong PeakFragmentStorageUsedBytes,
+        ulong PeakFragmentStorageCapacityBytes, ulong PeakFragmentStorageAllocationBytes,
         int DecalBuildFrames, int DecalReuseFrames,
-        double MeanDecalVolumes, double MeanDecalReferences, double MeanDecalResidentReferences,
+        double MeanDecalVolumes, double MeanDecalReferences, double MeanDecalRetainedReferences,
         double MeanDecalUsedBytes, ulong PeakDecalUsedBytes, ulong PeakDecalCapacityBytes, ulong PeakDecalAllocationBytes)
     {
-        internal static SceneBlendTiming? FromFrames(ClusterBlendMetrics[] frames)
+        internal static SceneBlendTiming? FromFrames(BlendFrameMetrics[] frames)
         {
             if (frames.Length == 0) return null;
-            return new(frames.Length, frames.Count(frame => !frame.ReusedIndex), frames.Count(frame => frame.ReusedIndex),
-                GpuPhaseTiming.FromValues(frames.Select(frame => frame.ProjectionIndexMs)),
-                GpuPhaseTiming.FromValues(frames.Select(frame => frame.CoverageReceiverMs)),
-                GpuPhaseTiming.FromValues(frames.Select(frame => frame.MaterialCompositeMs)),
-                frames.Average(frame => frame.Triangles), frames.Average(frame => frame.References),
-                frames.Average(frame => (double)frame.UsedBytes), frames.Max(frame => frame.UsedBytes),
-                frames.Max(frame => frame.CapacityBytes), frames.Max(frame => frame.AllocationBytes),
-                GpuPhaseTiming.FromValues(frames.Select(frame => frame.DecalIndexMs)),
-                GpuPhaseTiming.FromValues(frames.Select(frame => frame.OpaqueMaterialMs)),
-                frames.Count(frame => !frame.ReusedDecalIndex), frames.Count(frame => frame.ReusedDecalIndex),
+            return new(frames.Length,
+                GpuPhaseTiming.FromValues(frames.Select(frame => frame.LayerVisibilityMs)),
+                GpuPhaseTiming.FromValues(frames.Select(frame => frame.LayerClassificationMs)),
+                GpuPhaseTiming.FromValues(frames.Select(frame => frame.LayerShadingMs)),
+                GpuPhaseTiming.FromValues(frames.Select(frame => frame.LayerCompositeMs)),
+                GpuPhaseTiming.FromValues(frames.Select(frame => frame.OpaqueRequestsMs)),
+                GpuPhaseTiming.FromValues(frames.Select(frame => frame.OpaqueShadingMs)),
+                GpuPhaseTiming.FromValues(frames.Select(frame => frame.DecalBinningMs)),
+                frames.Average(frame => frame.Layers.Fragments), frames.Max(frame => frame.Layers.MaxFragmentsPerPixel),
+                frames.Max(frame => frame.Layers.BlocksUsed), frames.Max(frame => frame.Layers.FragmentOverflow),
+                frames.Max(frame => frame.Layers.SplitTiles), frames.Max(frame => frame.Layers.SlowPathPixels),
+                frames.Average(frame => (double)frame.RecordBytes), frames.Average(frame => (double)frame.PayloadBytes),
+                frames.Max(frame => frame.RecordBytes), frames.Max(frame => frame.PayloadBytes),
+                frames.Max(frame => frame.BlockPoolPeakBytes), frames.Max(frame => frame.BlockPoolCapacityBytes),
+                frames.Average(frame => (double)frame.FragmentStorageUsedBytes), frames.Max(frame => frame.FragmentStorageUsedBytes),
+                frames.Max(frame => frame.FragmentStorageCapacityBytes), frames.Max(frame => frame.FragmentStorageAllocationBytes),
+                frames.Count(frame => !frame.ReusedDecalBinning), frames.Count(frame => frame.ReusedDecalBinning),
                 frames.Average(frame => frame.DecalVolumes), frames.Average(frame => frame.DecalReferences),
-                frames.Average(frame => frame.DecalResidentReferences), frames.Average(frame => (double)frame.DecalUsedBytes),
+                frames.Average(frame => frame.DecalRetainedReferences), frames.Average(frame => (double)frame.DecalUsedBytes),
                 frames.Max(frame => frame.DecalUsedBytes), frames.Max(frame => frame.DecalCapacityBytes),
                 frames.Max(frame => frame.DecalAllocationBytes));
         }

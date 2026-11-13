@@ -1,4 +1,4 @@
-#include "feature_visible_clusters.slang"
+__exported import feature_visible_clusters;
 
 struct GeometryExportUniforms
 {

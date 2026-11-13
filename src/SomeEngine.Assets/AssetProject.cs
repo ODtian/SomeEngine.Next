@@ -1,4 +1,5 @@
 using System;
+using SlangShaderSharp;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -27,7 +28,8 @@ public sealed partial class AssetProject
         string projectRoot,
         IEnumerable<IAssetSourceImporter> importers,
         string? manifestDirectory = null,
-        IReadOnlyList<string>? shaderIncludeDirectories = null)
+        IReadOnlyList<string>? shaderIncludeDirectories = null,
+        IReadOnlyList<SlangCompileTarget>? shaderTargets = null)
     {
         _projectRoot = Path.GetFullPath(projectRoot);
         _manifestDirectory = RequireProjectPath(_projectRoot, manifestDirectory ?? Path.Combine(_projectRoot, "Library", "AssetManifest"), allowProjectRoot: true);
@@ -35,10 +37,13 @@ public sealed partial class AssetProject
         _shaderIncludeDirectories = shaderIncludeDirectories?
             .Select(path => Path.GetFullPath(Path.Combine(_projectRoot, path))).ToArray() ?? [];
 
+        ShaderTargets = shaderTargets?.ToArray() ?? [SlangCompileTarget.Dxil, SlangCompileTarget.Spirv];
         Manifest = AssetManifest.Load(_manifestDirectory);
     }
 
     public string RootPath => _projectRoot;
+
+    public IReadOnlyList<SlangCompileTarget> ShaderTargets { get; }
 
     public AssetManifest Manifest { get; private set; }
 
@@ -70,6 +75,7 @@ public sealed partial class AssetProject
         CancellationToken cancellationToken = default)
     {
         await _importGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        bool importGateHeld = true;
         AssetImportFiles? files = null;
         try
         {
@@ -103,7 +109,10 @@ public sealed partial class AssetProject
             files = new AssetImportFiles();
             string stage = files.CreateStagePath(targetPath);
             files.AddFile(targetPath, stage);
-            using ShaderAsset built = SlangShaderImporter.CompileDefinition(definition, fullPath,
+            _importGate.Release();
+            importGateHeld = false;
+            Console.WriteLine($"Shader: {ToManifestPath(fullPath)}");
+            using ShaderAsset built = SlangShaderImporter.CompileDefinition(definition, fullPath, ShaderTargets,
                 cancellationToken, _shaderIncludeDirectories, _projectRoot);
             var trace = built.GetBlock<ShaderBlock>().ImportTrace!;
             var inputs = new ImportInputs
@@ -117,7 +126,7 @@ public sealed partial class AssetProject
                 || !PathsEqual(Path.GetFullPath(output.Path), stage))
                 throw new InvalidDataException("The built asset identity, type or path differs from its native definition.");
             CheckUnchanged(fullPath, sourceBytes);
-            ImportInputs? finalInputs = SlangShaderImporter.GetDefinitionInputs(definition, fullPath,
+            ImportInputs? finalInputs = SlangShaderImporter.GetDefinitionInputs(definition, fullPath, ShaderTargets,
                 inputs.Dependencies, _shaderIncludeDirectories, _projectRoot);
             if (finalInputs is null || finalInputs.InputHash != inputs.InputHash
                 || finalInputs.ImporterVersion != inputs.ImporterVersion)
@@ -126,6 +135,7 @@ public sealed partial class AssetProject
             {
                 ImporterVersion = inputs.ImporterVersion, InputHash = inputs.InputHash,
                 Inputs = inputs.Dependencies,
+                AssetInputs = built.GetBlock<ShaderSourceBlock>().Dependencies.Select(input => input.Value).ToArray(),
                 Outputs = [new SourceOutput
                 {
                     AssetGuid = output.AssetGuid, SubAssetKey = "", InputHash = inputs.InputHash,
@@ -136,6 +146,8 @@ public sealed partial class AssetProject
             };
             files.AddWrite(buildPath, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(build,
                 SourceMetaJsonContext.Default.SourceBuildRecord));
+            await _importGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            importGateHeld = true;
             lock (_gate)
             {
                 CheckDestination();
@@ -153,7 +165,48 @@ public sealed partial class AssetProject
         finally
         {
             try { files?.Dispose(); }
-            finally { _importGate.Release(); }
+            finally { if (importGateHeld) _importGate.Release(); }
+        }
+    }
+
+    /// <summary>Compiles source definitions concurrently and serializes their manifest updates.</summary>
+    public async Task BuildAllAsync(IEnumerable<string> sources, int maxConcurrency, CancellationToken cancellationToken = default)
+    {
+        using var concurrency = new SemaphoreSlim(maxConcurrency);
+        var builds = new Dictionary<string, Task>(StringComparer.OrdinalIgnoreCase);
+        await Task.WhenAll(sources.Select(source => BuildSource(FullPath(source)))).ConfigureAwait(false);
+
+        Task BuildSource(string source)
+        {
+            lock (builds)
+            {
+                if (builds.TryGetValue(source, out Task? build)) return build;
+                var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                builds.Add(source, completion.Task);
+                _ = BuildSourceAsync(source, completion);
+                return completion.Task;
+            }
+        }
+
+        async Task BuildSourceAsync(string source, TaskCompletionSource completion)
+        {
+            try
+            {
+                using ShaderAsset definition = await ShaderAsset.OpenSourceAsync(source, cancellationToken).ConfigureAwait(false);
+                ShaderInputAsset[] inputs = ShaderImports.Read(definition.GetBlock<ShaderSourceBlock>(), source, _shaderIncludeDirectories);
+                await Task.WhenAll(inputs.Where(input =>
+                    {
+                        string relative = Path.GetRelativePath(_projectRoot, input.DefinitionPath);
+                        return !Path.IsPathRooted(relative) && relative != ".." &&
+                            !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+                    })
+                    .Select(input => BuildSource(input.DefinitionPath))).ConfigureAwait(false);
+                await concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try { await BuildAsync(source, cancellationToken: cancellationToken).ConfigureAwait(false); }
+                finally { concurrency.Release(); }
+                completion.SetResult();
+            }
+            catch (Exception error) { completion.SetException(error); }
         }
     }
 

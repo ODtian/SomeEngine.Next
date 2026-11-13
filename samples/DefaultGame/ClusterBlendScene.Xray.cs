@@ -1,7 +1,7 @@
 using System.Numerics;
 using SomeEngine.Core.Math;
-using SomeEngine.Render.Components;
 using SomeEngine.Resources;
+using SomeEngine.Resources.Layers;
 using SomeEngine.Runtime;
 
 namespace DefaultGame;
@@ -13,21 +13,25 @@ internal sealed partial class ClusterBlendScene
     private void AddXray(SceneEdit edit)
     {
         _xrayParts.Clear();
-        var rules = new Xray(new XrayBlend(.8f), new XrayBlend(new Vector3(.7f, .9f, 1), .45f), 0, 8);
         Material[] materials = [Standard(new(.9f, .35f, .15f, 1)), Standard(new(.2f, .6f, 1, 1)),
             Standard(new(.6f, .9f, .35f, 1)), Standard(new(.8f, .5f, .9f, 1))];
         foreach (Material material in materials)
-            material.State = material.State with { Surface = SurfaceMode.Opaque, TwoSided = false };
+        {
+            material.Shader = assets.Standard.Shader;
+            SetLayerMaterial(material, new LayerOperation
+            {
+                XRay = true, VisibleColor = new(Vector3.One, .8f), OccludedColor = new(new Vector3(.7f, .9f, 1), .45f),
+            });
+        }
         for (int index = 0; index < 64; index++)
         {
             TransformQvvs transform = new(new Vector3((index % 8 - 3.5f) * .23f,
                 (index / 8 - 3.5f) * .18f, 2.5f + index % 4 * .13f),
                 Quaternion.CreateFromYawPitchRoll(index * .23f, index * .17f, 0), .1f);
             _xrayParts.Add((_objects.Count, transform));
-            edit.SetXray(Add(edit, assets.Part, materials[index % materials.Length], transform), rules);
+            Add(edit, assets.Part, materials[index % materials.Length], transform);
         }
-        Material panel = Standard(new(.2f, .24f, .3f, 1));
-        panel.State = panel.State with { Surface = SurfaceMode.Opaque };
+        Material panel = OpaqueStandard(new(.2f, .24f, .3f, 1));
         Add(edit, assets.Panel, panel, new(new Vector3(-.35f, 0, 2.15f), Quaternion.Identity, .65f)
             { Stretch = new(1, 1.3f, 1) });
     }

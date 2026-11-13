@@ -21,8 +21,7 @@ public sealed class ComputeQueueTests
             input = edit.CreateBufferInput(BufferUsages.CopySource);
             GraphBufferId intermediate = edit.CreateBuffer(new(32,
                 BufferUsages.CopySource | BufferUsages.CopyDestination));
-            GraphBufferId destination = edit.RegisterExternalBuffer(result,
-                [new(BufferRange.Whole, result.InitialSync, result.InitialAccess, ResourceContentState.Undefined)]);
+            GraphBufferId destination = edit.RegisterExternalBuffer(result);
             edit.AddCopyFramePass("produce on compute", PassQueueSelection.AnyOfType(QueueType.Compute),
                 (input, intermediate), default,
                 static (ref PassDefinition pass, ref (GraphBufferInput Input, GraphBufferId Buffer) data) =>

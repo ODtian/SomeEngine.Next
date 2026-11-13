@@ -1,13 +1,13 @@
-#include "resource_effects.slang"
-#include "depth_page_hiz.slang"
-#include "vsm_page_dispatch.slang"
-#include "vsm_page_entry.slang"
-#include "vsm_depth_cache.slang"
+__exported import resource_effects;
+__exported import depth_page_hiz;
+__exported import vsm_page_dispatch;
+__exported import vsm_page_entry;
+__exported import vsm_depth_cache;
 
 struct VirtualShadowPageHiZUniforms
 {
     uint PageSize;
-    uint PhysicalPagesPerRow;
+    uint AtlasPagesPerRow;
     uint SourceMip;
     uint DestinationMip;
     uint StaticLayerOffset;
@@ -73,7 +73,7 @@ void StoreVirtualShadowPageHiZ(float2 depth, uint physicalPage, uint2 pixel, uin
     uint lane = thread.y * 8u + thread.x;
     PageHiZTile[lane] = depth;
     if (all(pixel < destinationSize))
-        WriteVirtualShadowPageHiZ(VirtualShadowPageHiZDestination, CalculateDepthPageHiZPixel(physicalPage, pixel, destinationSize, PageHiZ.PhysicalPagesPerRow), depth);
+        WriteVirtualShadowPageHiZ(VirtualShadowPageHiZDestination, CalculateDepthPageHiZPixel(physicalPage, pixel, destinationSize, PageHiZ.AtlasPagesPerRow), depth);
     // One tile produces four mips; dispatch boundaries synchronize tiles.
     [unroll]
     for (uint step = 1u; step <= 3u; step++)
@@ -93,11 +93,11 @@ void StoreVirtualShadowPageHiZ(float2 depth, uint physicalPage, uint2 pixel, uin
             if (destinationSize >= scale && all(outputPixel < (destinationSize >> step)))
             {
                 if (step == 1u)
-                    WriteVirtualShadowPageHiZ(VirtualShadowPageHiZDestination1, CalculateDepthPageHiZPixel(physicalPage, outputPixel, destinationSize >> step, PageHiZ.PhysicalPagesPerRow), depth);
+                    WriteVirtualShadowPageHiZ(VirtualShadowPageHiZDestination1, CalculateDepthPageHiZPixel(physicalPage, outputPixel, destinationSize >> step, PageHiZ.AtlasPagesPerRow), depth);
                 else if (step == 2u)
-                    WriteVirtualShadowPageHiZ(VirtualShadowPageHiZDestination2, CalculateDepthPageHiZPixel(physicalPage, outputPixel, destinationSize >> step, PageHiZ.PhysicalPagesPerRow), depth);
+                    WriteVirtualShadowPageHiZ(VirtualShadowPageHiZDestination2, CalculateDepthPageHiZPixel(physicalPage, outputPixel, destinationSize >> step, PageHiZ.AtlasPagesPerRow), depth);
                 else
-                    WriteVirtualShadowPageHiZ(VirtualShadowPageHiZDestination3, CalculateDepthPageHiZPixel(physicalPage, outputPixel, destinationSize >> step, PageHiZ.PhysicalPagesPerRow), depth);
+                    WriteVirtualShadowPageHiZ(VirtualShadowPageHiZDestination3, CalculateDepthPageHiZPixel(physicalPage, outputPixel, destinationSize >> step, PageHiZ.AtlasPagesPerRow), depth);
             }
         }
     }

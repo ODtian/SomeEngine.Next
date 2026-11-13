@@ -1,20 +1,26 @@
-#include "generated/render_instance_layout.slang"
-#include "cluster_shade_pipeline.slang"
-#include "triangle_surface.slang"
-#include "unlit_material.slang"
+import material_interfaces;
+import triangle_surface;
+import unlit_material;
 
-typedef StaticVertexEval VertexEvaluate;
-typedef LinearSurface DomainEvaluate;
-typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;
-typedef UnlitMaterial SurfaceEvaluate;
+[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[ConservativeBounds("finite")]
+struct DefaultUnlitMaterial : IMaterial
+{
+    typedef StaticVertexEval Vertex;
+    typedef LinearSurface Domain;
+    typedef OpaqueVisibilityEvaluate<Vertex.Vertex> Visibility;
 
-#define CLUSTER_MESHLET_RASTER 1
-#define CLUSTER_SURFACE_RECEIVERS 1
-#define CLUSTER_SOFTWARE_MESHLET_RASTER 1
-#define CLUSTER_SURFACE_VISIBILITY_DEPTH 1
-#define CLUSTER_SURFACE_MODES 1
-#define CLUSTER_FORWARD_SHADING 1
-#include "cluster_material_entries.slang"
+    UnlitMaterial Surface;
 
-#define TRANSPARENCY_MATERIAL_TYPE UnlitTransparencyMaterial
-#include "cluster_transparency_material.slang"
+    void evaluateSurface<TOutput : ISurfaceOutput>(SurfacePixelInput input,
+        Domain.Surface surface, float3 bary, Domain.TriangleData triangle, TOutput output)
+    {
+        Surface.evaluateSurface<TOutput>(input, surface, bary, triangle, output);
+    }
+
+    void evaluateDebug<TOutput : ISurfaceOutput>(uint debugMode, SurfacePixelInput input,
+        Domain.Surface surface, float3 bary, Domain.TriangleData triangle, TOutput output)
+    {
+        Surface.evaluateDebug<TOutput>(debugMode, input, surface, bary, triangle, output);
+    }
+};

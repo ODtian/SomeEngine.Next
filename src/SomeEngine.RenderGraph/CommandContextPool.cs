@@ -16,7 +16,7 @@ internal sealed class CommandContextPool : IDisposable
         _device = device;
     }
 
-    internal CommandContextLease Acquire(Queue queue, bool bundle, string? label = null, uint initialSlotCount = 4)
+    internal CommandContextHandle Acquire(Queue queue, bool bundle, string? label = null, uint initialCommandCount = 4)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var key = new CommandContextPoolKey(queue.Type, queue.Index, bundle);
@@ -29,21 +29,21 @@ internal sealed class CommandContextPool : IDisposable
                 new CommandContextDesc(
                     queue.Type,
                     queue.Index,
-                    InitialSlotCount: initialSlotCount,
+                    InitialBufferCount: initialCommandCount,
                     Bundle: bundle,
                     Label: label)));
             _all.Add(entry);
         }
-        long leaseIdentity = entry.BeginLease();
-        return new CommandContextLease(this, key, entry, leaseIdentity);
+        long useIdentity = entry.BeginUse();
+        return new CommandContextHandle(this, key, entry, useIdentity);
     }
 
     private void Return(
         in CommandContextPoolKey key,
         CommandContextPoolEntry entry,
-        long leaseIdentity)
+        long useIdentity)
     {
-        if (!entry.EndLease(leaseIdentity)) return;
+        if (!entry.EndUse(useIdentity)) return;
         if (_disposed) return;
         _idle.GetOrAdd(key, static _ => new ConcurrentBag<CommandContextPoolEntry>()).Add(entry);
     }
@@ -61,42 +61,42 @@ internal sealed class CommandContextPool : IDisposable
 
     internal sealed class CommandContextPoolEntry
     {
-        private long _nextLeaseIdentity;
-        private long _activeLeaseIdentity;
+        private long _nextUseIdentity;
+        private long _activeUseIdentity;
 
         internal CommandContextPoolEntry(CommandContext context) => Context = context;
 
         internal CommandContext Context { get; }
 
-        internal long BeginLease()
+        internal long BeginUse()
         {
-            long identity = Interlocked.Increment(ref _nextLeaseIdentity);
+            long identity = Interlocked.Increment(ref _nextUseIdentity);
             if (identity <= 0)
                 throw new InvalidOperationException("The CommandContext lease identity space is exhausted.");
-            if (Interlocked.CompareExchange(ref _activeLeaseIdentity, identity, 0) != 0)
+            if (Interlocked.CompareExchange(ref _activeUseIdentity, identity, 0) != 0)
                 throw new InvalidOperationException("The CommandContext pool entry is already leased.");
             return identity;
         }
 
-        internal bool EndLease(long identity) =>
+        internal bool EndUse(long identity) =>
             identity > 0 &&
-            Interlocked.CompareExchange(ref _activeLeaseIdentity, 0, identity) == identity;
+            Interlocked.CompareExchange(ref _activeUseIdentity, 0, identity) == identity;
     }
 
-    internal readonly struct CommandContextLease : IDisposable
+    internal readonly struct CommandContextHandle : IDisposable
     {
-        private readonly CommandContextPool? _owner;
+        private readonly CommandContextPool? _pool;
         private readonly CommandContextPoolKey _key;
         private readonly CommandContextPoolEntry? _entry;
         private readonly long _identity;
 
-        internal CommandContextLease(
-            CommandContextPool owner,
+        internal CommandContextHandle(
+            CommandContextPool pool,
             in CommandContextPoolKey key,
             CommandContextPoolEntry entry,
             long identity)
         {
-            _owner = owner;
+            _pool = pool;
             _key = key;
             _entry = entry;
             _identity = identity;
@@ -107,8 +107,8 @@ internal sealed class CommandContextPool : IDisposable
 
         public void Dispose()
         {
-            if (_owner is not null && _entry is not null)
-                _owner.Return(_key, _entry, _identity);
+            if (_pool is not null && _entry is not null)
+                _pool.Return(_key, _entry, _identity);
         }
     }
 }

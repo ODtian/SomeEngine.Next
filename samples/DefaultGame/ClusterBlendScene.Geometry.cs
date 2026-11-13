@@ -17,10 +17,10 @@ internal sealed partial class ClusterBlendScene
         {
             var material = new UnlitMaterial
             {
-                Shader = source.Shader, AlbedoMap = source.AlbedoMap, MaterialSampler = source.MaterialSampler,
+                Shader = assets.DeformedPhongBothShader, AlbedoMap = source.AlbedoMap, MaterialSampler = source.MaterialSampler,
                 BaseColorTint = new(.2f + group * .2f, .8f - group * .15f, 1, .35f),
-                State = source.State with { Surface = SurfaceMode.Translucent, TwoSided = true },
             };
+            SetLayerMaterial(material, new());
             for (int layer = 0; layer < 4; layer++)
             {
                 TransformQvvs transform = new(new Vector3((group % 2 - .5f) * .9f,

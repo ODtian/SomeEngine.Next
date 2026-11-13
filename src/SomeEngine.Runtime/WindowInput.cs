@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -89,17 +89,17 @@ public sealed class WindowInput : IDisposable
     {
         Key? key = virtualKey switch
         {
-            RuntimeInput.KeyLeft => Key.Left,
-            RuntimeInput.KeyRight => Key.Right,
-            RuntimeInput.KeyUp => Key.Up,
-            RuntimeInput.KeyDown => Key.Down,
-            RuntimeInput.KeyEnter => Key.Enter,
-            RuntimeInput.KeySpace => Key.Space,
-            RuntimeInput.KeyHome => Key.Home,
-            RuntimeInput.KeyEnd => Key.End,
-            RuntimeInput.KeyShift or RuntimeInput.KeyLeftShift or RuntimeInput.KeyRightShift => Key.Shift,
-            RuntimeInput.KeyBackspace => Key.Backspace,
-            RuntimeInput.KeyDelete => Key.Delete,
+            ApplicationInput.KeyLeft => Key.Left,
+            ApplicationInput.KeyRight => Key.Right,
+            ApplicationInput.KeyUp => Key.Up,
+            ApplicationInput.KeyDown => Key.Down,
+            ApplicationInput.KeyEnter => Key.Enter,
+            ApplicationInput.KeySpace => Key.Space,
+            ApplicationInput.KeyHome => Key.Home,
+            ApplicationInput.KeyEnd => Key.End,
+            ApplicationInput.KeyShift or ApplicationInput.KeyLeftShift or ApplicationInput.KeyRightShift => Key.Shift,
+            ApplicationInput.KeyBackspace => Key.Backspace,
+            ApplicationInput.KeyDelete => Key.Delete,
             _ => null,
         };
         if (key is { } value) Keyboard.Key(_world, value, pressed);

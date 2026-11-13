@@ -21,7 +21,7 @@ public enum DescriptorTableType : byte
 /// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
-public readonly record struct DescriptorSlotDesc(
+public readonly record struct DescriptorEntryDesc(
     ResourceBindingType Type,
     Format? Format = null,
     uint StructureStride = 0,
@@ -67,140 +67,23 @@ public readonly struct DescriptorIndex : IEquatable<DescriptorIndex>
 /// </remarks>
 public abstract class DescriptorTable : DeviceResource
 {
-    private const uint MaximumStructuredBufferStride = 2_048;
 
-    private readonly DescriptorSlotDesc[] _slots;
-
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Safety",
-        "SE032:Hot-path validation is forbidden",
-        Justification = "Validates caller-provided descriptor schema at the resource-creation boundary.")]
+    private readonly DescriptorEntryDesc[] _entries;
     internal DescriptorTable(
         Device device,
         DescriptorTableType type,
         uint nodeIndex,
-        ReadOnlySpan<DescriptorSlotDesc> slots,
+        ReadOnlySpan<DescriptorEntryDesc> entries,
         string? label)
-        : base(device ?? throw new ArgumentNullException(nameof(device)), label)
-    {
-        if (slots.IsEmpty)
-            throw new ArgumentException("A DescriptorTable requires at least one typed slot.", nameof(slots));
-        _slots = slots.ToArray();
-        bool samplers = type == DescriptorTableType.Sampler;
-        foreach (DescriptorSlotDesc slot in _slots)
-        {
-            if (!Enum.IsDefined(slot.Type) || slot.Type == ResourceBindingType.None)
-                throw new ArgumentOutOfRangeException(nameof(slots));
-            if ((slot.Type == ResourceBindingType.Sampler) != samplers)
-            {
-                throw new ArgumentException(
-                    "A DescriptorTable slot must match the table heap type.",
-                    nameof(slots));
-            }
-            ValidateSlot(slot, nameof(slots));
-        }
-        Type = type;
-        NodeIndex = nodeIndex;
-        Count = checked((uint)_slots.Length);
-    }
-
+        : base(device, label){ _entries = entries.ToArray(); Type = type; NodeIndex = nodeIndex; Count = checked((uint)_entries.Length); }
     public DescriptorTableType Type { get; }
     public uint NodeIndex { get; }
     public uint Count { get; }
-    public ReadOnlySpan<DescriptorSlotDesc> Slots => _slots;
+    public ReadOnlySpan<DescriptorEntryDesc> Entries => _entries;
 
-    public DescriptorSlotDesc GetSlotDesc(uint slot)
-    {
-        if (slot >= Count)
-            throw new ArgumentOutOfRangeException(nameof(slot));
-        return _slots[checked((int)slot)];
-    }
-
-    internal ResourceBindingType GetSlotType(uint slot) => GetSlotDesc(slot).Type;
-
-    private static void ValidateSlot(in DescriptorSlotDesc slot, string parameterName)
-    {
-        switch (slot.Type)
-        {
-            case ResourceBindingType.ConstantBuffer:
-            case ResourceBindingType.Sampler:
-            case ResourceBindingType.AccelerationStructure:
-                ValidateUnshapedSlot(slot, parameterName);
-                break;
-            case ResourceBindingType.BufferSrv:
-            case ResourceBindingType.BufferUav:
-                ValidateBufferSlot(slot, parameterName);
-                break;
-            case ResourceBindingType.TextureSrv:
-            case ResourceBindingType.TextureUav:
-                ValidateTextureSlot(slot, parameterName);
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(parameterName);
-        }
-    }
-
-    private static void ValidateUnshapedSlot(
-        in DescriptorSlotDesc slot,
-        string parameterName)
-    {
-        if (slot.Format.HasValue ||
-            slot.StructureStride != 0 ||
-            slot.TextureDimension.HasValue ||
-            slot.HasCounter)
-        {
-            throw new ArgumentException(
-                "The descriptor slot contains fields that do not apply to its type.",
-                parameterName);
-        }
-    }
-
-    private static void ValidateBufferSlot(
-        in DescriptorSlotDesc slot,
-        string parameterName)
-    {
-        if (slot.TextureDimension.HasValue ||
-            slot.Format.HasValue && slot.StructureStride != 0)
-        {
-            throw new ArgumentException(
-                "A Buffer slot cannot combine texture or typed/structured shapes.",
-                parameterName);
-        }
-
-        uint stride = slot.StructureStride;
-        if (stride != 0 && ((stride & 3) != 0 || stride > MaximumStructuredBufferStride))
-        {
-            throw new ArgumentOutOfRangeException(
-                parameterName,
-                $"A structured Buffer stride must be a four-byte multiple no greater than {MaximumStructuredBufferStride}.");
-        }
-
-        if (slot.HasCounter &&
-            (slot.Type != ResourceBindingType.BufferUav || stride == 0))
-        {
-            throw new ArgumentException(
-                "Only a structured Buffer UAV slot may carry a counter.",
-                parameterName);
-        }
-    }
-
-    private static void ValidateTextureSlot(
-        in DescriptorSlotDesc slot,
-        string parameterName)
-    {
-        if (!slot.Format.HasValue ||
-            !slot.TextureDimension.HasValue ||
-            slot.StructureStride != 0 ||
-            slot.HasCounter)
-        {
-            throw new ArgumentException(
-                "A Texture slot requires Format and TextureDimension only.",
-                parameterName);
-        }
-
-        if (!Enum.IsDefined(slot.TextureDimension.Value))
-            throw new ArgumentOutOfRangeException(parameterName);
-    }
+    public DescriptorEntryDesc GetEntryDesc(uint entry)
+=>_entries[checked((int)entry)];
+    internal ResourceBindingType GetEntryType(uint entry) => GetEntryDesc(entry).Type;
 }
 
 /// <remarks>

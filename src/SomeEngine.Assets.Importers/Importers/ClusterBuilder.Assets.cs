@@ -7,6 +7,10 @@ namespace SomeEngine.Assets.Importers;
 
 public static partial class ClusterBuilder
 {
+    /// <summary>Bakes geometry and opaque attributes into GPU pages for saving and streaming.</summary>
+    public static ClusterMeshBlock BuildMeshBlock(ClusterGeometryBlock geometry, ClusterVertexAttributesBlock attributes)
+        => ClusterMeshData.Build(geometry, attributes);
+
     public static MeshAsset ProcessRaw(Vector3[] rawPos, List<RawAttribute> rawAttributes,
         uint[] rawIndices, IReadOnlyList<MeshMaterialSlot> materialSlots, string name,
         IClusterVertexEncoder? vertexEncoder = null)
@@ -38,7 +42,7 @@ public static partial class ClusterBuilder
         using var streams = new VertexStreamsBlock(primitives, []);
         using ClusterGeometryBlock geometry = BuildGeometry(streams, default);
         using ClusterVertexAttributesBlock attributes = vertexEncoder is null or StandardClusterVertexEncoder
-            ? ClusterVertexAttributesImporter.BuildAttributes(streams, geometry)
+            ? ClusterVertexAttributesEncoder.BuildAttributes(streams, geometry)
             : EncodeAttributes(rawPos, rawAttributes, geometry, vertexEncoder);
         Vector3 minimum = rawPos.Aggregate(Vector3.Min), maximum = rawPos.Aggregate(Vector3.Max);
         using var shape = new MeshBlock
@@ -50,12 +54,14 @@ public static partial class ClusterBuilder
         {
             Materials = materialSlots.Select(static material => new AssetId<MaterialAsset>(material.MaterialGuid)).ToArray(),
         };
+        using ClusterMeshBlock packed = ClusterMeshData.Build(geometry, attributes);
         var asset = new MeshAsset { Name = name };
         try
         {
             asset.SetBlock(shape);
             asset.SetBlock(geometry);
             asset.SetBlock(attributes);
+            asset.SetBlock(packed);
             asset.SetBlock(materials);
             return asset;
         }
@@ -90,6 +96,9 @@ public static partial class ClusterBuilder
         {
             VertexEncoding = mesh.VertexEncoding,
             LowestDetailPageIndices = mesh.LowestDetailPageIndices.ToArray(),
+            ClusterGeometryIndices = mesh.ClusterGeometryIndices.ToArray(),
+            ClusterGroups = mesh.ClusterGroups.ToArray(),
+            RegionIndices = Enumerable.Range(0, mesh.Regions.Length).ToArray(),
         };
         byte[] payload = new byte[checked((int)mesh.BvhOffset + mesh.BvhByteLength)];
         for (int page = 0; page < mesh.PageCount; page++)

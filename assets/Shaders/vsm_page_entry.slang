@@ -15,7 +15,8 @@ struct VirtualShadowPageMetadata
     uint Flags;
     int2 WorldPage;
     uint Generation;
-    uint ViewIndex;
+    uint RangeId;
+    uint RangeGeneration;
 };
 
 uint PackVirtualShadowPage(uint pageEntry, uint pagesPerRow)

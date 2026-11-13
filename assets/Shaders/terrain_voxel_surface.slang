@@ -1,4 +1,4 @@
-#include "terrain_voxel_input.slang"
+__exported import terrain_voxel_input;
 
 float SampleTerrainSurface(float3 position)
 {

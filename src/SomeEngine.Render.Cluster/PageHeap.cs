@@ -1,4 +1,4 @@
-namespace SomeEngine.Render.Cluster;
+﻿namespace SomeEngine.Render.Cluster;
 
 internal sealed class PageHeap
 {
@@ -35,7 +35,7 @@ internal sealed class PageHeap
                 PageRetirement other = retirements[previous];
                 ulong otherEnd = checked((ulong)other.Offset + AllocationSize(other.Size));
                 if (retirement.Offset < otherEnd && other.Offset < end)
-                    throw new InvalidOperationException("The publication contains overlapping page retirements.");
+                    throw new InvalidOperationException("The geometryChanges contains overlapping page retirements.");
             }
         }
     }

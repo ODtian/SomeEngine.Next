@@ -48,7 +48,7 @@ public sealed class AtomicMergeableAccessTests
         var state = new AccessState(buffer, mode, sync, access, coverage, hazards);
         return edit.AddComputePass<AccessState, byte>(
             label,
-            PassQueueSelection.Exact(queue),
+            PassQueueSelection.OnQueue(queue),
             state,
             new PassOptions(Culling: PassCullingMode.NeverCull),
             static (ref PassDefinition pass, ref AccessState value) =>

@@ -33,7 +33,8 @@ public sealed class TransparencyContentFixture : IAsyncLifetime
         {
             string? cookedContent = Environment.GetEnvironmentVariable("SOMEENGINE_TEST_COOKED_CONTENT");
             if (cookedContent is null)
-                await SomeEngine.SceneContent.SceneContent.GenerateSpheresAsync(Spheres, source);
+                await SomeEngine.SceneContent.SceneContent.GenerateSpheresFromSharedAsync(Spheres,
+                    Path.Combine(source, "samples", "DefaultGame"), source);
             else
                 await SomeEngine.SceneContent.SceneContent.GenerateSpheresFromCookedAsync(Spheres, cookedContent);
             await SomeEngine.SceneContent.BehaviorScenes.CreateIntersectingPanelsAsync(Spheres, DirectoryPath);

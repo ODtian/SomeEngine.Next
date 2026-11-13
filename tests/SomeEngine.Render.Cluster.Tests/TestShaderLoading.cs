@@ -40,7 +40,7 @@ internal static class TestShaderLoading
         ShaderAsset asset,
         SlangCompileTarget target = SlangCompileTarget.Dxil,
         CancellationToken cancellationToken = default) =>
-        asset.CreateAsync(Slang, CreateSessionDescription(target),
+        SomeEngine.Resources.ShaderLibrary.CreateAsync(asset, Slang, CreateSessionDescription(target),
             cancellationToken: cancellationToken);
 
     private static IGlobalSession CreateGlobalSession()

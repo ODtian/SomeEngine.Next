@@ -40,6 +40,19 @@ public static class SceneContent
         await WriteSpheresAsync(destination, width, height).ConfigureAwait(false);
     }
 
+    public static async Task GenerateSpheresFromSharedAsync(string destination, string cookedContent,
+        string engineRoot, int width = 64, int height = 64)
+    {
+        var project = new AssetProject(destination, []);
+        var sourceManifest = AssetManifest.Load(Path.Combine(cookedContent, "Library", "AssetManifest"));
+        SomeEngine.Assets.Importers.EngineShaderContent.SetContentDirectories(project, [cookedContent, engineRoot]);
+        await using var files = SomeEngine.Assets.Importers.EngineShaderContent.OpenFiles(cookedContent, sourceManifest);
+        AssetEntry entry = sourceManifest.List(ApplicationSettingsAsset.FileType).Single();
+        using var application = await ApplicationSettingsAsset.OpenAsync(files, new(entry.AssetGuid));
+        project.RegisterAsset(await application.SaveAsync(Path.Combine(destination, entry.Path)));
+        await WriteSpheresAsync(destination, width, height, sourceManifest).ConfigureAwait(false);
+    }
+
     public static async Task GenerateSpheresFromCookedAsync(string destination, string cookedContent,
         int width = 64, int height = 64)
     {
@@ -56,11 +69,11 @@ public static class SceneContent
         await WriteSpheresAsync(destination, width, height).ConfigureAwait(false);
     }
 
-    private static async Task WriteSpheresAsync(string destination, int width, int height)
+    private static async Task WriteSpheresAsync(string destination, int width, int height, AssetManifest? sourceManifest = null)
     {
         var project = new AssetProject(destination, []);
         var manifest = project.Manifest;
-        await using var loader = new AssetLoader(new LooseAssetStorage(destination, manifest));
+        await using var loader = SomeEngine.Assets.Importers.EngineShaderContent.OpenFiles(destination, manifest);
         AssetEntry applicationEntry = manifest.List(ApplicationSettingsAsset.FileType).Single();
         using var application = await ApplicationSettingsAsset.OpenAsync(loader, new(applicationEntry.AssetGuid));
         var settings = await application.GetBlockAsync<ApplicationSettingsBlock>();
@@ -76,7 +89,7 @@ public static class SceneContent
             });
         }
         finally { originalWorld.ReleaseQuery(query); }
-        AssetEntry unlitEntry = manifest.Assets.Values.Single(entry => entry.Path.EndsWith("TestUnlit_1.material.asset", StringComparison.Ordinal));
+        AssetEntry unlitEntry = (sourceManifest ?? manifest).Assets.Values.Single(entry => entry.Path.EndsWith("TestUnlit_1.material.asset", StringComparison.Ordinal));
         using var template = await UnlitMaterialAsset.OpenAsync(loader, new(unlitEntry.AssetGuid));
         using var sourceMesh = await MeshAsset.OpenAsync(loader, meshId);
         using var world = new World();
@@ -97,7 +110,7 @@ public static class SceneContent
         world.CreateEntity(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
             VerticalFieldOfView = MathF.PI / 3, NearPlane = 0.1f, FarPlane = 100 });
         original.WriteWorld(world, SceneSerialization.CreateRegistry());
-        project.RegisterAsset(await original.SaveAsync(Path.Combine(destination, manifest.Assets[original.Id].Path)));
+        project.RegisterAsset(await original.SaveAsync(Path.Combine(destination, (sourceManifest ?? manifest).Assets[original.Id].Path)));
         settings.Width = width;
         settings.Height = height;
         project.RegisterAsset(await application.SaveAsync(Path.Combine(destination, applicationEntry.Path)));
@@ -107,7 +120,7 @@ public static class SceneContent
     {
         var project = new AssetProject(directory, []);
         var manifest = project.Manifest;
-        await using var loader = new AssetLoader(new LooseAssetStorage(directory, manifest));
+        await using var loader = SomeEngine.Assets.Importers.EngineShaderContent.OpenFiles(directory, manifest);
         AssetEntry entry = manifest.List(ApplicationSettingsAsset.FileType).Single();
         using var application = await ApplicationSettingsAsset.OpenAsync(loader, new(entry.AssetGuid));
         var settings = await application.GetBlockAsync<ApplicationSettingsBlock>();

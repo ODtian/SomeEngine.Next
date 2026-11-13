@@ -25,10 +25,8 @@ public sealed class LargeAccessOrderTests
         var passes = new GraphPassId[count];
         using (var edit = graph.BeginEdit())
         {
-            var sourceId = edit.RegisterExternalBuffer(source,
-                [new(BufferRange.Whole, source.InitialSync, source.InitialAccess, ResourceContentState.Defined)]);
-            var destinationId = edit.RegisterExternalBuffer(destination,
-                [new(BufferRange.Whole, destination.InitialSync, destination.InitialAccess, ResourceContentState.Undefined)]);
+            var sourceId = edit.RegisterExternalBuffer(source);
+            var destinationId = edit.RegisterExternalBuffer(destination);
             for (int index = 0; index < count; index++)
             {
                 var data = (Source: sourceId, Destination: destinationId, Offset: (ulong)index * 4);

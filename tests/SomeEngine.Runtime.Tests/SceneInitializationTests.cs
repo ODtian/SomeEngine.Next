@@ -1,4 +1,4 @@
-using DefaultGame;
+﻿using DefaultGame;
 using SomeEngine.Resources;
 using System.Numerics;
 using DefaultGame.Content;
@@ -21,7 +21,7 @@ public sealed class SceneInitializationTests(SceneContentFixture content)
                 "--static-scene", "--fixed-step", "0.016666667", "--no-vsync", "--no-taa", "--no-vsm",
                 "--no-debug-ui", "--frames", "12", "--linear-frame-output", path];
             var platform = new SceneTestPlatform([new("Initialized scene", content.DirectoryPath)],
-                RuntimeStartupOptions.Parse(arguments))
+                ApplicationOptions.Parse(arguments))
             {
                 InitializeScene = (edit, _) =>
                 {

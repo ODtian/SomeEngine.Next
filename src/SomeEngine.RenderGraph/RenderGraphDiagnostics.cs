@@ -53,7 +53,7 @@ public readonly record struct RenderGraphPassDiagnostic(
 public readonly record struct RenderGraphBufferDiagnostic(
     GraphBufferId Id,
     string? Label,
-    RenderGraphResourceOwnership Ownership,
+    RenderGraphResourceSource Source,
     RenderGraphResourceLifetime Lifetime,
     ulong Size,
     ulong PlacementOffset,
@@ -64,7 +64,7 @@ public readonly record struct RenderGraphBufferDiagnostic(
 public readonly record struct RenderGraphTextureDiagnostic(
     GraphTextureId Id,
     string? Label,
-    RenderGraphResourceOwnership Ownership,
+    RenderGraphResourceSource Source,
     RenderGraphResourceLifetime Lifetime,
     uint Width,
     uint Height,
@@ -96,7 +96,7 @@ public enum RenderGraphDependencyKind : byte
 {
     Value,
     Execution,
-    Physical,
+    QueueOrder,
 }
 
 public readonly record struct RenderGraphDependencyDiagnostic(
@@ -148,6 +148,8 @@ public readonly record struct RenderGraphStatistics(
     ulong GraphHeapBytes)
 {
     public bool AnalysisReused { get; init; }
+    public bool PersistentScheduleReused { get; init; }
+    public int FrameSectionPassCount { get; init; }
     /// <summary>Distinct passes visited by this frame's dependency and value analysis.</summary>
     public int AnalyzedPassCount { get; init; }
     /// <summary>Resource, view, pass and access rows rebuilt for this execution.</summary>

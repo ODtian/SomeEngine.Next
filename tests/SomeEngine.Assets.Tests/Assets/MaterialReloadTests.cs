@@ -46,7 +46,7 @@ public sealed class MaterialReloadTests
         await Assert.ThrowsAsync<FileNotFoundException>(() => ShaderAsset.OpenAsync(path).AsTask());
         await File.WriteAllBytesAsync(path, bytes);
         using ShaderAsset asset = await ShaderAsset.OpenAsync(path);
-        Shader shader = await asset.CreateAsync(ShaderTestCompilation.Slang, ShaderTestCompilation.CreateSessionDescription());
+        Shader shader = await SomeEngine.Resources.ShaderLibrary.CreateAsync(asset, ShaderTestCompilation.Slang, ShaderTestCompilation.CreateSessionDescription());
 
         Assert.True(shader.TryGetSlangTarget(SlangShaderSharp.SlangCompileTarget.Dxil, out _));
     }
@@ -59,7 +59,7 @@ public sealed class MaterialReloadTests
         AssetId<ShaderAsset> id = await SaveShaderAsync(project, directory);
         await using var files = new AssetLoader(project.CreateStorage());
         using ShaderAsset source = await ShaderAsset.OpenAsync(files, id);
-        Shader original = await source.CreateAsync(ShaderTestCompilation.Slang, ShaderTestCompilation.CreateSessionDescription());
+        Shader original = await SomeEngine.Resources.ShaderLibrary.CreateAsync(source, ShaderTestCompilation.Slang, ShaderTestCompilation.CreateSessionDescription());
         Dictionary<AssetId<ShaderAsset>, Shader> shaders = new() { [id] = original };
         Dictionary<AssetId<TextureAsset>, Texture> textures = [];
         using var asset = new MaterialAsset();
@@ -67,7 +67,7 @@ public sealed class MaterialReloadTests
         StandardMaterial material = await asset.CreateAsync<StandardMaterial>(files, shaders, textures);
         source.Name = "Changed shader";
 
-        Shader replacement = await source.CreateAsync(ShaderTestCompilation.Slang, ShaderTestCompilation.CreateSessionDescription());
+        Shader replacement = await SomeEngine.Resources.ShaderLibrary.CreateAsync(source, ShaderTestCompilation.Slang, ShaderTestCompilation.CreateSessionDescription());
         shaders[id] = replacement;
 
         Assert.Same(original, material.Shader);
@@ -84,7 +84,7 @@ public sealed class MaterialReloadTests
         AssetId<ShaderAsset> id = await SaveShaderAsync(project, directory);
         await using var files = new AssetLoader(project.CreateStorage());
         using ShaderAsset source = await ShaderAsset.OpenAsync(files, id);
-        Shader shader = await source.CreateAsync(ShaderTestCompilation.Slang, ShaderTestCompilation.CreateSessionDescription());
+        Shader shader = await SomeEngine.Resources.ShaderLibrary.CreateAsync(source, ShaderTestCompilation.Slang, ShaderTestCompilation.CreateSessionDescription());
         Dictionary<AssetId<ShaderAsset>, Shader> shaders = new() { [id] = shader };
         using MaterialAsset asset = new StandardMaterialAsset { Name = "after" };
         asset.GetBlock<MaterialBlock>().Shader = id;
@@ -104,7 +104,7 @@ public sealed class MaterialReloadTests
         AssetId<ShaderAsset> id = await SaveShaderAsync(project, directory);
         await using var files = new AssetLoader(project.CreateStorage());
         using ShaderAsset source = await ShaderAsset.OpenAsync(files, id);
-        Shader shader = await source.CreateAsync(ShaderTestCompilation.Slang, ShaderTestCompilation.CreateSessionDescription());
+        Shader shader = await SomeEngine.Resources.ShaderLibrary.CreateAsync(source, ShaderTestCompilation.Slang, ShaderTestCompilation.CreateSessionDescription());
         Dictionary<AssetId<ShaderAsset>, Shader> shaders = new() { [id] = shader };
         Dictionary<AssetId<TextureAsset>, Texture> textures = [];
         using MaterialAsset asset = new StandardMaterialAsset();

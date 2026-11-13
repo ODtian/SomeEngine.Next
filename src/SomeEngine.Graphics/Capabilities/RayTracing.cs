@@ -215,7 +215,7 @@ public enum AccelerationStructureGeometryOptions : byte
 {
     None = 0,
     Opaque = 1 << 0,
-    NoDuplicateAnyHitInvocation = 1 << 1,
+    NoRepeatedAnyHit = 1 << 1,
 }
 
 /// <remarks>

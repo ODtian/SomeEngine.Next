@@ -2,7 +2,7 @@
 #define VSM_SOFT_SAMPLING_SLANG
 
 #include "vsm_projection.slang"
-#include "vsm_prefilter_sampling.slang"
+__exported import vsm_prefilter_sampling;
 
 static const uint VSM_SOFT_MAX_BLOCKER_QUERIES = 4u;
 static const uint VSM_SOFT_MAX_FILTER_QUERIES = 8u;

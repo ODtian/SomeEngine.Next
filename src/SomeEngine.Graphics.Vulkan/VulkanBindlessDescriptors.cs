@@ -45,7 +45,7 @@ internal sealed unsafe partial class VulkanBackend
         {
             lock (_gate)
             {
-                ThrowIfReleased();
+
                 return Allocator(type).Reserve(count);
             }
         }
@@ -62,11 +62,10 @@ internal sealed unsafe partial class VulkanBackend
         {
             lock (_gate)
             {
-                ThrowIfReleased();
-                if (!_tables.Add(table))
-                    throw new InvalidOperationException("A Vulkan DescriptorTable was registered twice.");
-                foreach (DescriptorSlotDesc slot in table.Slots)
-                    _dirty.Add(ResolveKind(slot));
+
+                _tables.Add(table);
+                foreach (DescriptorEntryDesc entry in table.Entries)
+                    _dirty.Add(ResolveKind(entry));
             }
         }
 
@@ -77,8 +76,8 @@ internal sealed unsafe partial class VulkanBackend
             {
                 if (!_tables.Remove(table))
                     return;
-                foreach (DescriptorSlotDesc slot in table.Slots)
-                    _dirty.Add(ResolveKind(slot));
+                foreach (DescriptorEntryDesc entry in table.Entries)
+                    _dirty.Add(ResolveKind(entry));
                 Allocator(table.Type).Free(table.Range);
                 values = table.ClearStagedValues();
             }
@@ -87,7 +86,7 @@ internal sealed unsafe partial class VulkanBackend
 
         internal void Write(
             VulkanDescriptorTable table,
-            uint slot,
+            uint entry,
             in ResourceBinding value)
         {
             IVulkanRetained? next = value.Value as IVulkanRetained;
@@ -97,17 +96,10 @@ internal sealed unsafe partial class VulkanBackend
             {
                 lock (_gate)
                 {
-                    ThrowIfReleased();
-                    if (!_tables.Contains(table))
-                        throw new ObjectDisposedException(nameof(VulkanDescriptorTable));
-                    DescriptorSlotDesc shape = table.GetSlotDesc(slot);
-                    if (value.Type != shape.Type)
-                    {
-                        throw new ArgumentException(
-                            $"Descriptor slot {slot} requires {shape.Type}.",
-                            nameof(value));
-                    }
-                    previous = table.ExchangeStagedValue(slot, value);
+
+                    DescriptorEntryDesc shape = table.GetEntryDesc(entry);
+                    
+                    previous = table.ExchangeStagedValue(entry, value);
                     _dirty.Add(ResolveKind(shape));
                 }
             }
@@ -125,10 +117,9 @@ internal sealed unsafe partial class VulkanBackend
             cancellationToken.ThrowIfCancellationRequested();
             lock (_gate)
             {
-                ThrowIfReleased();
+
                 if (_dirty.Count == 0)
                     return;
-                ValidateTablesForPublish();
                 var replacements = new List<(VulkanBindlessHeap Heap,
                     VulkanBindlessGeneration Generation)>();
                 try
@@ -159,17 +150,17 @@ internal sealed unsafe partial class VulkanBackend
         {
             lock (_gate)
             {
-                ThrowIfReleased();
+
                 return GetOrCreateHeap(kind).Layout;
             }
         }
 
-        internal VulkanBindlessSnapshot Acquire(
+        internal VulkanBindlessData Acquire(
             ReadOnlySpan<VulkanBindlessSetBinding> bindings)
         {
             lock (_gate)
             {
-                ThrowIfReleased();
+
                 var generations = new VulkanBindlessGeneration[bindings.Length];
                 var sets = new VulkanBoundDescriptorSet[bindings.Length];
                 int acquired = 0;
@@ -185,7 +176,7 @@ internal sealed unsafe partial class VulkanBackend
                             generation.Set);
                         acquired++;
                     }
-                    return new VulkanBindlessSnapshot(generations, sets);
+                    return new VulkanBindlessData(generations, sets);
                 }
                 catch
                 {
@@ -241,8 +232,7 @@ internal sealed unsafe partial class VulkanBackend
                 (ResourceBindingType.AccelerationStructure,
                     DescriptorType.AccelerationStructureKhr) =>
                     VulkanBindlessKind.AccelerationStructure,
-                _ => throw new NotSupportedException(
-                    $"Vulkan bindless descriptor {bindingType}/{descriptorType} is unsupported."),
+                _ => default,
             };
 
         internal static uint BindingFor(VulkanBindlessKind kind) => kind switch
@@ -256,7 +246,7 @@ internal sealed unsafe partial class VulkanBackend
             VulkanBindlessKind.AccelerationStructure => DescriptorRegisterClassStride,
             VulkanBindlessKind.Sampler => DescriptorRegisterClassStride * 2,
             VulkanBindlessKind.ConstantBuffer => DescriptorRegisterClassStride * 3,
-            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            _ => default,
         };
 
         private void PopulateGeneration(
@@ -265,35 +255,17 @@ internal sealed unsafe partial class VulkanBackend
         {
             foreach (VulkanDescriptorTable table in _tables)
             {
-                for (uint slot = 0; slot < table.Count; slot++)
+                for (uint entry = 0; entry < table.Count; entry++)
                 {
-                    DescriptorSlotDesc shape = table.GetSlotDesc(slot);
+                    DescriptorEntryDesc shape = table.GetEntryDesc(entry);
                     if (ResolveKind(shape) != kind)
                         continue;
-                    ResourceBinding value = table.GetStagedValue(slot);
+                    ResourceBinding value = table.GetStagedValue(entry);
                     generation.Write(
-                        table.FirstIndex + slot,
+                        table.FirstIndex + entry,
                         shape,
                         value,
                         kind);
-                }
-            }
-        }
-
-        private void ValidateTablesForPublish()
-        {
-            foreach (VulkanDescriptorTable table in _tables)
-            {
-                for (uint slot = 0; slot < table.Count; slot++)
-                {
-                    DescriptorSlotDesc shape = table.GetSlotDesc(slot);
-                    ResourceBinding value = table.GetStagedValue(slot);
-                    if (value.Type != shape.Type ||
-                        shape.Type == ResourceBindingType.Sampler && value.IsNull)
-                    {
-                        throw new InvalidOperationException(
-                            "Every Vulkan DescriptorTable slot must contain one typed value before publish.");
-                    }
                 }
             }
         }
@@ -308,8 +280,7 @@ internal sealed unsafe partial class VulkanBackend
             if (kind == VulkanBindlessKind.AccelerationStructure &&
                 !_device.ExtendedFeatures.DescriptorBindingAccelerationStructureUpdateAfterBind)
             {
-                throw new NotSupportedException(
-                    "Bindless acceleration structures require descriptor update-after-bind support.");
+                throw new GraphicsException(GraphicsError.NativeFailure, "Bindless acceleration structures require native descriptor update-after-bind support.");
             }
             heap = VulkanBindlessHeap.Create(
                 _device,
@@ -322,7 +293,7 @@ internal sealed unsafe partial class VulkanBackend
             return heap;
         }
 
-        private static VulkanBindlessKind ResolveKind(in DescriptorSlotDesc shape) =>
+        private static VulkanBindlessKind ResolveKind(in DescriptorEntryDesc shape) =>
             ResolveKind(shape.Type, ToDescriptorType(shape.Type, shape));
 
         private static DescriptorType DescriptorTypeFor(VulkanBindlessKind kind) => kind switch
@@ -337,7 +308,7 @@ internal sealed unsafe partial class VulkanBackend
             VulkanBindlessKind.Sampler => DescriptorType.Sampler,
             VulkanBindlessKind.AccelerationStructure =>
                 DescriptorType.AccelerationStructureKhr,
-            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            _ => default,
         };
 
         private static void ReleaseValues(ResourceBinding[] values)
@@ -347,8 +318,6 @@ internal sealed unsafe partial class VulkanBackend
                     value.ReleaseNative();
         }
 
-        private void ThrowIfReleased() =>
-            ObjectDisposedException.ThrowIf(_released, this);
     }
 
     private sealed class VulkanBindlessHeap
@@ -381,7 +350,7 @@ internal sealed unsafe partial class VulkanBackend
             uint capacity)
         {
             if (capacity == 0)
-                throw new NotSupportedException("The Vulkan Device exposes no bindless descriptor capacity.");
+                throw new GraphicsException(GraphicsError.NativeFailure, "The Vulkan device exposes no bindless descriptor capacity.");
             DescriptorSetLayoutBinding nativeBinding = new(
                 binding,
                 type,
@@ -444,8 +413,7 @@ internal sealed unsafe partial class VulkanBackend
         {
             while (true)
             {
-                VulkanBindlessGeneration generation = Volatile.Read(ref _current)
-                    ?? throw new ObjectDisposedException(nameof(VulkanBindlessHeap));
+                VulkanBindlessGeneration generation = Volatile.Read(ref _current)!;
                 try { generation.RetainNative(); }
                 catch (ObjectDisposedException) { continue; }
                 if (ReferenceEquals(generation, Volatile.Read(ref _current)))
@@ -493,11 +461,6 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         internal VkDescriptorSet Set { get; }
-        internal void CaptureSparseBindings(VulkanCommandSlot commands)
-        {
-            foreach (IVulkanRetained resource in _retained)
-                commands.CaptureSparseBindings(resource);
-        }
 
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
@@ -552,7 +515,7 @@ internal sealed unsafe partial class VulkanBackend
 
         internal void Write(
             uint index,
-            in DescriptorSlotDesc shape,
+            in DescriptorEntryDesc shape,
             in ResourceBinding value,
             VulkanBindlessKind kind)
         {
@@ -561,7 +524,7 @@ internal sealed unsafe partial class VulkanBackend
                 retained.RetainNative();
                 _retained.Add(retained);
             }
-            var slot = new VulkanDescriptorSlot(
+            var entry = new VulkanDescriptorEntry(
                 value.Type,
                 ToDescriptorType(value.Type, shape),
                 0,
@@ -572,7 +535,7 @@ internal sealed unsafe partial class VulkanBackend
             _device.Backend.WriteResourceDescriptor(
                 _device,
                 Set,
-                slot,
+                entry,
                 value);
         }
 
@@ -587,12 +550,12 @@ internal sealed unsafe partial class VulkanBackend
         }
     }
 
-    private sealed class VulkanBindlessSnapshot : IVulkanRetained
+    private sealed class VulkanBindlessData : IVulkanRetained
     {
         private readonly VulkanBindlessGeneration[] _generations;
         private readonly VulkanLifetime _lifetime;
 
-        internal VulkanBindlessSnapshot(
+        internal VulkanBindlessData(
             VulkanBindlessGeneration[] generations,
             VulkanBoundDescriptorSet[] sets)
         {
@@ -602,11 +565,6 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         internal VulkanBoundDescriptorSet[] Sets { get; }
-        internal void CaptureSparseBindings(VulkanCommandSlot commands)
-        {
-            foreach (IVulkanRetained resource in _generations)
-                commands.CaptureSparseBindings(resource);
-        }
 
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
@@ -629,8 +587,7 @@ internal sealed unsafe partial class VulkanBackend
 
         internal VulkanDescriptorRange Reserve(uint count)
         {
-            if (count == 0)
-                throw new ArgumentOutOfRangeException(nameof(count));
+            
             for (int index = 0; index < _free.Count; index++)
             {
                 VulkanDescriptorRange candidate = _free[index];
@@ -648,7 +605,7 @@ internal sealed unsafe partial class VulkanBackend
             if (count > capacity - _next)
                 throw new GraphicsException(
                     GraphicsError.OutOfMemory,
-                    $"The Vulkan bindless descriptor publisher exhausted its {capacity} slots.");
+                    $"The Vulkan bindless descriptor publisher exhausted its {capacity} entries.");
             VulkanDescriptorRange allocated = new(_next, count);
             _next = checked(_next + count);
             return allocated;
@@ -656,14 +613,12 @@ internal sealed unsafe partial class VulkanBackend
 
         internal void Free(in VulkanDescriptorRange range)
         {
-            if (range.Count == 0 || range.First > capacity - range.Count)
-                throw new ArgumentOutOfRangeException(nameof(range));
+            
             int index = _free.BinarySearch(
                 range,
                 Comparer<VulkanDescriptorRange>.Create(
                     static (left, right) => left.First.CompareTo(right.First)));
-            if (index >= 0)
-                throw new InvalidOperationException("A Vulkan descriptor range was freed twice.");
+            
             index = ~index;
             _free.Insert(index, range);
             if (index > 0 &&

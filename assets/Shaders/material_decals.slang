@@ -1,6 +1,5 @@
 #ifndef MATERIAL_DECALS_SLANG
 #define MATERIAL_DECALS_SLANG
-#include "render_lighting.slang"
 
 [__AttributeUsage(_AttributeTargets.Struct)]
 struct MaterialDecalScalarsAttribute {};
@@ -18,20 +17,25 @@ struct MaterialDecalParameters
     uint Count, CellCount, ReferenceCapacity, UseIndex;
 };
 
-struct MaterialDecalCellRange
+struct MaterialDecalBinningView
 {
-    uint3 Minimum;
-    uint Valid;
-    uint3 Maximum;
-    uint View;
+    float4x4 View;
+    float4x4 Projection;
+    float4x4 InverseProjection;
+    uint2 ScreenSize;
+    uint2 TileCount;
+    uint TileSize;
+    uint DepthSliceCount;
+    uint CellCount;
+    uint DecalCount;
+    float4 Depth;
 };
 
 ConstantBuffer<MaterialDecalParameters> MaterialDecalUniforms;
 StructuredBuffer<MaterialDecalVolume> MaterialDecalVolumes;
 ByteAddressBuffer MaterialDecalProperties;
-StructuredBuffer<ClusteredLightGridParameters> MaterialDecalLightingViews;
-StructuredBuffer<uint> MaterialDecalCounts;
-StructuredBuffer<uint> MaterialDecalOffsets;
+StructuredBuffer<MaterialDecalBinningView> MaterialDecalViews;
+StructuredBuffer<uint2> MaterialDecalCells;
 StructuredBuffer<uint> MaterialDecalReferences;
 
 struct MaterialDecalInput
@@ -50,12 +54,14 @@ MaterialDecalIterator BeginMaterialDecals(uint3 pixel, float3 position)
 {
     MaterialDecalIterator input = { 0u, MaterialDecalUniforms.Count, 0u, false };
     if (input.Count == 0u || MaterialDecalUniforms.UseIndex == 0u) return input;
-    ClusteredLightGridParameters grid = MaterialDecalLightingViews[pixel.z];
-    float depth = max(-mul(float4(position, 1.0), grid.View).z, grid.ZParams.x);
-    uint cell = ClusteredLightCellIndex(grid, pixel.z, pixel.xy, depth);
-    uint offset = MaterialDecalOffsets[cell];
-    if (offset == 0xFFFFFFFFu) return input;
-    input.Offset = offset; input.Count = MaterialDecalCounts[cell]; input.Indexed = true;
+    MaterialDecalBinningView grid = MaterialDecalViews[pixel.z];
+    float depth = max(-mul(float4(position, 1.0), grid.View).z, grid.Depth.x);
+    uint slice = uint(clamp(floor(log2(depth) * grid.Depth.z + grid.Depth.w),
+        0.0, float(grid.DepthSliceCount - 1u)));
+    uint2 tile = pixel.xy / grid.TileSize;
+    uint cell = pixel.z * grid.CellCount + (slice * grid.TileCount.y + tile.y) * grid.TileCount.x + tile.x;
+    uint2 range = MaterialDecalCells[cell];
+    input.Offset = range.x; input.Count = range.y; input.Indexed = true;
     return input;
 }
 

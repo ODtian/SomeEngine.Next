@@ -1,7 +1,7 @@
 #ifndef RENDER_INSTANCE_TRANSFORM_SLANG
 #define RENDER_INSTANCE_TRANSFORM_SLANG
 
-#include "render_instance_properties.slang"
+__exported import render_instance_properties;
 
 // Render-owned transform encoding. The generic instance-property transport does not know this
 // structure; producers and shader consumers agree on it through their encoding fingerprint.

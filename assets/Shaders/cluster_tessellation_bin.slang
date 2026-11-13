@@ -1,7 +1,7 @@
-#include "cluster_tessellation_types.slang"
-#include "cluster_structures.slang"
-#include "resource_effects.slang"
-#include "wave_aggregation.slang"
+__exported import cluster_tessellation_types;
+__exported import cluster_structures;
+__exported import resource_effects;
+__exported import wave_aggregation;
 
 ConstantBuffer<TessellationBinUniforms> Uniforms;
 ByteAddressBuffer TessellationCountersRead;

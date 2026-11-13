@@ -1,9 +1,9 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Numerics;
-using DefaultGame.Content;
 using Microsoft.Extensions.DependencyInjection;
 using SharpGLTF.Schema2;
+using SlangShaderSharp;
 using SomeEngine.Animation;
 using SomeEngine.Animation.Pose;
 using SomeEngine.Assets;
@@ -91,7 +91,7 @@ public sealed partial class SkinningRenderingTests
         QuantizedClipData parentData = QuantizedClipData.Encode(parentClip, 4), childData = QuantizedClipData.Encode(childClip, 4);
         Entity[] targets = new Entity[3];
         var repeat = new GpuPoseExamples.RepeatLastInput(targets);
-        var reads = new List<GpuPoseReadback>();
+        var reads = new List<GpuPoseReadbackResult>();
         var application = new ApplicationScene(content.Project.RootPath)
         {
             Initialize = frame =>
@@ -126,7 +126,7 @@ public sealed partial class SkinningRenderingTests
         Matrix4x4[][] current = Reference(.625f), previous = Reference(.5f);
         for (int index = 0; index < reads.Count; index++)
         {
-            GpuPoseReadback result = reads[index];
+            GpuPoseReadbackResult result = reads[index];
             int section = index % 3;
             Assert.Equal(1u, result.Starts);
             // The app evaluates the initial zero-delta input before its five timed updates.
@@ -304,24 +304,37 @@ public sealed partial class SkinningRenderingTests
             while (!File.Exists(Path.Combine(engine, "SomeEngine.slnx"))) engine = Path.GetDirectoryName(engine)!;
             string directory = Path.Combine(Path.GetTempPath(), $"SomeEngine-Skin-{Guid.NewGuid():N}");
             string source = Path.Combine(engine, "samples/DefaultGame");
-            foreach (string file in Directory.EnumerateFiles(Path.Combine(source, "assets"), "*", SearchOption.AllDirectories))
-            {
-                string output = Path.Combine(directory, Path.GetRelativePath(source, file));
-                Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-                File.Copy(file, output);
-            }
-            string shader = await File.ReadAllTextAsync(Path.Combine(directory, "assets/Shaders/standard.slang"));
-            var project = new AssetProject(directory, [], shaderIncludeDirectories: [Path.Combine(engine, "assets/Shaders")]);
-            var result = new SkinContent(project, shader);
+            string sourceShaders = Path.Combine(source, "assets/Shaders");
+            string shader = await File.ReadAllTextAsync(Path.Combine(sourceShaders, "standard.slang"));
+            Directory.CreateDirectory(directory);
             try
             {
+                await SomeEngine.SceneContent.SceneContent.GenerateSpheresFromSharedAsync(directory, source, engine, 1280, 720);
+                var project = new AssetProject(directory, [],
+                    shaderIncludeDirectories: [sourceShaders, Path.Combine(engine, "assets/Shaders")],
+                    shaderTargets: [SlangCompileTarget.Dxil]);
+                string shaders = Path.Combine(directory, "assets/Shaders");
+                Directory.CreateDirectory(shaders);
+                string definitionPath = Path.Combine(shaders, "standard.shader");
+                File.Copy(Path.Combine(sourceShaders, "standard.shader"), definitionPath);
+                using (ShaderAsset definition = await ShaderAsset.OpenSourceAsync(definitionPath))
+                    foreach (string name in definition.GetBlock<ShaderSourceBlock>().SourceNames)
+                    {
+                        string output = Path.Combine(shaders, name);
+                        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+                        File.Copy(Path.Combine(sourceShaders, name), output);
+                    }
+                var result = new SkinContent(project, shader);
                 await File.WriteAllTextAsync(result.ShaderPath, result.SkinShader(FloatReader, "someengine.tests.skin.float.v1"));
-                await SampleContent.BuildAsync(directory, engine);
-                var prepared = new AssetProject(directory, [], shaderIncludeDirectories: [Path.Combine(engine, "assets/Shaders")]);
-                await prepared.BuildAsync(result.ShaderPath.Replace(".slang", ".shader"));
-                return new SkinContent(prepared, shader);
+                await project.BuildAsync(definitionPath);
+                var manifest = AssetManifest.Load(Path.Combine(source, "Library/AssetManifest"));
+                await using var files = EngineShaderContent.OpenFiles(source, manifest);
+                AssetEntry materialEntry = manifest.List(MaterialAsset.FileType).Single(item => item.Name == "Standard");
+                using MaterialAsset material = await MaterialAsset.OpenAsync(files, new(materialEntry.AssetGuid));
+                project.RegisterAsset(await material.SaveAsync(Path.Combine(directory, materialEntry.Path)));
+                return result;
             }
-            catch { result.Dispose(); throw; }
+            catch { Directory.Delete(directory, recursive: true); throw; }
         }
 
         public async Task SetShaderAsync(string reader, string encoding)
@@ -336,9 +349,8 @@ public sealed partial class SkinningRenderingTests
         }
         public async Task SetReferenceShaderAsync()
         {
-            await File.WriteAllTextAsync(ShaderPath, shader
-                .Replace("typedef StaticVertexEval VertexEvaluate;", ReferenceEvaluator + "\ntypedef PanelReference VertexEvaluate;")
-                .Replace("typedef StaticPositionEval RasterVertexEvaluate;", "typedef PanelReference RasterVertexEvaluate;"));
+            await File.WriteAllTextAsync(ShaderPath,
+                CreateMaterialSource(ReferenceEvaluator, "PanelReference", "someengine.cluster.attributes.standard.v1"));
             await project.BuildAsync(ShaderPath.Replace(".slang", ".shader"));
         }
         public async Task WriteBoundsSceneAsync()
@@ -352,6 +364,8 @@ public sealed partial class SkinningRenderingTests
                 Clusters = attributes.Clusters.Select((item, cluster) => item with
                     { Data = EncodeFloatInfluences(item, skin.Clusters[cluster], previous: false).ToImmutableArray() }).ToArray(),
             });
+            using (var packed = SomeEngine.Assets.Importers.ClusterBuilder.BuildMeshBlock(
+                await mesh.GetBlockAsync<ClusterGeometryBlock>(), mesh.GetBlock<ClusterVertexAttributesBlock>())) mesh.SetBlock(packed);
             await WriteSharedPanelAsync(mesh, [new(-10, 1, 6), new(-10, -1, 6)]);
         }
         public async Task WriteBoundsReferenceAsync()
@@ -377,9 +391,12 @@ public sealed partial class SkinningRenderingTests
             project.RegisterAsset(await scene.SaveAsync(Path.Combine(project.RootPath, entry.Path)));
         }
         private string SkinShader(string reader, string encoding) =>
-            "#define CLUSTER_VERTEX_ENCODING \"someengine.cluster.positions.uint16.v1+" + encoding + "\"\n" + shader
-            .Replace("typedef StaticVertexEval VertexEvaluate;", SkinEvaluator.Replace("USER_READER", reader) + "\ntypedef PanelSkin VertexEvaluate;")
-            .Replace("typedef StaticPositionEval RasterVertexEvaluate;", "typedef PanelSkin RasterVertexEvaluate;");
+            CreateMaterialSource(SkinEvaluator.Replace("USER_READER", reader), "PanelSkin", encoding);
+
+        private string CreateMaterialSource(string vertexSource, string vertexType, string encoding) => shader
+            .Replace("[VertexEncoding(", vertexSource + "\n[VertexEncoding(")
+            .Replace("someengine.cluster.attributes.standard.v1", encoding)
+            .Replace("typedef StaticVertexEval Vertex;", $"typedef {vertexType} Vertex;");
 
         public Task WriteMeshesAsync(Func<ClusterVertexAttributes, ClusterVertexAttributes, bool, byte[]> encode) =>
             WriteSceneAsync(async (index, previous, right) =>
@@ -393,6 +410,8 @@ public sealed partial class SkinningRenderingTests
                     VertexIdentity = attributes.VertexIdentity, Encoding = encoding,
                     Clusters = attributes.Clusters.Select((item, cluster) => item with { Data = encode(item, skin.Clusters[cluster], previous).ToImmutableArray() }).ToArray(),
                 });
+                using (var packed = SomeEngine.Assets.Importers.ClusterBuilder.BuildMeshBlock(
+                    await mesh.GetBlockAsync<ClusterGeometryBlock>(), mesh.GetBlock<ClusterVertexAttributesBlock>())) mesh.SetBlock(packed);
                 return mesh;
             });
 
@@ -499,10 +518,13 @@ public sealed partial class SkinningRenderingTests
         };
         """;
     private const string SkinEvaluator = """
-        #include "skin_pose.slang"
+        #include "generated/render_instance_layout.slang"
         struct PanelSkin : IVertexEvaluate
         {
             typedef StandardVertex Vertex;
+            ByteAddressBuffer InstanceData;
+            ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
+            #include "skin_pose.slang"
             Vertex evaluate(VertexEvalContext ctx)
             {
                 uint2 footer = ctx.pageHeap.Load2(ctx.attributeBlobAddress + ctx.attributeBlobSize - 8u);

@@ -1,10 +1,10 @@
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
-#include "resource_effects.slang"
+__exported import resource_effects;
 
 struct VirtualShadowPagePoolUniforms
 {
-    uint MaxPhysicalPages;
+    uint MaxPages;
     uint PageTableEntryCount;
     uint FrameIndex;
     uint PageListPhase;
@@ -22,7 +22,7 @@ StructuredBuffer<uint> RequestedPageCount;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWByteAddressBuffer PageRequestDispatchArgs;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<uint> PhysicalPageOwners;
+RWStructuredBuffer<uint> PageAssignments;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<VirtualShadowPageMetadata> PageMetadata;
 #include "vsm_page_lists.slang"
@@ -74,22 +74,27 @@ bool PublishOwnedPage(uint atlasPage, uint owner)
 {
     if (owner >= PagePool.PageTableEntryCount)
         return false;
-    uint viewIndex = PageMetadata[atlasPage].ViewIndex;
-    if (viewIndex >= PagePool.ViewCount)
+    uint4 range = ShadowRanges[PageMetadata[atlasPage].RangeId];
+    if (range.z != PageMetadata[atlasPage].RangeGeneration || range.w >= PagePool.ViewCount)
+    {
+        ShadowPageTable[owner] = 0u;
         return false;
+    }
+    uint viewIndex = range.w;
     VirtualShadowMapParameters view = ShadowViews[viewIndex];
     uint mipLevel;
     uint2 localPage;
     if (!VirtualShadowDecodePageTableIndex(view, owner, mipLevel, localPage) ||
         mipLevel >= PagePool.MipLevelCount)
     {
+        ShadowPageTable[owner] = 0u;
         return false;
     }
     uint entry = ShadowPageTable[owner];
     int2 worldPage = VirtualShadowWorldPage(view, mipLevel, localPage);
     uint page;
     if ((entry & VSM_PAGE_RENDERING) == 0u ||
-        !DecodeVirtualShadowPage(entry, view.PhysicalPagesPerRow, page) || page != atlasPage) return false;
+        !DecodeVirtualShadowPage(entry, view.AtlasPagesPerRow, page) || page != atlasPage) return false;
     if (PageMetadata[atlasPage].Generation != view.CacheGeneration || any(PageMetadata[atlasPage].WorldPage != worldPage))
     {
         ShadowPageTable[owner] = 0u;
@@ -99,55 +104,17 @@ bool PublishOwnedPage(uint atlasPage, uint owner)
     return true;
 }
 
-groupshared uint PagePrefix[256];
-
-void CompactAvailableShadowPages(uint groupIndex)
-{
-    uint total = 0u;
-    uint availableStart = ShadowPageListStart(VSM_PAGE_LIST_AVAILABLE, PagePool.MaxPhysicalPages);
-    uint lruStart = ShadowPageListStart(VSM_PAGE_LIST_LRU, PagePool.MaxPhysicalPages);
-    for (uint first = 0u; first < PagePool.MaxPhysicalPages; first += 256u)
-    {
-        uint index = first + groupIndex;
-        uint page = index < PagePool.MaxPhysicalPages ? ShadowPageLists[lruStart + index] : VSM_UNOWNED_PAGE;
-        PagePrefix[groupIndex] = page != VSM_UNOWNED_PAGE ? 1u : 0u;
-        GroupMemoryBarrierWithGroupSync();
-        for (uint step = 1u; step < 256u; step <<= 1u)
-        {
-            uint preceding = groupIndex >= step ? PagePrefix[groupIndex - step] : 0u;
-            GroupMemoryBarrierWithGroupSync();
-            PagePrefix[groupIndex] += preceding;
-            GroupMemoryBarrierWithGroupSync();
-        }
-        uint prefix = PagePrefix[groupIndex];
-        if (page != VSM_UNOWNED_PAGE)
-            ShadowPageLists[availableStart + total + prefix - 1u] = page;
-        total += PagePrefix[255];
-        GroupMemoryBarrierWithGroupSync();
-    }
-    uint emptyCount = ShadowPageListCount(VSM_PAGE_LIST_EMPTY, PagePool.MaxPhysicalPages);
-    uint emptyStart = ShadowPageListStart(VSM_PAGE_LIST_EMPTY, PagePool.MaxPhysicalPages);
-    for (uint index = groupIndex; index < emptyCount; index += 256u)
-        ShadowPageLists[availableStart + total + index] = ShadowPageLists[emptyStart + index];
-    AllMemoryBarrierWithGroupSync();
-    if (groupIndex == 0u)
-    {
-        ShadowPageLists[ShadowPageListCountIndex(VSM_PAGE_LIST_AVAILABLE, PagePool.MaxPhysicalPages)] = total + emptyCount;
-        ShadowPageLists[ShadowPageListCountIndex(VSM_PAGE_LIST_EMPTY, PagePool.MaxPhysicalPages)] = 0u;
-    }
-}
-
 void FinishShadowPageOrder(uint groupIndex)
 {
-    uint requestedCount = ShadowPageListCount(VSM_PAGE_LIST_REQUESTED, PagePool.MaxPhysicalPages);
-    uint availableCount = ShadowPageListCount(VSM_PAGE_LIST_AVAILABLE, PagePool.MaxPhysicalPages);
-    uint requestedStart = ShadowPageListStart(VSM_PAGE_LIST_REQUESTED, PagePool.MaxPhysicalPages);
-    uint availableStart = ShadowPageListStart(VSM_PAGE_LIST_AVAILABLE, PagePool.MaxPhysicalPages);
+    uint requestedCount = ShadowPageListCount(VSM_PAGE_LIST_REQUESTED, PagePool.MaxPages);
+    uint availableCount = ShadowPageListCount(VSM_PAGE_LIST_AVAILABLE, PagePool.MaxPages);
+    uint requestedStart = ShadowPageListStart(VSM_PAGE_LIST_REQUESTED, PagePool.MaxPages);
+    uint availableStart = ShadowPageListStart(VSM_PAGE_LIST_AVAILABLE, PagePool.MaxPages);
     for (uint index = groupIndex; index < availableCount; index += 256u)
         ShadowPageLists[requestedStart + requestedCount + index] = ShadowPageLists[availableStart + index];
     AllMemoryBarrierWithGroupSync();
     if (groupIndex == 0u)
-        ShadowPageLists[ShadowPageListCountIndex(VSM_PAGE_LIST_REQUESTED, PagePool.MaxPhysicalPages)] = requestedCount + availableCount;
+        ShadowPageLists[ShadowPageListCountIndex(VSM_PAGE_LIST_REQUESTED, PagePool.MaxPages)] = requestedCount + availableCount;
 }
 
 [shader("compute")]
@@ -155,7 +122,7 @@ void FinishShadowPageOrder(uint groupIndex)
 void BuildVirtualShadowPagePool(uint3 threadId : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 {
     uint index = threadId.x;
-    uint capacity = PagePool.MaxPhysicalPages;
+    uint capacity = PagePool.MaxPages;
     if (PagePool.PageListPhase == 0u)
     {
         if (index < capacity)
@@ -174,11 +141,7 @@ void BuildVirtualShadowPagePool(uint3 threadId : SV_DispatchThreadID, uint group
         }
         return;
     }
-    if (PagePool.PageListPhase == 2u)
-    {
-        CompactAvailableShadowPages(groupIndex);
-        return;
-    }
+
     if (PagePool.PageListPhase == 3u)
     {
         FinishShadowPageOrder(groupIndex);
@@ -189,7 +152,7 @@ void BuildVirtualShadowPagePool(uint3 threadId : SV_DispatchThreadID, uint group
 
     uint lruIndex = ShadowPageListStart(VSM_PAGE_LIST_LRU, capacity) + index;
     uint atlasPage = ShadowPageLists[lruIndex];
-    uint owner = PhysicalPageOwners[atlasPage];
+    uint owner = PageAssignments[atlasPage];
     if (owner == VSM_UNOWNED_PAGE || owner >= PagePool.PageTableEntryCount)
     {
         AppendShadowPage(VSM_PAGE_LIST_EMPTY, capacity, atlasPage);
@@ -198,7 +161,7 @@ void BuildVirtualShadowPagePool(uint3 threadId : SV_DispatchThreadID, uint group
     }
     if (!PublishOwnedPage(atlasPage, owner))
     {
-        PhysicalPageOwners[atlasPage] = VSM_UNOWNED_PAGE;
+        PageAssignments[atlasPage] = VSM_UNOWNED_PAGE;
         AppendShadowPage(VSM_PAGE_LIST_EMPTY, capacity, atlasPage);
         ShadowPageLists[lruIndex] = VSM_UNOWNED_PAGE;
         return;

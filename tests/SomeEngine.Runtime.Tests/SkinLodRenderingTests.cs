@@ -119,6 +119,8 @@ public sealed partial class SkinningRenderingTests
                 Clusters = attributes.Clusters.Select((item, cluster) => item with
                     { Data = EncodeFloatInfluences(item, skin.Clusters[cluster], previous: false).ToImmutableArray() }).ToArray(),
             });
+            using (var packed = SomeEngine.Assets.Importers.ClusterBuilder.BuildMeshBlock(
+                await mesh.GetBlockAsync<ClusterGeometryBlock>(), mesh.GetBlock<ClusterVertexAttributesBlock>())) mesh.SetBlock(packed);
             Project.RegisterAsset(await mesh.SaveAsync(Path.Combine(Project.RootPath, "assets/Models/lod-sphere.mesh.asset")));
             using var world = new World();
             Entity entity = world.CreateEntity(new WorldTransform { Qvvs = new(new(0, 0, 15), Quaternion.Identity) });

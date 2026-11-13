@@ -48,9 +48,9 @@ public sealed partial class CanvasCompositionTests
     {
         using var game = new World();
         using var render = new RenderWorld();
-        using var renderDevice = new RenderDevice(backend, device);
-        using var frames = new RenderFrameCoordinator(renderDevice);
+        using var pipelines = new global::SomeEngine.Render.RenderPipelines(backend, device);
         using var graph = new RenderGraph(backend, device, [backend.GetQueue(device, QueueType.Graphics)]);
+        using var renderDevice = new RenderDevice(graph, pipelines);
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(game));
         Entity time = game.CreateEntity(new AnimationTime(0));
         systems.Add(new ViewRebuildSystem());
@@ -72,8 +72,10 @@ public sealed partial class CanvasCompositionTests
         });
         Entity root = Views.Views.Spawn(game, canvas, new AnimatedShadow(false));
         using var extraction = new RenderExtractionSystems(render, new CanvasRenderExtractor());
-        using SurfaceMaterial material = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
-        using var renderer = new CanvasRenderer(backend, device, graph, render, material, Format.R8G8B8A8UNorm);
+        using var shaderLibrary = new SomeEngine.Resources.ShaderLibrary(device.Capabilities.CompileTarget);
+        using var shaderFiles = new SomeEngine.Tests.EngineShaderFiles();
+        SurfaceMaterial material = SurfaceMaterial.Create(shaderLibrary, shaderFiles.Files);
+        using var renderer = new CanvasRenderer(backend, device, pipelines, graph, render, material, Format.R8G8B8A8UNorm);
         Entity view = render.CreateEntity(new RenderView(Matrix4x4.Identity, Matrix4x4.Identity, 64, 64));
         using SomeEngine.Graphics.Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(64 * 256, BufferUsages.CopyDestination), MemoryType.Readback);
@@ -93,13 +95,7 @@ public sealed partial class CanvasCompositionTests
             extraction.Extract(game);
             using (var prepare = new RenderPrepareSystems(render, extraction))
             {
-                Assert.True(frames.TryBeginPrepare(out var scope));
-                using (scope)
-                {
-                    try { Assert.True(prepare.ApplyExtraction(scope)); }
-                    finally { prepare.Shutdown(scope); }
-                    scope.Commit();
-                }
+                Assert.True(prepare.ApplyExtraction());
             }
             renderer.ReconcileGraph(target, worldTarget);
             Entity mirror = extraction.RequireMirror(canvas);
@@ -123,9 +119,9 @@ public sealed partial class CanvasCompositionTests
             {
                 renderer.UpdateFrame(ref frame);
                 var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
-                int count = frame.Execute(completions);
-                renderDevice.TrackSubmission(completions.AsSpan(0, count));
-                renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+                ulong identity = frame.FrameIdentity;
+                frame.Execute();
+                Assert.Equal(WaitStatus.Completed, graph.WaitForFrame(identity, TimeSpan.FromSeconds(10)));
             }
             finally { frame.Dispose(); }
             using MappedBuffer pixels = backend.Map(readback, MapType.Read, BufferRange.Whole);

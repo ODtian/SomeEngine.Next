@@ -231,6 +231,8 @@ public readonly record struct BufferRange(ulong Offset, ulong Size)
             throw new ArgumentOutOfRangeException(nameof(Size));
         return this;
     }
+
+    internal BufferRange Expand(ulong bufferSize) => IsWhole ? new BufferRange(0, bufferSize) : this;
 }
 
 /// <remarks>

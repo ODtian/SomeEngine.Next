@@ -51,7 +51,8 @@ internal static class HudMeasurements
         using var frames = new RenderFrameCoordinator(renderDevice);
         using var extraction = new RenderExtractionSystems(render, new CanvasRenderExtractor { Parallel = false });
         using var prepare = new RenderPrepareSystems(render, extraction);
-        using SurfaceMaterial material = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
+        using var shaderLibrary = new SomeEngine.Resources.ShaderLibrary(device.Capabilities.CompileTarget);
+        SurfaceMaterial material = SurfaceMaterial.Create(shaderLibrary);
         using var renderer = new CanvasRenderer(backend, device, graph, render, material, Format.R8G8B8A8UNorm);
         using var views = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(game));
         views.Add(new ViewRebuildSystem());

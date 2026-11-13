@@ -4,14 +4,14 @@ public sealed partial class ValidationLayer
 {
     public Swapchain CreateSwapchain(Device device, in SwapchainDesc desc)
     {
-        RequireDevice(device);
+        RequireCapability<Presentation>(device);
+        ValidateSwapchainDescription(device, desc);
         lock (_gate)
         {
             if (!_surfaces.Contains(desc.Surface))
-                Reject("Ownership", "Swapchain Surface was not created through this Validation Layer.");
+                throw new ArgumentException("The swapchain surface belongs to this validation layer.", nameof(desc));
         }
-        if (desc.Surface.IsDisposed)
-            Reject("Lifetime", "Swapchain Surface is disposed.", desc.Surface.Label);
+        ObjectDisposedException.ThrowIf(desc.Surface.IsDisposed, desc.Surface);
         SwapchainDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -87,7 +87,7 @@ public sealed partial class ValidationLayer
     public PresentStatus Present(Queue queue, in SwapchainImage image)
     {
         RequireQueue(queue);
-        Swapchain swapchain = image.Swapchain;
+        Swapchain swapchain = ValidateSwapchainImage(image, SwapchainImageStatus.Submitted).Swapchain;
         Require(swapchain);
         RequireSameDevice(queue.Device, swapchain.Device, "SwapchainImage");
         RequirePresentationQueue(queue, swapchain);
@@ -103,16 +103,14 @@ public sealed partial class ValidationLayer
             0);
         if (!ReferenceEquals(queue, presentationQueue))
         {
-            Reject(
-                "Presentation",
-                "SwapchainImage submission and presentation require the Graphics Queue that owns the native swapchain.",
-                swapchain.Label);
+            throw new ArgumentException("Swapchain images use the device's Graphics Queue 0.", nameof(queue));
         }
     }
 
     public ReconfigureStatus Reconfigure(Swapchain swapchain, in SwapchainConfig config)
     {
         Require(swapchain);
+        ValidateSwapchainConfig(swapchain.Device, config, nameof(config));
         return Backend.Reconfigure(swapchain, config);
     }
 
@@ -122,13 +120,24 @@ public sealed partial class ValidationLayer
         lock (_gate)
         {
             for (uint index = 0; index < pool.Description.Count; index++)
-                _queryStates.Remove(new QuerySlot(pool, index));
+                _queryStates.Remove(new QueryIndex(pool, index));
         }
     }
 
     public QueryPool CreateQueryPool(Device device, in QueryPoolDesc desc)
     {
         RequireDevice(device);
+        if (!Enum.IsDefined(desc.Type) || !Enum.IsDefined(desc.QueueType) || desc.Count == 0)
+            throw new ArgumentOutOfRangeException(nameof(desc));
+        if (desc.Type != QueryType.Timestamp && desc.QueueType != QueueType.Graphics)
+            throw new ArgumentException("Non-timestamp queries require the graphics queue family.", nameof(desc));
+        if (desc.Type == QueryType.StreamOutputStatistics && desc.StreamIndex > 3)
+            throw new ArgumentOutOfRangeException(nameof(desc));
+        if (desc.Type != QueryType.StreamOutputStatistics && desc.StreamIndex != 0)
+            throw new ArgumentException("StreamIndex requires stream output statistics.", nameof(desc));
+        if (desc.Type == QueryType.PipelineStatistics && !device.Capabilities.SupportsPipelineStatistics ||
+            desc.Type == QueryType.StreamOutputStatistics && !device.Capabilities.SupportsStreamOutputStatistics)
+            throw new NotSupportedException("The requested query statistics are unavailable on this device.");
         DeviceValidationState deviceState = _deviceStates.GetValue(
             device,
             static _ => throw new InvalidOperationException(
@@ -170,7 +179,7 @@ public sealed partial class ValidationLayer
         lock (state)
         {
             for (uint index = 0; index < queryCount; index++)
-                if (GetLocalQueryPhase(state, new QuerySlot(pool, firstQuery + index)) == QueryLocalPhase.Active)
+                if (GetLocalQueryPhase(state, new QueryIndex(pool, firstQuery + index)) == QueryLocalPhase.Active)
                     Reject("Queries", "An active query cannot be reset.", pool.Label);
             CommandMutationCapacity capacity = new()
             {
@@ -180,7 +189,7 @@ public sealed partial class ValidationLayer
             ReserveCommandMutation(state, capacity);
             Backend.ResetQueries(context, pool, firstQuery, queryCount);
             for (uint index = 0; index < queryCount; index++)
-                RecordQueryEvent(state, new QuerySlot(pool, firstQuery + index),
+                RecordQueryEvent(state, new QueryIndex(pool, firstQuery + index),
                     QueryValidationEventType.Reset, QueryLocalPhase.Reset);
             RecordCommandDependencyCore(state, pool);
         }
@@ -191,17 +200,17 @@ public sealed partial class ValidationLayer
         ContextValidationState state = RequireRecording(context);
         RequireOnDevice(context.Device, pool, "QueryPool");
         ValidateQueryPool(context, pool, queryIndex, QueryValidationEventType.Begin);
-        QuerySlot slot = new(pool, queryIndex);
+        QueryIndex entry = new(pool, queryIndex);
         lock (state)
         {
-            QueryLocalPhase phase = GetLocalQueryPhase(state, slot);
+            QueryLocalPhase phase = GetLocalQueryPhase(state, entry);
             if (phase is QueryLocalPhase.Active or QueryLocalPhase.Ready)
                 Reject("Queries", "Query index is already active or has an unresolved result.", pool.Label);
             CommandMutationCapacity capacity = new() { QueryEvents = 1, QueryPhases = 1 };
             PrepareCommandDependencyCore(state, pool, ref capacity);
             ReserveCommandMutation(state, capacity);
             Backend.BeginQuery(context, pool, queryIndex);
-            RecordQueryEvent(state, slot, QueryValidationEventType.Begin, QueryLocalPhase.Active);
+            RecordQueryEvent(state, entry, QueryValidationEventType.Begin, QueryLocalPhase.Active);
             RecordCommandDependencyCore(state, pool);
         }
     }
@@ -211,17 +220,17 @@ public sealed partial class ValidationLayer
         ContextValidationState state = RequireRecording(context);
         RequireOnDevice(context.Device, pool, "QueryPool");
         ValidateQueryPool(context, pool, queryIndex, QueryValidationEventType.End);
-        QuerySlot slot = new(pool, queryIndex);
+        QueryIndex entry = new(pool, queryIndex);
         lock (state)
         {
-            QueryLocalPhase phase = GetLocalQueryPhase(state, slot);
+            QueryLocalPhase phase = GetLocalQueryPhase(state, entry);
             if (phase is QueryLocalPhase.Ready or QueryLocalPhase.Resolved)
                 Reject("Queries", "EndQuery has no matching active query in execution order.", pool.Label);
             CommandMutationCapacity capacity = new() { QueryEvents = 1, QueryPhases = 1 };
             PrepareCommandDependencyCore(state, pool, ref capacity);
             ReserveCommandMutation(state, capacity);
             Backend.EndQuery(context, pool, queryIndex);
-            RecordQueryEvent(state, slot, QueryValidationEventType.End, QueryLocalPhase.Ready);
+            RecordQueryEvent(state, entry, QueryValidationEventType.End, QueryLocalPhase.Ready);
             RecordCommandDependencyCore(state, pool);
         }
     }
@@ -232,17 +241,17 @@ public sealed partial class ValidationLayer
         ContextValidationState state = GetContextState(context);
         RequireOnDevice(context.Device, pool, "QueryPool");
         ValidateQueryPool(context, pool, queryIndex, QueryValidationEventType.Write);
-        QuerySlot slot = new(pool, queryIndex);
+        QueryIndex entry = new(pool, queryIndex);
         lock (state)
         {
-            QueryLocalPhase phase = GetLocalQueryPhase(state, slot);
+            QueryLocalPhase phase = GetLocalQueryPhase(state, entry);
             if (phase is QueryLocalPhase.Active or QueryLocalPhase.Ready)
                 Reject("Queries", "Timestamp query index has an unresolved earlier result.", pool.Label);
             CommandMutationCapacity capacity = new() { QueryEvents = 1, QueryPhases = 1 };
             PrepareCommandDependencyCore(state, pool, ref capacity);
             ReserveCommandMutation(state, capacity);
             Backend.WriteTimestamp(context, pool, queryIndex);
-            RecordQueryEvent(state, slot, QueryValidationEventType.Write, QueryLocalPhase.Ready);
+            RecordQueryEvent(state, entry, QueryValidationEventType.Write, QueryLocalPhase.Ready);
             RecordCommandDependencyCore(state, pool);
         }
     }
@@ -259,6 +268,12 @@ public sealed partial class ValidationLayer
         ContextValidationState state = GetContextState(context);
         RequireOnDevice(context.Device, pool, "QueryPool");
         RequireOnDevice(context.Device, destination, "Query destination");
+        if ((destination.Info.Usages & BufferUsages.QueryResolve) == 0)
+            throw new ArgumentException("Query results require QueryResolve buffer usage.", nameof(destination));
+        BufferRange resultRange = destinationRange.Resolve(destination.Info.Size);
+        if (resultRange.Offset % pool.ResultInfo.ElementAlignment != 0 ||
+            resultRange.Size < checked((ulong)queryCount * pool.ResultInfo.ResultStride))
+            throw new ArgumentOutOfRangeException(nameof(destinationRange));
         if (queryCount == 0 ||
             firstQuery >= pool.Description.Count ||
             queryCount > pool.Description.Count - firstQuery)
@@ -267,8 +282,8 @@ public sealed partial class ValidationLayer
         {
             for (uint offset = 0; offset < queryCount; offset++)
             {
-                QuerySlot slot = new(pool, checked(firstQuery + offset));
-                if (GetLocalQueryPhase(state, slot) == QueryLocalPhase.Active)
+                QueryIndex entry = new(pool, checked(firstQuery + offset));
+                if (GetLocalQueryPhase(state, entry) == QueryLocalPhase.Active)
                     Reject("Queries", "ResolveQueries cannot resolve an active query.", pool.Label);
             }
 
@@ -294,10 +309,10 @@ public sealed partial class ValidationLayer
 
             for (uint offset = 0; offset < queryCount; offset++)
             {
-                QuerySlot slot = new(pool, checked(firstQuery + offset));
+                QueryIndex entry = new(pool, checked(firstQuery + offset));
                 RecordQueryEvent(
                     state,
-                    slot,
+                    entry,
                     QueryValidationEventType.Resolve,
                     QueryLocalPhase.Resolved);
             }
@@ -335,18 +350,18 @@ public sealed partial class ValidationLayer
 
     private static QueryLocalPhase GetLocalQueryPhase(
         ContextValidationState state,
-        in QuerySlot slot) =>
-        state.QueryPhases.TryGetValue(slot, out QueryLocalPhase phase)
+        in QueryIndex entry) =>
+        state.QueryPhases.TryGetValue(entry, out QueryLocalPhase phase)
             ? phase
             : QueryLocalPhase.Unknown;
 
     private static void RecordQueryEvent(
         ContextValidationState state,
-        in QuerySlot slot,
+        in QueryIndex entry,
         QueryValidationEventType type,
         QueryLocalPhase phase)
     {
-        state.QueryEvents.Add(new QueryValidationEvent(slot, type));
-        state.QueryPhases[slot] = phase;
+        state.QueryEvents.Add(new QueryValidationEvent(entry, type));
+        state.QueryPhases[entry] = phase;
     }
 }

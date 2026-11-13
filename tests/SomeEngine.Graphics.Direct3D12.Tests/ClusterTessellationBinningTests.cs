@@ -61,7 +61,7 @@ public sealed class ClusterTessellationBinningTests(D3D12TestCompiler shaderComp
             ulong bytesTotal = sizes.Aggregate(0ul, (sum, size) => sum + size);
             Buffer readback = Keep(backend.CreateBuffer(device, new BufferDesc(bytesTotal, BufferUsages.CopyDestination), MemoryType.Readback));
             using CommandContext context = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Compute, 0, 1));
-            backend.Begin(context, new CommandRecordingDesc(128, 16, 128));
+            backend.Begin(context, new CommandRecordingDesc(128, 16));
             for (int index = 0; index < buffers.Length; index++)
                 backend.Barrier(context, new BufferBarrier(buffers[index], PipelineSync.None,
                     index == 8 ? PipelineSync.Copy : PipelineSync.ComputeShading, ResourceAccess.NoAccess,

@@ -1,8 +1,8 @@
 #ifndef TERRAIN_BLEND_INPUT
 #define TERRAIN_BLEND_INPUT
 
-#include "terrain_height_input.slang"
-#include "terrain_voxel_input.slang"
+__exported import terrain_height_input;
+__exported import terrain_voxel_input;
 
 struct TerrainSurfaceNode
 {

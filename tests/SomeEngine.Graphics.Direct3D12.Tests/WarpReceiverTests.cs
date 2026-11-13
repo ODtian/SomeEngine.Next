@@ -1,5 +1,6 @@
 using System.Numerics;
 using SomeEngine.Graphics.Direct3D12;
+using SomeEngine.Graphics.Validation;
 using SlangShaderSharp;
 using Xunit;
 
@@ -23,8 +24,8 @@ public sealed class WarpReceiverTests(D3D12TestCompiler shaderCompiler)
     [Fact]
     public void Receiver_rejects_objects_created_by_another_backend_instance()
     {
-        using var receiver = D3D12GraphicsBackend.Create();
-        using var foreignReceiver = D3D12GraphicsBackend.Create();
+        using ValidationLayer receiver = new(D3D12GraphicsBackend.Create());
+        using ValidationLayer foreignReceiver = new(D3D12GraphicsBackend.Create());
         using Device foreignDevice = D3D12TestSupport.CreateWarpDevice(foreignReceiver);
         using Buffer foreignBuffer = foreignReceiver.CreateBuffer(
             foreignDevice,
@@ -149,7 +150,7 @@ public sealed class WarpReceiverTests(D3D12TestCompiler shaderCompiler)
         }
         backend.CollectCompleted(device);
 
-        RecordedCommands recorded = default;
+        RecordedCommands recorded = null!;
         backend.Begin(context);
         backend.CopyBuffer(context, new BufferCopy(upload, 0, readback, 0, 256));
         recorded = backend.End(context);
@@ -228,7 +229,7 @@ public sealed class WarpReceiverTests(D3D12TestCompiler shaderCompiler)
         }
         backend.CollectCompleted(device);
 
-        RecordedCommands recorded = default;
+        RecordedCommands recorded = null!;
         backend.Begin(context);
         backend.SetViewports(context, viewports);
         backend.SetScissors(context, scissors);
@@ -273,7 +274,7 @@ public sealed class WarpReceiverTests(D3D12TestCompiler shaderCompiler)
         }
         backend.CollectCompleted(device);
 
-        RecordedCommands recorded = default;
+        RecordedCommands recorded = null!;
         backend.Begin(context);
         backend.ClearBuffer(context, destination, BufferRange.Whole, pattern);
         recorded = backend.End(context);
@@ -338,7 +339,7 @@ public sealed class WarpReceiverTests(D3D12TestCompiler shaderCompiler)
         }
         backend.CollectCompleted(device);
 
-        RecordedCommands recorded = default;
+        RecordedCommands recorded = null!;
         backend.Begin(context);
         backend.ClearTexture(context, target, range, clear);
         recorded = backend.End(context);
@@ -355,7 +356,7 @@ public sealed class WarpReceiverTests(D3D12TestCompiler shaderCompiler)
     [Fact]
     public void Repeated_normalized_state_calls_produce_valid_direct_and_bundle_payloads()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out VariableRateShading? shadingRate));
         Assert.NotNull(shadingRate);
@@ -538,7 +539,7 @@ public sealed class WarpReceiverTests(D3D12TestCompiler shaderCompiler)
         TypeLayoutReflection reflected = GetDataLayout(layout);
         Assert.Equal((nint)1, reflected.BindingRangeCount);
 
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer buffer = backend.CreateBuffer(
             device,
@@ -598,7 +599,7 @@ public sealed class WarpReceiverTests(D3D12TestCompiler shaderCompiler)
         using CommandContext transientContext = backend.CreateCommandContext(
             device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(transientContext, new CommandRecordingDesc(2, 0, 4));
+        backend.Begin(transientContext, new CommandRecordingDesc(2, 0));
         backend.SetPipeline(transientContext, firstPipeline);
         backend.SetTransientParameterBindings(
             transientContext,

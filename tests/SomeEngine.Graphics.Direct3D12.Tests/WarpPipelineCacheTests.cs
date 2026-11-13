@@ -88,7 +88,7 @@ public sealed class WarpPipelineCacheTests(D3D12TestCompiler shaderCompiler)
     [Fact]
     public void Hard_entry_corruption_boundary_and_failed_merge_are_atomic()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         const uint hardEntryCount = 1_000_000;
 
@@ -118,7 +118,7 @@ public sealed class WarpPipelineCacheTests(D3D12TestCompiler shaderCompiler)
     [Fact]
     public void Public_cache_policy_rejects_invalid_limits_and_preserves_device_usability()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         int emptyEnvelopeByteCount = Convert.FromHexString(EmptyEnvelopeGolden).Length;
 
@@ -200,7 +200,7 @@ public sealed class WarpPipelineCacheTests(D3D12TestCompiler shaderCompiler)
         var messages = new List<ValidationMessage>();
         using var backend = new ValidationLayer(
             D3D12GraphicsBackend.Create(),
-            new ValidationOptions(new DelegateValidationMessageSink(messages.Add)));
+            new ValidationOptions(new DelegateValidationReporter(messages.Add)));
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => backend.CreatePipelineCache(
@@ -1285,7 +1285,7 @@ public sealed class WarpPipelineCacheTests(D3D12TestCompiler shaderCompiler)
         [
             new(targetView, LoadType.Clear, StoreType.Store, new System.Numerics.Vector4(0, 0, 0, 1)),
         ];
-        backend.Begin(context, new CommandRecordingDesc(8, 2, 32));
+        backend.Begin(context, new CommandRecordingDesc(8, 2));
         backend.Barrier(context, new TextureBarrier(
             target,
             targetRange,
@@ -1375,7 +1375,7 @@ public sealed class WarpPipelineCacheTests(D3D12TestCompiler shaderCompiler)
         [
             new(targetView, LoadType.Clear, StoreType.Store, new System.Numerics.Vector4(0, 0, 0, 1)),
         ];
-        backend.Begin(context, new CommandRecordingDesc(8, 2, 32));
+        backend.Begin(context, new CommandRecordingDesc(8, 2));
         backend.Barrier(context, new TextureBarrier(
             target,
             targetRange,
@@ -1469,7 +1469,7 @@ public sealed class WarpPipelineCacheTests(D3D12TestCompiler shaderCompiler)
             device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
         Queue queue = backend.GetQueue(device, QueueType.Compute);
-        backend.Begin(context, new CommandRecordingDesc(8, 2, 8));
+        backend.Begin(context, new CommandRecordingDesc(8, 2));
         backend.Barrier(context, new BufferBarrier(
             output,
             beforeSync,
@@ -1526,7 +1526,7 @@ public sealed class WarpPipelineCacheTests(D3D12TestCompiler shaderCompiler)
         using CommandContext context = backend.CreateCommandContext(
             device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(8, 8, 64));
+        backend.Begin(context, new CommandRecordingDesc(8, 8));
         backend.SetPipeline(context, pipeline);
         backend.Barrier(context, new BufferBarrier(
             output,
@@ -1602,7 +1602,7 @@ public sealed class WarpPipelineCacheTests(D3D12TestCompiler shaderCompiler)
         using CommandContext context = backend.CreateCommandContext(
             device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
-        backend.Begin(context, new CommandRecordingDesc(8, 2, 32));
+        backend.Begin(context, new CommandRecordingDesc(8, 2));
         backend.Barrier(context, new BufferBarrier(
             output,
             PipelineSync.None,

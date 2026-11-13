@@ -53,7 +53,7 @@ public struct VirtualShadowPageAllocationUniforms
 {
     public uint PageTableEntryCount;
     public uint PageTableEntriesPerView;
-    public uint MaxPhysicalPages;
+    public uint MaxPages;
     public uint ViewCount;
     public uint FrameIndex;
     public int DeferredInvalidationBudget;
@@ -65,14 +65,14 @@ public struct VirtualShadowPageAllocationUniforms
 public struct VirtualShadowStateInitUniforms
 {
     public uint PageTableEntryCount;
-    public uint MaxPhysicalPages;
+    public uint MaxPages;
     public uint RequestFlagEntryCount;
     public uint Pad0;
     public uint Pad1;
     public uint Pad2;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 48)]
 public struct VirtualShadowInvalidationUniforms
 {
     public uint ChangedInstanceCount;
@@ -83,12 +83,14 @@ public struct VirtualShadowInvalidationUniforms
     public uint HierarchyWordsPerView;
     public uint MipLevelCount;
     public uint DeferredChangedInstanceCount;
+    public System.Numerics.Vector3 PreviousWorldTranslation;
+    public uint Padding;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
 public struct VirtualShadowPagePoolUniforms
 {
-    public uint MaxPhysicalPages;
+    public uint MaxPages;
     public uint PageTableEntryCount;
     public uint FrameIndex;
     public uint PageListPhase;
@@ -108,7 +110,7 @@ public struct VirtualShadowRasterWorkUniforms
     public uint ActivePageCapacity;
     public uint PageSize;
     public uint PageHiZMipCount;
-    public uint PhysicalPagesPerRow;
+    public uint AtlasPagesPerRow;
     public uint InstanceGroupCount;
     public uint HasPreviousHistory;
     public uint WorkFeedbackEnabled;
@@ -119,7 +121,7 @@ public struct VirtualShadowRasterWorkUniforms
 public struct VirtualShadowPageClearUniforms
 {
     public uint PageSize;
-    public uint PhysicalPagesPerRow;
+    public uint AtlasPagesPerRow;
     public uint AtlasSize;
     public uint Pad0;
 }
@@ -168,7 +170,7 @@ public struct VirtualShadowSamplingUniforms
 public struct VirtualShadowPageHiZUniforms
 {
     public uint PageSize;
-    public uint PhysicalPagesPerRow;
+    public uint AtlasPagesPerRow;
     public uint SourceMip;
     public uint DestinationMip;
     public uint StaticLayerOffset;
@@ -178,7 +180,7 @@ public struct VirtualShadowPageHiZUniforms
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
 public struct VirtualShadowDynamicResolutionUniforms
 {
-    public uint MaxPhysicalPages;
+    public uint MaxPages;
     public uint PadRasterWork;
     public float PagePoolLoadStart;
     public float MaxLodBias;

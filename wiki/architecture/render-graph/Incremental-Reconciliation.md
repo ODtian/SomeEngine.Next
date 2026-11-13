@@ -1,16 +1,9 @@
 # Incremental Reconciliation
 
-## Definition
-结构编辑显式记录受触碰的 graph identities；commit 从这些 identity 开始更新，而不是重新扫描整张图寻找差异。
+结构编辑通过 `GraphEditChanges` 记录受触碰的身份。结构存储以 copy-on-write 分块保存；未修改分块由相邻结构版本共享。`GraphStructureIndex` 持有 resource→access、pass→access 与显式依赖索引，提交时从变化身份更新索引。
 
-## Invariants
-- structural storage 使用 copy-on-write 分块或等价持久数据结构。
-- 未修改分块可被旧版与新版共同引用。
-- resource→access、pass→access、pass predecessor/successor 等索引长期维护。
-- 传播到结果不再变化的位置立即停止。
+提交后的变化集中交给图唯一的 `GraphSchedule`，在下一帧开始时一次消费。`FrameResources` 保存资源、上传与读回页、命令复用缓存、提交完成点和当帧段数据。每帧资源通过 `ScheduleVersion` 跟进共享调度版本。
 
-## Current direction
-借鉴 retained UI 的 key identity、dirty propagation 与局部 reconcile，但不采用每帧重新生成树再做全量 diff 的方式。
+高频当帧工作由 Start / End 当帧段承载。当帧段数量或内容变化时，在该段重新分析，并使用共享持久调度的边界完成连接。
 
-## Relations
-[[Incremental-Hazards]] · [[Incremental-Scheduling]] · [[Transient-Placement]]
+参见 [[Incremental-Scheduling]]、[[Retained-Graph]]、[[Transient-Placement]]。

@@ -2,6 +2,7 @@ using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS;
 using SomeEngine.Render.Components;
+using System.Numerics;
 using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Lighting;
@@ -12,6 +13,10 @@ namespace SomeEngine.Render.Lighting;
 /// </summary>
 public sealed class RenderLightSet
 {
+    private readonly List<RenderLightIndex> _uploadOrder = [];
+    private readonly Comparison<RenderLightIndex> _priorityComparison;
+    private Vector3 _cameraPosition;
+
     private readonly LightRows<RenderDirectionalLight> _directional = new(
         static light => light.ShadowSettings,
         static (before, after) => before.Direction != after.Direction);
@@ -22,6 +27,8 @@ public sealed class RenderLightSet
         static light => light.ShadowSettings,
         static (before, after) => before.Position != after.Position || before.Direction != after.Direction);
 
+    public RenderLightSet() => _priorityComparison = ComparePriority;
+
     public IReadOnlyList<RenderDirectionalLight> Directional => _directional.Values;
     public IReadOnlyList<RenderPointLight> Points => _points.Values;
     public IReadOnlyList<RenderSpotLight> Spots => _spots.Values;
@@ -30,6 +37,44 @@ public sealed class RenderLightSet
     public IReadOnlyList<RenderLightCookie?> SpotCookies => _spots.Cookies;
 
     public ulong Revision { get; private set; }
+    public IReadOnlyList<RenderLightIndex> UploadOrder => _uploadOrder;
+
+    /// <summary>
+    /// Orders non-directional lights for GPU upload by intensity divided by squared camera
+    /// distance, then entity id. All current lights participate in shadow projection and share
+    /// its priority class. Each reference retains its index in the corresponding light collection.
+    /// </summary>
+    public IReadOnlyList<RenderLightIndex> OrderForUpload(Vector3 cameraPosition)
+    {
+        _cameraPosition = cameraPosition;
+        _uploadOrder.Clear();
+        for (int index = 0; index < Points.Count; index++)
+            _uploadOrder.Add(new(RenderLightKind.Point, index));
+        for (int index = 0; index < Spots.Count; index++)
+            _uploadOrder.Add(new(RenderLightKind.Spot, index));
+        _uploadOrder.Sort(_priorityComparison);
+        return _uploadOrder;
+    }
+
+    private int ComparePriority(RenderLightIndex left, RenderLightIndex right)
+    {
+        var leftPriority = ReadPriority(left);
+        var rightPriority = ReadPriority(right);
+        int comparison = rightPriority.Strength.CompareTo(leftPriority.Strength);
+        if (comparison != 0) return comparison;
+        comparison = leftPriority.Entity.Index.CompareTo(rightPriority.Entity.Index);
+        return comparison != 0 ? comparison : leftPriority.Entity.Generation.CompareTo(rightPriority.Entity.Generation);
+    }
+
+    private (float Strength, Entity Entity) ReadPriority(RenderLightIndex light) => light.Kind switch
+    {
+        RenderLightKind.Point => (
+            Points[light.Index].Intensity / Vector3.DistanceSquared(Points[light.Index].Position, _cameraPosition),
+            GetPointEntity(light.Index)),
+        _ => (
+            Spots[light.Index].Intensity / Vector3.DistanceSquared(Spots[light.Index].Position, _cameraPosition),
+            GetSpotEntity(light.Index)),
+    };
 
     public Entity GetDirectionalEntity(int lightIndex) => _directional.GetEntity(lightIndex);
     public Entity GetPointEntity(int lightIndex) => _points.GetEntity(lightIndex);
@@ -48,6 +93,7 @@ public sealed class RenderLightSet
 
     public void Clear()
     {
+        _uploadOrder.Clear();
         _directional.Clear();
         _points.Clear();
         _spots.Clear();

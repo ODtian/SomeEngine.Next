@@ -1,3 +1,4 @@
+using SomeEngine.Graphics.Validation;
 using System.Numerics;
 using SomeEngine.Graphics.Direct3D12;
 using Xunit;
@@ -9,8 +10,8 @@ public sealed class WarpCreationValidationTests
     [Fact]
     public void Backend_rejects_objects_created_by_another_backend_instance()
     {
-        using var owner = D3D12GraphicsBackend.Create();
-        using var foreign = D3D12GraphicsBackend.Create();
+        using ValidationLayer owner = new(D3D12GraphicsBackend.Create());
+        using ValidationLayer foreign = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(owner);
         using Buffer buffer = owner.CreateBuffer(
             device,
@@ -26,7 +27,7 @@ public sealed class WarpCreationValidationTests
     [Fact]
     public void Device_scoped_creation_rejects_resources_from_another_device()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device first = D3D12TestSupport.CreateWarpDevice(backend);
         using Device second = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer buffer = backend.CreateBuffer(
@@ -42,7 +43,7 @@ public sealed class WarpCreationValidationTests
     [Fact]
     public void Unrequested_feature_capabilities_are_not_enabled()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         AdapterInfo warp = D3D12TestSupport.SelectWarp(backend);
         using Device device = backend.CreateDevice(new DeviceDesc(
             warp.Id,
@@ -68,7 +69,7 @@ public sealed class WarpCreationValidationTests
     [Fact]
     public void Unavailable_optional_feature_does_not_disable_the_device()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         AdapterInfo warp = D3D12TestSupport.SelectWarp(backend);
         using Device device = backend.CreateDevice(new DeviceDesc(
             warp.Id,
@@ -83,7 +84,7 @@ public sealed class WarpCreationValidationTests
     public void Presentation_must_be_enabled_before_swapchain_creation()
     {
         using D3D12TestWindow window = new();
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         AdapterInfo warp = D3D12TestSupport.SelectWarp(backend);
         using Surface surface = backend.CreateSurface(new SurfaceDesc(
             NativeWindowType.Win32,
@@ -120,7 +121,7 @@ public sealed class WarpCreationValidationTests
                 warp.Id,
                 copyQueues,
                 requiredFeatures: DeviceFeatures.Presentation)));
-        Assert.Equal(GraphicsError.NativeFailure, missing.Error);
+        Assert.Equal(GraphicsError.UnsupportedDeviceFeatures, missing.Error);
         Assert.Null(missing.NativeCode);
 
         using Device enabled = backend.CreateDevice(new DeviceDesc(
@@ -143,7 +144,7 @@ public sealed class WarpCreationValidationTests
     [Fact]
     public void Missing_required_feature_is_a_retryable_graphics_failure()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         AdapterInfo warp = D3D12TestSupport.SelectWarp(backend);
         DeviceQueueDesc[] queues = [new(QueueType.Graphics)];
 
@@ -153,7 +154,7 @@ public sealed class WarpCreationValidationTests
                 queues,
                 requiredFeatures: DeviceFeatures.LinkedAdapters)));
 
-        Assert.Equal(GraphicsError.NativeFailure, failure.Error);
+        Assert.Equal(GraphicsError.UnsupportedDeviceFeatures, failure.Error);
         Assert.Null(failure.NativeCode);
 
         using Device device = backend.CreateDevice(new DeviceDesc(
@@ -165,7 +166,7 @@ public sealed class WarpCreationValidationTests
     [Fact]
     public void Explicit_WARP_selection_preserves_the_enumerated_adapter_identity()
     {
-        using var backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         AdapterInfo selected = D3D12TestSupport.SelectWarp(backend);
         using Device device = backend.CreateDevice(new DeviceDesc(
             selected.Id,
@@ -178,7 +179,7 @@ public sealed class WarpCreationValidationTests
     [Fact]
     public void Device_description_rejects_malformed_queue_topology_before_native_creation()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         AdapterInfo adapter = D3D12TestSupport.SelectWarp(backend);
 
         Assert.Throws<ArgumentException>(() => backend.CreateDevice(new DeviceDesc(
@@ -214,7 +215,7 @@ public sealed class WarpCreationValidationTests
     [Fact]
     public void Buffer_and_heap_descriptions_are_rejected_before_native_creation()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -252,7 +253,7 @@ public sealed class WarpCreationValidationTests
     [Fact]
     public void Texture_descriptions_enforce_dimensions_formats_and_usage()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => backend.CreateTexture(
@@ -382,7 +383,7 @@ public sealed class WarpCreationValidationTests
     [Fact]
     public void Ordinary_texture_paths_reject_the_sampler_feedback_subtype()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         TextureDesc ordinary = new(
             TextureDimension.Texture2D,
@@ -465,7 +466,7 @@ public sealed class WarpCreationValidationTests
     [Fact]
     public void Placed_resources_validate_heap_class_alignment_and_range()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         BufferDesc bufferDesc = new(4_096, BufferUsages.CopyDestination);
         MemoryRequirements bufferRequirements =
@@ -504,7 +505,7 @@ public sealed class WarpCreationValidationTests
     [Fact]
     public void Buffer_views_validate_usage_shape_alignment_and_counters()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer buffer = backend.CreateBuffer(
             device,
@@ -569,7 +570,7 @@ public sealed class WarpCreationValidationTests
     [Fact]
     public void Texture_views_validate_declared_format_subresources_and_native_shape()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Format[] permitted = [Format.R8G8B8A8UNorm, Format.R8G8B8A8UNormSrgb];
         using Texture color = backend.CreateTexture(
@@ -682,7 +683,7 @@ public sealed class WarpCreationValidationTests
     [Fact]
     public void Invalid_sampler_creation_does_not_consume_descriptor_storage()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         SamplerDesc invalid = new(
             FilterType.Linear,

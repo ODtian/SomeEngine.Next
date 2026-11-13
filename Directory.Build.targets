@@ -1,4 +1,4 @@
-<Project>
+﻿<Project>
   <ItemGroup>
     <_FieldReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.ECS'))" />
     <_FieldReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Animation'))" />
@@ -49,5 +49,14 @@
   </Target>
   <Target Name="CheckTestRules" BeforeTargets="VSTest" DependsOnTargets="BuildTestRuleChecker" Condition="'$(IsTestProject)' == 'true'">
     <Exec Command="dotnet &quot;$(SomeEngineRepositoryRoot)tools/TestRules/bin/$(Configuration)/net10.0/SomeEngine.TestRules.dll&quot; &quot;$(SomeEngineRepositoryRoot).&quot; &quot;$(MSBuildProjectDirectory)&quot; &quot;$(AssemblyName)&quot;" />
+  </Target>
+  <Target Name="BuildRenderArchitectureChecker">
+    <MSBuild Projects="$(SomeEngineRepositoryRoot)tools/ArchitectureRules/SomeEngine.ArchitectureRules.csproj"
+             Targets="Restore;Build" Properties="Configuration=$(Configuration)"
+             RemoveProperties="TargetFramework;TargetFrameworks;RuntimeIdentifier;SelfContained;PublishAot" />
+  </Target>
+  <Target Name="CheckRenderArchitecture" BeforeTargets="VSTest" DependsOnTargets="BuildRenderArchitectureChecker"
+          Condition="'$(MSBuildProjectName)' == 'SomeEngine.Render.Tests'">
+    <Exec Command="dotnet &quot;$(SomeEngineRepositoryRoot)tools/ArchitectureRules/bin/$(Configuration)/net10.0/SomeEngine.ArchitectureRules.dll&quot; &quot;$(SomeEngineRepositoryRoot).&quot; --rules ARCH-04,ARCH-08,ARCH-09,ARCH-10,ARCH-11,ARCH-12,ARCH-13,ARCH-15,ARCH-16,ARCH-18,ARCH-19,ARCH-21" />
   </Target>
 </Project>

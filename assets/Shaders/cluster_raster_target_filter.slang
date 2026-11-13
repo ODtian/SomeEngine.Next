@@ -1,14 +1,14 @@
-#include "vsm_page_entry.slang"
+__exported import vsm_page_entry;
 #ifndef CLUSTER_RASTER_TARGET_FILTER_SLANG
 #define CLUSTER_RASTER_TARGET_FILTER_SLANG
 
-#include "cluster_raster_target_view.slang"
+__exported import cluster_raster_target_view;
 #include "cluster_bvh_cull_common.slang"
-#include "depth_page_hiz.slang"
-#include "cluster_view_access.slang"
-#include "raster_sample_bounds.slang"
+__exported import depth_page_hiz;
+__exported import cluster_view_access;
+__exported import raster_sample_bounds;
 
-#include "cluster_raster_target_resources.slang"
+__exported import cluster_raster_target_resources;
 #ifndef CLUSTER_TARGET_BOUNDS_ONLY
 #ifndef CLUSTER_RASTER_TARGET_METADATA_DECLARED
 #define CLUSTER_RASTER_TARGET_METADATA_DECLARED 1
@@ -131,7 +131,7 @@ bool ClusterTargetReceiverHierarchyAccepts(ClusterRasterTargetView target, uint2
     uint2 lastTexel = lastPixel >> uint2(cellShift + 3u, cellShift + 2u);
     uint maximumExtent = max(lastTexel.x - firstTexel.x + 1u, lastTexel.y - firstTexel.y + 1u);
     uint mip = maximumExtent > 2u ? uint(firstbithigh(maximumExtent - 1u)) : 0u;
-    mip = min(mip, 7u);
+    mip = min(mip, min(7u, uint(firstbithigh(target.PagesPerRow))));
     uint2 origin = ClusterTargetReceiverMaskOrigin(target);
     uint2 firstCell = ((origin * uint2(8u, 4u)) + (firstPixel >> cellShift)) >> mip;
     uint2 lastCell = ((origin * uint2(8u, 4u)) + (lastPixel >> cellShift)) >> mip;
@@ -319,10 +319,10 @@ float ClusterTargetHiZMax(
     uint2 p2 = uint2(p0.x, p3.y);
 
     uint layerOffset = depthCacheClass == 1u ? target.StaticHiZLayerOffset : 0u;
-    uint3 c0 = CalculateDepthPageHiZPixel(physicalPage, p0, mipSize, target.PhysicalPagesPerRow);
-    uint3 c1 = CalculateDepthPageHiZPixel(physicalPage, p1, mipSize, target.PhysicalPagesPerRow);
-    uint3 c2 = CalculateDepthPageHiZPixel(physicalPage, p2, mipSize, target.PhysicalPagesPerRow);
-    uint3 c3 = CalculateDepthPageHiZPixel(physicalPage, p3, mipSize, target.PhysicalPagesPerRow);
+    uint3 c0 = CalculateDepthPageHiZPixel(physicalPage, p0, mipSize, target.AtlasPagesPerRow);
+    uint3 c1 = CalculateDepthPageHiZPixel(physicalPage, p1, mipSize, target.AtlasPagesPerRow);
+    uint3 c2 = CalculateDepthPageHiZPixel(physicalPage, p2, mipSize, target.AtlasPagesPerRow);
+    uint3 c3 = CalculateDepthPageHiZPixel(physicalPage, p3, mipSize, target.AtlasPagesPerRow);
     c0.z += layerOffset; c1.z += layerOffset; c2.z += layerOffset; c3.z += layerOffset;
     return max(max(source.Load(int4(c0, mip)), source.Load(int4(c1, mip))),
         max(source.Load(int4(c2, mip)), source.Load(int4(c3, mip))));
@@ -331,7 +331,7 @@ float ClusterTargetHiZMax(
 bool ClusterTargetPolicyWorldDepthAccepts(float3 worldMin, float3 worldMax,
     ClusterViewUniforms view, uint depthCacheClass)
 {
-    if (view.TargetPolicy == 0u || view.CullingEnabled == 0u)
+    if (view.CullingEnabled == 0u)
         return true;
     ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
     bool distant = (target.Padding.y & 16u) != 0u;
@@ -353,7 +353,7 @@ bool ClusterTargetPolicyWorldDepthAccepts(float3 worldMin, float3 worldMax,
 
 uint ClusterTargetPolicyRequiredPageFlags(float nearDepth, ClusterViewUniforms view)
 {
-    if (view.TargetPolicy == 0u || view.CullingEnabled == 0u) return 0u;
+    if (view.CullingEnabled == 0u) return 0u;
     ClusterRasterTargetView target = RasterTargetViews[view.TargetViewIndex];
     return (target.Padding.y & 16u) != 0u && nearDepth > target.DynamicDepthCullRange.x ? VSM_PAGE_PRIMARY : 0u;
 }
@@ -362,8 +362,6 @@ bool ClusterTargetPolicyAccepts(
     ClusterProjectedBounds projectedBounds,
     ClusterViewUniforms view, uint depthCacheClass)
 {
-    if (view.TargetPolicy == 0u)
-        return true;
     if (view.CullingEnabled == 0u || projectedBounds.CrossesNearPlane)
         return ClusterTargetPolicyScreenBoundsAccepts(0.0.xx, 1.0.xx, view, depthCacheClass);
     return ClusterTargetPolicyScreenBoundsAccepts(
@@ -380,7 +378,7 @@ bool ClusterTargetPolicyScreenBoundsOccluded(
     ClusterViewUniforms view,
     uint depthCacheClass)
 {
-    if (view.TargetPolicy == 0u || view.HiZMipCount == 0u)
+    if (view.HiZMipCount == 0u)
         return false;
     if (usePrevious && view.HasPrevHistory == 0u)
         return false;

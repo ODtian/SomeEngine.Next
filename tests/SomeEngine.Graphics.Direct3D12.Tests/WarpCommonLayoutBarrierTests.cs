@@ -94,6 +94,6 @@ public sealed class WarpCommonLayoutBarrierTests
             return native;
         return new ValidationLayer(
             native,
-            new ValidationOptions(new DelegateValidationMessageSink(static _ => { })));
+            new ValidationOptions(new DelegateValidationReporter(static _ => { })));
     }
 }

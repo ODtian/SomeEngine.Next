@@ -21,7 +21,7 @@ public sealed class ApplicationGeometryTransferTests(SceneContentFixture content
         var feature = new GeometryTransferFeature();
         var scene = new ApplicationScene(content.DirectoryPath)
         {
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--static-scene", "--no-debug-ui",
+            Options = ApplicationOptions.Parse(["--hidden-window", "--static-scene", "--no-debug-ui",
                 "--no-vsync", "--no-taa", "--no-vsm", "--frames", "2"]) with { SynchronousFrames = synchronous },
         };
         scene.InstallGeometry(feature);
@@ -94,45 +94,27 @@ public sealed class ApplicationGeometryTransferTests(SceneContentFixture content
             context.AddExtractor(new GeometrySampleExtractor());
             context.AddPrepareSystem(transfer);
             context.AddFrameSystem(transfer);
-            context.AddCompletionObserver(transfer);
             return transfer;
         }
     }
 
     private sealed class GeometryTransfer : ISystem<RenderPrepareSystemContext>, ISystem<RenderFrameSystemContext>,
-        IRenderGraphFrameExecutionObserver, IDisposable
+        IGraphReadbackReceiver, IDisposable
     {
-        private readonly IGraphicsBackend _backend;
+        private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
         private readonly List<uint> _values;
-        private readonly Buffer _output;
         private readonly GraphBufferInput _input;
-        private readonly GraphPassId _copy;
+        private readonly GraphReadbackId _readback;
         private QueryHandle _query;
         private uint _value;
-        private QueueCompletion _lastCompletion;
 
         public GeometryTransfer(ApplicationGeometryContext context, List<uint> values)
         {
-            _backend = context.Backend;
+            _graph = context.Graph;
             _values = values;
-            _output = _backend.CreateBuffer(context.Device, new BufferDesc(4, BufferUsages.CopyDestination), MemoryType.Readback);
-            using RenderGraphEdit edit = context.Graph.BeginEdit();
+            using RenderGraphEdit edit = _graph.BeginEdit();
             _input = edit.CreateBufferInput(BufferUsages.CopySource);
-            GraphBufferId destination = edit.RegisterExternalBuffer(_output,
-                [new(BufferRange.Whole, _output.InitialSync, _output.InitialAccess, ResourceContentState.Undefined)]);
-            _copy = edit.AddCopyFramePass("geometry sample", PassQueueSelection.AnyOfType(QueueType.Graphics),
-                (Source: _input, Destination: destination), new PassOptions(Culling: PassCullingMode.NeverCull),
-                static (ref PassDefinition access, ref (GraphBufferInput Source, GraphBufferId Destination) data) =>
-                {
-                    access.Read(data.Source, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
-                    access.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy,
-                        ResourceAccess.CopyDestination, WriteCoverage.Complete);
-                },
-                static (ref CopyPassCommandScope commands, in (GraphBufferInput Source, GraphBufferId Destination) data) =>
-                {
-                    BufferRegion source = commands.GetBufferRegion(data.Source);
-                    commands.CopyBuffer(new(source.Buffer, source.Range.Offset, commands.GetBuffer(data.Destination), 0, 4));
-                });
+            _readback = edit.AddReadback(_input, new BufferRange(0, 4), this, "geometry sample");
             edit.Commit();
         }
 
@@ -153,17 +135,15 @@ public sealed class ApplicationGeometryTransferTests(SceneContentFixture content
             graph.SetBufferInput(_input, graph.Upload(BitConverter.GetBytes(_value), BufferUsages.CopySource));
         }
 
-        public void OnRenderGraphSubmitted(RenderGraphFrameResult result)
+        public void OnReadback(ReadOnlySpan<byte> bytes, ulong tag) => _values.Add(BitConverter.ToUInt32(bytes));
+
+        public void Dispose()
         {
-            if (!result.TryGetPassCompletion(_copy, out QueueCompletion completion) || completion == _lastCompletion) return;
-            _lastCompletion = completion;
-            if (_backend.WaitCpu(completion, TimeSpan.FromSeconds(30)) != WaitStatus.Completed) throw new TimeoutException();
-            using MappedBuffer mapping = _backend.Map(_output, MapType.Read, BufferRange.Whole);
-            mapping.Invalidate(mapping.Range);
-            _values.Add(BitConverter.ToUInt32(mapping.Bytes));
+            if (_graph.IsDisposed || _graph.IsLost) return;
+            using RenderGraphEdit edit = _graph.BeginEdit();
+            edit.Remove(_readback);
+            edit.Commit();
         }
 
-        public void OnRenderGraphFrameFinished(RenderGraphFrameResult result) { }
-        public void Dispose() => _output.Dispose();
     }
 }

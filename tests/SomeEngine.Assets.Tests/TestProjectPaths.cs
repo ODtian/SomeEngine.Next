@@ -33,7 +33,7 @@ internal static class TestProjectPaths
         => Path.Combine(ProjectRoot(), "samples", "DefaultGame");
 
     public static string BuiltShaderPath(string fileName)
-        => Path.Combine(DefaultGameRoot(), "assets", "Shaders", fileName);
+        => Path.Combine(ShaderDirectory(), fileName);
 
     public static string CreateTempDir()
     {

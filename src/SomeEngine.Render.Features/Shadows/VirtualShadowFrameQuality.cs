@@ -1,12 +1,12 @@
+using SomeEngine.Render;
 using SomeEngine.Render.Shadows;
-using SomeEngine.Render.Cluster.Pipeline;
 
 namespace SomeEngine.Render.Features.Shadows;
 
 /// <summary>Completed frame-used shadow quality. Raster units version 2: HW page area; each SW batch weighs 64 pages.</summary>
 public sealed record VirtualShadowFrameQuality(ulong RenderingFrame, float DirectionalLodAddition, float LocalLodAddition,
     uint RequestedPages, uint DirtyPages, uint AllocationFailures, uint FineAllocationFailures,
-    uint FreePhysicalPages, uint RasterPageArea, ClusterWorkOverflow WorkOverflow, VirtualShadowViewQuality[] Views)
+    uint FreePages, uint RasterPageArea, RenderGeometryWorkFlags WorkOverflow, VirtualShadowViewQuality[] Views)
 {
     public double RasterBatchEquivalents => RasterPageArea / 64.0;
     /// <summary>The shared local-light list budget omitted required assignments in this frame.</summary>
@@ -18,6 +18,9 @@ public sealed record VirtualShadowViewQuality(VirtualShadowLightKind LightKind, 
     int ClipmapLevel, uint VirtualResolution, float BaseResolutionLodBias, float AppliedResolutionLodBias,
     VirtualShadowMipQuality[] Mips)
 {
+    public uint DirtyPages { get; init; }
+    public bool HistoryValid { get; init; }
+    public VirtualShadowView Projection { get; init; }
     /// <summary>One accepted visible cluster/window, before material batch expansion.</summary>
     public uint StaticHardwareVisibleItems { get; init; }
     public uint StaticSoftwareVisibleItems { get; init; }

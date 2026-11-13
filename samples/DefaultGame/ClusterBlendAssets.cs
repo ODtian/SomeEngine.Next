@@ -1,4 +1,4 @@
-using SlangShaderSharp;
+﻿using SlangShaderSharp;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.Collections;
@@ -15,31 +15,20 @@ internal sealed class ClusterBlendAssets
     internal required StandardMaterial Standard { get; init; }
     internal required UnlitMaterial Unlit { get; init; }
     internal required UnlitMaterial DeformedPhong { get; init; }
+    internal required Shader StandardBothShader { get; init; }
+    internal required Shader UnlitBothShader { get; init; }
+    internal required Shader DeformedPhongBothShader { get; init; }
     internal required Texture Smoke { get; init; }
     internal required Texture Leaf { get; init; }
     internal required Texture CoatingNormal { get; init; }
 
-    internal static async Task<ClusterBlendAssets> OpenAsync(string root, RuntimeGraphicsBackend backend)
+    internal static async Task<ClusterBlendAssets> OpenAsync(string root, ApplicationGraphicsBackend backend)
     {
         AssetManifest manifest = AssetManifest.Load(Path.Combine(root, "Library/AssetManifest"));
-        await using var loader = new AssetLoader(new LooseAssetStorage(root, manifest));
-        IGlobalSession slang = Shader.CreateSlangGlobalSession();
-        var shaders = new WeakValues<AssetResourceKey<ShaderAsset>, Shader>();
+        await using var loader = SomeEngine.Assets.Importers.EngineShaderContent.OpenFiles(root, manifest);
+        using var shaders = new ShaderLibrary(backend == ApplicationGraphicsBackend.Vulkan
+            ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil);
         var textures = new WeakValues<AssetResourceKey<TextureAsset>, Texture>();
-        bool vulkan = backend == RuntimeGraphicsBackend.Vulkan;
-        var session = new SessionDesc
-        {
-            Targets = [new TargetDesc { Format = vulkan ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil,
-                Profile = slang.FindProfile(vulkan ? "spirv_1_5" : "sm_6_6") }],
-            DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
-            CompilerOptionEntries =
-            [
-                new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(0, 0)),
-                new(CompilerOptionName.VulkanEmitReflection, CompilerOptionValue.FromInt(1, 0)),
-                new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0, 0)),
-                new(CompilerOptionName.ExperimentalFeature, CompilerOptionValue.FromInt(1, 0)),
-            ],
-        };
         return new()
         {
             Panel = await ReadMeshAsync("Blend panel"),
@@ -47,6 +36,9 @@ internal sealed class ClusterBlendAssets
             Standard = (StandardMaterial)await ReadMaterialAsync("Standard"),
             Unlit = (UnlitMaterial)await ReadMaterialAsync("Unlit"),
             DeformedPhong = (UnlitMaterial)await ReadMaterialAsync("Deformed Phong"),
+            StandardBothShader = await shaders.GetAsync(loader, new AssetId<ShaderAsset>(Id("Standard both faces", ShaderAsset.FileType))),
+            UnlitBothShader = await shaders.GetAsync(loader, new AssetId<ShaderAsset>(Id("Unlit both faces", ShaderAsset.FileType))),
+            DeformedPhongBothShader = await shaders.GetAsync(loader, new AssetId<ShaderAsset>(Id("Deformed Phong both faces", ShaderAsset.FileType))),
             Smoke = await ReadTextureAsync("Blend smoke"),
             Leaf = await ReadTextureAsync("Blend leaf"),
             CoatingNormal = await ReadTextureAsync("Blend coating normal"),
@@ -58,13 +50,6 @@ internal sealed class ClusterBlendAssets
         {
             using var file = await MeshAsset.OpenAsync(loader, new(Id(name, MeshAsset.FileType)));
             MeshBlock geometry = await file.GetBlockAsync<MeshBlock>();
-            if (await file.TryGetBlockAsync<ClusterGeometryBlock>() is { } clusters)
-            {
-                ClusterVertexAttributesBlock attributes = await file.GetBlockAsync<ClusterVertexAttributesBlock>();
-                Mesh mesh = await clusters.CreateAsync(geometry, attributes, file.Name);
-                await clusters.LoadPagesAsync(mesh, attributes, Enumerable.Range(0, mesh.PageCount));
-                return mesh;
-            }
             ClusterMeshBlock packed = await file.GetBlockAsync<ClusterMeshBlock>();
             Mesh packedMesh = await packed.CreateAsync(geometry, file.Name);
             await packed.LoadPagesAsync(packedMesh, Enumerable.Range(0, packedMesh.PageCount));
@@ -78,7 +63,7 @@ internal sealed class ClusterBlendAssets
             var materialShaders = new Dictionary<AssetId<ShaderAsset>, Shader>();
             var materialTextures = new Dictionary<AssetId<TextureAsset>, Texture>();
             if (!content.Shader.IsEmpty)
-                materialShaders.Add(content.Shader, await ShaderAsset.GetAsync(loader, content.Shader, shaders, slang, session));
+                materialShaders.Add(content.Shader, await shaders.GetAsync(loader, content.Shader));
             foreach (MaterialParameter parameter in content.Parameters)
                 if (parameter.Kind == MaterialParameterKind.Texture && !parameter.Texture.IsEmpty &&
                     !materialTextures.ContainsKey(parameter.Texture))

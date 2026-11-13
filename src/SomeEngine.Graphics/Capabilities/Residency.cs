@@ -39,14 +39,16 @@ public readonly record struct ResidencyInfo(
 /// </remarks>
 public readonly struct ResidencyResource : IEquatable<ResidencyResource>
 {
-    internal ResidencyResource(Device device, object value)
+    internal ResidencyResource(Device device, object value, GraphicsObject source)
     {
         Device = device;
         Value = value;
+        Source = source;
     }
 
     public Device Device { get; }
     internal object? Value { get; }
+    internal GraphicsObject? Source { get; }
     public bool IsDefault => Value is null;
 
     public bool Equals(ResidencyResource other) => ReferenceEquals(Value, other.Value);

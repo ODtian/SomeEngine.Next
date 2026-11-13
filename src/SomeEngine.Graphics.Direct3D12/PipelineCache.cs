@@ -5,7 +5,6 @@ using System.Text;
 using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Direct3D12;
-
 internal sealed unsafe partial class D3D12Backend
 {
     private const uint PipelineCacheEnvelopeSchemaVersion = PipelineCacheEnvelope.SchemaVersion;
@@ -17,18 +16,13 @@ internal sealed unsafe partial class D3D12Backend
     // Stable little-endian wire identity: ASCII "D3D12" followed by three zero bytes.
     private const ulong D3D12PipelineCacheBackendTag = 0x0000_0032_3144_3344UL;
     private const uint PipelineKeySchemaVersion = 2;
-    private const uint D3D12BackendAbiVersion = 1;
+    private const uint D3D12BackendVersion = 1;
     private const byte SlangTargetSettingsIdentityVersion = 1;
     private const string AgilityPackageVersion = "1.619.5";
-
-    public PipelineCache CreatePipelineCache(
-        Device device,
-        in PipelineCacheDesc desc,
-        CancellationToken cancellationToken = default)
+    public PipelineCache CreatePipelineCache(Device device, in PipelineCacheDesc desc, CancellationToken cancellationToken = default)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         cancellationToken.ThrowIfCancellationRequested();
-        ValidatePipelineCachePolicy(desc);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache result = new(
@@ -38,7 +32,8 @@ internal sealed unsafe partial class D3D12Backend
             desc.MaximumByteCount,
             desc.MaximumDecodedByteCount,
             desc.Label,
-            cancellationToken);
+            cancellationToken
+        );
         nativeDevice.RegisterChild(result);
         return result;
     }
@@ -47,7 +42,8 @@ internal sealed unsafe partial class D3D12Backend
         PipelineCache cache,
         Span<byte> destination,
         out int requiredByteCount,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         cancellationToken.ThrowIfCancellationRequested();
@@ -63,7 +59,8 @@ internal sealed unsafe partial class D3D12Backend
     public void MergePipelineCaches(
         PipelineCache destination,
         ReadOnlySpan<PipelineCache> sources,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         cancellationToken.ThrowIfCancellationRequested();
@@ -74,46 +71,12 @@ internal sealed unsafe partial class D3D12Backend
             cancellationToken.ThrowIfCancellationRequested();
             nativeSources[index] = RequirePipelineCache(sources[index]);
         }
-        nativeDestination.Merge(nativeSources, cancellationToken);
-    }
 
-    private static void ValidatePipelineCachePolicy(in PipelineCacheDesc desc)
-    {
-        if (desc.MaximumEntryCount < 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(PipelineCacheDesc.MaximumEntryCount),
-                desc.MaximumEntryCount,
-                "The maximum pipeline-cache entry count must not be negative.");
-        }
-        if (desc.MaximumByteCount < 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(PipelineCacheDesc.MaximumByteCount),
-                desc.MaximumByteCount,
-                "The maximum serialized pipeline-cache byte count must not be negative.");
-        }
-        if (desc.MaximumByteCount is > 0 and < PipelineCacheEmptyEnvelopeByteCount)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(PipelineCacheDesc.MaximumByteCount),
-                desc.MaximumByteCount,
-                $"The D3D12 pipeline-cache byte limit must be zero or at least " +
-                $"{PipelineCacheEmptyEnvelopeByteCount} bytes for an empty envelope.");
-        }
-        if (desc.MaximumDecodedByteCount < 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(PipelineCacheDesc.MaximumDecodedByteCount),
-                desc.MaximumDecodedByteCount,
-                "The maximum decoded pipeline-cache byte count must not be negative.");
-        }
+        nativeDestination.Merge(nativeSources, cancellationToken);
     }
 
     private sealed class D3D12PipelineCache : PipelineCache
     {
-        private static readonly object MergeGate = new();
-
         private readonly D3D12Device _device;
         private readonly object _gate = new();
         private readonly int _maximumEntryCount;
@@ -123,7 +86,6 @@ internal sealed unsafe partial class D3D12Backend
         private int _residentWireByteCount = PipelineCacheEmptyEnvelopeByteCount;
         private int _residentDecodedByteCount;
         private int _pipelineCreationReferences = 1;
-
         internal D3D12PipelineCache(
             D3D12Device device,
             ReadOnlySpan<byte> data,
@@ -131,17 +93,13 @@ internal sealed unsafe partial class D3D12Backend
             int maximumByteCount,
             int maximumDecodedByteCount,
             string? label,
-            CancellationToken cancellationToken)
-            : base(device, label)
+            CancellationToken cancellationToken
+        ) : base(device, label)
         {
             _device = device;
-            _maximumEntryCount = maximumEntryCount == 0
-                ? PipelineCacheHardEntryCountLimit
-                : Math.Min(maximumEntryCount, PipelineCacheHardEntryCountLimit);
+            _maximumEntryCount = maximumEntryCount == 0 ? PipelineCacheHardEntryCountLimit : Math.Min(maximumEntryCount, PipelineCacheHardEntryCountLimit);
             _maximumByteCount = maximumByteCount == 0 ? int.MaxValue : maximumByteCount;
-            _maximumDecodedByteCount = maximumDecodedByteCount == 0
-                ? int.MaxValue
-                : maximumDecodedByteCount;
+            _maximumDecodedByteCount = maximumDecodedByteCount == 0 ? int.MaxValue : maximumDecodedByteCount;
             Compatibility = ComputeCompatibility(device, cancellationToken);
             if (!data.IsEmpty)
                 Parse(data, cancellationToken);
@@ -167,18 +125,17 @@ internal sealed unsafe partial class D3D12Backend
                     found = false;
                 }
             }
-            D3D12PipelineCompiler.RecordCacheLookup(found);
+
             return found;
         }
 
         internal bool Reject(CacheCandidate candidate)
         {
-            if (!ReferenceEquals(candidate.Owner, this))
+            if (!ReferenceEquals(candidate.Cache, this))
                 return false;
             lock (_gate)
             {
-                if (!_entries.TryGetValue(candidate.Key, out CacheEntry? current) ||
-                    !ReferenceEquals(current, candidate.Entry))
+                if (!_entries.TryGetValue(candidate.Key, out CacheEntry? current) || !ReferenceEquals(current, candidate.Entry))
                 {
                     return false;
                 }
@@ -186,11 +143,12 @@ internal sealed unsafe partial class D3D12Backend
                 try
                 {
                     var replacement = new SortedDictionary<CacheEntryKey, CacheEntry>();
-                    foreach ((CacheEntryKey key, CacheEntry entry) in _entries)
+                    foreach ((CacheEntryKey key, CacheEntry entry)in _entries)
                     {
                         if (key.CompareTo(candidate.Key) != 0)
                             replacement.Add(key, entry);
                     }
+
                     int wireByteCount = checked(_residentWireByteCount - candidate.Entry.WireByteCount);
                     int decodedByteCount = checked(_residentDecodedByteCount - candidate.Entry.Payload.Length);
                     _entries = replacement;
@@ -198,18 +156,14 @@ internal sealed unsafe partial class D3D12Backend
                     _residentDecodedByteCount = decodedByteCount;
                     return true;
                 }
-                catch (Exception exception) when (exception is OutOfMemoryException or OverflowException)
+                catch (Exception exception)when (exception is OutOfMemoryException or OverflowException)
                 {
                     return false;
                 }
             }
         }
 
-        internal CacheAdmission? PrepareAdmission(
-            byte family,
-            ReadOnlySpan<byte> key,
-            ReadOnlySpan<byte> data,
-            CancellationToken cancellationToken)
+        internal CacheEntryRequest? ReserveCacheEntry(byte family, ReadOnlySpan<byte> key, ReadOnlySpan<byte> data, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             lock (_gate)
@@ -221,8 +175,7 @@ internal sealed unsafe partial class D3D12Backend
                 try
                 {
                     wireByteCount = checked(PipelineCacheEntryFixedByteCount + data.Length);
-                    singleEntryEnvelopeByteCount = checked(
-                        (long)PipelineCacheEmptyEnvelopeByteCount + wireByteCount);
+                    singleEntryEnvelopeByteCount = checked((long)PipelineCacheEmptyEnvelopeByteCount + wireByteCount);
                 }
                 catch (OverflowException)
                 {
@@ -231,95 +184,69 @@ internal sealed unsafe partial class D3D12Backend
 
                 if (!CanContain(1, singleEntryEnvelopeByteCount, data.Length))
                     return null;
-
                 byte[] keyCopy = CopyBytes(key, cancellationToken);
-                var entryKey = new CacheEntryKey(
-                    D3D12PipelineCacheBackendTag,
-                    family,
-                    keyCopy,
-                    Compatibility);
+                var entryKey = new CacheEntryKey(D3D12PipelineCacheBackendTag, family, keyCopy, Compatibility);
                 bool hasExisting = expectedRoot.TryGetValue(entryKey, out CacheEntry? existing);
-                long candidateEntryCount = hasExisting
-                    ? expectedRoot.Count
-                    : (long)expectedRoot.Count + 1;
-                long candidateWireByteCount = hasExisting
-                    ? (long)_residentWireByteCount - existing!.WireByteCount + wireByteCount
-                    : (long)_residentWireByteCount + wireByteCount;
-                long candidateDecodedByteCount = hasExisting
-                    ? (long)_residentDecodedByteCount - existing!.Payload.Length + data.Length
-                    : (long)_residentDecodedByteCount + data.Length;
-
-                if ((hasExisting &&
-                        CompareBytes(data, existing!.Payload, cancellationToken) >= 0) ||
-                    !CanContain(
-                        candidateEntryCount,
-                        candidateWireByteCount,
-                        candidateDecodedByteCount))
+                long candidateEntryCount = hasExisting ? expectedRoot.Count : (long)expectedRoot.Count + 1;
+                long candidateWireByteCount = hasExisting ? (long)_residentWireByteCount - existing!.WireByteCount + wireByteCount : (long)_residentWireByteCount + wireByteCount;
+                long candidateDecodedByteCount = hasExisting ? (long)_residentDecodedByteCount - existing!.Payload.Length + data.Length : (long)_residentDecodedByteCount + data.Length;
+                if ((hasExisting && CompareBytes(data, existing!.Payload, cancellationToken) >= 0) || !CanContain(candidateEntryCount, candidateWireByteCount, candidateDecodedByteCount))
                 {
                     return null;
                 }
 
                 byte[] payloadCopy = CopyBytes(data, cancellationToken);
                 var candidate = new SortedDictionary<CacheEntryKey, CacheEntry>();
-                foreach ((CacheEntryKey existingKey, CacheEntry existingEntry) in expectedRoot)
+                foreach ((CacheEntryKey existingKey, CacheEntry existingEntry)in expectedRoot)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     candidate.Add(existingKey, existingEntry);
                 }
+
                 candidate[entryKey] = new CacheEntry(payloadCopy, wireByteCount);
                 cancellationToken.ThrowIfCancellationRequested();
-                return new CacheAdmission(
-                    this,
-                    expectedRoot,
-                    candidate,
-                    checked((int)candidateWireByteCount),
-                    checked((int)candidateDecodedByteCount));
+                return new CacheEntryRequest(this, expectedRoot, candidate, checked((int)candidateWireByteCount), checked((int)candidateDecodedByteCount));
             }
         }
 
-        internal bool CommitAdmission(CacheAdmission? admission)
+        internal bool StoreCacheEntry(CacheEntryRequest? entryRequest)
         {
-            if (admission is null || !ReferenceEquals(admission.Owner, this))
+            if (entryRequest is null || !ReferenceEquals(entryRequest.Cache, this))
                 return false;
             lock (_gate)
             {
-                if (!ReferenceEquals(_entries, admission.ExpectedRoot))
+                if (!ReferenceEquals(_entries, entryRequest.ExpectedRoot))
                     return false;
-                _entries = admission.Entries;
-                _residentWireByteCount = admission.WireByteCount;
-                _residentDecodedByteCount = admission.DecodedByteCount;
+                _entries = entryRequest.Entries;
+                _residentWireByteCount = entryRequest.WireByteCount;
+                _residentDecodedByteCount = entryRequest.DecodedByteCount;
                 return true;
             }
         }
 
         internal void Store(byte family, ReadOnlySpan<byte> key, ReadOnlySpan<byte> data)
         {
-            CacheAdmission? admission = PrepareAdmission(
-                family,
-                key,
-                data,
-                CancellationToken.None);
-            CommitAdmission(admission);
+            CacheEntryRequest? entryRequest = ReserveCacheEntry(family, key, data, CancellationToken.None);
+            StoreCacheEntry(entryRequest);
         }
 
-        internal void Merge(
-            ReadOnlySpan<D3D12PipelineCache> sources,
-            CancellationToken cancellationToken)
+        internal void Merge(ReadOnlySpan<D3D12PipelineCache> sources, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            lock (MergeGate)
+            lock (_device.PipelineCacheMergeGate)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 lock (_gate)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    ThrowIfDisposed();
+
                     var candidate = new SortedDictionary<CacheEntryKey, CacheEntry>();
-                    foreach ((CacheEntryKey key, CacheEntry entry) in _entries)
+                    foreach ((CacheEntryKey key, CacheEntry entry)in _entries)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         candidate.Add(key, entry);
                     }
+
                     long candidateWireByteCount = _residentWireByteCount;
                     long candidateDecodedByteCount = _residentDecodedByteCount;
                     for (int sourceIndex = 0; sourceIndex < sources.Length; sourceIndex++)
@@ -329,39 +256,24 @@ internal sealed unsafe partial class D3D12Backend
                         lock (source._gate)
                         {
                             cancellationToken.ThrowIfCancellationRequested();
-                            source.ThrowIfDisposed();
-                            foreach ((CacheEntryKey key, CacheEntry entry) in source._entries)
+
+                            foreach ((CacheEntryKey key, CacheEntry entry)in source._entries)
                             {
                                 cancellationToken.ThrowIfCancellationRequested();
-                                bool hasExisting = candidate.TryGetValue(
-                                    key,
-                                    out CacheEntry? existing);
-                                if (hasExisting &&
-                                    CompareBytes(
-                                        entry.Payload,
-                                        existing!.Payload,
-                                        cancellationToken) >= 0)
+                                bool hasExisting = candidate.TryGetValue(key, out CacheEntry? existing);
+                                if (hasExisting && CompareBytes(entry.Payload, existing!.Payload, cancellationToken) >= 0)
                                 {
                                     continue;
                                 }
 
-                                long prospectiveEntryCount = hasExisting
-                                    ? candidate.Count
-                                    : (long)candidate.Count + 1;
+                                long prospectiveEntryCount = hasExisting ? candidate.Count : (long)candidate.Count + 1;
                                 if (!hasExisting && !CanContainEntryCount(prospectiveEntryCount))
                                 {
-                                    throw new ArgumentException(
-                                        "The complete pipeline-cache union exceeds the destination cache policy.",
-                                        nameof(sources));
+                                    throw new ArgumentException("The complete pipeline-cache union exceeds the destination cache policy.", nameof(sources));
                                 }
-                                long prospectiveWireByteCount = hasExisting
-                                    ? candidateWireByteCount - existing!.WireByteCount +
-                                        entry.WireByteCount
-                                    : candidateWireByteCount + entry.WireByteCount;
-                                long prospectiveDecodedByteCount = hasExisting
-                                    ? candidateDecodedByteCount - existing!.Payload.Length +
-                                        entry.Payload.Length
-                                    : candidateDecodedByteCount + entry.Payload.Length;
+
+                                long prospectiveWireByteCount = hasExisting ? candidateWireByteCount - existing!.WireByteCount + entry.WireByteCount : candidateWireByteCount + entry.WireByteCount;
+                                long prospectiveDecodedByteCount = hasExisting ? candidateDecodedByteCount - existing!.Payload.Length + entry.Payload.Length : candidateDecodedByteCount + entry.Payload.Length;
                                 candidate[key] = entry;
                                 candidateWireByteCount = prospectiveWireByteCount;
                                 candidateDecodedByteCount = prospectiveDecodedByteCount;
@@ -370,15 +282,11 @@ internal sealed unsafe partial class D3D12Backend
                     }
 
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (!CanContain(
-                        candidate.Count,
-                        candidateWireByteCount,
-                        candidateDecodedByteCount))
+                    if (!CanContain(candidate.Count, candidateWireByteCount, candidateDecodedByteCount))
                     {
-                        throw new ArgumentException(
-                            "The complete pipeline-cache union exceeds the destination cache policy.",
-                            nameof(sources));
+                        throw new ArgumentException("The complete pipeline-cache union exceeds the destination cache policy.", nameof(sources));
                     }
+
                     _entries = candidate;
                     _residentWireByteCount = checked((int)candidateWireByteCount);
                     _residentDecodedByteCount = checked((int)candidateDecodedByteCount);
@@ -392,22 +300,15 @@ internal sealed unsafe partial class D3D12Backend
             lock (_gate)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                ThrowIfDisposed();
+
                 var entries = new PipelineCacheEntry[_entries.Count];
                 int index = 0;
-                foreach ((CacheEntryKey key, CacheEntry entry) in _entries)
+                foreach ((CacheEntryKey key, CacheEntry entry)in _entries)
                 {
-                    entries[index++] = new PipelineCacheEntry(
-                        key.Backend,
-                        key.Family,
-                        key.Key,
-                        key.Compatibility,
-                        entry.Payload);
+                    entries[index++] = new PipelineCacheEntry(key.Backend, key.Family, key.Key, key.Compatibility, entry.Payload);
                 }
-                return PipelineCacheEnvelope.Serialize(
-                    entries,
-                    Limits,
-                    cancellationToken);
+
+                return PipelineCacheEnvelope.Serialize(entries, Limits, cancellationToken);
             }
         }
 
@@ -415,7 +316,6 @@ internal sealed unsafe partial class D3D12Backend
         {
             lock (_gate)
             {
-                ThrowIfDisposed();
                 _pipelineCreationReferences = checked(_pipelineCreationReferences + 1);
             }
         }
@@ -426,8 +326,6 @@ internal sealed unsafe partial class D3D12Backend
             lock (_gate)
             {
                 int references = --_pipelineCreationReferences;
-                if (references < 0)
-                    throw new InvalidOperationException("PipelineCache physical references underflowed.");
                 release = references == 0;
                 if (release)
                 {
@@ -436,63 +334,39 @@ internal sealed unsafe partial class D3D12Backend
                     _residentDecodedByteCount = 0;
                 }
             }
+
             if (release)
                 _device.UnregisterChild(this);
         }
 
         internal override void Release(bool fromParent) => ReleasePipelineCreationUse();
-
         private void Parse(ReadOnlySpan<byte> data, CancellationToken cancellationToken)
         {
-            ParsedPipelineCache parsed = PipelineCacheEnvelope.Parse(
-                data,
-                Limits,
-                cancellationToken);
+            ParsedPipelineCache parsed = PipelineCacheEnvelope.Parse(data, Limits, cancellationToken);
             var candidate = new SortedDictionary<CacheEntryKey, CacheEntry>();
             int decodedByteCount = 0;
             foreach (PipelineCacheEntry entry in parsed.Entries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 candidate.Add(
-                    new CacheEntryKey(
-                        entry.Backend,
-                        entry.Family,
-                        entry.Key,
-                        entry.Compatibility),
-                    new CacheEntry(
-                        entry.Payload,
-                        PipelineCacheEnvelope.GetEntryWireByteCount(entry.Payload.Length)));
+                    new CacheEntryKey(entry.Backend, entry.Family, entry.Key, entry.Compatibility),
+                    new CacheEntry(entry.Payload, PipelineCacheEnvelope.GetEntryWireByteCount(entry.Payload.Length))
+                );
                 decodedByteCount = checked(decodedByteCount + entry.Payload.Length);
             }
+
             cancellationToken.ThrowIfCancellationRequested();
             _entries = candidate;
             _residentWireByteCount = data.Length;
             _residentDecodedByteCount = decodedByteCount;
         }
 
-        private PipelineCacheLimits Limits => new(
-            _maximumEntryCount,
-            _maximumByteCount,
-            _maximumDecodedByteCount);
+        private PipelineCacheLimits Limits => new(_maximumEntryCount, _maximumByteCount, _maximumDecodedByteCount);
 
-        private CacheEntryKey CreateLocalEntryKey(byte family, ReadOnlySpan<byte> key) =>
-            new(
-                D3D12PipelineCacheBackendTag,
-                family,
-                key.ToArray(),
-                Compatibility);
-
-        private bool CanContainEntryCount(long entryCount) =>
-            entryCount <= _maximumEntryCount;
-
-        private bool CanContain(long entryCount, long wireByteCount, long decodedByteCount) =>
-            CanContainEntryCount(entryCount) &&
-            wireByteCount <= _maximumByteCount &&
-            decodedByteCount <= _maximumDecodedByteCount;
-
-        private static byte[] ComputeCompatibility(
-            D3D12Device device,
-            CancellationToken cancellationToken)
+        private CacheEntryKey CreateLocalEntryKey(byte family, ReadOnlySpan<byte> key) => new(D3D12PipelineCacheBackendTag, family, key.ToArray(), Compatibility);
+        private bool CanContainEntryCount(long entryCount) => entryCount <= _maximumEntryCount;
+        private bool CanContain(long entryCount, long wireByteCount, long decodedByteCount) => CanContainEntryCount(entryCount) && wireByteCount <= _maximumByteCount && decodedByteCount <= _maximumDecodedByteCount;
+        private static byte[] ComputeCompatibility(D3D12Device device, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             using MemoryStream stream = new();
@@ -500,26 +374,24 @@ internal sealed unsafe partial class D3D12Backend
             {
                 writer.Write(PipelineCacheEnvelopeSchemaVersion);
                 writer.Write(PipelineKeySchemaVersion);
-                writer.Write(D3D12BackendAbiVersion);
+                writer.Write(D3D12BackendVersion);
                 writer.Write(RootSignatureSchemaVersion);
                 writer.Write(AgilitySdkVersion);
-                WriteCanonicalString(writer, AgilityPackageVersion);
-                WriteCanonicalString(writer, SlangToolchainIdentity.Version);
-
+                WriteKeyString(writer, AgilityPackageVersion);
+                WriteKeyString(writer, SlangToolchainIdentity.Version);
                 AdapterInfo adapter = device.Adapter;
                 writer.Write(adapter.Id.Low);
                 writer.Write(adapter.Id.High);
                 writer.Write((byte)adapter.Type);
-                WriteCanonicalString(writer, adapter.Name);
+                WriteKeyString(writer, adapter.Name);
                 writer.Write(adapter.VendorId);
                 writer.Write(adapter.DeviceId);
                 writer.Write(adapter.DedicatedVideoMemory);
                 writer.Write(adapter.DedicatedSystemMemory);
                 writer.Write(adapter.SharedSystemMemory);
-                WriteCanonicalString(writer, adapter.DriverVersion);
+                WriteKeyString(writer, adapter.DriverVersion);
                 writer.Write(adapter.HardwareAccelerated);
                 writer.Write(device.EnabledNodeMask);
-
                 DeviceCapabilities capabilities = device.Capabilities;
                 WriteDeviceLimits(writer, capabilities.Limits);
                 writer.Write(capabilities.SupportsBundles);
@@ -529,36 +401,27 @@ internal sealed unsafe partial class D3D12Backend
                 WriteFormatSupport(writer, capabilities.Formats, cancellationToken);
                 writer.Write(device.FeatureSupport.NodeCount);
                 writer.Write(device.EnhancedBarriers);
-
                 WriteDeviceCapabilities(device, writer, cancellationToken);
             }
 
             var result = new byte[PipelineCacheHashByteCount];
-            ComputeSha256(
-                stream.GetBuffer().AsSpan(0, checked((int)stream.Length)),
-                result,
-                cancellationToken);
+            ComputeSha256(stream.GetBuffer().AsSpan(0, checked((int)stream.Length)), result, cancellationToken);
             return result;
         }
 
-        private static int CompareBytes(
-            ReadOnlySpan<byte> left,
-            ReadOnlySpan<byte> right,
-            CancellationToken cancellationToken)
+        private static int CompareBytes(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right, CancellationToken cancellationToken)
         {
             int sharedLength = Math.Min(left.Length, right.Length);
             for (int offset = 0; offset < sharedLength;)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                int byteCount = Math.Min(
-                    PipelineCacheCancellationChunkByteCount,
-                    sharedLength - offset);
-                int comparison = left.Slice(offset, byteCount).SequenceCompareTo(
-                    right.Slice(offset, byteCount));
+                int byteCount = Math.Min(PipelineCacheCancellationChunkByteCount, sharedLength - offset);
+                int comparison = left.Slice(offset, byteCount).SequenceCompareTo(right.Slice(offset, byteCount));
                 if (comparison != 0)
                     return comparison;
                 offset += byteCount;
             }
+
             cancellationToken.ThrowIfCancellationRequested();
             return left.Length.CompareTo(right.Length);
         }
@@ -571,7 +434,8 @@ internal sealed unsafe partial class D3D12Backend
             ulong rightBackend,
             byte rightFamily,
             ReadOnlySpan<byte> rightKey,
-            ReadOnlySpan<byte> rightCompatibility)
+            ReadOnlySpan<byte> rightCompatibility
+        )
         {
             int result = leftBackend.CompareTo(rightBackend);
             if (result != 0)
@@ -580,14 +444,10 @@ internal sealed unsafe partial class D3D12Backend
             if (result != 0)
                 return result;
             result = leftKey.SequenceCompareTo(rightKey);
-            return result != 0
-                ? result
-                : leftCompatibility.SequenceCompareTo(rightCompatibility);
+            return result != 0 ? result : leftCompatibility.SequenceCompareTo(rightCompatibility);
         }
 
-        private static byte[] CopyBytes(
-            ReadOnlySpan<byte> source,
-            CancellationToken cancellationToken)
+        private static byte[] CopyBytes(ReadOnlySpan<byte> source, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var result = new byte[source.Length];
@@ -595,26 +455,18 @@ internal sealed unsafe partial class D3D12Backend
             return result;
         }
 
-        private static void CopyWithCancellation(
-            ReadOnlySpan<byte> source,
-            Span<byte> destination,
-            CancellationToken cancellationToken)
+        private static void CopyWithCancellation(ReadOnlySpan<byte> source, Span<byte> destination, CancellationToken cancellationToken)
         {
-            if (source.Length != destination.Length)
-                throw new ArgumentException("Pipeline-cache copy spans must have equal lengths.");
             for (int offset = 0; offset < source.Length;)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                int byteCount = Math.Min(
-                    PipelineCacheCancellationChunkByteCount,
-                    source.Length - offset);
+                int byteCount = Math.Min(PipelineCacheCancellationChunkByteCount, source.Length - offset);
                 source.Slice(offset, byteCount).CopyTo(destination.Slice(offset, byteCount));
                 offset += byteCount;
             }
         }
 
-        private static void ComputeSha256(ReadOnlySpan<byte> source, Span<byte> destination,
-            CancellationToken cancellationToken)
+        private static void ComputeSha256(ReadOnlySpan<byte> source, Span<byte> destination, CancellationToken cancellationToken)
         {
             using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             while (!source.IsEmpty)
@@ -624,6 +476,7 @@ internal sealed unsafe partial class D3D12Backend
                 hash.AppendData(source[..count]);
                 source = source[count..];
             }
+
             cancellationToken.ThrowIfCancellationRequested();
             hash.GetHashAndReset(destination);
         }
@@ -642,68 +495,50 @@ internal sealed unsafe partial class D3D12Backend
 
         internal readonly struct CacheCandidate
         {
-            internal CacheCandidate(
-                D3D12PipelineCache owner,
-                CacheEntryKey key,
-                CacheEntry entry)
+            internal CacheCandidate(D3D12PipelineCache cache, CacheEntryKey key, CacheEntry entry)
             {
-                Owner = owner;
+                Cache = cache;
                 Key = key;
                 Entry = entry;
             }
 
-            internal D3D12PipelineCache Owner { get; }
+            internal D3D12PipelineCache Cache { get; }
             internal CacheEntryKey Key { get; }
             internal CacheEntry Entry { get; }
             internal byte[] Payload => Entry.Payload;
         }
 
-        internal sealed class CacheAdmission
+        internal sealed class CacheEntryRequest
         {
-            internal CacheAdmission(
-                D3D12PipelineCache owner,
+            internal CacheEntryRequest(
+                D3D12PipelineCache cache,
                 SortedDictionary<CacheEntryKey, CacheEntry> expectedRoot,
                 SortedDictionary<CacheEntryKey, CacheEntry> entries,
                 int wireByteCount,
-                int decodedByteCount)
+                int decodedByteCount
+            )
             {
-                Owner = owner;
+                Cache = cache;
                 ExpectedRoot = expectedRoot;
                 Entries = entries;
                 WireByteCount = wireByteCount;
                 DecodedByteCount = decodedByteCount;
             }
 
-            internal readonly D3D12PipelineCache Owner;
+            internal readonly D3D12PipelineCache Cache;
             internal readonly SortedDictionary<CacheEntryKey, CacheEntry> ExpectedRoot;
             internal readonly SortedDictionary<CacheEntryKey, CacheEntry> Entries;
             internal readonly int WireByteCount;
             internal readonly int DecodedByteCount;
         }
 
-        internal readonly record struct CacheEntryKey(
-            ulong Backend,
-            byte Family,
-            byte[] Key,
-            byte[] Compatibility) : IComparable<CacheEntryKey>
+        internal readonly record struct CacheEntryKey(ulong Backend, byte Family, byte[] Key, byte[] Compatibility) : IComparable<CacheEntryKey>
         {
-            public int CompareTo(CacheEntryKey other) => CompareEntryKeys(
-                Backend,
-                Family,
-                Key,
-                Compatibility,
-                other.Backend,
-                other.Family,
-                other.Key,
-                other.Compatibility);
+            public int CompareTo(CacheEntryKey other) => CompareEntryKeys(Backend, Family, Key, Compatibility, other.Backend, other.Family, other.Key, other.Compatibility);
         }
-
     }
 
-    private static void WriteDeviceCapabilities(
-        D3D12Device device,
-        BinaryWriter writer,
-        CancellationToken cancellationToken)
+    private static void WriteDeviceCapabilities(D3D12Device device, BinaryWriter writer, CancellationToken cancellationToken)
     {
         writer.Write(device.TryGetCapability(out Presentation? _));
         WriteSparseCapability(device, writer, cancellationToken);
@@ -720,10 +555,7 @@ internal sealed unsafe partial class D3D12Backend
         WriteExternalTimelineCapability(device, writer);
     }
 
-    private static void WriteSparseCapability(
-        D3D12Device device,
-        BinaryWriter writer,
-        CancellationToken cancellationToken)
+    private static void WriteSparseCapability(D3D12Device device, BinaryWriter writer, CancellationToken cancellationToken)
     {
         bool hasSparse = device.TryGetCapability(out SparseResources? sparse);
         writer.Write(hasSparse);
@@ -738,10 +570,7 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    private static void WriteSamplerFeedbackCapability(
-        D3D12Device device,
-        BinaryWriter writer,
-        CancellationToken cancellationToken)
+    private static void WriteSamplerFeedbackCapability(D3D12Device device, BinaryWriter writer, CancellationToken cancellationToken)
     {
         bool hasFeedback = device.TryGetCapability(out SamplerFeedback? feedback);
         writer.Write(hasFeedback);
@@ -816,10 +645,7 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    private static void WriteVariableRateShadingCapability(
-        D3D12Device device,
-        BinaryWriter writer,
-        CancellationToken cancellationToken)
+    private static void WriteVariableRateShadingCapability(D3D12Device device, BinaryWriter writer, CancellationToken cancellationToken)
     {
         bool hasVrs = device.TryGetCapability(out VariableRateShading? vrs);
         writer.Write(hasVrs);
@@ -831,12 +657,14 @@ internal sealed unsafe partial class D3D12Backend
                 cancellationToken.ThrowIfCancellationRequested();
                 writer.Write((byte)rate);
             }
+
             writer.Write(checked((uint)vrs.Combiners.Length));
             foreach (ShadingRateCombiner combiner in vrs.Combiners)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 writer.Write((byte)combiner);
             }
+
             writer.Write(vrs.PerPrimitive);
             writer.Write(vrs.ShadingRateImage);
             writer.Write(vrs.AdditionalRates);
@@ -901,22 +729,28 @@ internal sealed unsafe partial class D3D12Backend
             ExternalResources capability = externalResources!;
             writer.Write(GetExternalHandleMask(
                 capability.SupportsBufferImport(ExternalHandleType.OpaqueWin32),
-                capability.SupportsBufferImport(ExternalHandleType.OpaqueWin32Kmt)));
+                capability.SupportsBufferImport(ExternalHandleType.OpaqueWin32Kmt)
+            ));
             writer.Write(GetExternalHandleMask(
                 capability.SupportsBufferExport(ExternalHandleType.OpaqueWin32),
-                capability.SupportsBufferExport(ExternalHandleType.OpaqueWin32Kmt)));
+                capability.SupportsBufferExport(ExternalHandleType.OpaqueWin32Kmt)
+            ));
             writer.Write(GetExternalHandleMask(
                 capability.SupportsTextureImport(ExternalHandleType.OpaqueWin32),
-                capability.SupportsTextureImport(ExternalHandleType.OpaqueWin32Kmt)));
+                capability.SupportsTextureImport(ExternalHandleType.OpaqueWin32Kmt)
+            ));
             writer.Write(GetExternalHandleMask(
                 capability.SupportsTextureExport(ExternalHandleType.OpaqueWin32),
-                capability.SupportsTextureExport(ExternalHandleType.OpaqueWin32Kmt)));
+                capability.SupportsTextureExport(ExternalHandleType.OpaqueWin32Kmt)
+            ));
             writer.Write(GetExternalHandleMask(
                 capability.SupportsHeapImport(ExternalHandleType.OpaqueWin32),
-                capability.SupportsHeapImport(ExternalHandleType.OpaqueWin32Kmt)));
+                capability.SupportsHeapImport(ExternalHandleType.OpaqueWin32Kmt)
+            ));
             writer.Write(GetExternalHandleMask(
                 capability.SupportsHeapExport(ExternalHandleType.OpaqueWin32),
-                capability.SupportsHeapExport(ExternalHandleType.OpaqueWin32Kmt)));
+                capability.SupportsHeapExport(ExternalHandleType.OpaqueWin32Kmt)
+            ));
         }
     }
 
@@ -929,10 +763,12 @@ internal sealed unsafe partial class D3D12Backend
             ExternalTimelines capability = externalTimelines!;
             writer.Write(GetExternalHandleMask(
                 capability.SupportsImport(ExternalHandleType.OpaqueWin32),
-                capability.SupportsImport(ExternalHandleType.OpaqueWin32Kmt)));
+                capability.SupportsImport(ExternalHandleType.OpaqueWin32Kmt)
+            ));
             writer.Write(GetExternalHandleMask(
                 capability.SupportsExport(ExternalHandleType.OpaqueWin32),
-                capability.SupportsExport(ExternalHandleType.OpaqueWin32Kmt)));
+                capability.SupportsExport(ExternalHandleType.OpaqueWin32Kmt)
+            ));
         }
     }
 
@@ -944,12 +780,11 @@ internal sealed unsafe partial class D3D12Backend
             if (capability.Supports(type))
                 result |= checked((ushort)(1 << (int)type));
         }
+
         return result;
     }
 
-    private static byte GetExternalHandleMask(bool opaqueWin32, bool opaqueWin32Kmt) =>
-        checked((byte)((opaqueWin32 ? 1 : 0) | (opaqueWin32Kmt ? 2 : 0)));
-
+    private static byte GetExternalHandleMask(bool opaqueWin32, bool opaqueWin32Kmt) => checked((byte)((opaqueWin32 ? 1 : 0) | (opaqueWin32Kmt ? 2 : 0)));
     private static void WriteDeviceLimits(BinaryWriter writer, in DeviceLimits limits)
     {
         writer.Write(limits.MaximumBufferSize);
@@ -967,10 +802,7 @@ internal sealed unsafe partial class D3D12Backend
         writer.Write(limits.MaximumConstantBufferRange);
     }
 
-    private static void WriteFormatSupport(
-        BinaryWriter writer,
-        ReadOnlySpan<FormatSupport> formats,
-        CancellationToken cancellationToken)
+    private static void WriteFormatSupport(BinaryWriter writer, ReadOnlySpan<FormatSupport> formats, CancellationToken cancellationToken)
     {
         writer.Write(checked((uint)formats.Length));
         foreach (ref readonly FormatSupport support in formats)
@@ -983,10 +815,7 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    private static void WriteFormats(
-        BinaryWriter writer,
-        ReadOnlySpan<Format> formats,
-        CancellationToken cancellationToken)
+    private static void WriteFormats(BinaryWriter writer, ReadOnlySpan<Format> formats, CancellationToken cancellationToken)
     {
         writer.Write(checked((uint)formats.Length));
         foreach (Format format in formats)
@@ -996,7 +825,7 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    private static void WriteCanonicalString(BinaryWriter writer, string value)
+    private static void WriteKeyString(BinaryWriter writer, string value)
     {
         ArgumentNullException.ThrowIfNull(value);
         int byteCount = Encoding.UTF8.GetByteCount(value);
@@ -1007,7 +836,7 @@ internal sealed unsafe partial class D3D12Backend
         writer.Write(bytes);
     }
 
-    private static void WriteCanonicalBytes(BinaryWriter writer, ReadOnlySpan<byte> value)
+    private static void WriteKeyBytes(BinaryWriter writer, ReadOnlySpan<byte> value)
     {
         writer.Write(checked((uint)value.Length));
         writer.Write(value);
@@ -1017,35 +846,30 @@ internal sealed unsafe partial class D3D12Backend
     {
         if (value == 0f)
             return 0;
-        return float.IsNaN(value)
-            ? 0x7FC0_0000u
-            : BitConverter.SingleToUInt32Bits(value);
+        return float.IsNaN(value) ? 0x7FC0_0000u : BitConverter.SingleToUInt32Bits(value);
     }
 
-    private static void WriteCanonicalSingle(BinaryWriter writer, float value) =>
-        writer.Write(CanonicalizePipelineKeySingle(value));
-
-    private static byte[] CreateCanonicalPipelineKey(
+    private static void WriteKeySingle(BinaryWriter writer, float value) => writer.Write(CanonicalizePipelineKeySingle(value));
+    private static byte[] CreatePipelineKey(
         D3D12Device device,
         byte family,
-        Action<BinaryWriter> writeProgramIdentities,
+        Action<BinaryWriter> writeShaderIdentities,
         Action<BinaryWriter> writeRootSignatures,
-        Action<BinaryWriter> writeFamily)
+        Action<BinaryWriter> writeFamily
+    )
     {
         using MemoryStream stream = new();
         using (BinaryWriter writer = new(stream, Encoding.UTF8, leaveOpen: true))
         {
             writer.Write(PipelineKeySchemaVersion);
-            writeProgramIdentities(writer);
-
+            writeShaderIdentities(writer);
             // Slang's GetEntryPointHash is the authority for the selected target,
             // profile, capabilities and compiler options. Its stable digest is
-            // written by writeProgramIdentities; these fields identify how that
+            // written by writeShaderIdentities; these fields identify how that
             // digest and the emitted bytes are interpreted by this backend.
             writer.Write(SlangTargetSettingsIdentityVersion);
             writer.Write((int)SlangCompileTarget.Dxil);
-            WriteCanonicalString(writer, SlangToolchainIdentity.Version);
-
+            WriteKeyString(writer, SlangToolchainIdentity.Version);
             writer.Write(RootSignatureSchemaVersion);
             writeRootSignatures(writer);
             writer.Write(family);
@@ -1053,16 +877,11 @@ internal sealed unsafe partial class D3D12Backend
             writeFamily(writer);
         }
 
-        return SHA256.HashData(
-            stream.GetBuffer().AsSpan(0, checked((int)stream.Length)));
+        return SHA256.HashData(stream.GetBuffer().AsSpan(0, checked((int)stream.Length)));
     }
 
     private static partial class RequireD3D12
     {
-        internal static D3D12PipelineCache PipelineCache(PipelineCache value) =>
-            value as D3D12PipelineCache ??
-            throw new ArgumentException(
-                "The PipelineCache was not created by the Direct3D 12 backend.",
-                nameof(value));
+        internal static D3D12PipelineCache PipelineCache(PipelineCache value) => (D3D12PipelineCache)value;
     }
 }

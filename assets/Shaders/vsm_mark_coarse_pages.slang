@@ -11,7 +11,7 @@ struct VirtualShadowCoarsePageDemandUniforms
 
 ConstantBuffer<VirtualShadowCoarsePageDemandUniforms> CoarsePageDemand;
 StructuredBuffer<VirtualShadowMapParameters> ShadowViews;
-#include "vsm_page_request_common.slang"
+__exported import vsm_page_request_common;
 
 void PublishPage(
     VirtualShadowMapParameters view,

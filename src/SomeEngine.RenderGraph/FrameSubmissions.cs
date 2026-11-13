@@ -1,8 +1,8 @@
 namespace SomeEngine.RenderGraph;
 
-internal sealed partial class FrameExecutor
+internal sealed partial class FrameRecording
 {
-    private bool _submissionsInitialized;
+    private ulong _submissionVersion;
     private Queue?[] _submissionQueues = [];
     private readonly HashSet<int> _submissionUpdates = [];
     private readonly HashSet<int> _submissionMergeCandidates = [];
@@ -19,14 +19,14 @@ internal sealed partial class FrameExecutor
 
     private int BuildWaves()
     {
-        if (!_submissionsInitialized)
+        if (_submissionVersion == 0)
         {
             int count = BuildInitialWaves();
             EnsureCapacity(ref _submissionQueues, _submissionCount);
             foreach (int submission in _changedSubmissions)
                 _submissionQueues[submission] = _passes[_submissionPasses[submission][0]].Queue;
             _recordingSubmissionChanges.UnionWith(_changedSubmissions);
-            _submissionsInitialized = true;
+            _submissionVersion = _frame.Graph.Schedule.Version;
             return count;
         }
 
@@ -192,7 +192,7 @@ internal sealed partial class FrameExecutor
         foreach (int pass in passes)
         {
             foreach (int predecessor in _predecessors[pass]) Add(predecessor);
-            foreach (int predecessor in _physicalPredecessors[pass]) Add(predecessor);
+            foreach (int predecessor in _queuePredecessors[pass]) Add(predecessor);
             Add(_sameQueuePredecessor[pass]);
         }
         List<int> dependencies = _submissionDependencies[submission];
@@ -354,7 +354,7 @@ internal sealed partial class FrameExecutor
         {
             foreach (int candidate in _predecessors[pass])
                 if (Matches(candidate)) { predecessor = candidate; consumer = pass; return; }
-            foreach (int candidate in _physicalPredecessors[pass])
+            foreach (int candidate in _queuePredecessors[pass])
                 if (Matches(candidate)) { predecessor = candidate; consumer = pass; return; }
             int previous = _sameQueuePredecessor[pass];
             if (Matches(previous)) { predecessor = previous; consumer = pass; return; }

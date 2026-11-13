@@ -2,6 +2,8 @@ using System.Numerics;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Resources;
+using SomeEngine.Resources.Layers;
+using SomeEngine.Render.Features.Layers;
 using SomeEngine.Runtime;
 using Texture = SomeEngine.Resources.Texture;
 
@@ -10,6 +12,9 @@ namespace DefaultGame;
 internal sealed partial class ClusterBlendScene(ClusterBlendAssets assets, string effect)
 {
     private readonly List<(Entity Entity, TransformQvvs Local)> _objects = [];
+    private readonly Dictionary<Material, LayerMaterialValues> _layerMaterials = [];
+    private LayerPassId? _layerPass;
+    private readonly record struct LayerMaterialValues(LayerOperation Operation, byte DrawOrder, byte StencilReference);
 
     internal string Effect => effect;
     internal string Workload => effect switch
@@ -28,6 +33,7 @@ internal sealed partial class ClusterBlendScene(ClusterBlendAssets assets, strin
     public void Initialize(SceneEdit edit, TestScene scene)
     {
         _objects.Clear();
+        _layerMaterials.Clear();
         switch (effect)
         {
             case "glass": AddGlass(edit); break;
@@ -41,6 +47,38 @@ internal sealed partial class ClusterBlendScene(ClusterBlendAssets assets, strin
             default: throw new ArgumentOutOfRangeException(nameof(effect));
         }
         Update(edit, scene, 0);
+    }
+
+    internal IApplicationFrameFeature CreateLayerFeature(LayerComposition layers)
+    {
+        LayerPassId pass = layers.AddPass(new(effect,
+            effect == "ordered" ? LayerSortMode.DrawOrderThenDepth : LayerSortMode.DepthFrontToBack,
+            ClipByOpaqueDepth: effect is not ("ordered" or "xray"),
+            Accumulator: effect == "ordered" ? LayerAccumulator.ColorDepthStencil : LayerAccumulator.Color));
+        _layerPass = pass;
+        var feature = new LayerMaterialsFeature(this, pass);
+        feature.Reconcile();
+        return feature;
+    }
+
+    private void SetMaterialLayers(LayerPassId pass)
+    {
+        foreach (var (material, values) in _layerMaterials)
+            material.Layer = new(pass, values.DrawOrder, values.Operation, values.StencilReference);
+        _layerMaterials.Clear();
+    }
+
+    private sealed class LayerMaterialsFeature(ClusterBlendScene scene, LayerPassId pass) : IApplicationFrameFeature
+    {
+        public void Reconcile() => scene.SetMaterialLayers(pass);
+        public void Record(ref SomeEngine.RenderGraph.RenderGraphFrame frame, int simulationFrame) { }
+        public void Dispose() { }
+    }
+
+    private void SetLayerMaterial(Material material, LayerOperation operation, byte drawOrder = 0, byte stencilReference = 0)
+    {
+        _layerMaterials[material] = new(operation, drawOrder, stencilReference);
+        if (_layerPass is { } pass) material.Layer = new(pass, drawOrder, operation, stencilReference);
     }
 
     public void Update(SceneEdit edit, TestScene scene, int frame)
@@ -104,13 +142,20 @@ internal sealed partial class ClusterBlendScene(ClusterBlendAssets assets, strin
 
     private StandardMaterial Standard(Vector4 color)
     {
+        StandardMaterial material = OpaqueStandard(color);
+        material.Shader = assets.StandardBothShader;
+        SetLayerMaterial(material, new());
+        return material;
+    }
+
+    private StandardMaterial OpaqueStandard(Vector4 color)
+    {
         StandardMaterial source = assets.Standard;
         var material = new StandardMaterial
         {
             Shader = source.Shader, AlbedoMap = source.AlbedoMap, NormalMap = source.NormalMap, ARMMap = source.ARMMap,
             MaterialSampler = source.MaterialSampler, BaseColorTint = color, MetallicFactor = .1f,
             Roughness = .2f, EmissiveFactor = new Vector3(color.X, color.Y, color.Z) * .04f,
-            State = source.State with { Surface = SurfaceMode.Translucent, TwoSided = true },
         };
         return material;
     }
@@ -120,9 +165,9 @@ internal sealed partial class ClusterBlendScene(ClusterBlendAssets assets, strin
         UnlitMaterial source = assets.Unlit;
         var material = new UnlitMaterial
         {
-            Shader = source.Shader, AlbedoMap = texture, MaterialSampler = source.MaterialSampler, BaseColorTint = color,
-            State = source.State with { Surface = SurfaceMode.Translucent, TwoSided = true },
+            Shader = assets.UnlitBothShader, AlbedoMap = texture, MaterialSampler = source.MaterialSampler, BaseColorTint = color,
         };
+        SetLayerMaterial(material, new());
         return material;
     }
 }

@@ -16,7 +16,7 @@ public sealed class ShadowImageTests(RenderingContentFixture content)
     public async Task MovingLightShadowsMatchStartingWithTheFinalLight(string backend)
     {
         SceneImage? before = null, first = null, settled = null, expected = null, unshadowed = null;
-        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Shadows, 24,
         [
             new(15, edit => edit.CaptureImage(image => before = image)),
             new(16, edit =>
@@ -26,12 +26,12 @@ public sealed class ShadowImageTests(RenderingContentFixture content)
             }),
             new(23, edit => edit.CaptureImage(image => settled = image)),
         ]) { ShadowSettings = CreateShadowSettings() }, "--no-taa", "--vsm");
-        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Shadows, 24,
         [
             new(0, edit => edit.SetPointLight(edit.PointLights.Single(), new(new(-4, 2, 3), 20, Vector3.One, 30))),
             new(23, edit => edit.CaptureImage(image => expected = image)),
         ]) { ShadowSettings = CreateShadowSettings() }, "--no-taa", "--vsm");
-        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Shadows, 24,
         [
             new(0, edit => edit.SetPointLight(edit.PointLights.Single(), new(new(-4, 2, 3), 20, Vector3.One, 30))),
             new(23, edit => edit.CaptureImage(image => unshadowed = image)),
@@ -49,24 +49,26 @@ public sealed class ShadowImageTests(RenderingContentFixture content)
     {
         SceneImage? first = null, settled = null, refreshed = null, refreshedSettled = null, unshadowed = null;
         var rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, -MathF.Atan(1f / 8));
-        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        // The 128px, 60-degree receiver selects absolute level 12; -4..12 needs 17 levels.
+        VirtualShadowMapSettings settings = CreateShadowSettings() with { DirectionalClipmapLevels = 17 };
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Shadows, 24,
         [
             new(0, edit => edit.SetDirectionalLight(edit.PointLights.Single(), new(Vector3.Normalize(new(0, -.2f, 1)), Vector3.One, 3))),
             new(16, edit => { edit.SetCameraTransform(new(1, 0, 0), rotation); edit.CaptureImage(image => first = image); }),
             new(23, edit => edit.CaptureImage(image => settled = image)),
-        ]) { ShadowSettings = CreateShadowSettings() }, "--no-taa", "--vsm");
-        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        ]) { ShadowSettings = settings }, "--no-taa", "--vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Shadows, 24,
         [
             new(0, edit => edit.SetDirectionalLight(edit.PointLights.Single(), new(Vector3.Normalize(new(0, -.2f, 1)), Vector3.One, 3))),
             new(16, edit => { edit.SetCameraTransform(new(1, 0, 0), rotation); edit.RefreshShadowMaps(); edit.CaptureImage(image => refreshed = image); }),
             new(23, edit => { edit.RefreshShadowMaps(); edit.CaptureImage(image => refreshedSettled = image); }),
-        ]) { ShadowSettings = CreateShadowSettings() }, "--no-taa", "--vsm");
-        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        ]) { ShadowSettings = settings }, "--no-taa", "--vsm");
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Shadows, 24,
         [
             new(0, edit => edit.SetDirectionalLight(edit.PointLights.Single(), new(Vector3.Normalize(new(0, -.2f, 1)), Vector3.One, 3))),
             new(16, edit => edit.SetCameraTransform(new(1, 0, 0), rotation)),
             new(23, edit => edit.CaptureImage(image => unshadowed = image)),
-        ]) { ShadowSettings = CreateShadowSettings() }, "--no-taa", "--no-vsm");
+        ]) { ShadowSettings = settings }, "--no-taa", "--no-vsm");
         Assert.NotEqual(unshadowed!.Pixels.ToArray(), settled!.Pixels.ToArray());
         SceneImages.AssertEqual(refreshed!, first!, 2);
         SceneImages.AssertEqual(refreshedSettled!, settled!, 2);
@@ -94,13 +96,13 @@ public sealed class ShadowImageTests(RenderingContentFixture content)
             "mesh" => ["--hardware-raster"],
             _ => [],
         };
-        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Shadows, 24,
         [
             new(16, edit => { edit.SetPointLight(edit.PointLights.Single(), new(new(-4, 2, 3), 20, Vector3.One, 30)); edit.CaptureImage(image => maskedFirst = image); }),
             new(23, edit => edit.CaptureImage(image => masked = image)),
         ]) { ShadowSettings = CreateShadowSettings() with { NormalBias = normalBias, LocalReceiverMask = true },
             RasterEdgePixels = raster == "software" ? 64 : 4 }, ["--no-taa", "--vsm", .. rasterOptions]);
-        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Shadows, 24,
         [
             new(16, edit => { edit.SetPointLight(edit.PointLights.Single(), new(new(-4, 2, 3), 20, Vector3.One, 30)); edit.CaptureImage(image => completeFirst = image); }),
             new(23, edit => edit.CaptureImage(image => complete = image)),
@@ -122,13 +124,13 @@ public sealed class ShadowImageTests(RenderingContentFixture content)
         };
         var light = new DirectionalLight(Vector3.Normalize(new(1, -.5f, 1)), Vector3.One, 3,
             ShadowSettings: new(SourceAngleDegrees: 12));
-        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Shadows, 24,
         [
             new(0, edit => edit.SetDirectionalLight(edit.PointLights.Single(), light)),
             new(23, edit => edit.CaptureLinearImage(image => single = image)),
         ]) { ShadowSettings = settings with { DirectionalRayCount = 1 }, RasterEdgePixels = 32 },
             "--no-taa", "--vsm", "--hardware-raster");
-        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Shadows, 24,
         [
             new(0, edit => edit.SetDirectionalLight(edit.PointLights.Single(), light)),
             new(23, edit => edit.CaptureLinearImage(image => multiple = image)),
@@ -146,13 +148,13 @@ public sealed class ShadowImageTests(RenderingContentFixture content)
         VirtualShadowMapSettings settings = CreateShadowSettings() with { AdaptiveRayCount = 0 };
         var light = new PointLight(new(-4, 2, 3), 20, Vector3.One, 30,
             ShadowSettings: new(SourceRadius: .75f));
-        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Shadows, 24,
         [
             new(0, edit => edit.SetPointLight(edit.PointLights.Single(), light)),
             new(23, edit => edit.CaptureLinearImage(image => single = image)),
         ]) { ShadowSettings = settings with { LocalRayCount = 1 }, RasterEdgePixels = 32 },
             "--no-taa", "--vsm", "--hardware-raster");
-        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        await SceneImages.RunAsync(backend, new SceneScript(await content.Shadows, 24,
         [
             new(0, edit => edit.SetPointLight(edit.PointLights.Single(), light)),
             new(23, edit => edit.CaptureLinearImage(image => multiple = image)),

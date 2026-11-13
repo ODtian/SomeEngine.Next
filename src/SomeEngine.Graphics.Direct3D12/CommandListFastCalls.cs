@@ -14,15 +14,17 @@ internal static unsafe class D3D12CommandListFastCalls
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void DrawInstanced(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         uint vertexCount,
         uint instanceCount,
         uint firstVertex,
         uint firstInstance) =>
-        CommandExecutionTrace.DrawInstanced(list, vertexCount, instanceCount, firstVertex, firstInstance);
+        CommandExecutionTrace.DrawInstanced(context, list, vertexCount, instanceCount, firstVertex, firstInstance);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void DrawIndexedInstanced(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         uint indexCount,
         uint instanceCount,
@@ -30,7 +32,7 @@ internal static unsafe class D3D12CommandListFastCalls
         int vertexOffset,
         uint firstInstance) =>
         CommandExecutionTrace.DrawIndexedInstanced(
-        list, indexCount,
+        context, list, indexCount,
             instanceCount,
             firstIndex,
             vertexOffset,
@@ -38,114 +40,128 @@ internal static unsafe class D3D12CommandListFastCalls
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void Dispatch(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         uint x,
         uint y,
         uint z) =>
-        CommandExecutionTrace.Dispatch(list, x, y, z);
+        CommandExecutionTrace.Dispatch(context, list, x, y, z);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void SetPrimitiveTopology(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         D3DPrimitiveTopology topology) =>
-        CommandBindingTrace.IASetPrimitiveTopology(list, topology);
+        CommandBindingTrace.IASetPrimitiveTopology(context, list, topology);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void SetViewports(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         uint count,
         NativeViewport* viewports) =>
-        CommandBindingTrace.RSSetViewports(list, count, viewports);
+        CommandBindingTrace.RSSetViewports(context, list, count, viewports);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void SetScissors(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         uint count,
         Box2D<int>* scissors) =>
-        CommandBindingTrace.RSSetScissorRects(list, count, scissors);
+        CommandBindingTrace.RSSetScissorRects(context, list, count, scissors);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void SetPipelineState(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         ID3D12PipelineState* pipeline) =>
-        CommandBindingTrace.SetPipelineState(list, pipeline);
+        CommandBindingTrace.SetPipelineState(context, list, pipeline);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void ResourceBarrier(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         uint count,
         ResourceBarrier* barriers) =>
-        CommandTransferTrace.ResourceBarrier(list, count, barriers);
+        CommandTransferTrace.ResourceBarrier(context, list, count, barriers);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void SetDescriptorHeaps(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         uint count,
         ID3D12DescriptorHeap** heaps) =>
-        CommandBindingTrace.SetDescriptorHeaps(list, count, heaps);
+        CommandBindingTrace.SetDescriptorHeaps(context, list, count, heaps);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void SetRootSignature(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         bool compute,
         ID3D12RootSignature* rootSignature)
     {
         if (compute)
-            CommandBindingTrace.SetComputeRootSignature(list, rootSignature);
+            CommandBindingTrace.SetComputeRootSignature(context, list, rootSignature);
         else
-            CommandBindingTrace.SetGraphicsRootSignature(list, rootSignature);
+            CommandBindingTrace.SetGraphicsRootSignature(context, list, rootSignature);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void SetRootDescriptorTable(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         bool compute,
         uint rootParameter,
         GpuDescriptorHandle handle)
     {
         if (compute)
-            CommandBindingTrace.SetComputeRootDescriptorTable(list, rootParameter, handle);
+            CommandBindingTrace.SetComputeRootDescriptorTable(context, list, rootParameter, handle);
         else
-            CommandBindingTrace.SetGraphicsRootDescriptorTable(list, rootParameter, handle);
+            CommandBindingTrace.SetGraphicsRootDescriptorTable(context, list, rootParameter, handle);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void SetRenderTargets(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         uint count,
         CpuDescriptorHandle* renderTargets,
         CpuDescriptorHandle* depthStencil) =>
-        CommandBindingTrace.OMSetRenderTargets(list, count, renderTargets, false, depthStencil);
+        CommandBindingTrace.OMSetRenderTargets(context, list, count, renderTargets, false, depthStencil);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void ClearRenderTargetView(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         CpuDescriptorHandle renderTarget,
         float* color) =>
-        CommandExecutionTrace.ClearRenderTargetView(list, renderTarget, color, 0, null);
+        CommandExecutionTrace.ClearRenderTargetView(context, list, renderTarget, color, 0, null);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void Barrier(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         uint groupCount,
         BarrierGroup* groups) =>
-        CommandTransferTrace.Barrier(list, groupCount, groups);
+        CommandTransferTrace.Barrier(context, list, groupCount, groups);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void SetRootConstantBufferView(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         bool compute,
         uint rootParameter,
         ulong address)
     {
         if (compute)
-            CommandBindingTrace.SetComputeRootConstantBufferView(list, rootParameter, address);
+            CommandBindingTrace.SetComputeRootConstantBufferView(context, list, rootParameter, address);
         else
-            CommandBindingTrace.SetGraphicsRootConstantBufferView(list, rootParameter, address);
+            CommandBindingTrace.SetGraphicsRootConstantBufferView(context, list, rootParameter, address);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void SetRoot32BitConstants(
+        CommandContext context,
         ID3D12GraphicsCommandList10* list,
         bool compute,
         uint rootParameter,
@@ -153,8 +169,8 @@ internal static unsafe class D3D12CommandListFastCalls
         void* values)
     {
         if (compute)
-            CommandBindingTrace.SetComputeRoot32BitConstants(list, rootParameter, count, values, 0);
+            CommandBindingTrace.SetComputeRoot32BitConstants(context, list, rootParameter, count, values, 0);
         else
-            CommandBindingTrace.SetGraphicsRoot32BitConstants(list, rootParameter, count, values, 0);
+            CommandBindingTrace.SetGraphicsRoot32BitConstants(context, list, rootParameter, count, values, 0);
     }
 }

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using DefaultGame;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.Math;
@@ -118,7 +118,7 @@ public sealed class TerrainCacheRenderingTests(SceneContentFixture content)
             Transform = new TransformQvvs(new Vector3(-8, -2, 6), Quaternion.Identity),
         };
 
-    private static RuntimeStartupOptions Options() => RuntimeStartupOptions.Parse(
+    private static ApplicationOptions Options() => ApplicationOptions.Parse(
         ["--hidden-window", "--synchronous-frames", "--static-scene", "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]);
 
     private sealed class GroundAttributes : ITerrainAttributeGenerator<StandardClusterAttributes>

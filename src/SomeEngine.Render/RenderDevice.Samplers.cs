@@ -13,7 +13,7 @@ public sealed partial class RenderDevice
         if (_indexedSamplers.TryGetValue(description, out var value)) return value.Index;
         Sampler sampler = _backend.CreateSampler(_device, description);
         DescriptorTable table = _backend.CreateDescriptorTable(_device,
-            [new DescriptorSlotDesc(ResourceBindingType.Sampler)], "Material sampler");
+            [new DescriptorEntryDesc(ResourceBindingType.Sampler)], "Material sampler");
         _backend.WriteDescriptor(table, 0, ResourceBinding.SampledWith(sampler));
         uint index = _backend.GetDescriptorIndex(table, 0).Value;
         _indexedSamplers.Add(description, (sampler, table, index));

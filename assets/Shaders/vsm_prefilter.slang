@@ -1,11 +1,11 @@
 #define VSM_WHOLE_PAGE_SAMPLING 1
 #include "vsm_sampling.slang"
-#include "vsm_prefilter_sampling.slang"
-#include "vsm_prefilter_math.slang"
-#include "resource_effects.slang"
+__exported import vsm_prefilter_sampling;
+__exported import vsm_prefilter_math;
+__exported import resource_effects;
 
-#include "vsm_prefilter_common.slang"
-#include "vsm_receiver_mask_common.slang"
+__exported import vsm_prefilter_common;
+__exported import vsm_receiver_mask_common;
 
 ConstantBuffer<VirtualShadowPrefilterUniforms> Prefilter;
 StructuredBuffer<VirtualShadowMapParameters> FilterViews;
@@ -30,7 +30,7 @@ ByteAddressBuffer FilterPageCount;
 
 uint2 VirtualShadowFilterAtlasPixel(VirtualShadowMapParameters view, uint atlasPage, uint2 localPixel, bool border)
 {
-    return uint2(atlasPage % view.PhysicalPagesPerRow, atlasPage / view.PhysicalPagesPerRow) *
+    return uint2(atlasPage % view.AtlasPagesPerRow, atlasPage / view.AtlasPagesPerRow) *
         (view.PageSize + (border ? 2u : 0u)) + localPixel + (border ? 1u : 0u);
 }
 
@@ -44,14 +44,14 @@ uint VirtualShadowFilterNeighbor(VirtualShadowMapParameters view, uint2 page, in
         uint entry = FilterPageTable[VirtualShadowPageTableIndex(view, 0u, neighbor)];
         if (IsVirtualShadowPageTag(entry, VirtualShadowWorldPage(view, 0u, neighbor)) &&
             VirtualShadowPageHasOwnDepth(entry) &&
-            DecodeVirtualShadowPage(entry, view.PhysicalPagesPerRow, atlasPage))
+            DecodeVirtualShadowPage(entry, view.AtlasPagesPerRow, atlasPage))
         {
             pixel = uint2(virtualPixel) & (view.PageSize - 1u);
             return atlasPage;
         }
     }
     uint current = FilterPageTable[VirtualShadowPageTableIndex(view, 0u, page)];
-    DecodeVirtualShadowPage(current, view.PhysicalPagesPerRow, atlasPage);
+    DecodeVirtualShadowPage(current, view.AtlasPagesPerRow, atlasPage);
     pixel = uint2(clamp(localPixel, 0, int(view.PageSize) - 1));
     return atlasPage;
 }
@@ -68,9 +68,9 @@ bool VirtualShadowFilterSample(VirtualShadowMapParameters view, bool previous, f
     uint atlasPage;
     if (!IsVirtualShadowPageTag(entry, VirtualShadowWorldPage(view, 0u, virtualPage)) ||
         !VirtualShadowPageHasOwnDepth(entry) ||
-        !DecodeVirtualShadowPage(entry, view.PhysicalPagesPerRow, atlasPage)) return false;
+        !DecodeVirtualShadowPage(entry, view.AtlasPagesPerRow, atlasPage)) return false;
     uint layer = Prefilter.WriteLayer ^ (previous ? 1u : 0u);
-    uint2 atlasBase = uint2(atlasPage % view.PhysicalPagesPerRow, atlasPage / view.PhysicalPagesPerRow) * (view.PageSize + 2u);
+    uint2 atlasBase = uint2(atlasPage % view.AtlasPagesPerRow, atlasPage / view.AtlasPagesPerRow) * (view.PageSize + 2u);
     int2 base = int2(floor(texel)) - int2(virtualPage * view.PageSize) + int2(atlasBase) + 1;
     float2 fraction = frac(texel);
     float top = lerp(FilterSeparate[int3(base, layer)], FilterSeparate[int3(base + int2(1, 0), layer)], fraction.x);

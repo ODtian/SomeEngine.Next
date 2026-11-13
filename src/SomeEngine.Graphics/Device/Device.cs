@@ -380,6 +380,7 @@ public abstract class Device : GraphicsObject
         Adapter = adapter;
         Capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
         EnabledNodeMask = enabledNodeMask;
+        DeferredReleases = new DeferredReleases(this);
     }
 
     public AdapterInfo Adapter { get; }
@@ -387,7 +388,9 @@ public abstract class Device : GraphicsObject
     public uint EnabledNodeMask { get; }
     public DeviceStatus Status => (DeviceStatus)Volatile.Read(ref _status);
 
-    internal IGraphicsBackend BackendOwner { get; init; } = null!;
+    internal IGraphicsBackend BackendReceiver { get; init; } = null!;
+    internal DeferredReleases DeferredReleases { get; }
+    internal abstract IEnumerable<Queue> DeviceQueues { get; }
     internal GraphicsException? Loss => Volatile.Read(ref _loss);
     internal Exception? TeardownFailure => Volatile.Read(ref _teardownFailure);
 
@@ -396,30 +399,12 @@ public abstract class Device : GraphicsObject
 
     internal void ThrowIfUnavailable()
     {
-        if (IsDisposed)
-            throw new ObjectDisposedException(GetType().FullName);
-
-        switch (Status)
-        {
-            case DeviceStatus.Active:
-                return;
-            case DeviceStatus.Lost:
-                throw _loss ?? new GraphicsException(
-                    GraphicsError.DeviceLost,
-                    "The graphics device is lost.");
-            case DeviceStatus.Disposed:
-                throw new ObjectDisposedException(GetType().FullName);
-            default:
-                throw new InvalidOperationException("The graphics device has an invalid status.");
-        }
+        if (Status == DeviceStatus.Lost)
+            throw _loss ?? new GraphicsException(GraphicsError.DeviceLost, "The graphics device is lost.");
     }
 
     internal bool TryMarkLost(GraphicsException exception)
     {
-        ArgumentNullException.ThrowIfNull(exception);
-        if (exception.Error != GraphicsError.DeviceLost)
-            throw new ArgumentException("A terminal device loss must use GraphicsError.DeviceLost.", nameof(exception));
-
         lock (_terminalGate)
         {
             if ((DeviceStatus)_status != DeviceStatus.Active)
@@ -462,6 +447,9 @@ public abstract class DeviceCapability
 /// </remarks>
 public abstract class Queue
 {
+    private ulong _lastSubmitted;
+    internal ulong LastSubmittedValue => Volatile.Read(ref _lastSubmitted);
+    internal void MarkSubmitted(ulong value) => Volatile.Write(ref _lastSubmitted, value);
     internal Queue(
         Device device,
         QueueType type,
@@ -518,18 +506,18 @@ public abstract class Surface : GraphicsObject
         NativeWindowType type,
         nint windowHandle,
         nint displayHandle,
-        IGraphicsBackend backendOwner,
+        IGraphicsBackend backendReceiver,
         string? label)
         : base(label)
     {
         Type = type;
         WindowHandle = windowHandle;
         DisplayHandle = displayHandle;
-        BackendOwner = backendOwner ?? throw new ArgumentNullException(nameof(backendOwner));
+        BackendReceiver = backendReceiver ?? throw new ArgumentNullException(nameof(backendReceiver));
     }
 
     public NativeWindowType Type { get; }
     public nint WindowHandle { get; }
     public nint DisplayHandle { get; }
-    internal IGraphicsBackend BackendOwner { get; }
+    internal IGraphicsBackend BackendReceiver { get; }
 }
