@@ -56,7 +56,7 @@ public sealed class GeneratedBundleTests
     {
         using var world = new World();
         ValueIndex<BundleName, string> index = world.Index<BundleName, string>();
-        Entity entity = world.Create(new BundlePosition(1));
+        Entity entity = world.Create();
         world.AddBundle(entity, new BundleValues
         {
             Pair = new() { Position = new(2) }, Scene = new(7), Damage = new(3),

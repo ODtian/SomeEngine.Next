@@ -257,7 +257,7 @@ public sealed partial class World
     private void DestroyCore(Entity entity)
     {
         RequireStructure();
-        if (_lifecycleCount != 0 || HasDestroyedReaders) { DestroyObserved(entity, false); return; }
+        if (_lifecycleCount != 0 || HasDestroyedReaders) { DestroyObserved(entity, false); PublishDestroyed(entity); return; }
         ref EntityRecord record = ref Resolve(entity);
         if (HasDestroyed(in record)) throw new InvalidOperationException("Destroy an active entity.");
         DestroyComponents(entity, ref record);
@@ -316,8 +316,15 @@ public sealed partial class World
             else
             {
                 PrepareDestroyColumns(entities);
+                // Lifecycle hooks may destroy entities themselves, so the batch keeps its own list.
+                var destroyed = new List<Entity>(entities.Length);
                 foreach (Entity entity in entities)
-                    if (IsAliveCore(entity) && !HasDestroyed(in Records[entity.Id])) DestroyObserved(entity, false);
+                    if (IsAliveCore(entity) && !HasDestroyed(in Records[entity.Id]))
+                    {
+                        DestroyObserved(entity, false);
+                        destroyed.Add(entity);
+                    }
+                PublishDestroyed(CollectionsMarshal.AsSpan(destroyed));
                 return;
             }
         }

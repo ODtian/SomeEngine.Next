@@ -40,7 +40,8 @@ public sealed partial class WorldJobs(Scheduler scheduler) : WorldExecution
     internal override void CheckActive()
     {
         if (!IsClosed) return;
-        if (Environment.CurrentManagedThreadId == _disposingThread) return;
+        // Only the disposal call itself is exempt; jobs that this thread helps run while waiting are not.
+        if (Environment.CurrentManagedThreadId == _disposingThread && !JobThreads.IsActive) return;
         if (s_current is { } frame && ReferenceEquals(frame.Jobs, this) && frame.JobDepth == JobThreads.Depth) return;
         if (JobThreads.IsActive && _jobLifetime.OwnsCurrentScope()) return;
         throw new ObjectDisposedException(nameof(World));
