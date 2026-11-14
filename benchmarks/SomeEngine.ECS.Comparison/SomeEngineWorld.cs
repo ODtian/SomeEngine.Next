@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
 using System.Runtime.CompilerServices;
@@ -36,14 +37,16 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
         _entities = new Entity[count];
         if (SignalInInitialLayout)
         {
-            _world.Reserve<Position, Velocity, Health, Team, Sleeping, Signal>(count / 4);
-            _world.Reserve<Position, Velocity, Health, Team, Signal>(count / 4);
-            _world.Reserve<Position, Velocity, Health, Signal>(count / 2);
+            _world.ReserveBundle<SignalSleepingTeamBody>(count / 4);
+            _world.ReserveBundle<SignalTeamBody>(count / 4);
+            _world.ReserveBundle<SignalBody>(count / 2);
             CreateSignalEntities();
         }
         else if (initialWorkload?.EndsWith("-random-read") == true)
         {
-            CreateFeatureEntities(static row => new JobOrdinal(row), twoColumns: true);
+            CreateFeatureEntities(static (row, body) => new OrdinalBody { Body = body, Ordinal = new(row) },
+                static (row, body) => new OrdinalTeamBody { Body = body, Ordinal = new(row) },
+                static (row, body) => new OrdinalSleepingTeamBody { Body = body, Ordinal = new(row) }, twoColumns: true);
             _randomJobColumnsReady = true;
         }
         else if (initialWorkload?.EndsWith("-random-write") == true)
@@ -52,25 +55,37 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
             _randomJobColumnsReady = true;
         }
         else if (initialWorkload?.StartsWith("buffer-") == true)
-            CreateFeatureEntities(static _ => new Buffer<BufferItem>(), 1, twoColumns: true);
+            CreateFeatureEntities(static (_, body) => new BufferBody { Body = body },
+                static (_, body) => new BufferTeamBody { Body = body },
+                static (_, body) => new BufferSleepingTeamBody { Body = body }, 1, twoColumns: true);
         else if (initialWorkload?.StartsWith("changes-") == true)
-            CreateFeatureEntities(static _ => new ScoreValue(), twoColumns: true);
+            CreateFeatureEntities(static (_, body) => new ScoreBody { Body = body },
+                static (_, body) => new ScoreTeamBody { Body = body },
+                static (_, body) => new ScoreSleepingTeamBody { Body = body }, twoColumns: true);
         else if (initialWorkload is "clone-set" or "prefab-set")
             CreateCopyEntities();
         else if (initialWorkload?.StartsWith("index-") == true)
-            CreateFeatureEntities(static row => new IndexedNumber(row % 16, row), twoColumns: true);
+            CreateFeatureEntities(static (row, body) => new IndexedBody { Body = body, Number = new(row % 16, row) },
+                static (row, body) => new IndexedTeamBody { Body = body, Number = new(row % 16, row) },
+                static (row, body) => new IndexedSleepingTeamBody { Body = body, Number = new(row % 16, row) }, twoColumns: true);
         else if (initialWorkload?.StartsWith("shared-") == true)
         {
             int groups = initialWorkload.EndsWith("unique") ? count : 16;
-            CreateFeatureEntities(row => new SharedNumber(row % groups));
+            CreateFeatureEntities((row, body) => new SharedBody { Body = body, Number = new(row % groups) },
+                (row, body) => new SharedTeamBody { Body = body, Number = new(row % groups) },
+                (row, body) => new SharedSleepingTeamBody { Body = body, Number = new(row % groups) });
         }
         else
         {
-            _world.Reserve<Position, Velocity, Health>(count / 2 + creationBatchCapacity);
-            _world.Reserve<Position, Velocity, Health, Team, Sleeping>(count / 4);
-            _world.Reserve<Position, Velocity, Health, Team>(count / 4);
+            _world.ReserveBundle<Body>(count / 2 + creationBatchCapacity);
+            _world.ReserveBundle<SleepingTeamBody>(count / 4);
+            _world.ReserveBundle<TeamBody>(count / 4);
             PositionInputs positions = PositionInputs.Get(count);
-            _world.Create<Position, Velocity, Health>(_entities.AsSpan(0, count / 2), positions.Plain, new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 });
+            var bodies = new Body[count / 2];
+            for (int row = 0; row < bodies.Length; row++) bodies[row] = Body.Moving(positions.Plain[row]);
+            _world.Spawn<Body>(bodies, _entities.AsSpan(0, count / 2));
+            var sleepingRows = new SleepingTeamBody[Changes];
+            var teamRows = new TeamBody[Changes];
             for (int row = count / 2 - 1; row >= 0; row--)
             {
                 Entity entity = _entities[row];
@@ -83,8 +98,16 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
                 {
                     Span<Entity> batch = _created.AsSpan(0, Math.Min(Changes, count / 4 - start));
                     ReadOnlySpan<Position> values = (firstOrdinal == 0 ? positions.Sleeping : positions.Team).AsSpan(start, batch.Length);
-                    if (firstOrdinal == 0) _world.Create<Position, Velocity, Health, Team, Sleeping>(batch, values, new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 }, new Team(), new Sleeping());
-                    else _world.Create<Position, Velocity, Health, Team>(batch, values, new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 }, new Team());
+                    if (firstOrdinal == 0)
+                    {
+                        for (int row = 0; row < batch.Length; row++) sleepingRows[row] = new() { Body = Body.Moving(values[row]) };
+                        _world.Spawn<SleepingTeamBody>(sleepingRows.AsSpan(0, batch.Length), batch);
+                    }
+                    else
+                    {
+                        for (int row = 0; row < batch.Length; row++) teamRows[row] = new() { Body = Body.Moving(values[row]) };
+                        _world.Spawn<TeamBody>(teamRows.AsSpan(0, batch.Length), batch);
+                    }
                     for (int row = 0; row < batch.Length; row++)
                     {
                         int ordinal = (start + row) * 4 + firstOrdinal;
@@ -98,49 +121,49 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
 
     private void CreateCopyEntities()
     {
-        _world.Reserve<Position, Velocity, Health, SomeCopyNode, IndexedNumber, Buffer<SomeCopyItem>>(Count / 2);
-        _world.Reserve<Position, Velocity, Health, SomeCopyNode, IndexedNumber, Buffer<SomeCopyItem>, Team>(Count / 4);
-        _world.Reserve<Position, Velocity, Health, SomeCopyNode, IndexedNumber, Buffer<SomeCopyItem>, Team, Sleeping>(Count / 4);
+        _world.ReserveBundle<CopyBody>(Count / 2);
+        _world.ReserveBundle<CopyTeamBody>(Count / 4);
+        _world.ReserveBundle<CopySleepingTeamBody>(Count / 4);
         for (int row = 0; row < Count; row++)
         {
-            var position = new Position { X = row };
-            var velocity = new Velocity { X = 1, Y = 2 };
-            var health = new Health { Value = 100, Max = 100 };
-            var node = new SomeCopyNode();
-            var number = new IndexedNumber();
-            var buffer = new Buffer<SomeCopyItem>();
-            _entities[row] = row % 4 == 0 ? _world.Create(position, velocity, health, node, number, buffer, new Team(), new Sleeping())
-                : row % 2 == 0 ? _world.Create(position, velocity, health, node, number, buffer, new Team())
-                : _world.Create(position, velocity, health, node, number, buffer);
+            Body body = Body.Moving(new Position { X = row });
+            _entities[row] = row % 4 == 0 ? _world.Spawn(new CopySleepingTeamBody { Body = body })
+                : row % 2 == 0 ? _world.Spawn(new CopyTeamBody { Body = body })
+                : _world.Spawn(new CopyBody { Body = body });
         }
     }
 
-    private void CreateFeatureEntities<T>(Func<int, T> values, int temporaryRows = 0, bool twoColumns = false) where T : struct
+    private void CreateFeatureEntities<TPlain, TTeam, TSleeping>(Func<int, Body, TPlain> plain, Func<int, Body, TTeam> team,
+        Func<int, Body, TSleeping> sleeping, int temporaryRows = 0, bool twoColumns = false)
+        where TPlain : struct, IComponentBundle<TPlain> where TTeam : struct, IComponentBundle<TTeam>
+        where TSleeping : struct, IComponentBundle<TSleeping>
     {
-        _world.Reserve<Position, Velocity, Health, T>(Count / 2 + temporaryRows);
-        _world.Reserve<Position, Velocity, Health, T, Team>(Count / 4 + temporaryRows);
-        _world.Reserve<Position, Velocity, Health, T, Team, Sleeping>(Count / 4 + temporaryRows);
+        _world.ReserveBundle<TPlain>(Count / 2 + temporaryRows);
+        _world.ReserveBundle<TTeam>(Count / 4 + temporaryRows);
+        _world.ReserveBundle<TSleeping>(Count / 4 + temporaryRows);
         if (twoColumns)
         {
-            CreateFeatureBatches(values);
+            CreateFeatureBatches(plain, team, sleeping);
             return;
         }
         for (int row = 0; row < Count; row++)
         {
-            var position = new Position { X = row };
-            var velocity = new Velocity { X = 1, Y = 2 };
-            var health = new Health { Value = 100, Max = 100 };
-            T value = values(row);
-            _entities[row] = row % 4 == 0 ? _world.Create(position, velocity, health, value, new Team(), new Sleeping())
-                : row % 2 == 0 ? _world.Create(position, velocity, health, value, new Team())
-                : _world.Create(position, velocity, health, value);
+            Body body = Body.Moving(new Position { X = row });
+            _entities[row] = row % 4 == 0 ? _world.Spawn(sleeping(row, body))
+                : row % 2 == 0 ? _world.Spawn(team(row, body))
+                : _world.Spawn(plain(row, body));
         }
     }
 
-    private void CreateFeatureBatches<T>(Func<int, T> values) where T : struct
+    private void CreateFeatureBatches<TPlain, TTeam, TSleeping>(Func<int, Body, TPlain> plain, Func<int, Body, TTeam> team,
+        Func<int, Body, TSleeping> sleeping)
+        where TPlain : struct, IComponentBundle<TPlain> where TTeam : struct, IComponentBundle<TTeam>
+        where TSleeping : struct, IComponentBundle<TSleeping>
     {
         PositionInputs positions = PositionInputs.Get(Count);
-        var input = new T[Changes];
+        var plainRows = new TPlain[Changes];
+        var teamRows = new TTeam[Changes];
+        var sleepingRows = new TSleeping[Changes];
         for (int shape = 2; shape >= 0; shape--)
         {
             int first = shape == 2 ? 1 : shape * 2;
@@ -151,15 +174,17 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
             {
                 int length = Math.Min(Changes, count - start);
                 Span<Entity> batch = _created.AsSpan(0, length);
-                Span<T> items = input.AsSpan(0, length);
-                for (int row = 0; row < length; row++) items[row] = values((start + row) * stride + first);
-                ReadOnlySpan<Position> batchPositions = source.Slice(start, length);
-                if (shape == 0) _world.Create<Position, T, Velocity, Health, Team, Sleeping>(batch, batchPositions, items,
-                    new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 }, new Team(), new Sleeping());
-                else if (shape == 1) _world.Create<Position, T, Velocity, Health, Team>(batch, batchPositions, items,
-                    new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 }, new Team());
-                else _world.Create<Position, T, Velocity, Health>(batch, batchPositions, items,
-                    new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 });
+                for (int row = 0; row < length; row++)
+                {
+                    int ordinal = (start + row) * stride + first;
+                    Body body = Body.Moving(source[start + row]);
+                    if (shape == 0) sleepingRows[row] = sleeping(ordinal, body);
+                    else if (shape == 1) teamRows[row] = team(ordinal, body);
+                    else plainRows[row] = plain(ordinal, body);
+                }
+                if (shape == 0) _world.Spawn<TSleeping>(sleepingRows.AsSpan(0, length), batch);
+                else if (shape == 1) _world.Spawn<TTeam>(teamRows.AsSpan(0, length), batch);
+                else _world.Spawn<TPlain>(plainRows.AsSpan(0, length), batch);
                 for (int row = 0; row < length; row++) _entities[(start + row) * stride + first] = batch[row];
             }
         }
@@ -168,7 +193,9 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     private void CreateSignalEntities()
     {
         PositionInputs positions = PositionInputs.Get(Count);
-        var signals = new Signal[Changes];
+        var plainRows = new SignalBody[Changes];
+        var teamRows = new SignalTeamBody[Changes];
+        var sleepingRows = new SignalSleepingTeamBody[Changes];
         for (int shape = 0; shape < 3; shape++)
         {
             int first = shape == 2 ? 1 : shape * 2;
@@ -180,12 +207,16 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
                 int length = Math.Min(Changes, count - start);
                 Span<Entity> batch = _created.AsSpan(0, length);
                 ReadOnlySpan<Position> values = source.Slice(start, length);
-                if (shape == 0) _world.Create<Position, Signal, Velocity, Health, Team, Sleeping>(batch, values, signals.AsSpan(0, length),
-                    new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 }, new Team(), new Sleeping());
-                else if (shape == 1) _world.Create<Position, Signal, Velocity, Health, Team>(batch, values, new Signal(),
-                    new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 }, new Team());
-                else _world.Create<Position, Signal, Velocity, Health>(batch, values, new Signal(),
-                    new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 });
+                for (int row = 0; row < length; row++)
+                {
+                    Body body = Body.Moving(values[row]);
+                    if (shape == 0) sleepingRows[row] = new() { Body = body };
+                    else if (shape == 1) teamRows[row] = new() { Body = body };
+                    else plainRows[row] = new() { Body = body };
+                }
+                if (shape == 0) _world.Spawn<SignalSleepingTeamBody>(sleepingRows.AsSpan(0, length), batch);
+                else if (shape == 1) _world.Spawn<SignalTeamBody>(teamRows.AsSpan(0, length), batch);
+                else _world.Spawn<SignalBody>(plainRows.AsSpan(0, length), batch);
                 for (int row = 0; row < length; row++) _entities[(start + row) * stride + first] = batch[row];
             }
         }
@@ -203,9 +234,9 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
         switch (workload)
         {
             case "add-remove":
-                _world.Reserve<Position, Velocity, Health, Extra>(Changes / 2);
-                _world.Reserve<Position, Velocity, Health, Extra, Team>(Changes / 4);
-                _world.Reserve<Position, Velocity, Health, Extra, Team, Sleeping>(Changes / 4);
+                _world.ReserveBundle<ExtraBody>(Changes / 2);
+                _world.ReserveBundle<ExtraTeamBody>(Changes / 4);
+                _world.ReserveBundle<ExtraSleepingTeamBody>(Changes / 4);
                 break;
             case "resources": PrepareResources(); break;
             case "enableable": PrepareEnabled(); break;
@@ -401,14 +432,13 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     internal override void CreateDestroyThree()
     {
         for (int i = 0; i < Changes; i++)
-            _created[i] = _world.Create(new Position { X = i }, new Velocity { X = 1, Y = 2 },
-                new Health { Value = 100, Max = 100 });
+            _created[i] = _world.Spawn(Body.Moving(new Position { X = i }));
         for (int i = 0; i < Changes; i++) _world.Destroy(_created[i]);
     }
 
     internal override void SpawnBatch()
     {
-        _world.Create(_created, new Position(), new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 });
+        _world.Spawn(Body.Moving(new Position()), _created);
         _world.Destroy(_created);
     }
 
@@ -425,16 +455,19 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
         var created = new Entity[Count];
         switch (FeatureGrowth)
         {
-            case GrowthFeature.Enabled: CreateFeatureGrowth(created, static row => new Signal { Value = row + 1 }); break;
-            case GrowthFeature.Buffer: CreateFeatureGrowth(created, static _ => new Buffer<BufferItem>()); break;
+            case GrowthFeature.Enabled:
+                CreateFeatureGrowth(created, static (row, body) => new SignalBody { Body = body, Signal = new() { Value = row + 1 } }); break;
+            case GrowthFeature.Buffer: CreateFeatureGrowth(created, static (_, body) => new BufferBody { Body = body }); break;
             case GrowthFeature.Changes: CreateScoreGrowth(created); break;
-            case GrowthFeature.Index: CreateFeatureGrowth(created, row => new IndexedNumber(row == 0 ? 16 : row % 16, Count + row)); break;
-            case GrowthFeature.Shared: CreateFeatureGrowth(created, row => new SharedNumber(SharedGroupCount + row % SharedGroupCount)); break;
+            case GrowthFeature.Index:
+                CreateFeatureGrowth(created, (row, body) => new IndexedBody { Body = body, Number = new(row == 0 ? 16 : row % 16, Count + row) }); break;
+            case GrowthFeature.Shared:
+                CreateFeatureGrowth(created, (row, body) => new SharedBody { Body = body, Number = new(SharedGroupCount + row % SharedGroupCount) }); break;
             default:
                 int originalRows = FeatureGrowth == GrowthFeature.Group ? 0 : Count / 2;
                 int temporaryRows = _creationBatchCapacity;
-                _world.Reserve<Position, Velocity, Health>(originalRows + Count + temporaryRows);
-                _world.Create(created, new Position(), new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 });
+                _world.ReserveBundle<Body>(originalRows + Count + temporaryRows);
+                _world.Spawn(Body.Moving(new Position()), created);
                 break;
         }
         _world.Add(created[0], new GrowthMarker { Value = 1 });
@@ -449,24 +482,24 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
 
     private void CreateScoreGrowth(Entity[] entities)
     {
-        _world.Reserve<ScoreValue, Position, Velocity, Health>(Count * 3 / 2);
-        var input = new ScoreValue[Changes];
+        _world.ReserveBundle<ScoreBody>(Count * 3 / 2);
+        var input = new ScoreBody[Changes];
+        Body body = Body.Moving(new Position());
         for (int start = 0; start < entities.Length; start += Changes)
         {
             int length = Math.Min(Changes, entities.Length - start);
-            Span<ScoreValue> values = input.AsSpan(0, length);
-            for (int row = 0; row < length; row++) values[row] = new ScoreValue { Value = start + row + 1 };
-            _world.Create<ScoreValue, Position, Velocity, Health>(entities.AsSpan(start, length), values,
-                new Position(), new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 });
+            Span<ScoreBody> values = input.AsSpan(0, length);
+            for (int row = 0; row < length; row++) values[row] = new() { Body = body, Score = new ScoreValue { Value = start + row + 1 } };
+            _world.Spawn<ScoreBody>(values, entities.AsSpan(start, length));
         }
     }
 
-    private void CreateFeatureGrowth<T>(Entity[] entities, Func<int, T> values) where T : struct
+    private void CreateFeatureGrowth<TBundle>(Entity[] entities, Func<int, Body, TBundle> rows)
+        where TBundle : struct, IComponentBundle<TBundle>
     {
-        _world.Reserve<Position, Velocity, Health, T>(Count * 3 / 2);
-        for (int row = 0; row < entities.Length; row++)
-            entities[row] = _world.Create(new Position(), new Velocity { X = 1, Y = 2 },
-                new Health { Value = 100, Max = 100 }, values(row));
+        _world.ReserveBundle<TBundle>(Count * 3 / 2);
+        Body body = Body.Moving(new Position());
+        for (int row = 0; row < entities.Length; row++) entities[row] = _world.Spawn(rows(row, body));
     }
 
     internal override Health ReadHealth(int index) => _world.Execution is null

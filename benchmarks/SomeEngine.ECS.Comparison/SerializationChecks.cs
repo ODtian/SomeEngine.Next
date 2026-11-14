@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Relations;
@@ -10,6 +11,8 @@ namespace SomeEngine.ECS.Comparison;
 
 internal static partial class SerializationChecks
 {
+    private partial struct ArchiveRow : IComponentBundle { internal ArchiveValue Value; internal ArchiveStep Step; }
+    private partial struct ArchivePosition : IComponentBundle { internal ArchiveValue Value; internal ArchiveStep Step; internal Position Position; }
     private struct ArchiveValue(int value) : IAddedComponent, IRemovedComponent { internal int Value = value; }
     private readonly record struct ArchiveStep(int Value) : IEnableableComponent;
     private readonly record struct ArchiveShared(int Value) : ISharedComponent, IGroupComponent { public int GetGroup() => Value; }
@@ -38,15 +41,15 @@ internal static partial class SerializationChecks
     private static void CheckRecaptureEncoding()
     {
         using var world = new World(16);
-        Entity first = world.Create(new Position { X = 7 }, new Velocity { X = 2 });
-        Entity second = world.Create(new Position { X = 9 }, new Velocity { X = 3 });
+        Entity first = world.Spawn(new Motion { Position = new() { X = 7 }, Velocity = new() { X = 2 } });
+        Entity second = world.Spawn(new Motion { Position = new() { X = 9 }, Velocity = new() { X = 3 } });
         using var checkpoint = new WorldCheckpoint();
         var serializer = new WorldSerializer(new SerializationRegistry().Register<Position>().Register<Velocity>().Register<Health>());
         var output = new ArrayBufferWriter<byte>();
         checkpoint.Capture(world, CheckpointProgress.Preserve);
         serializer.Save(checkpoint, output);
         world.Set(first, new Health { Value = 17 });
-        Entity third = world.Create(new Position { X = 23 }, new Velocity { X = 4 }, new Health { Value = 29 });
+        Entity third = world.Spawn(new Body { Position = new() { X = 23 }, Velocity = new() { X = 4 }, Health = new() { Value = 29 } });
         checkpoint.Capture(world, CheckpointProgress.Preserve);
         output.Clear(); serializer.Save(checkpoint, output);
         world.Clear(); serializer.Load(world, output.WrittenSpan);
@@ -71,7 +74,7 @@ internal static partial class SerializationChecks
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, EnableCounters = false });
         using var world = new World(300, chunkCapacity: 128, execution: new WorldJobs(scheduler));
         Entity[] entities = new Entity[257];
-        for (int i = 0; i < entities.Length; i++) entities[i] = world.Create(new ArchiveValue(i), new ArchiveStep(2), new Position { X = i });
+        for (int i = 0; i < entities.Length; i++) entities[i] = world.Spawn(new ArchivePosition { Value = new(i), Step = new(2), Position = new() { X = i } });
         world.Disable<ArchiveStep>(entities[7]);
         world.Index<IndexedNumber, int>();
         world.Set(entities[3], new IndexedNumber(7, 3));
@@ -207,7 +210,7 @@ internal static partial class SerializationChecks
         Require(world.EntityCount == capturedCount && state.LastSystemVersion == world.Version, "rebuild mode initializes consumers at the restored observation point");
         using (var children = Hierarchy<ArchiveTree>.GetChildren(world, secondParent)) Require(children.Count == 1, "rebuild mode returns completed hierarchy views");
         using (var edges = world.GetOutgoingRelations<ArchiveEdge>(secondParent)) Require(edges.Count == 1, "rebuild mode returns completed relation views");
-        world.Create(new ArchiveValue(17), new ArchiveStep(2));
+        world.Spawn(new ArchiveRow { Value = new(17), Step = new(2) });
         if (format == 4) Require(File.Exists(savedFile + ".previous"), "file commit retains the previous completed generation");
         Console.WriteLine($"Snapshot format {format}: complete rows, identities, buffers and old values, sparse/shared/indexed storage, resources, ordered deferred topology and system progress passed.");
     }

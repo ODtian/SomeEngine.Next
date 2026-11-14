@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Systems;
 using SomeEngine.ECS.Entities;
 
@@ -5,6 +6,7 @@ namespace SomeEngine.ECS.Comparison;
 
 internal static partial class ChunkChecks
 {
+    private partial struct PositionOwned : IComponentBundle { internal Position Position; internal OwnedValue Owned; }
     internal static void Run()
     {
         using var world = new World(8, chunkCapacity: 32);
@@ -12,13 +14,13 @@ internal static partial class ChunkChecks
         Require(query.Count == 0, "an existing query starts with its current empty membership");
         var original = new Entity[80];
         for (int i = 0; i < original.Length; i++)
-            original[i] = world.Create(new Position { X = i }, new Velocity { X = 2 }, new Health { Value = 7 });
+            original[i] = world.Spawn(new Body { Position = new() { X = i }, Velocity = new() { X = 2 }, Health = new() { Value = 7 } });
         Require(query.Count == 80, "a query observes the initial fixed chunks");
         using (var cached = world.OpenRead<Position>()) Require(cached.Read(original[63]).X == 63, "bind across initial chunks");
 
-        Entity extra = world.Create(new Position(), new Velocity { X = 5 }, new Health { Value = 11 }, new Extra());
+        Entity extra = world.Spawn(new ExtraBody { Body = new() { Velocity = new() { X = 5 }, Health = new() { Value = 11 } } });
         var added = new Entity[96];
-        world.Create(added, new Position(), new Velocity { X = 3 }, new Health { Value = 4 });
+        world.Spawn(new Body { Velocity = new() { X = 3 }, Health = new() { Value = 4 } }, added);
         Require(query.Count == 177, "an existing query sees a new table and new chunks in an existing table");
         var one = new ChangeHealth();
         var two = new Move();
@@ -48,7 +50,7 @@ internal static partial class ChunkChecks
         world.Destroy(added);
         Require(query.Count == 81, "batch reclamation removes its rows across chunks");
         var reused = new Entity[64];
-        world.Create(reused, new Position { X = 9 }, new Velocity(), new Health());
+        world.Spawn(new Body { Position = new() { X = 9 } }, reused);
         Require(query.Count == 145, "reclaimed chunk capacity accepts new rows");
         using (var cached = world.OpenRead<Position>())
             Require(!cached.Has(added[0]) && !cached.Has(added[^1]) && cached.Read(reused[^1]).X == 9
@@ -59,7 +61,7 @@ internal static partial class ChunkChecks
         var managed = new Entity[40];
         for (int i = 0; i < managed.Length; i++)
         {
-            managed[i] = world.Create(new Position { X = i }, new OwnedValue(releases, i));
+            managed[i] = world.Spawn(new PositionOwned { Position = new() { X = i }, Owned = new(releases, i) });
             world.AddBuffer<Element>(managed[i]);
             using var buffer = world.GetBuffer<Element>(managed[i]);
             buffer.Add(new Element { Value = i });

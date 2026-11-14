@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using System.Runtime.CompilerServices;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
@@ -5,8 +6,9 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Comparison;
 
-internal static class ContainerChecks
+internal static partial class ContainerChecks
 {
+    private partial struct ElementBody : IComponentBundle { internal Body Body; internal ReadOnlyMemory<Element> Elements; }
     internal static void Run()
     {
         var releases = new ReleaseCount();
@@ -38,11 +40,12 @@ internal static class ContainerChecks
         var variableBuffers = new SomeEngine.ECS.Entities.Entity[2];
         var repeatedBuffers = new SomeEngine.ECS.Entities.Entity[2];
         Position[] positions = [new() { X = 10 }, new() { X = 11 }];
-        Buffer<Element> template = world.Read<Buffer<Element>>(source);
-        Buffer<Element>[] inputs = [template, template];
-        world.Create<Position, Buffer<Element>, Velocity, Health>(variableBuffers, positions, inputs, new Velocity(), new Health());
-        Velocity[] velocities = [new(), new()];
-        world.Create<Position, Velocity, Health, Buffer<Element>>(repeatedBuffers, positions, velocities, new Health(), template);
+        Element[] template;
+        using (var read = world.ReadBuffer<Element>(source)) template = read.AsSpan().ToArray();
+        ElementBody[] copies = [new() { Body = new() { Position = positions[0] }, Elements = template },
+            new() { Body = new() { Position = positions[1] }, Elements = template }];
+        world.Spawn<ElementBody>(copies, variableBuffers);
+        world.Spawn<ElementBody>(copies, repeatedBuffers);
         using (var first = world.GetBuffer<Element>(variableBuffers[0])) first[0].Value = 70;
         using (var first = world.GetBuffer<Element>(repeatedBuffers[0])) first[0].Value = 80;
         using (var variable = world.ReadBuffer<Element>(variableBuffers[1]))

@@ -319,9 +319,9 @@ internal sealed class SomeHierarchyComparison : IHierarchyComparison<Entity>
     public void DestroySubtree(Entity entity) => Hierarchy<ComparisonHierarchyDomain>.DestroySubtree(_world, entity);
     public Entity Create(int ordinal)
     {
-        var p = new Position { X = ordinal }; var v = new Velocity { X = 1, Y = 2 }; var h = new Health { Value = 100, Max = 100 };
-        return ordinal % 4 == 0 ? _world.Create(p, v, h, new Team(), new Sleeping())
-            : ordinal % 2 == 0 ? _world.Create(p, v, h, new Team()) : _world.Create(p, v, h);
+        Body body = Body.Moving(new Position { X = ordinal });
+        return ordinal % 4 == 0 ? _world.Spawn(new SleepingTeamBody { Body = body })
+            : ordinal % 2 == 0 ? _world.Spawn(new TeamBody { Body = body }) : _world.Spawn(body);
     }
     public void ReadFacts(ulong since, HierarchyObservation<Entity> result)
     {

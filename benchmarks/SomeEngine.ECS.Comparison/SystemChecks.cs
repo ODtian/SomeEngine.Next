@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Hierarchy;
@@ -9,6 +10,8 @@ namespace SomeEngine.ECS.Comparison;
 
 internal static partial class SystemChecks
 {
+    private partial struct SystemRow : IComponentBundle { internal SystemValue Value; internal SystemStep Step; }
+    private partial struct RandomSystemRow : IComponentBundle { internal SystemValue Value; internal SystemStep Step; internal RandomValue Random; }
     private struct SystemValue(int value) : IAddedComponent { public int Value = value; public int Ordinal = value; }
     private struct SystemStep(int value) : IEnableableComponent { public int Value = value; }
     private struct RandomValue(int value) : IAddedComponent { public int Value = value; }
@@ -117,7 +120,7 @@ internal static partial class SystemChecks
         FieldInfo countField = rangesType.GetField("Count", instance)!;
         FieldInfo filterField = rangesType.GetField("_hasFilters", instance)!;
         using var world = new World();
-        for (int i = 0; i < 257; i++) world.Create(new SystemValue(i), new SystemStep(1));
+        for (int i = 0; i < 257; i++) world.Spawn(new SystemRow { Value = new(i), Step = new(1) });
         Query query = world.Query(new QueryDescription().With<SystemStep>().WithChanged<SystemValue>(0));
         using var queryRead = query.OpenRead();
         var ranges = new object[count];
@@ -158,7 +161,7 @@ internal static partial class SystemChecks
     private static void CheckQueryReadRejectsStructureChanges(Scheduler scheduler)
     {
         using var world = new World(execution: new WorldJobs(scheduler));
-        Entity original = world.Create(new Position { X = 7 }, new Velocity { X = 1 });
+        Entity original = world.Spawn(new Motion { Position = new() { X = 7 }, Velocity = new() { X = 1 } });
         var calls = new JobResult<int>();
         bool rejected = false;
         try { SystemRunner.Execute(world, new CreateDuringQuery(world, calls), world.Query<Position, Velocity>()); }
@@ -172,7 +175,7 @@ internal static partial class SystemChecks
     private static void CheckQueryWriteKeepsReadGuard(Scheduler scheduler)
     {
         using var world = new World(execution: new WorldJobs(scheduler));
-        Entity original = world.Create(new Position { X = 7 }, new Velocity { X = 1 });
+        Entity original = world.Spawn(new Motion { Position = new() { X = 7 }, Velocity = new() { X = 1 } });
         using var structure = world.OpenStructureWrite();
         var calls = new JobResult<int>();
         bool rejected = false;
@@ -199,7 +202,7 @@ internal static partial class SystemChecks
         using var world = new World(256, execution: new WorldJobs(scheduler));
         var entities = new Entity[128];
         for (int i = 0; i < entities.Length; i++)
-            entities[i] = world.Create(new SystemValue(i), new SystemStep(1), new RandomValue(2));
+            entities[i] = world.Spawn(new RandomSystemRow { Value = new(i), Step = new(1), Random = new(2) });
         Query query = world.Query(new QueryDescription().With<SystemValue>().With<SystemStep>().Optional<RandomValue>());
         var runner = new SystemRunner(world, scheduler);
         runner.Schedule(query, new ReadRandom(world, entities)).Complete();
@@ -212,7 +215,7 @@ internal static partial class SystemChecks
         using var world = new World(256, execution: new WorldJobs(scheduler));
         var entities = new Entity[128];
         for (int i = 0; i < entities.Length; i++)
-            entities[i] = world.Create(new SystemValue(i), new SystemStep(1), new RandomValue(2));
+            entities[i] = world.Spawn(new RandomSystemRow { Value = new(i), Step = new(1), Random = new(2) });
         Query query = world.Query(new QueryDescription().With<SystemValue>().With<SystemStep>().Optional<RandomValue>());
         var group = new SystemGroup(world, scheduler);
         group.Add(new SetRandomFive(), world.Query<RandomValue, SystemStep>());
@@ -235,7 +238,7 @@ internal static partial class SystemChecks
         using var world = new World(256, execution: new WorldJobs(scheduler));
         var entities = new Entity[128];
         for (int i = 0; i < entities.Length; i++)
-            entities[i] = world.Create(new Position { X = i }, new Velocity { X = 1, Y = 2 }, new JobOrdinal(i));
+            entities[i] = world.Spawn(new OrdinalMotion { Motion = new() { Position = new() { X = i }, Velocity = new() { X = 1, Y = 2 } }, Ordinal = new(i) });
         using (var binding = world.OpenWrite<Position>()) { }
         var runner = new SystemRunner(world, scheduler, 64);
         runner.Schedule(world.Query<Position, Velocity, JobOrdinal>(), new WriteCurrentRows(world, entities)).Complete();
@@ -269,7 +272,7 @@ internal static partial class SystemChecks
         using var world = new World(256, execution: new WorldJobs(scheduler));
         var entities = new Entity[128];
         for (int i = 0; i < entities.Length; i++)
-            entities[i] = world.Create(new Position { X = i }, new Velocity(), new JobOrdinal(i));
+            entities[i] = world.Spawn(new OrdinalMotion { Motion = new() { Position = new() { X = i } }, Ordinal = new(i) });
         var runner = new SystemRunner(world, scheduler, 64);
         bool failed = false;
         try { runner.Schedule(world.Query<Position, Velocity, JobOrdinal>(), new WriteOtherRange(world, entities)).Complete(); }
@@ -291,7 +294,7 @@ internal static partial class SystemChecks
         using var world = new World(256, execution: new WorldJobs(scheduler));
         var entities = new Entity[128];
         for (int i = 0; i < entities.Length; i++)
-            entities[i] = world.Create(new Position { X = i }, new Velocity());
+            entities[i] = world.Spawn(new Motion { Position = new() { X = i } });
         Query query = world.Query<Position, Velocity>();
         var runner = new SystemRunner(world, scheduler, 64);
         bool failed = false;
@@ -317,7 +320,7 @@ internal static partial class SystemChecks
         var entities = new Entity[count];
         for (int i = 0; i < count; i++)
         {
-            entities[i] = world.Create(new SystemValue(i), new SystemStep(2));
+            entities[i] = world.Spawn(new SystemRow { Value = new(i), Step = new(2) });
             if (i % 4 == 0) world.Disable<SystemStep>(entities[i]);
         }
         var runner = new SystemRunner(world, scheduler, rangeRows: 256);
@@ -348,7 +351,7 @@ internal static partial class SystemChecks
         Require(world.Version == beforeWork + 1, "filtered writes share their batch version");
         Require(world.Query(new QueryDescription().WithChanged<SystemValue>(beforeWork)).Count == changed, "changed filters select the original changed members");
         for (int i = 1; i < count; i += 8) Require(world.Read<SystemValue>(entities[i]).Value == -8, "changed row values are published");
-        world.Create(new SystemValue(1), new SystemStep(1));
+        world.Spawn(new SystemRow { Value = new(1), Step = new(1) });
     }
 
     private static void Require(bool condition, string behavior)
@@ -362,7 +365,7 @@ internal static partial class SystemChecks
         using var world = new World(count, execution: new WorldJobs(scheduler));
         Entity[] entities = new Entity[count];
         for (int i = 0; i < count; i++)
-            entities[i] = world.Create(new SystemValue(i), new SystemStep(2), new RandomValue(1));
+            entities[i] = world.Spawn(new RandomSystemRow { Value = new(i), Step = new(2), Random = new(1) });
         var runner = new SystemRunner(world, scheduler, rangeRows: 256);
         Query query = world.Query<SystemValue, SystemStep>();
         ulong before = world.Version;
@@ -422,7 +425,7 @@ internal static partial class SystemChecks
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, EnableCounters = false });
         using var world = new World(execution: new WorldJobs(scheduler));
-        Entity parent = world.Create(new SystemValue(0), new SystemStep(1));
+        Entity parent = world.Spawn(new SystemRow { Value = new(0), Step = new(1) });
         using var commands = new CommandBatch(world, 1);
         var result = new GroupResult();
         var group = new SystemGroup(world, scheduler, rangeRows: 128);

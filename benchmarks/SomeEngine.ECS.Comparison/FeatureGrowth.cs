@@ -107,8 +107,10 @@ internal sealed partial class SomeEngineWorld
                 break;
             case GrowthFeature.Changes:
                 foreach (var entity in created) ObserveGrowth(_world.Read<ScoreValue>(entity).Value);
-                _world.Reserve<Position, Velocity, Health, ScoreValue, Removed<ScoreValue>>(created.Length - 1);
-                _world.Reserve<Position, Velocity, Health, ScoreValue, Removed<ScoreValue>, GrowthMarker>(1);
+                _world.ReserveBundle([ComponentId<Position>.Value, ComponentId<Velocity>.Value, ComponentId<Health>.Value,
+                    ComponentId<ScoreValue>.Value, ComponentId<Removed<ScoreValue>>.Value], created.Length - 1);
+                _world.ReserveBundle([ComponentId<Position>.Value, ComponentId<Velocity>.Value, ComponentId<Health>.Value,
+                    ComponentId<ScoreValue>.Value, ComponentId<Removed<ScoreValue>>.Value, ComponentId<GrowthMarker>.Value], 1);
                 foreach (var entity in created) _world.Remove<ScoreValue>(entity);
                 foreach (var entity in created) ObserveGrowthOldValue(_world.Read<Removed<ScoreValue>>(entity).Value.Value);
                 _world.ClearRemoved<ScoreValue>();

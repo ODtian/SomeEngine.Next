@@ -12,7 +12,7 @@ internal static class QueryBindingChecks
             "dynamic and typed bindings see the same current rows");
         description.Without<Extra>();
         Query filtered = world.Query(description);
-        world.Create(new Position { X = 2 }, new Extra());
+        world.Spawn(new PositionExtra { Position = new() { X = 2 } });
         Require(positions.Count == 2 && filtered.Count == 1,
             "changing a builder preserves earlier query predicates");
 

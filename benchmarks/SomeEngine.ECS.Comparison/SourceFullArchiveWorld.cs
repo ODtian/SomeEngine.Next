@@ -62,14 +62,13 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
         World.GroupBy<SaveShared>(); World.Index<IndexedNumber, int>();
         for (int i = 0; i < count; i++)
         {
-            var p = new Position { X = i }; var v = new Velocity { X = 1, Y = 2 }; var h = new Health { Value = 100, Max = 100 };
-            var counter = new SaveCounter(i + 2, i); var step = new SaveStep(2);
-            var indexed = new IndexedNumber(i % 16, i); var shared = new SaveShared(i % 16);
-            Entity entity = Entities[i] = i % 4 == 0
-                ? World.Create(p, v, h, counter, step, default(Buffer<SaveLink>), indexed, shared, new Team(), new Sleeping())
-                : i % 2 == 0
-                    ? World.Create(p, v, h, counter, step, default(Buffer<SaveLink>), indexed, shared, new Team())
-                    : World.Create(p, v, h, counter, step, default(Buffer<SaveLink>), indexed, shared);
+            var archive = new ArchiveBody
+            {
+                Body = Body.Moving(new Position { X = i }), Counter = new(i + 2, i), Step = new(2),
+                Number = new(i % 16, i), Shared = new(i % 16),
+            };
+            Entity entity = Entities[i] = i % 4 == 0 ? World.Spawn(new ArchiveSleepingTeamBody { Archive = archive })
+                : i % 2 == 0 ? World.Spawn(new ArchiveTeamBody { Archive = archive }) : World.Spawn(archive);
             if (i % 4 == 0) World.Disable<SaveStep>(entity);
         }
         Span<SaveLink> links = stackalloc SaveLink[4];
@@ -162,9 +161,11 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
         Span<SaveLink> links = stackalloc SaveLink[4];
         for (int i = 0; i < edits.Length; i++)
         {
-            Entity entity = World.Create(new Position { X = i }, new Velocity { X = 1, Y = 2 },
-                new Health { Value = 100, Max = 100 }, new SaveCounter(i + 2, i), new SaveStep(2), default(Buffer<SaveLink>),
-                new IndexedNumber(i % 16, i), new SaveShared(i % 16));
+            Entity entity = World.Spawn(new ArchiveBody
+            {
+                Body = Body.Moving(new Position { X = i }), Counter = new(i + 2, i), Step = new(2),
+                Number = new(i % 16, i), Shared = new(i % 16),
+            });
             if (i % 4 == 0) World.Disable<SaveStep>(entity);
             NativeFullArchiveWorld.WriteLinks(links, entity, Entities[i % Entities.Length], i);
             using (var buffer = World.GetBuffer<SaveLink>(entity)) buffer.AddRange(links);

@@ -9,11 +9,12 @@ internal sealed partial class SomeEngineWorld
 
     private void CreateRandomWriteEntities()
     {
-        _world.Reserve<Position, Velocity, Health, JobOrdinal, JobExtra>(Count / 2);
-        _world.Reserve<Position, Velocity, Health, JobOrdinal, JobExtra, Team>(Count / 4);
-        _world.Reserve<Position, Velocity, Health, JobOrdinal, JobExtra, Team, Sleeping>(Count / 4);
+        _world.ReserveBundle<RandomWriteBody>(Count / 2);
+        _world.ReserveBundle<RandomWriteTeamBody>(Count / 4);
+        _world.ReserveBundle<RandomWriteSleepingTeamBody>(Count / 4);
         PositionInputs positions = PositionInputs.Get(Count);
-        var ordinals = new JobOrdinal[Changes];
+        var plainRows = new RandomWriteBody[Changes];
+        var teamRows = new RandomWriteTeamBody[Changes];
         for (int shape = 2; shape >= 0; shape--)
         {
             int stride = shape == 2 ? 2 : 4, first = shape == 2 ? 1 : shape * 2;
@@ -23,19 +24,24 @@ internal sealed partial class SomeEngineWorld
             {
                 int length = Math.Min(Changes, count - start);
                 Span<SomeEngine.ECS.Entities.Entity> batch = _created.AsSpan(0, length);
-                Span<JobOrdinal> values = ordinals.AsSpan(0, length);
-                for (int row = 0; row < length; row++) values[row] = new((start + row) * stride + first);
                 if (shape == 0)
                 {
                     for (int row = 0; row < length; row++)
-                        batch[row] = _world.Create(input[start + row], new Velocity { X = 1, Y = 2 },
-                            new Health { Value = 100, Max = 100 }, values[row], new JobExtra(), new Team(), new Sleeping());
+                        batch[row] = _world.Spawn(new RandomWriteSleepingTeamBody
+                        { Body = Body.Moving(input[start + row]), Ordinal = new((start + row) * stride + first) });
                 }
-                else if (shape == 1) _world.Create<Position, JobOrdinal, Velocity, Health, JobExtra, Team>(batch,
-                    input.Slice(start, length), values, new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 },
-                    new JobExtra(), new Team());
-                else _world.Create<Position, JobOrdinal, Velocity, Health, JobExtra>(batch,
-                    input.Slice(start, length), values, new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 }, new JobExtra());
+                else if (shape == 1)
+                {
+                    for (int row = 0; row < length; row++)
+                        teamRows[row] = new() { Body = Body.Moving(input[start + row]), Ordinal = new((start + row) * stride + first) };
+                    _world.Spawn<RandomWriteTeamBody>(teamRows.AsSpan(0, length), batch);
+                }
+                else
+                {
+                    for (int row = 0; row < length; row++)
+                        plainRows[row] = new() { Body = Body.Moving(input[start + row]), Ordinal = new((start + row) * stride + first) };
+                    _world.Spawn<RandomWriteBody>(plainRows.AsSpan(0, length), batch);
+                }
                 for (int row = 0; row < length; row++) _entities[(start + row) * stride + first] = batch[row];
             }
         }

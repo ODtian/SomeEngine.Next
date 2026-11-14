@@ -1,15 +1,18 @@
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.ECS.Comparison;
 
-internal static class GroupChecks
+internal static partial class GroupChecks
 {
+    private partial struct ZonedPosition : IComponentBundle { internal Position Position; internal Zone Zone; }
+    private partial struct LayeredZone : IComponentBundle { internal Position Position; internal Zone Zone; internal Layer Layer; }
     internal static void Run(int chunkCapacity = 0)
     {
         using var world = new World(chunkCapacity: chunkCapacity);
         var entities = new Entity[200];
         for (int i = 0; i < entities.Length; i++)
-            entities[i] = world.Create(new Position { X = i }, new Zone { Group = i % 16, Ordinal = i });
+            entities[i] = world.Spawn(new ZonedPosition { Position = new() { X = i }, Zone = new() { Group = i % 16, Ordinal = i } });
         var seventh = world.Query(new QueryDescription().InGroup<Zone>(7));
         using (var positions = world.OpenRead<Position>()) Require(positions.Read(entities[7]).X == 7, "bind positions before grouping");
         Zone.Groups = 0;
@@ -38,7 +41,7 @@ internal static class GroupChecks
         world.Set(entities[23], new Zone { Group = 7, Ordinal = 23 });
         Require(world.Query(new QueryDescription().WithAdded<Zone>(beforeAdd)).Count == 1 && combined.Count == 12,
             "adding a grouped component records its Added fact");
-        Entity created = world.Create(new Position { X = 999 }, new Zone { Group = 3, Ordinal = 999 }, new Layer { Group = 5 });
+        Entity created = world.Spawn(new LayeredZone { Position = new() { X = 999 }, Zone = new() { Group = 3, Ordinal = 999 }, Layer = new() { Group = 5 } });
         Require(world.Query(new QueryDescription().InGroup<Zone>(3).InGroup<Layer>(5)).Count == 1,
             "typed creation publishes the final grouped layout");
         Entity copy = world.Clone(entities[39]);
@@ -64,10 +67,10 @@ internal static class GroupChecks
                         "each returned contiguous range carries one group tuple and aligned main values");
             }
         world.Clear();
-        world.Create(new Position { X = 1 }, new Zone { Group = 7, Ordinal = 1 }, new Layer { Group = 1 });
+        world.Spawn(new LayeredZone { Position = new() { X = 1 }, Zone = new() { Group = 7, Ordinal = 1 }, Layer = new() { Group = 1 } });
         Require(combined.Count == 1 && Count(index, 7) == 1, "clear reuses grouping and index registrations");
         var batch = new Entity[10];
-        world.Create(batch, new Position { X = 42 }, new Zone { Group = 3, Ordinal = 42 }, new Layer { Group = 2 });
+        world.Spawn(new LayeredZone { Position = new() { X = 42 }, Zone = new() { Group = 3, Ordinal = 42 }, Layer = new() { Group = 2 } }, batch);
         Require(world.Query(new QueryDescription().InGroup<Zone>(3).InGroup<Layer>(2)).Count == 10,
             "batch creation publishes every grouped row");
         Console.WriteLine("GroupBy activation, contiguous tuples, value indexes, versions, clone and lifecycle behavior: passed.");

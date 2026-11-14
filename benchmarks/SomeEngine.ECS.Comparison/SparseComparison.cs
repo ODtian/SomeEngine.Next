@@ -117,8 +117,7 @@ internal sealed partial class SomeEngineWorld
         SparseReleased = SparseCounter.Count;
         for (int i = 0; i < Count; i += SparseStride * 2) _world.Remove<SparseWeight>(_entities[i]);
         for (int i = SparseStride; i < Count; i += SparseStride * 2)
-            _entities[i] = _world.Create(new Position { X = i }, new Velocity { X = 1, Y = 2 },
-                new Health { Value = 100, Max = 100 }, new Team(), new Sleeping());
+            _entities[i] = _world.Spawn(new SleepingTeamBody { Body = Body.Moving(new Position { X = i }) });
         for (int i = 0; i < Count; i += SparseStride)
         {
             _world.Set(_entities[i], new SparseNumber(SparseCounter, 1, i));

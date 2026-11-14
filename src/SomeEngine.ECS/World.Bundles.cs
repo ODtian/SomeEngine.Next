@@ -45,8 +45,40 @@ internal static class BundleTypes<TState, TWriter>
     }
 }
 
+internal readonly struct ComponentBundleWriter<TBundle> : IBundleWriter<TBundle>
+    where TBundle : struct, Components.IComponentBundle<TBundle>
+{
+    public void Write(BundleWriteView view, in TBundle state) => TBundle.Write(view, state);
+}
+
 public sealed partial class World
 {
+    /// <summary>Creates one entity holding every component of the bundle in one structural move.</summary>
+    public Entity Spawn<TBundle>(in TBundle bundle) where TBundle : struct, Components.IComponentBundle<TBundle>
+        => ExecuteBundleSpawn(TBundle.ComponentIds, TBundle.SparseComponentIds, bundle, new ComponentBundleWriter<TBundle>());
+
+    /// <summary>Creates one entity per bundle value.</summary>
+    public void Spawn<TBundle>(ReadOnlySpan<TBundle> bundles, Span<Entity> entities)
+        where TBundle : struct, Components.IComponentBundle<TBundle>
+        => ExecuteBundleSpawn(entities, TBundle.ComponentIds, TBundle.SparseComponentIds, bundles, new ComponentBundleWriter<TBundle>());
+
+    /// <summary>Creates one entity per destination element from the same bundle value.</summary>
+    public void Spawn<TBundle>(in TBundle bundle, Span<Entity> entities)
+        where TBundle : struct, Components.IComponentBundle<TBundle>
+        => ExecuteBundleSpawn(entities, TBundle.ComponentIds, TBundle.SparseComponentIds, bundle, new ComponentBundleWriter<TBundle>());
+
+    /// <summary>Adds every component of the bundle to an entity that holds none of them, in one structural move.</summary>
+    public void AddBundle<TBundle>(Entity entity, in TBundle bundle) where TBundle : struct, Components.IComponentBundle<TBundle>
+        => ExecuteBundleAdd(entity, TBundle.ComponentIds, TBundle.SparseComponentIds, bundle, new ComponentBundleWriter<TBundle>());
+
+    /// <summary>Replaces every component of the bundle on an entity that holds all of them.</summary>
+    public void ReplaceBundle<TBundle>(Entity entity, in TBundle bundle) where TBundle : struct, Components.IComponentBundle<TBundle>
+        => ExecuteBundleReplace(entity, TBundle.ComponentIds, TBundle.SparseComponentIds, bundle, new ComponentBundleWriter<TBundle>());
+
+    /// <summary>Reserves rows in the archetype of the bundle.</summary>
+    public void ReserveBundle<TBundle>(int capacity) where TBundle : struct, Components.IComponentBundle<TBundle>
+        => ReserveBundle(TBundle.ComponentIds, capacity);
+
     public void ReserveBundle(ReadOnlySpan<int> componentIds, int capacity)
         => ReserveTypes(new TypeSet(false, componentIds.ToArray()), capacity);
 
@@ -132,6 +164,33 @@ public sealed partial class World
             {
                 for (int index = 0; index < count; index++)
                     writer.Write(new(this, created[index], offset + index, true), in states[offset + index]);
+            }
+            finally { CompleteBundleRows(chunk, created); }
+            offset += count;
+        }
+    }
+
+    /// <summary>Creates one entity per destination element, each written from the same bundle state.</summary>
+    public void ExecuteBundleSpawn<TState, TWriter>(Span<Entity> entities, ReadOnlySpan<int> componentIds,
+        ReadOnlySpan<int> sparseComponentIds, in TState state, in TWriter writer)
+        where TState : struct where TWriter : struct, IBundleWriter<TState>
+    {
+        using WorldAccess access = OpenStructure();
+        RequireStructure();
+        using BatchVersionScope version = BeginBatchVersion(0);
+        Archetype archetype = Find(BundleTypes<TState, TWriter>.Get(componentIds));
+        if (ChunkCapacity == 0) archetype.ReserveRows(archetype.PrimaryChunk.Count + entities.Length);
+        int offset = 0;
+        while (offset < entities.Length)
+        {
+            Chunk chunk = archetype.WritableChunk.EnsureRow();
+            int count = Math.Min(entities.Length - offset, chunk.Capacity - chunk.Count);
+            Span<Entity> created = entities.Slice(offset, count);
+            BeginBundleRows(chunk, created);
+            try
+            {
+                for (int index = 0; index < count; index++)
+                    writer.Write(new(this, created[index], offset + index, true), in state);
             }
             finally { CompleteBundleRows(chunk, created); }
             offset += count;

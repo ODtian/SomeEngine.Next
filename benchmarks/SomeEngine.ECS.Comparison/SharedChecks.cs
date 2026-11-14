@@ -1,9 +1,11 @@
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.ECS.Comparison;
 
-internal static class SharedChecks
+internal static partial class SharedChecks
 {
+    private partial struct ColoredPosition : IComponentBundle { internal Color Color; internal Position Position; }
     internal static void Run()
     {
         using var world = new World();
@@ -63,7 +65,7 @@ internal static class SharedChecks
                     Require(colors[row].Value == (int)positions[row].X % 16, "shared row views follow ordinary column order");
             }
         world.Clear();
-        var next = world.Create(new Color { Value = 7 }, new Position { X = 42 });
+        var next = world.Spawn(new ColoredPosition { Color = new() { Value = 7 }, Position = new() { X = 42 } });
         Require(Count(blueRows) == 1 && world.ReadShared<Color>(next).Value == 7,
             "clear reuses shared identities and existing query bindings");
         Console.WriteLine("Shared interning, group queries, migration and old-value lifecycle behavior: passed.");

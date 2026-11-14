@@ -93,7 +93,13 @@ public sealed class BundleGenerator : IIncrementalGenerator
             if (model is null)
                 continue;
 
-            context.AddSource(GetHintName(bundle), GenerateSource(model));
+            if (!EcsGenerator.Partial(bundle))
+            {
+                EcsGenerator.Error(context, bundle, "Declare component bundles as partial structs.");
+                continue;
+            }
+
+            context.AddSource(GetHintName(bundle), GenerateSource(bundle, model));
         }
     }
 
@@ -303,10 +309,7 @@ public sealed class BundleGenerator : IIncrementalGenerator
             return null;
         }
 
-        return type.TypeArguments[0] is INamedTypeSymbol elementType &&
-               ImplementsInterface(elementType, ComponentsNamespace, "IBufferElement")
-            ? elementType
-            : null;
+        return type.TypeArguments[0] is INamedTypeSymbol { IsValueType: true } elementType ? elementType : null;
     }
 
     private static bool ImplementsInterface(INamedTypeSymbol type, string @namespace, string name)
@@ -321,114 +324,32 @@ public sealed class BundleGenerator : IIncrementalGenerator
         return false;
     }
 
-    private static string GenerateSource(BundleModel model)
+    private static string GenerateSource(INamedTypeSymbol bundle, BundleModel model)
     {
-        string[] tableAndTagIdLines = model.Members
+        string[] tableAndTagIds = model.Members
             .Where(member => member.Kind != BundleMemberKind.Sparse)
             .SelectMany(ComponentIds)
             .ToArray();
-
-        string[] sparseComponentIdLines = model.Members
+        string[] sparseComponentIds = model.Members
             .Where(member => member.Kind == BundleMemberKind.Sparse)
             .SelectMany(ComponentIds)
             .ToArray();
-
-        string[] sharedWriteLines = model.Members
-            .Where(member => member.Kind == BundleMemberKind.Shared)
-            .Select((member, index) =>
-                $"                view.WriteShared(in {StateAccess(member)});")
-            .ToArray();
-
         string[] writeLines = model.Members
-            .Where(member => member.Kind != BundleMemberKind.Tag && member.Kind != BundleMemberKind.Shared)
+            .Where(member => member.Kind != BundleMemberKind.Tag)
+            .OrderBy(member => member.Kind == BundleMemberKind.Shared ? 0 : 1)
             .Select(GetWriteLine)
             .ToArray();
-
-        string componentIdBlock = tableAndTagIdLines.Length == 0
-            ? "        global::System.Span<int> componentIds = global::System.Span<int>.Empty;"
-            : "        global::System.Span<int> componentIds = stackalloc int[]\n        {\n" +
-              string.Join("\n", tableAndTagIdLines.Select(line => $"            {line},")) +
-              "\n        };";
-
-        string sparseComponentIdBlock = sparseComponentIdLines.Length == 0
-            ? "        global::System.Span<int> sparseComponentIds = global::System.Span<int>.Empty;"
-            : "        global::System.Span<int> sparseComponentIds = stackalloc int[]\n        {\n" +
-              string.Join("\n", sparseComponentIdLines.Select(line => $"            {line},")) +
-              "\n        };";
-
-        string fieldWrites = string.Join(
-            "\n",
-            sharedWriteLines.Concat(writeLines));
-        if (fieldWrites.Length > 0)
-            fieldWrites += "\n";
-        string writerName = new string((model.BundleTypeName + "Writer").Select(character =>
-            char.IsLetterOrDigit(character) ? character : '_').ToArray());
-
-        string body = $$"""
-internal static partial class BundleExtensions
-{
-    internal static global::SomeEngine.ECS.Entities.Entity Spawn(this global::SomeEngine.ECS.World world, in {{model.BundleTypeName}} bundle)
-    {
-{{componentIdBlock}}
-{{sparseComponentIdBlock}}
-        return world.ExecuteBundleSpawn(
-            componentIds,
-            sparseComponentIds,
-            bundle,
-            new {{writerName}}());
-    }
-
-    internal static void AddBundle(this global::SomeEngine.ECS.World world, global::SomeEngine.ECS.Entities.Entity entity, in {{model.BundleTypeName}} bundle)
-    {
-{{componentIdBlock}}
-{{sparseComponentIdBlock}}
-        world.ExecuteBundleAdd(
-            entity,
-            componentIds,
-            sparseComponentIds,
-            bundle,
-            new {{writerName}}());
-    }
-
-    internal static void ReplaceBundle(this global::SomeEngine.ECS.World world, global::SomeEngine.ECS.Entities.Entity entity, in {{model.BundleTypeName}} bundle)
-    {
-{{componentIdBlock}}
-{{sparseComponentIdBlock}}
-        world.ExecuteBundleReplace(
-            entity,
-            componentIds,
-            sparseComponentIds,
-            bundle,
-            new {{writerName}}());
-    }
-
-    internal static void Spawn(this global::SomeEngine.ECS.World world,
-        global::System.ReadOnlySpan<{{model.BundleTypeName}}> bundles,
-        global::System.Span<global::SomeEngine.ECS.Entities.Entity> entities)
-    {
-{{componentIdBlock}}
-{{sparseComponentIdBlock}}
-        world.ExecuteBundleSpawn(entities, componentIds, sparseComponentIds, bundles, new {{writerName}}());
-    }
-
-    private readonly struct {{writerName}} : global::SomeEngine.ECS.IBundleWriter<{{model.BundleTypeName}}>
-    {
-        public void Write(global::SomeEngine.ECS.BundleWriteView view, in {{model.BundleTypeName}} state)
-        {
-{{fieldWrites}}        }
-    }
-}
-""";
-
-        if (string.IsNullOrEmpty(model.Namespace))
-            return body;
-
-        return $$"""
-namespace {{model.Namespace}}
-{
-{{Indent(body, 1)}}
-}
-""";
+        string self = model.BundleTypeName;
+        string contract = "global::SomeEngine.ECS.Components.IComponentBundle<" + self + ">";
+        var body = new StringBuilder();
+        body.Append("private static readonly int[] __ecsComponentIds = new int[] { ").Append(string.Join(", ", tableAndTagIds)).Append(" };\n");
+        body.Append("private static readonly int[] __ecsSparseComponentIds = new int[] { ").Append(string.Join(", ", sparseComponentIds)).Append(" };\n");
+        body.Append("static global::System.ReadOnlySpan<int> ").Append(contract).Append(".ComponentIds => __ecsComponentIds;\n");
+        body.Append("static global::System.ReadOnlySpan<int> ").Append(contract).Append(".SparseComponentIds => __ecsSparseComponentIds;\n");
+        body.Append("static void ").Append(contract).Append(".Write(global::SomeEngine.ECS.BundleWriteView view, in ").Append(self).Append(" state)\n{\n");
+        foreach (string line in writeLines) body.Append(line).Append('\n');
+        body.Append("}");
+        return EcsGenerator.Wrap(bundle, contract, body.ToString());
     }
 
     private static string Indent(string text, int level)
@@ -453,9 +374,8 @@ namespace {{model.Namespace}}
     {
         return member.Kind switch
         {
-            BundleMemberKind.Buffer => $"                view.WriteBuffer(in {StateAccess(member)});",
-            BundleMemberKind.Shared => string.Empty,
-            _ => $"                view.Write(in {StateAccess(member)});",
+            BundleMemberKind.Buffer => $"view.WriteBuffer(in {StateAccess(member)});",
+            _ => $"view.Write(in {StateAccess(member)});",
         };
     }
 

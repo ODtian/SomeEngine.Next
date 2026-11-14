@@ -1,9 +1,11 @@
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.ECS.Comparison;
 
-internal static class ChangeChecks
+internal static partial class ChangeChecks
 {
+    private partial struct ScoreExtra : IComponentBundle { internal Score Score; internal Extra Extra; }
     internal static void Run()
     {
         BatchStampMatchesScalar();
@@ -140,7 +142,7 @@ internal static class ChangeChecks
     {
         using var world = new World();
         Entity[] members = [world.Create(new Score { Value = 1 }),
-            world.Create(new Score { Value = 2 }, new Extra()), world.Create(new Score { Value = 3 })];
+            world.Spawn(new ScoreExtra { Score = new() { Value = 2 }, Extra = new() }), world.Create(new Score { Value = 3 })];
         world.Remove<Score>(members);
         var first = world.Read<Removed<Score>>(members[0]);
         var second = world.Read<Removed<Score>>(members[1]);

@@ -70,7 +70,7 @@ internal static class GeneratedChecks
         var entities = new Entity[512];
         for (int i = 0; i < entities.Length; i++)
         {
-            Entity entity = entities[i] = world.Create(new GeneratedCounter(i, i), new GeneratedOther(), new GeneratedVelocity(2));
+            Entity entity = entities[i] = world.Spawn(new GeneratedRow { Counter = new(i, i), Other = new(), Velocity = new(2) });
             world.AddBuffer<GeneratedElement>(entity);
             if (i % 4 == 0) world.Disable<GeneratedVelocity>(entity);
         }

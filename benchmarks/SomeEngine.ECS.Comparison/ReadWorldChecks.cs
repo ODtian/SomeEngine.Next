@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Relations;
@@ -5,8 +6,10 @@ using SomeEngine.ECS.Serialization;
 
 namespace SomeEngine.ECS.Comparison;
 
-internal static class ReadWorldChecks
+internal static partial class ReadWorldChecks
 {
+    private partial struct MarkedRow : IComponentBundle { internal Marker Marker; internal EnabledValue Enabled; internal OptionalValue Optional; }
+    private partial struct ReferenceRow : IComponentBundle { internal ReferenceValue Reference; internal AutomaticReference Automatic; }
     private sealed class Counter { internal int Patches, Disposals; }
     private readonly record struct Marker(int Value) : IAddedComponent;
     private readonly record struct OptionalValue(int Value) : IComponent;
@@ -50,7 +53,7 @@ internal static class ReadWorldChecks
     {
         using var source = new World();
         Entity hole = source.Create();
-        Entity first = source.Create(new ReferenceValue(default, 10), new AutomaticReference(default));
+        Entity first = source.Spawn(new ReferenceRow { Reference = new(default, 10), Automatic = new(default) });
         Entity second = source.Create(new Marker(20));
         Entity removed = source.Create(new ReferenceValue(second, 30));
         source.Set(first, new ReferenceValue(second, 10));
@@ -195,8 +198,8 @@ internal static class ReadWorldChecks
         using var source = new World();
         Entity firstOwner = source.Create(), secondOwner = source.Create();
         ulong baseline = source.Version;
-        Entity first = source.Create(new Marker(10), new EnabledValue(5), new OptionalValue(1));
-        Entity second = source.Create(new Marker(20), new EnabledValue(6), new OptionalValue(2));
+        Entity first = source.Spawn(new MarkedRow { Marker = new(10), Enabled = new(5), Optional = new(1) });
+        Entity second = source.Spawn(new MarkedRow { Marker = new(20), Enabled = new(6), Optional = new(2) });
         source.SetShared(first, new GroupedReference(firstOwner, 7));
         source.SetShared(second, new GroupedReference(secondOwner, 7));
         source.GroupBy<GroupedReference>();

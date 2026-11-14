@@ -51,9 +51,10 @@ internal static class HierarchyChecks
         Hierarchy<Ui>.SetParent(world, leaf, first);
         Require(Hierarchy<Scene>.GetParent(world, leaf) == Entity.Null && Hierarchy<Ui>.GetParent(world, leaf) == first,
             "typed domains hold independent parent links");
-        Entity initialized = world.Create(new Position { X = 6 }, new Parent<Scene>(first));
+        Entity initialized = world.Create(new Position { X = 6 });
+        Hierarchy<Scene>.SetParent(world, initialized, first);
         Entity copy = world.Clone(initialized);
-        Require(Hierarchy<Scene>.GetParent(world, copy) == first, "typed creation and clone initialize parent links");
+        Require(Hierarchy<Scene>.GetParent(world, copy) == first, "clone initializes the parent link");
         Entity rootCopy = world.Clone(first);
         Require(!world.Has<Children<Scene>>(rootCopy) && !world.Has<Children<Ui>>(rootCopy),
             "cloning a parent rebuilds its computed children");

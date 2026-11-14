@@ -16,7 +16,7 @@ public static partial class Relations<T> where T : struct
 
     public static RelationEdge<T> CreateEdge(World world, Entity source, Entity target, in T payload, bool deferred = false)
     {
-        if (!deferred) return new(world.Create(new RelationEndpoints<T>(source, target), payload));
+        if (!deferred) return new(world.CreateEdge(new RelationEndpoints<T>(source, target), payload));
         using WorldAccess access = world.OpenStructure();
         RelationEdge<T> edge = default;
         Edit(world, [EndpointEdit.Create(source, target)], new Span<RelationEdge<T>>(ref edge), true);

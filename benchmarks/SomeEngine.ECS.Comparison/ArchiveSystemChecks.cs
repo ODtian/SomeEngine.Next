@@ -19,7 +19,7 @@ internal static partial class ArchiveSystemChecks
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, EnableCounters = false });
         using var world = new World(128, chunkCapacity: 64, execution: new WorldJobs(scheduler));
         var entities = new Entity[128];
-        for (int i = 0; i < entities.Length; i++) entities[i] = world.Create(new SaveCounter(2, i), new Position { X = i });
+        for (int i = 0; i < entities.Length; i++) entities[i] = world.Spawn(new CounterPosition { Counter = new(2, i), Position = new() { X = i } });
         var group = new SystemGroup(world, scheduler, 64);
         group.Add(new Advance(), world.Query<SaveCounter, Position>());
         group.Add(new Advance(), world.Query<SaveCounter, Position>());

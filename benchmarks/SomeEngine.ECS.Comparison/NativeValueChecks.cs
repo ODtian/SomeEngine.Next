@@ -12,9 +12,9 @@ internal static partial class NativeValueChecks
         using var world = new World(64);
         using (var chunks = new World(24, chunkCapacity: 8))
         {
-            chunks.Reserve<Position, Velocity, Health>(24);
+            chunks.ReserveBundle<Body>(24);
             var rows = new SomeEngine.ECS.Entities.Entity[24];
-            for (int row = 0; row < rows.Length; row++) rows[row] = chunks.Create(new Position { X = row }, new Velocity { X = 1 }, new Health { Value = 7 });
+            for (int row = 0; row < rows.Length; row++) rows[row] = chunks.Spawn(new Body { Position = new() { X = row }, Velocity = new() { X = 1 }, Health = new() { Value = 7 } });
             Query ranges = chunks.Query<Position, Velocity, Health>();
             Require(ranges.TryGetValues<Position, Velocity, Health>(out _, out _, out _), "filled chunks bind shared columns");
             chunks.Add(rows[0], new Extra());
@@ -27,12 +27,12 @@ internal static partial class NativeValueChecks
         }
         using (var selection = new World(32))
         {
-            selection.Create(new Health(), new Team());
+            selection.Spawn(new HealthTeam());
             selection.Create(new Position());
             Query selected = selection.Query(new QueryDescription().With<Health>().Without<Extra>());
             Require(selected.TryGetValues<Health>(out var selectedValues) && selectedValues.Length == 1,
                 "one matching chunk binds current values");
-            selection.Create(new Health(), new Team(), new GrowthMarker());
+            selection.Spawn(new HealthTeamGrowth());
             Require(!selected.TryGetValues<Health>(out _) && selected.Count == 2,
                 "new matching archetypes refresh the bound selection");
         }
@@ -42,9 +42,9 @@ internal static partial class NativeValueChecks
             Query team = tags.Query<Team>();
             Require(!team.TryGetValues<Team>(out _) && team.Count == 1, "tag queries expose membership through the query");
         }
-        world.Reserve<Position, Velocity, Health>(32);
+        world.ReserveBundle<Body>(32);
         var entities = new SomeEngine.ECS.Entities.Entity[32];
-        world.Create(entities, new Position(), new Velocity(), new Health { Value = 10, Max = 20 });
+        world.Spawn(new Body { Health = new() { Value = 10, Max = 20 } }, entities);
         Query pairs = world.Query<Position, Velocity>();
         Require(pairs.TryGetValues<Position, Velocity>(out var pairPositions, out var pairVelocities)
             && pairPositions.Length == 32 && pairVelocities.Length == 32, "two columns share complete row ranges");
@@ -53,7 +53,7 @@ internal static partial class NativeValueChecks
             && positions.Length == 32 && velocities.Length == 32 && healthValues.Length == 32
             && healthValues[31].Value == 10, "required columns share complete row ranges");
         Span<SomeEngine.ECS.Entities.Entity> other = stackalloc SomeEngine.ECS.Entities.Entity[16];
-        for (int i = 0; i < other.Length; i++) other[i] = world.Create(new Position(), new Velocity());
+        for (int i = 0; i < other.Length; i++) other[i] = world.Spawn(new Motion());
         Require(pairs.Count == 48 && pairs.TryGetValues<Position, Velocity>(out pairPositions, out pairVelocities)
             && pairPositions.Length == 48 && pairVelocities.Length == 48,
             "new archetypes extend the bound column selection");
@@ -69,7 +69,7 @@ internal static partial class NativeValueChecks
         Require(world.Read<Health>(entities[0]).Max == 21, "view writes reach primary values");
         world.Destroy(entities[31]);
         Require(health.TryGetValues<Health>(out values) && values.Length == 31 && health.Count == 31, "destroy refreshes the visible row count");
-        world.Create(new Position(), new Velocity(), new Health());
+        world.Spawn(new Body());
         Require(health.TryGetValues<Health>(out values) && values.Length == 32, "refill makes ranges complete");
         world.Remove<Health>(entities[0]);
         Require(!health.TryGetValues<Health>(out _) && health.Count == 31, "presence changes invalidate filled ranges");
@@ -81,11 +81,11 @@ internal static partial class NativeValueChecks
     private static void ContinuousValuesReturnAfterTailRemoval()
     {
         using var world = new World(16, chunkCapacity: 4);
-        world.Reserve<Position, Velocity, Health>(8);
+        world.ReserveBundle<Body>(8);
         var rows = new SomeEngine.ECS.Entities.Entity[7];
         for (int row = 0; row < rows.Length; row++)
-            rows[row] = world.Create(new Position { X = row }, new Velocity { X = 1 }, new Health { Value = 7 });
-        var tail = world.Create(new Position { X = 99 }, new Velocity { X = 2 }, new Health { Value = 9 }, new Extra());
+            rows[row] = world.Spawn(new Body { Position = new() { X = row }, Velocity = new() { X = 1 }, Health = new() { Value = 7 } });
+        var tail = world.Spawn(new ExtraBody { Body = new() { Position = new() { X = 99 }, Velocity = new() { X = 2 }, Health = new() { Value = 9 } } });
         Query values = world.Query<Position, Velocity, Health>();
         Require(!values.TryGetValues<Position, Velocity, Health>(out _, out _, out _),
             "separated live rows use individual ranges");
@@ -99,10 +99,10 @@ internal static partial class NativeValueChecks
     private static void MiddleGapsKeepChunkRanges()
     {
         using var world = new World(12, chunkCapacity: 4);
-        world.Reserve<Position, Velocity, Health>(12);
+        world.ReserveBundle<Body>(12);
         var rows = new SomeEngine.ECS.Entities.Entity[12];
         for (int row = 0; row < rows.Length; row++)
-            rows[row] = world.Create(new Position { X = row }, new Velocity { X = 1 }, new Health { Value = 7 });
+            rows[row] = world.Spawn(new Body { Position = new() { X = row }, Velocity = new() { X = 1 }, Health = new() { Value = 7 } });
         Query values = world.Query<Position, Velocity, Health>();
         var removed = new SomeEngine.ECS.Entities.Entity[4];
         SomeEngine.ECS.Entities.Entity first, last;
@@ -141,8 +141,8 @@ internal static partial class NativeValueChecks
         {
             var position = new Position { X = row, Y = row + 100 };
             entities[row] = row < groupCount
-                ? world.Create(position, new SomeCopyNode(), new Team())
-                : world.Create(position, new SomeCopyNode(), new Sleeping());
+                ? world.Spawn(new NodeTeam { Position = position })
+                : world.Spawn(new NodeSleeping { Position = position });
         }
         for (int row = 0; row < entities.Length; row++)
         {
@@ -156,7 +156,7 @@ internal static partial class NativeValueChecks
                 "cached columns include the later layout before growth");
         Query values = world.Query<Position, SomeCopyNode>();
         _ = values.TryGetValues<Position, SomeCopyNode>(out _, out _);
-        world.Reserve<Position, SomeCopyNode, Team>(128);
+        world.ReserveBundle<NodeTeam>(128);
         using (var positions = world.OpenRead<Position>())
         using (var nodes = world.OpenRead<SomeCopyNode>())
             for (int row = groupCount; row < entities.Length; row++)

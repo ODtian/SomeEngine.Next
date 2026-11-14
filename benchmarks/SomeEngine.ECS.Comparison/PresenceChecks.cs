@@ -9,7 +9,7 @@ internal static class PresenceChecks
         using var world = new World();
         var entities = new Entity[130];
         for (int i = 0; i < entities.Length; i++)
-            entities[i] = world.Create(new Position { X = i }, new Velocity { X = 1 }, new Health { Value = 100 });
+            entities[i] = world.Spawn(new Body { Position = new() { X = i }, Velocity = new() { X = 1 }, Health = new() { Value = 100 } });
         Query present = world.Query(new QueryDescription().With<Position>().With<Velocity>());
         Query absent = world.Query(new QueryDescription().With<Position>().Without<Velocity>());
         Require(Count(present) == 130 && Count(absent) == 0, "queries observe the initial members");
@@ -26,7 +26,7 @@ internal static class PresenceChecks
         for (int i = 2; i < entities.Length; i += 2) world.Add(entities[i], new Velocity { X = 2 });
         Require(Count(present) == 129 && Count(absent) == 0 && world.Read<Velocity>(entities[0]).X == 9,
             "readding a retained column restores its query membership and value");
-        for (int i = 0; i < 300; i++) world.Create(new Position(), new Velocity { X = 3 }, new Health());
+        for (int i = 0; i < 300; i++) world.Spawn(new Body { Velocity = new() { X = 3 } });
         Require(Count(present) == 429, "new rows initialize presence after retained storage grows");
         Console.WriteLine("Retained columns, query membership and location cache behavior: passed.");
     }
