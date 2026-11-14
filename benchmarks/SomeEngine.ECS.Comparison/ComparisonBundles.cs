@@ -63,13 +63,13 @@ internal partial struct SharedSleepingTeamBody : IComponentBundle
 { internal Body Body; internal Team Team; internal Sleeping Sleeping; internal SharedNumber Number; }
 
 internal partial struct CopyBody : IComponentBundle
-{ internal Body Body; internal SomeCopyNode Node; internal IndexedNumber Number; internal ReadOnlyMemory<SomeCopyItem> Items; }
+{ internal Body Body; internal SomeCopyNode Node; internal IndexedNumber Number; }
 internal partial struct CopyTeamBody : IComponentBundle
-{ internal Body Body; internal Team Team; internal SomeCopyNode Node; internal IndexedNumber Number; internal ReadOnlyMemory<SomeCopyItem> Items; }
+{ internal Body Body; internal Team Team; internal SomeCopyNode Node; internal IndexedNumber Number; }
 internal partial struct CopySleepingTeamBody : IComponentBundle
 {
     internal Body Body; internal Team Team; internal Sleeping Sleeping;
-    internal SomeCopyNode Node; internal IndexedNumber Number; internal ReadOnlyMemory<SomeCopyItem> Items;
+    internal SomeCopyNode Node; internal IndexedNumber Number;
 }
 
 internal partial struct ArchiveBody : IComponentBundle
