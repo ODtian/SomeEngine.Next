@@ -43,6 +43,8 @@ public abstract class WorldExecution
     public virtual JobResourceAccess[] StructureWrite => [];
     public virtual JobResourceAccess[] CollectReadAccess(Query query) => [];
     internal virtual JobHandle CurrentAccess => default;
+    /// <summary>The write version already allocated for the calling thread's job, or 0.</summary>
+    internal virtual ulong OpenWriteVersion => 0;
     internal virtual void RegisterEventAccess(JobResourceAccess access) { }
     internal virtual void CheckActive() { }
     internal virtual void ValidateDisposePreconditions() { }

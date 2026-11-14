@@ -65,7 +65,7 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
             ulong version;
             using (QueryScope source = _meshQuery.OpenRead())
             {
-                version = _world.Version;
+                version = _world.CompletedVersion;
                 foreach (QueryChunk chunk in source)
                 {
                     if (_initialized && !chunk.WasWritten<RenderMesh>(_lastVersion)) continue;

@@ -219,7 +219,7 @@ internal sealed partial class HierarchyData<TDomain>
         foreach (var pair in futureOrders)
             if (deferred || _projected.ContainsKey(pair.Key)) ReplaceProjected(pair.Key, pair.Value);
             else ReleaseChildOrder(pair.Value);
-        if (deferred) RecordDeferredChange();
+        if (deferred) _hasDeferredChanges = true;
         else ConfirmAppliedParents();
     }
 

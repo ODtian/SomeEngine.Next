@@ -174,7 +174,7 @@ internal sealed partial class RelationData<T>
                     _world.Destroy(edit.Key);
                 }
             }
-        if (deferred) RecordDeferredChange();
+        if (deferred) _hasDeferredChanges = true;
         else ConfirmApplied();
     }
 }

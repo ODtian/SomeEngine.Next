@@ -50,13 +50,13 @@ internal sealed partial class HierarchyData<TDomain>
     }
 
     public bool RequiresIndividualDestroy(Archetype archetype)
-        => _hasDeferredChanges || _version != _world.Version || _usesChildOrder
+        => _hasDeferredChanges || _version != _world.CompletedVersion || _usesChildOrder
             || archetype.Types.Bits.Has(ComponentType<Parent<TDomain>>.TypeId)
             || archetype.Types.Bits.Has(ComponentType<Children<TDomain>>.TypeId);
 
     public void BeforeDestroy(Entity entity, bool deferred)
     {
-        if (!_hasDeferredChanges && _version == _world.Version)
+        if (!_hasDeferredChanges && _version == _world.CompletedVersion)
         {
             ref EntityRecord record = ref _world.Records[entity.Id];
             var columns = record.Chunk!.Columns;
@@ -75,7 +75,7 @@ internal sealed partial class HierarchyData<TDomain>
         ReleaseProjected(entity);
         if (deferred)
         {
-            RecordDeferredChange();
+            _hasDeferredChanges = true;
             Children<TDomain> children = ReadChildren(entity);
             if (children.Count != 0) _retiredChildren.Add(entity, Children<TDomain>.Copy(children));
             _differences.Remove(entity);
@@ -148,7 +148,7 @@ internal sealed partial class HierarchyData<TDomain>
         }
         ClearProjected();
         _hasDeferredChanges = false;
-        _version = _world.Version;
+        _version = _world.CompletedVersion;
         _reader.Advance(through);
     }
 
@@ -192,7 +192,7 @@ internal sealed partial class HierarchyData<TDomain>
         _hasDeferredChanges = false;
         _differences.Clear();
         if (clearApplied) Array.Clear(_applied, 0, Math.Min(_applied.Length, _world.Used + 1));
-        _version = _world.Version;
+        _version = _world.CompletedVersion;
     }
 
     public void Dispose() { ClearData(false); _reader.Dispose(); _applied = []; _spareChildOrders.Clear(); _batchChildren.Clear(); }

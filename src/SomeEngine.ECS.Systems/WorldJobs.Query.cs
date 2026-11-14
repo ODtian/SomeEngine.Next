@@ -12,6 +12,8 @@ public sealed partial class WorldJobs
         ? s_writeVersion != 0 ? s_writeVersion : s_writeVersion = _world.AdvanceVersion()
         : 0;
 
+    internal override ulong OpenWriteVersion => ReferenceEquals(s_writeWorld, this) ? s_writeVersion : 0;
+
     private static WorldValueKind ChangeKind(WorldValueKind kind)
         => kind == WorldValueKind.Sparse ? WorldValueKind.SparseChanges : WorldValueKind.Changes;
 

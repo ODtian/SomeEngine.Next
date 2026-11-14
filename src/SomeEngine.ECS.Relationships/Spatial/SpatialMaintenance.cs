@@ -106,7 +106,7 @@ public sealed class SpatialMaintenance<TGeometry, TBoundsReader, TFilter, TGroup
     private void Update(in EventReadRange membership)
     {
         World world = Query.Enumerable.World;
-        ulong version = world.Version;
+        ulong version = world.CompletedVersion;
         using (QueryScope access = _access.OpenRead())
         using (QueryScope members = _members.OpenRead())
         {

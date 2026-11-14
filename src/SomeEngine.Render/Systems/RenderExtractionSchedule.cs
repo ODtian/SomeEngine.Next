@@ -124,7 +124,7 @@ public sealed partial class RenderExtractionSystems : IDisposable
         _changedSystems.Clear(); _sourceChanges.Clear();
         using (QueryScope source = _sourceRows!.Value.Since(_lastSystemVersion).OpenRead())
         {
-            _candidateSystemVersion = mainWorld.Version;
+            _candidateSystemVersion = mainWorld.CompletedVersion;
             for (int i = 0; i < _sourceReaders.Length; i++)
             {
                 EventReadRange range = _sourceReaders[i].Capture();

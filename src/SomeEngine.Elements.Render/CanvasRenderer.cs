@@ -180,7 +180,7 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
                 _graph.RetireAfterSubmittedFrames(_atlases[atlas]);
                 _atlases.Remove(atlas);
             }
-        _lastVersion = _world.World.Version;
+        _lastVersion = _world.World.CompletedVersion;
     }
 
     /// <summary>Returns the canvas pass for application ordering and diagnostics.</summary>

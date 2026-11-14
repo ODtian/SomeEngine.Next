@@ -253,7 +253,7 @@ internal sealed partial class RelationData<T>
         if ((uint)insertAt >= (uint)order.Count) throw new ArgumentOutOfRangeException(nameof(insertAt));
         order.RemoveAt(previous);
         order.Insert(insertAt, edge);
-        RecordDeferredChange();
+        _hasDeferredChanges = true;
     }
 
     private void PublishFutureOrders()

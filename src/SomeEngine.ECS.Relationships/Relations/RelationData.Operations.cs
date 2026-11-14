@@ -6,17 +6,9 @@ internal sealed partial class RelationData<T>
 {
     private void ConfirmApplied()
     {
-        if (!_hasDeferredChanges) _version = _world.Version;
+        if (!_hasDeferredChanges) _version = _world.CompletedVersion;
     }
 
-    // Maintain finds unapplied writes by version. Edits in one batch share a version, so the watermark stays below
-    // every deferred write even when applied edits earlier in the same batch confirmed that version.
-    private void RecordDeferredChange()
-    {
-        _hasDeferredChanges = true;
-        ulong current = _world.Version;
-        if (current != 0 && _version >= current) _version = current - 1;
-    }
 
     internal void Initialize()
     {
@@ -24,7 +16,7 @@ internal sealed partial class RelationData<T>
         using (var scope = _main.Open())
             foreach (var rows in scope) entities.AddRange(rows.Entities);
         foreach (Entity entity in entities) InitializeEdge(entity);
-        _version = _world.Version;
+        _version = _world.CompletedVersion;
     }
 
     internal void ValidateCreate(in RelationEndpoints<T> value)
@@ -64,7 +56,7 @@ internal sealed partial class RelationData<T>
         Claim(edge, after);
         if (deferred)
         {
-            RecordDeferredChange();
+            _hasDeferredChanges = true;
             AppliedEdge applied = Applied(edge);
             _sourceDifferences.Set(edge, after.Source == applied.Source ? Entity.Null : after.Source);
             _targetDifferences.Set(edge, after.Target == applied.Target ? Entity.Null : after.Target);

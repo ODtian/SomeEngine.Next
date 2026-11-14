@@ -26,7 +26,7 @@ public sealed partial class ClusterPipelineSystem
     {
         RenderInstanceBatches<RenderInstanceSingleGroup> instances = _instances.Current!;
         bool membershipChanged = !ReferenceEquals(instances, _casterInputInstances);
-        if (!membershipChanged && _casterInputVersion == _resources.World.World.Version) return;
+        if (!membershipChanged && _casterInputVersion == _resources.World.World.CompletedVersion) return;
         var inputs = new CasterInputChanges(this, instances, membershipChanged);
         using QueryScope query = _sceneQuery.OpenRead();
         inputs.Collect(query, _casterInputVersion);
@@ -67,7 +67,7 @@ public sealed partial class ClusterPipelineSystem
                 pipeline._hasFirstPersonWorldMeshes = firstPerson;
                 pipeline._casterInputInstances = instances;
             }
-            pipeline._casterInputVersion = pipeline._resources.World.World.Version;
+            pipeline._casterInputVersion = pipeline._resources.World.World.CompletedVersion;
         }
     }
 
