@@ -148,7 +148,6 @@ public sealed partial class NavigationNeighborSystem<TMotion, TReader> : IDispos
     private readonly World _world;
     private readonly Query _actors;
     private readonly Query _predictedActors;
-    private readonly SystemRunner _runner;
     private readonly JobResourceAccess[] _buildAccesses;
     private readonly JobResourceAccess _dataWrite;
     private JobHandle _completion;
@@ -158,7 +157,6 @@ public sealed partial class NavigationNeighborSystem<TMotion, TReader> : IDispos
         _world = world;
         Scheduler = scheduler;
         Data = new(cellSize);
-        _runner = new(world, scheduler);
         _actors = world.Query(new QueryDescription().With<NavigationAgent>().With<AvoidanceAgent>().With<TMotion>()
             .Optional<Buffer<NavigationTrajectoryPoint>>());
         _predictedActors = world.Query(new QueryDescription().With<NavigationAgent>().With<AvoidanceAgent>().With<TMotion>()
@@ -176,8 +174,8 @@ public sealed partial class NavigationNeighborSystem<TMotion, TReader> : IDispos
     public JobHandle Schedule(JobHandle motionReady = default, JobHandle predictionReady = default)
     {
         JobHandle reset = Scheduler.Schedule(new ResetNeighbors(Data), [_dataWrite], Scheduler.CombineDependencies([_completion, motionReady, predictionReady]));
-        JobHandle collected = _runner.Schedule(_actors, new CollectNeighbors(Data), reset, parallel: false);
-        JobHandle predicted = _runner.Schedule(_predictedActors, new CollectPredictions(Data), collected, parallel: false);
+        JobHandle collected = new CollectNeighbors(Data).Schedule(_world, reset, _actors);
+        JobHandle predicted = new CollectPredictions(Data).Schedule(_world, collected, _predictedActors);
         _completion = Scheduler.Schedule(new BuildNeighbors(_world, _actors, Data), _buildAccesses, predicted);
         return _completion;
     }

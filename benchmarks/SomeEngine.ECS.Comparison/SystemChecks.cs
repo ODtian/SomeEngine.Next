@@ -207,7 +207,7 @@ internal static partial class SystemChecks
         for (int i = 0; i < entities.Length; i++)
             entities[i] = world.Spawn(new RandomSystemRow { Value = new(i), Step = new(1), Random = new(2) });
         Query query = world.Query(new QueryDescription().With<SystemValue>().With<SystemStep>().Optional<RandomValue>());
-        var runner = new SystemRunner(world, scheduler);
+        var runner = new SystemRunner(world);
         runner.Schedule(query, new ReadRandom(world, entities)).Complete();
         for (int i = 0; i < entities.Length; i++)
             Require(world.ReadValue<SystemValue>(entities[i]).Value == i + 3, "scheduled optional values are readable through the declared query access");
@@ -243,7 +243,7 @@ internal static partial class SystemChecks
         for (int i = 0; i < entities.Length; i++)
             entities[i] = world.Spawn(new OrdinalMotion { Motion = new() { Position = new() { X = i }, Velocity = new() { X = 1, Y = 2 } }, Ordinal = new(i) });
         using (var binding = world.OpenWrite<Position>()) { }
-        var runner = new SystemRunner(world, scheduler, 64);
+        var runner = new SystemRunner(world, 64);
         runner.Schedule(world.Query<Position, Velocity, JobOrdinal>(), new WriteCurrentRows(world, entities)).Complete();
         for (int i = 0; i < entities.Length; i++)
         {
@@ -276,7 +276,7 @@ internal static partial class SystemChecks
         var entities = new Entity[128];
         for (int i = 0; i < entities.Length; i++)
             entities[i] = world.Spawn(new OrdinalMotion { Motion = new() { Position = new() { X = i } }, Ordinal = new(i) });
-        var runner = new SystemRunner(world, scheduler, 64);
+        var runner = new SystemRunner(world, 64);
         bool failed = false;
         try { runner.Schedule(world.Query<Position, Velocity, JobOrdinal>(), new WriteOtherRange(world, entities)).Complete(); }
         catch (InvalidOperationException) { failed = true; }
@@ -299,7 +299,7 @@ internal static partial class SystemChecks
         for (int i = 0; i < entities.Length; i++)
             entities[i] = world.Spawn(new Motion { Position = new() { X = i } });
         Query query = world.Query<Position, Velocity>();
-        var runner = new SystemRunner(world, scheduler, 64);
+        var runner = new SystemRunner(world, 64);
         bool failed = false;
         try { runner.Schedule(query, new WriteThroughQuery(query)).Complete(); }
         catch (InvalidOperationException) { failed = true; }
@@ -319,14 +319,14 @@ internal static partial class SystemChecks
 
     private static void Check(Scheduler scheduler, int count, int chunkCapacity)
     {
-        using var world = new World(count, chunkCapacity: chunkCapacity);
+        using var world = new World(count, chunkCapacity: chunkCapacity, execution: new WorldJobs(scheduler));
         var entities = new Entity[count];
         for (int i = 0; i < count; i++)
         {
             entities[i] = world.Spawn(new SystemRow { Value = new(i), Step = new(2) });
             if (i % 4 == 0) world.Disable<SystemStep>(entities[i]);
         }
-        var runner = new SystemRunner(world, scheduler, rangeRows: 256);
+        var runner = new SystemRunner(world, rangeRows: 256);
         ulong before = world.Version;
         runner.ExecuteParallel(world.Query<SystemValue, SystemStep>(), new Advance());
         Require(world.Version == before + 1, "one version for the complete parallel write");
@@ -334,7 +334,7 @@ internal static partial class SystemChecks
         for (int i = 0; i < count; i++)
         {
             bool enabled = i % 4 != 0;
-            Require(world.Read<SystemValue>(entities[i]).Value == i + (enabled ? 2 : 0), "selected rows receive their values");
+            Require(world.ReadValue<SystemValue>(entities[i]).Value == i + (enabled ? 2 : 0), "selected rows receive their values");
             if (enabled) selected++;
         }
         Require(world.Query(new QueryDescription().WithChanged<SystemValue>(before)).Count == selected,
@@ -353,7 +353,7 @@ internal static partial class SystemChecks
         runner.ExecuteParallel(query, new Advance());
         Require(world.Version == beforeWork + 1, "filtered writes share their batch version");
         Require(world.Query(new QueryDescription().WithChanged<SystemValue>(beforeWork)).Count == changed, "changed filters select the original changed members");
-        for (int i = 1; i < count; i += 8) Require(world.Read<SystemValue>(entities[i]).Value == -8, "changed row values are published");
+        for (int i = 1; i < count; i += 8) Require(world.ReadValue<SystemValue>(entities[i]).Value == -8, "changed row values are published");
         world.Spawn(new SystemRow { Value = new(1), Step = new(1) });
     }
 
@@ -369,7 +369,7 @@ internal static partial class SystemChecks
         Entity[] entities = new Entity[count];
         for (int i = 0; i < count; i++)
             entities[i] = world.Spawn(new RandomSystemRow { Value = new(i), Step = new(2), Random = new(1) });
-        var runner = new SystemRunner(world, scheduler, rangeRows: 256);
+        var runner = new SystemRunner(world, rangeRows: 256);
         Query query = world.Query<SystemValue, SystemStep>();
         ulong before = world.Version;
         runner.ExecuteParallel(query, new Advance());

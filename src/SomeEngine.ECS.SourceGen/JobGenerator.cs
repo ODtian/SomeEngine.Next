@@ -189,11 +189,11 @@ internal static class JobGenerator
         }
         code.Append(");\n"); if (entity) code.Append("}\n"); code.Append("}\n");
         code.Append("public void ExecuteParallel(global::SomeEngine.ECS.World world, global::SomeEngine.Job.JobHandle dependency = default, global::SomeEngine.ECS.Query? query = null) { dependency.Complete(); new global::SomeEngine.ECS.Systems.SystemRunner(world).ExecuteParallel<")
-            .Append(self).Append(">(this, query); }\n");
+            .Append(self).Append(">(query, this); }\n");
         foreach (bool parallel in new[] { false, true })
             code.Append("public global::SomeEngine.Job.JobHandle ").Append(parallel ? "ScheduleParallel" : "Schedule")
                 .Append("(global::SomeEngine.ECS.World world, global::SomeEngine.Job.JobHandle dependency = default, global::SomeEngine.ECS.Query? query = null) => new global::SomeEngine.ECS.Systems.SystemRunner(world).Schedule<")
-                .Append(self).Append(">(this, dependency, ").Append(parallel ? "true" : "false").Append(", query);\n");
+                .Append(self).Append(">(query, this, dependency, ").Append(parallel ? "true" : "false").Append(");\n");
         EcsGenerator.Add(output, type, "Job", EcsGenerator.Wrap(type, "global::SomeEngine.ECS.Systems.IChunkAction", code.ToString()));
     }
 

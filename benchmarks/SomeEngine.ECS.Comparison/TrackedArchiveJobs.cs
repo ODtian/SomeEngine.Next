@@ -64,7 +64,7 @@ internal sealed partial class SourceTrackedArchiveJobs : TrackedArchiveJobs
     private JobHandle _last;
     internal SourceTrackedArchiveJobs(SourceFullArchiveWorld world, Scheduler scheduler) : base(world, world.Entities)
     {
-        _world = world.World; _query = _world.Query<SaveCounter, Position>(); _runner = new(_world, scheduler);
+        _world = world.World; _query = _world.Query<SaveCounter, Position>(); _runner = new(_world);
         _action = new(_world, world.Entities, world.SecondRoot);
     }
     internal override void Run(string mode)

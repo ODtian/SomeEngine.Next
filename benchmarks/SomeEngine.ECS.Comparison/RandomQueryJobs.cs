@@ -54,7 +54,7 @@ internal sealed partial class SomeEngineWorld
         if (mode == 1) { using var binding = _world.OpenRead<Velocity>(); }
         else { using var binding = _world.OpenWrite<JobExtra>(); }
         Query query = _world.Query<Position, Velocity, JobOrdinal>();
-        var runner = new SystemRunner(_world, GetJobScheduler());
+        var runner = new SystemRunner(_world);
         QueryJobs = mode == 1
             ? new SourceRandomJobs<ReadRandomJob>(_world, runner, query, new(_world, _entities))
             : new SourceRandomJobs<WriteRandomJob>(_world, runner, query, new(_world, _entities));

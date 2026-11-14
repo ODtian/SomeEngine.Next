@@ -15,7 +15,7 @@ public sealed partial class SystemState
 
 public sealed partial class SystemGroup(World world, Scheduler scheduler, int rangeRows = 1024) : ISystemVersions
 {
-    private readonly SystemRunner _runner = new(world, scheduler, rangeRows);
+    private readonly SystemRunner _runner = new(world, rangeRows);
     private readonly List<SystemEntry> _systems = [];
     private int[][] _predecessors = [];
     private JobHandle[] _handles = [];

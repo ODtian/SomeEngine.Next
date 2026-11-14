@@ -5,26 +5,15 @@ namespace SomeEngine.ECS.Systems;
 
 public sealed partial class SystemRunner
 {
-    private readonly int _chunkRangeRows = rangeRows;
 
     private int ChunkRangeRows<TAction>() where TAction : struct, IChunkAction
         => ChunkActionTypes<TAction>.TrackedWrites.Length == 0 ? _chunkRangeRows : _rangeRows;
 
-    public SystemRunner(World world, int rangeRows = 1024)
-        : this(world, world.Execution is WorldJobs jobs ? jobs.Scheduler
-            : throw new InvalidOperationException("Connect WorldJobs before scheduling generated work."), rangeRows) { }
-
-    public void ExecuteParallel<TAction>(in TAction action, Query? query = null) where TAction : struct, IChunkAction
-        => ExecuteParallel(query ?? _world.Query(ChunkActionTypes<TAction>.Query), action);
-
-    public JobHandle Schedule<TAction>(in TAction action, JobHandle dependency = default, bool parallel = true,
-        Query? query = null) where TAction : struct, IChunkAction
-        => Schedule(query ?? _world.Query(ChunkActionTypes<TAction>.Query), action, dependency, parallel);
-
-    public void ExecuteParallel<TAction>(Query query, in TAction action)
+    /// <summary>Runs the action over the query, or over the action's own query when none is given, and returns after it completes.</summary>
+    public void ExecuteParallel<TAction>(Query? selection, in TAction action)
         where TAction : struct, IChunkAction
     {
-        query = ChunkActionTypes<TAction>.Bind(query);
+        Query query = ChunkActionTypes<TAction>.Bind(selection ?? _world.Query(ChunkActionTypes<TAction>.Query));
         SystemAccesses? additional = TAction.AdditionalAccesses;
         WorldJobs? jobs = _world.Execution as WorldJobs;
         SynchronousResourceAccess access = default; JobHandle handle = jobs?.CurrentAccess ?? default;
@@ -65,10 +54,11 @@ public sealed partial class SystemRunner
         if (schedule) Schedule(query, action).Complete();
     }
 
-    public JobHandle Schedule<TAction>(Query query, in TAction action, JobHandle dependency = default,
+    /// <summary>Schedules the action over the query, or over the action's own query when none is given.</summary>
+    public JobHandle Schedule<TAction>(Query? selection, in TAction action, JobHandle dependency = default,
         bool parallel = true, SystemState? state = null) where TAction : struct, IChunkAction
     {
-        query = ChunkActionTypes<TAction>.Bind(query);
+        Query query = ChunkActionTypes<TAction>.Bind(selection ?? _world.Query(ChunkActionTypes<TAction>.Query));
         WorldJobs jobs = (WorldJobs)_world.Execution!; jobs.BeginUse();
         return _scheduler.ScheduleStages(new ChunkStages<TAction>(this, jobs, query, action, parallel, state), dependency);
     }

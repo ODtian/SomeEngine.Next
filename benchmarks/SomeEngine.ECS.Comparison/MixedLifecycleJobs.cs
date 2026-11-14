@@ -27,7 +27,7 @@ internal sealed partial class SourceMixedLifecycleJobs : MixedLifecycleJobs
     private readonly Query _query;
     private readonly SystemRunner _runner;
     internal SourceMixedLifecycleJobs(World world, Scheduler scheduler, int count) : base(count)
-    { _query = world.Query<Position, Velocity>(); _runner = new(world, scheduler); }
+    { _query = world.Query<Position, Velocity>(); _runner = new(world); }
     internal override void Schedule()
     { Last = _runner.Schedule(_query, new Move(Rows), Last); Runs++; }
     private readonly partial struct Move(LifecycleRows rows) : IJobChunk

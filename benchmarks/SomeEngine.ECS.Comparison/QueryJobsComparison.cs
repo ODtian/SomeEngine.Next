@@ -61,7 +61,7 @@ internal sealed partial class SomeEngineWorld
     {
         if (randomMode == 3) { PrepareSystemGroupJobs(); return; }
         if (randomMode != 0) { PrepareRandomQueryJobs(randomMode); return; }
-        QueryJobs = new SourceQueryJobs(_world, new SystemRunner(_world, GetJobScheduler()), _world.Query<Position, Velocity>());
+        QueryJobs = new SourceQueryJobs(_world, new SystemRunner(_world), _world.Query<Position, Velocity>());
     }
     private sealed class SourceQueryJobs(World world, SystemRunner runner, Query query) : IQueryJobs
     {
