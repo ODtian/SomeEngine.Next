@@ -173,7 +173,6 @@ public sealed partial class World
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void RequireValue<T>(bool write, WorldValueKind kind = WorldValueKind.Table) where T : struct
     {
-        RequireCallingThread();
         if (Execution is { } execution)
             RequireValueWithExecution<T>(execution, write, kind);
     }

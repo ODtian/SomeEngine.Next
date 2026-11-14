@@ -41,7 +41,6 @@ public sealed partial class World : IDisposable
         get
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            RequireCallingThread();
             Execution?.CheckActive();
             return _count;
         }
@@ -51,7 +50,6 @@ public sealed partial class World : IDisposable
     internal ref EntityRecord Resolve(Entity entity)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        RequireCallingThread();
         if ((uint)(entity.Id - 1) >= (uint)Used) throw new ArgumentException("Entity id is outside this world.");
         ref EntityRecord record = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Records), entity.Id);
         if (record.Generation != entity.Generation) throw new ArgumentException("Entity generation has expired.");
@@ -114,7 +112,6 @@ public sealed partial class World : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool HasCore<T>(Entity entity) where T : struct
     {
-        RequireCallingThread();
         if (!IsAliveCore(entity)) return false;
         ref EntityRecord record = ref Records[entity.Id];
         ColumnEntry[] columns = record.Chunk!.Columns;
@@ -182,15 +179,7 @@ public sealed partial class World : IDisposable
     internal void RequireStructure()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        RequireCallingThread();
         if (_readers != 0) throw new InvalidOperationException("Finish the current read scope before changing entity layout.");
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void RequireCallingThread()
-    {
-        if (Execution is null && JobThreads.IsActive)
-            throw new InvalidOperationException("Connect WorldJobs before accessing World from a Job.");
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -349,7 +338,6 @@ public sealed partial class World : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void BeginRead(bool withExecution)
     {
-        RequireCallingThread();
         if (!withExecution) _readers++;
         else Interlocked.Increment(ref _readers);
     }
