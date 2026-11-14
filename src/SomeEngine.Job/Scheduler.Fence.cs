@@ -62,12 +62,11 @@ public sealed partial class Scheduler
         Action<JobHandle, object?> continuation,
         object? callbackState)
     {
-        ArgumentNullException.ThrowIfNull(continuation);
         ExternalCompletionContinuation observer = new(handle, continuation, callbackState);
 
         if (handle.Index == 0)
         {
-            observer.InvokeAndSuppressObserverExceptions();
+            observer.Invoke();
             return;
         }
 
@@ -76,7 +75,7 @@ public sealed partial class Scheduler
         {
             if (!TryAddExternalContinuation(handle, observer))
             {
-                observer.InvokeAndSuppressObserverExceptions();
+                observer.Invoke();
             }
         }
         finally
@@ -164,17 +163,7 @@ public sealed partial class Scheduler
             _state = state;
         }
 
-        internal void InvokeAndSuppressObserverExceptions()
-        {
-            try
-            {
-                _continuation(_handle, _state);
-            }
-            catch
-            {
-                // Completion observers are best-effort notifications; callback faults must not corrupt cleanup.
-            }
-        }
+        internal void Invoke() => _continuation(_handle, _state);
     }
 }
 

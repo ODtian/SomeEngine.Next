@@ -88,16 +88,12 @@ public static partial class JobSystem
         Action<JobHandle, object?> continuation,
         object? state = null)
     {
-        // Observer registration does not wait for completion. Callbacks are best-effort notifications
-        // and run inline on the registering, completing, or signaling thread; exceptions are suppressed.
+        // Registration does not wait for completion. The callback runs inline on the registering, completing or
+        // signaling thread, and its exceptions reach that thread.
         if (handle.Scheduler is { } scheduler)
             scheduler.OnCompleted(handle, continuation, state);
         else
-        {
-            ArgumentNullException.ThrowIfNull(continuation);
-            try { continuation(handle, state); }
-            catch { /* Completion observers do not alter the completed operation. */ }
-        }
+            continuation(handle, state);
     }
 
     internal static bool IsCompleted(JobHandle handle)
