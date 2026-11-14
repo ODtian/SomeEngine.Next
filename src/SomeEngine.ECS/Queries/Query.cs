@@ -1,4 +1,6 @@
 using System.Runtime.CompilerServices;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Sparse;
 using SomeEngine.ECS.Storage;
 using SomeEngine.Core.Diagnostics;
 
@@ -18,6 +20,12 @@ public sealed class QueryDescription
     internal ComponentBits Disabled;
     internal ComponentBits Changed;
     internal ComponentBits Added;
+    // Sparse types are not archetype columns. Their conditions are checked per row against the sparse stores, and
+    // their reads are declared with sparse storage.
+    internal ComponentBits SparseRequired;
+    internal ComponentBits SparseExcluded;
+    internal ComponentBits SparseReads;
+    internal bool HasSparseConditions => SparseRequired.Count + SparseExcluded.Count != 0;
     internal ulong Since;
     internal SharedCondition[] Shared = [];
     internal GroupCondition[] Groups = [];
@@ -26,6 +34,7 @@ public sealed class QueryDescription
     {
         _definition = null;
         int type = ComponentType<T>.TypeId;
+        if (ComponentType<T>.IsSparseType) { SparseRequired.Add(type); return this; }
         Required.Add(type);
         Stored.Remove(type);
         Disabled.Remove(type);
@@ -35,13 +44,24 @@ public sealed class QueryDescription
     {
         _definition = null;
         int type = ComponentType<T>.TypeId;
+        if (ComponentType<T>.IsSparseType) { SparseRequired.Add(type); return this; }
         Required.Add(type);
         Stored.Add(type);
         Disabled.Remove(type);
         return this;
     }
-    public QueryDescription WithAny<T>() where T : struct { _definition = null; Any.Add(ComponentType<T>.TypeId); return this; }
-    public QueryDescription Optional<T>() where T : struct { _definition = null; OptionalReads.Add(ComponentType<T>.TypeId); return this; }
+    public QueryDescription WithAny<T>() where T : struct
+    {
+        if (ComponentType<T>.IsSparseType) throw new InvalidOperationException("A sparse type joins a query through With, Without, WithChanged, WithAdded or Optional.");
+        _definition = null; Any.Add(ComponentType<T>.TypeId); return this;
+    }
+    public QueryDescription Optional<T>() where T : struct
+    {
+        _definition = null;
+        if (ComponentType<T>.IsSparseType) SparseReads.Add(ComponentType<T>.TypeId);
+        else OptionalReads.Add(ComponentType<T>.TypeId);
+        return this;
+    }
     public QueryDescription WithAccess(QueryDescription inputs)
     {
         _definition = null;
@@ -80,9 +100,16 @@ public sealed class QueryDescription
         return this;
     }
 
-    public QueryDescription Without<T>() where T : struct { _definition = null; Excluded.Add(ComponentType<T>.TypeId); return this; }
+    public QueryDescription Without<T>() where T : struct
+    {
+        _definition = null;
+        if (ComponentType<T>.IsSparseType) SparseExcluded.Add(ComponentType<T>.TypeId);
+        else Excluded.Add(ComponentType<T>.TypeId);
+        return this;
+    }
     public QueryDescription WithDisabled<T>() where T : struct, IEnableableComponent
     {
+        if (ComponentType<T>.IsSparseType) throw new InvalidOperationException("A sparse type joins a query through With, Without, WithChanged, WithAdded or Optional.");
         _definition = null;
         int type = ComponentType<T>.TypeId;
         Required.Add(type);
@@ -95,7 +122,8 @@ public sealed class QueryDescription
     {
         _definition = null;
         int type = ComponentType<T>.TypeId;
-        Required.Add(type);
+        if (ComponentType<T>.IsSparseType) SparseRequired.Add(type);
+        else Required.Add(type);
         Changed.Add(type);
         Since = since;
         return this;
@@ -130,6 +158,7 @@ public sealed class QueryDescription
         Required = Required.Copy(), Stored = Stored.Copy(), Excluded = Excluded.Copy(), Disabled = Disabled.Copy(),
         Any = Any.Copy(), OptionalReads = OptionalReads.Copy(),
         Changed = Changed.Copy(), Added = Added.Copy(), Since = Since,
+        SparseRequired = SparseRequired.Copy(), SparseExcluded = SparseExcluded.Copy(), SparseReads = SparseReads.Copy(),
         Shared = Shared.ToArray(),
         Groups = Groups.ToArray(),
     };
@@ -274,7 +303,8 @@ public partial struct Query
         _world.Execution?.EnterQuery(this, [], writeAll: true);
         _world.BeginRead();
         RefreshIfNeeded();
-        return new QueryScope(_world, _matches, _count, _since, _world.BeginBatchVersion(0));
+        SparseStore? driver = SparseDriver(out bool none);
+        return new QueryScope(_world, _matches, none ? 0 : _count, _since, _world.BeginBatchVersion(0), driver, _data.MatchByArchetype);
     }
 
     public QueryScope OpenRead()
@@ -282,11 +312,35 @@ public partial struct Query
         _world.Execution?.EnterQuery(this, [], writeAll: false);
         _world.BeginRead();
         RefreshIfNeeded();
-        return new QueryScope(_world, _matches, _count, _since, batch: null);
+        SparseStore? driver = SparseDriver(out bool none);
+        return new QueryScope(_world, _matches, none ? 0 : _count, _since, batch: null, driver, _data.MatchByArchetype);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private readonly void RefreshIfNeeded() => _data.RefreshIfNeeded(_world);
+
+    /// <summary>
+    /// The smallest required sparse store, when it has fewer members than the matched rows; iterating its members is
+    /// then cheaper than filtering every row. <paramref name="none"/> is true when a required store does not exist.
+    /// </summary>
+    private readonly SparseStore? SparseDriver(out bool none)
+    {
+        none = false;
+        int[] required = _data.Description.Definition.SparseRequiredTypes;
+        if (required.Length == 0) return null;
+        SparseStore?[] stores = _world.SparseTypes?.Types ?? [];
+        SparseStore? smallest = null;
+        foreach (int type in required)
+        {
+            SparseStore? store = (uint)type < (uint)stores.Length ? stores[type] : null;
+            if (store is null) { none = true; return null; }
+            if (smallest is null || store.Count < smallest.Count) smallest = store;
+        }
+        int candidates = 0;
+        for (int i = 0; i < _count && candidates <= smallest!.Count; i++)
+            foreach (Chunk chunk in _matches[i].Archetype.AllChunks) candidates += chunk.Count;
+        return smallest!.Count < candidates ? smallest : null;
+    }
 }
 
 public ref partial struct QueryScope
@@ -297,11 +351,17 @@ public ref partial struct QueryScope
     private readonly int _count;
     private readonly ulong _since;
     private readonly World.BatchVersionScope? _batch;
+    private readonly SparseStore? _driver;
+    private readonly int[] _matchByArchetype;
 
-    internal QueryScope(World world, QueryMatch[] matches, int count, ulong since, World.BatchVersionScope? batch)
-        => (_world, _matches, _count, _since, _batch) = (world, matches, count, since, batch);
+    internal QueryScope(World world, QueryMatch[] matches, int count, ulong since, World.BatchVersionScope? batch,
+        SparseStore? driver = null, int[]? matchByArchetype = null)
+        => (_world, _matches, _count, _since, _batch, _driver, _matchByArchetype)
+            = (world, matches, count, since, batch, driver, matchByArchetype ?? []);
 
-    public ChunkEnumerator GetEnumerator() => new(_matches, _count, _world.HasMultipleChunks, _since, _batch.HasValue);
+    public ChunkEnumerator GetEnumerator() => _driver is null
+        ? new(_matches, _count, _world.HasMultipleChunks, _since, _batch.HasValue)
+        : new(_matches, _since, _batch.HasValue, _driver, _matchByArchetype, _world.Records);
     public void Dispose()
     {
         _batch?.Dispose();
@@ -322,14 +382,23 @@ public struct ChunkEnumerator
     private Chunk? _chunk;
     private QueryRowFilter? _filter;
     private QueryChunk _current;
+    private readonly SparseStore? _driver;
+    private readonly int[]? _matchByArchetype;
+    private readonly EntityRecord[]? _records;
 
     internal ChunkEnumerator(QueryMatch[] matches, int count, bool multiple, ulong since, bool write)
         => (_matches, _count, _multiple, _since, _write, _index, _chunkIndex, _nextRow, _chunk, _filter, _current)
             = (matches, count, multiple, since, write, -1, 0, 0, null, null, default);
 
+    // Iterates a sparse store's members; each matching entity is a one-row chunk.
+    internal ChunkEnumerator(QueryMatch[] matches, ulong since, bool write, SparseStore driver, int[] matchByArchetype,
+        EntityRecord[] records) : this(matches, 0, false, since, write)
+        => (_driver, _matchByArchetype, _records) = (driver, matchByArchetype, records);
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool MoveNext()
     {
+        if (_driver is not null) return MoveNextMember();
         while (true)
         {
             if (_chunk is { } current && _nextRow < current.Count)
@@ -366,6 +435,23 @@ public struct ChunkEnumerator
     }
 
     public readonly QueryChunk Current => _current;
+
+    private bool MoveNextMember()
+    {
+        SparseStore driver = _driver!;
+        while (_nextRow < driver.Count)
+        {
+            Entities.Entity entity = driver.Entities[_nextRow++];
+            ref EntityRecord record = ref _records![entity.Id];
+            Chunk chunk = record.Chunk!;
+            int archetype = chunk.Archetype.Id;
+            int match = (uint)archetype < (uint)_matchByArchetype!.Length ? _matchByArchetype[archetype] - 1 : -1;
+            if (match < 0 || !_matches[match].Filter!.Contains(chunk, record.Row, _since)) continue;
+            _current = new QueryChunk(chunk, record.Row, 1, _write ? ChunkWrites.Published : ChunkWrites.ReadOnly);
+            return true;
+        }
+        return false;
+    }
 }
 
 /// <summary>How a chunk view records the writes made through it.</summary>
@@ -398,6 +484,7 @@ public readonly partial struct QueryChunk
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Span<T> Write<T>() where T : struct
     {
+        if (ComponentType<T>.IsSparseType) throw new InvalidOperationException("Write a sparse value by row with Write<T>(row).");
         if (ComponentType<T>.IsSharedType || ComponentType<T>.IsControlledType || ComponentType<T>.IsIndexedType || ComponentType<T>.IsGroupedType)
             throw new InvalidOperationException("Use the component's typed write view or Set entry.");
         if (InJob)
@@ -422,6 +509,7 @@ public readonly partial struct QueryChunk
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ReadOnlySpan<T> Read<T>() where T : struct
     {
+        if (ComponentType<T>.IsSparseType) throw new InvalidOperationException("Read a sparse value by row with Read<T>(row).");
         if (!InJob) _chunk.Archetype.World.RequireValue<T>(false);
         if (ComponentType<T>.IsSharedType) throw new InvalidOperationException("Use ReadShared<T>() to read this range's shared values.");
         return ColumnEntry.Span<T>(ref _chunk.Columns[ComponentType<T>.TypeId], _chunk.Count).Slice(_start, Count);

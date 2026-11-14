@@ -26,6 +26,7 @@ public sealed partial class WorldJobs
             if (query.Description.Changed.Has(type) && !ChunkActionTypes<TAction>.TrackedWrites.Contains(type)
                 && !ComponentTypes.Get(type).UsesStructureWrites)
                 accesses.Add(JobResourceAccess.Read(Resource(WorldValueKind.Changes, type)));
+        AddSparseReads(query.Description, ref accesses);
         if (additional is not null) foreach (WorldValueAccess access in additional.Values) AddValue(ref accesses, access);
     }
 
@@ -61,6 +62,7 @@ public sealed partial class WorldJobs
                     while (i + 1 < ranges.Count && ReferenceEquals(ranges.Items[i + 1].Chunk, range.Chunk)) i++;
                     accesses.Add(JobResourceAccess.Read(Resource(WorldValueKind.Changes, type), range.Chunk.Id, 1));
                 }
+        AddSparseReads(query.Description, ref accesses);
         if (additional is not null) foreach (WorldValueAccess access in additional.Values) AddValue(ref accesses, access);
     }
 }

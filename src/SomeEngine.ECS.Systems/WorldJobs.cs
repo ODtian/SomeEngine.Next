@@ -203,6 +203,12 @@ public sealed partial class WorldJobs(Scheduler scheduler) : WorldExecution
         finally { accesses.Clear(); }
     }
 
+    internal void AddSparseReads(QueryDescription description, ref AccessBuilder<JobResourceAccess> accesses)
+    {
+        foreach (int type in description.Definition.SparseAccessTypes)
+            AddValue(ref accesses, new(type, WorldValueKind.Sparse, false, description.Changed.Has(type)));
+    }
+
     private void AddValue(ref AccessBuilder<JobResourceAccess> accesses, in WorldValueAccess value)
     {
         if (value.Structural) return;
@@ -264,6 +270,7 @@ public sealed partial class WorldJobs(Scheduler scheduler) : WorldExecution
             bool write = !structural && (writeAll || writes.Contains(type));
             AddValue(ref accesses, new(type, WorldValueKind.Table, write, component.TracksWrites, structural));
         }
+        AddSparseReads(description, ref accesses);
     }
 
     private void CacheQueryValues(QueryDefinition definition, int writeType, in AccessBuilder<JobResourceAccess> accesses)

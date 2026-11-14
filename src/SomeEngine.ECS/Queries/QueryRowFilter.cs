@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
+using SomeEngine.ECS.Sparse;
 using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS;
@@ -9,17 +10,20 @@ internal readonly record struct QueryMatch(Archetype Archetype, QueryRowFilter? 
 
 internal sealed class QueryRowFilter(int[] required, int[] excluded, int[] any, int[] changed, QueryDescription description)
 {
+    private readonly bool _sparse = description.HasSparseConditions;
+
     internal static QueryRowFilter? Create(Archetype archetype, QueryDescription description)
     {
         if ((archetype.TransferKinds & 4) == 0 && !archetype.Types.Bits.Intersects(description.Disabled)
-            && !archetype.Types.Bits.Intersects(description.Changed) && description.Shared.Length == 0) return null;
+            && !archetype.Types.Bits.Intersects(description.Changed) && description.Shared.Length == 0
+            && !description.HasSparseConditions) return null;
         int[] required = archetype.Types.Types.Where(t => (archetype.Optional.Has(t) || description.Disabled.Has(t)) && description.Required.Has(t)).ToArray();
         int[] excluded = archetype.Types.Types.Where(t => archetype.Optional.Has(t) && description.Excluded.Has(t)).ToArray();
         int[] any = description.Any.Count != 0 && !archetype.Types.Bits.IntersectsExcept(description.Any, archetype.Optional)
             ? archetype.Types.Types.Where(description.Any.Has).ToArray() : [];
         int[] changed = archetype.Types.Types.Where(description.Changed.Has).ToArray();
         return required.Length + excluded.Length + any.Length + changed.Length + description.Shared.Length == 0
-            ? null : new(required, excluded, any, changed, description);
+            && !description.HasSparseConditions ? null : new(required, excluded, any, changed, description);
     }
 
     private ulong BaseMask(Chunk chunk, int word, ulong since)
@@ -81,7 +85,35 @@ internal sealed class QueryRowFilter(int[] required, int[] excluded, int[] any, 
                 if (values[row] == condition.Value) matching |= 1UL << (row - start);
             mask &= matching;
         }
+        return _sparse ? SparseMask(chunk, word, since, mask) : mask;
+    }
+
+    // Sparse values are not chunk columns, so each remaining row checks the sparse stores by its entity.
+    private ulong SparseMask(Chunk chunk, int word, ulong since, ulong mask)
+    {
+        SparseStore?[] stores = chunk.Archetype.World.SparseTypes?.Types ?? [];
+        int start = word << 6;
+        for (ulong remaining = mask; remaining != 0; remaining &= remaining - 1)
+        {
+            int bit = BitOperations.TrailingZeroCount(remaining);
+            int row = start + bit;
+            if (row >= chunk.Count || !SparseMatches(stores, chunk.Entities[row].Id, since)) mask &= ~(1UL << bit);
+        }
         return mask;
+    }
+
+    private bool SparseMatches(SparseStore?[] stores, int entityId, ulong since)
+    {
+        foreach (int type in description.Definition.SparseRequiredTypes)
+        {
+            SparseStore? store = (uint)type < (uint)stores.Length ? stores[type] : null;
+            if (store is null) return false;
+            if (description.Changed.Has(type) ? !store.HasChanged(entityId, since, description.Added.Has(type)) : !store.Has(entityId))
+                return false;
+        }
+        for (int type = 0; type < stores.Length && description.SparseExcluded.Count != 0; type++)
+            if (description.SparseExcluded.Has(type) && stores[type] is { } excludedStore && excludedStore.Has(entityId)) return false;
+        return true;
     }
 
     internal bool Contains(Chunk chunk, int row, ulong since)
@@ -89,7 +121,7 @@ internal sealed class QueryRowFilter(int[] required, int[] excluded, int[] any, 
         if ((BaseMask(chunk, row >> 6, since) & (1UL << (row & 63))) == 0) return false;
         foreach (var condition in description.Shared)
             if (Unsafe.As<int[]>(chunk.Columns[condition.Type].Values!)[row] != condition.Value) return false;
-        return true;
+        return !_sparse || SparseMatches(chunk.Archetype.World.SparseTypes?.Types ?? [], chunk.Entities[row].Id, since);
     }
 
     internal ulong SelectWord(Chunk chunk, int word, ulong since) => Mask(chunk, word, since);
@@ -160,7 +192,7 @@ internal sealed class QueryRowFilter(int[] required, int[] excluded, int[] any, 
 
     private int WholeRange(Chunk chunk)
     {
-        if (any.Length != 0 || changed.Length != 0 || description.Shared.Length != 0) return 0;
+        if (any.Length != 0 || changed.Length != 0 || description.Shared.Length != 0 || _sparse) return 0;
         bool all = true;
         foreach (int type in required)
         {

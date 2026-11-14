@@ -76,7 +76,7 @@ internal abstract partial class ComparisonWorld
 
 internal sealed partial class SomeEngineWorld
 {
-    private SparseQuery? _mixedSparse;
+    private Query? _mixedSparse;
     private void PrepareSparse(string workload)
     {
         if (_mixedSparse is not null) return;
@@ -86,13 +86,14 @@ internal sealed partial class SomeEngineWorld
             _world.Set(_entities[i], new SparseNumber(SparseCounter, 1, i));
             if (i % (SparseStride * 2) == 0) _world.Set(_entities[i], new SparseWeight(i));
         }
-        _mixedSparse = _world.QuerySparse<SparseNumber>(new QueryDescription().With<Position>().With<Team>()).With<SparseWeight>();
+        _mixedSparse = _world.Query(new QueryDescription().With<Position>().With<Team>().With<SparseNumber>().With<SparseWeight>());
     }
     private int ReadSparseMembers()
     {
-        using var members = _mixedSparse!.Open();
+        using QueryScope members = _mixedSparse!.Value.OpenRead();
         int count = 0;
-        foreach (var entity in members) SparseMembers[count++] = _world.Read<SparseNumber>(entity).Ordinal;
+        foreach (QueryChunk chunk in members)
+            for (int row = 0; row < chunk.Count; row++) SparseMembers[count++] = chunk.Read<SparseNumber>(row).Ordinal;
         return count;
     }
     internal override void SparseCycle()
