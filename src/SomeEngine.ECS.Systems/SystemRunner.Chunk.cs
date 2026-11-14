@@ -215,13 +215,13 @@ public sealed partial class SystemRunner
     {
         private QueryRanges? _ranges;
         private ChunkResourceRange[]? _resourceRanges;
-        public static int StageCount => 3;
+        // The structure read is reserved at submission, so ranges are built in the first stage without waiting for it.
+        public static int StageCount => 2;
         public void Reserve(ref AccessBuilder<JobResourceAccess> accesses)
             => jobs.ReserveChunkAccesses<TAction>(query, TAction.AdditionalAccesses, ref accesses);
         public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses)
         {
-            if (stage == 0) accesses.Add(JobResourceAccess.Read(jobs.Structure));
-            else if (stage == 1)
+            if (stage == 0)
             {
                 runner._world.BeginRead(); _ranges = QueryRanges.Rent(); _ranges.Build(query, runner.ChunkRangeRows<TAction>());
                 jobs.BuildChunkAccesses<TAction>(query, _ranges, TAction.AdditionalAccesses, ref accesses);
