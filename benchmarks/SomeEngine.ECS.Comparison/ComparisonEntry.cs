@@ -385,7 +385,7 @@ internal static class ComparisonEntry
         PositionInputs.Get(count);
         return [
         ("SomeEngine", () => new SomeEngineWorld(count, workload is "query-append-fixed" or "query-bind-fixed" ? 256 : 0,
-            workload?.StartsWith("job-") == true && workload != "job-native-parallel", workload == "enableable",
+            workload?.StartsWith("job-") == true, workload == "enableable",
             workload is "create-destroy-three" or "spawn-batch" ? ComparisonWorld.Changes : 0, workload)),
         ("EasyEcs", () => new EasyEcsWorld(count, workload == "job-native-parallel", workload == "enableable", workload)),
         ("Friflo", () => new FrifloWorld(count, workload == "enableable", workload)),
