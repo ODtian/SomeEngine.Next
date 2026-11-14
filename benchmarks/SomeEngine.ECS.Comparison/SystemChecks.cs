@@ -220,7 +220,7 @@ internal static partial class SystemChecks
         for (int i = 0; i < entities.Length; i++)
             entities[i] = world.Spawn(new RandomSystemRow { Value = new(i), Step = new(1), Random = new(2) });
         Query query = world.Query(new QueryDescription().With<SystemValue>().With<SystemStep>().Optional<RandomValue>());
-        var group = new SystemGroup(world, scheduler);
+        var group = new SystemGroup(world);
         group.Add(new SetRandomFive(), world.Query<RandomValue, SystemStep>());
         group.Add(new ReadRandom(world, entities), query);
         group.Execute();
@@ -431,7 +431,7 @@ internal static partial class SystemChecks
         Entity parent = world.Spawn(new SystemRow { Value = new(0), Step = new(1) });
         using var commands = new CommandBatch(world, 1);
         var result = new GroupResult();
-        var group = new SystemGroup(world, scheduler, rangeRows: 128);
+        var group = new SystemGroup(world, rangeRows: 128);
         SystemState first = group.Add(new RecordChild(commands[0], parent, result), world.Query<SystemValue, SystemStep>(),
             commands, parallel: false);
         SystemState maintenance = group.AddJob(new MaintainChildren(world), structureWrite: true);
@@ -444,11 +444,11 @@ internal static partial class SystemChecks
         Require(first.LastSystemVersion == first.CurrentSystemVersion && second.LastSystemVersion > first.LastSystemVersion,
             "each system commits its observation upper bound after its completion stages");
         group.Execute();
-        Require(result.Children == 2 && group.GraphBuildCount == 1, "repeated execution reuses the declared system graph");
+        Require(result.Children == 2, "repeated execution reuses the declared system graph");
         group.Execute();
-        Require(group.GraphBuildCount == 1 && result.Children == 3, "generated declarations keep the system graph across runs");
+        Require(result.Children == 3, "generated declarations keep the system graph across runs");
 
-        var failing = new SystemGroup(world, scheduler);
+        var failing = new SystemGroup(world);
         SystemState failed = failing.Add(new RecordChild(commands[0], parent, result), world.Query<SystemValue, SystemStep>(),
             commands, parallel: false);
         result.Fail = true;

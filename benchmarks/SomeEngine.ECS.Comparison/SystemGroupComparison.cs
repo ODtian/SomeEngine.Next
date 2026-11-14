@@ -128,7 +128,7 @@ internal sealed partial class SomeEngineWorld
         internal SourceSystemGroupJobs(World world, Scheduler scheduler, CommandBatch commands,
             SystemGroupFrame<Entity, DeferredEntity, SomeCommandComparison, SomeHierarchyComparison> frame)
         {
-            _frame = frame; _group = new(world, scheduler);
+            _frame = frame; _group = new(world);
             Query query = world.Query<Position, Velocity>();
             _first = _group.Add(new MovePositions(), query, commands);
             SystemState finish = _group.AddJob(new FinishGroup(frame), structureWrite: true);
@@ -142,7 +142,7 @@ internal sealed partial class SomeEngineWorld
         }
         public void Run(bool scheduled, bool parallel, bool dependent)
         { _frame.Commands.RecordCommands(); _last = _group.Schedule(); _last.Complete(); Runs++; }
-        public bool Check() => _group.GraphBuildCount == 1 && _last.IsCompleted && _frame.Check()
+        public bool Check() => _last.IsCompleted && _frame.Check()
             && _first.LastSystemVersion == _first.CurrentSystemVersion && _second.LastSystemVersion == _second.CurrentSystemVersion
             && _second.CurrentSystemVersion >= _first.CurrentSystemVersion;
         public void Dispose() { _group.Complete(); _frame.Dispose(); }

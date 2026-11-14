@@ -7,7 +7,6 @@ public sealed class SystemAccesses
     internal readonly List<WorldValueAccess> Values = [];
     internal bool HasRandomWrites;
     internal bool HasTrackedWrites;
-    internal int Revision;
 
     internal bool RequiresSerial<T>() where T : struct
     {
@@ -25,14 +24,12 @@ public sealed class SystemAccesses
     public SystemAccesses ReadResource<T>()
     {
         Values.Add(new(ResourceType<T>.Id, WorldValueKind.Resource, false, false));
-        Revision++;
         return this;
     }
 
     public SystemAccesses WriteResource<T>()
     {
         Values.Add(new(ResourceType<T>.Id, WorldValueKind.Resource, true, false));
-        Revision++;
         HasRandomWrites = true;
         return this;
     }
@@ -42,7 +39,6 @@ public sealed class SystemAccesses
         bool structural = kind == WorldValueKind.Table && ComponentType<T>.Value.UsesStructureWrites;
         if (structural && write) throw new InvalidOperationException("Record structural writes in the command producer.");
         Values.Add(new(ComponentType<T>.TypeId, kind, write, ComponentType<T>.TracksWritesType, structural));
-        Revision++;
         HasRandomWrites |= write;
         HasTrackedWrites |= write && ComponentType<T>.TracksWritesType;
         return this;

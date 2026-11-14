@@ -1,5 +1,4 @@
 using SomeEngine.ECS.Commands;
-using SomeEngine.ECS.Storage;
 using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems;
@@ -13,18 +12,22 @@ public sealed partial class SystemState
     public bool Enabled { get; internal set; } = true;
 }
 
-public sealed partial class SystemGroup(World world, Scheduler scheduler, int rangeRows = 1024) : ISystemVersions
+/// <summary>
+/// Systems are jobs on the World's scheduler. Each run submits every system with its declared World accesses;
+/// the scheduler orders systems whose accesses conflict in submission order. Submission follows registration
+/// order, adjusted only by explicit <see cref="After"/> edges.
+/// </summary>
+public sealed partial class SystemGroup(World world, int rangeRows = 1024) : ISystemVersions
 {
     private readonly SystemRunner _runner = new(world, rangeRows);
+    private readonly Scheduler _scheduler = ((WorldJobs)world.Execution!).Scheduler;
     private readonly List<SystemEntry> _systems = [];
-    private int[][] _predecessors = [];
+    private int[] _order = [];
     private JobHandle[] _handles = [];
     private JobHandle[] _dependencies = [];
-    private int[] _order = [];
-    private bool _changed;
+    private bool _orderChanged;
     private JobHandle _previousRun;
 
-    public int GraphBuildCount { get; private set; }
     public int VersionCount => _systems.Count;
 
     public void Complete() => _previousRun.Complete();
@@ -47,19 +50,22 @@ public sealed partial class SystemGroup(World world, Scheduler scheduler, int ra
         }
     }
 
+    /// <summary>Runs <paramref name="system"/> after <paramref name="predecessor"/> completes, whatever their accesses.</summary>
     public void After(SystemState system, SystemState predecessor)
     {
         _systems[system.Index].ExplicitPredecessors.Add(predecessor.Index);
-        _changed = true;
+        _orderChanged = true;
     }
 
     public SystemState AddJob<TJob>(in TJob job, SystemAccesses? accesses = null, bool structureWrite = false)
         where TJob : struct, IJob
+        => Register(new ScheduledSystemJob<TJob>(world, _scheduler, job, accesses, structureWrite));
+
+    private SystemState Register(SystemEntry system)
     {
-        var system = new ScheduledSystemJob<TJob>(world, scheduler, job, accesses, structureWrite);
         system.State.Index = _systems.Count;
         _systems.Add(system);
-        _changed = true;
+        _orderChanged = true;
         return system.State;
     }
 
@@ -67,69 +73,55 @@ public sealed partial class SystemGroup(World world, Scheduler scheduler, int ra
 
     public JobHandle Schedule(JobHandle dependency = default)
     {
-        foreach (SystemEntry system in _systems)
-            if (system.DeclarationVersion != (system.Accesses?.Revision ?? 0)) _changed = true;
-        if (_changed) BuildGraph();
+        if (_orderChanged) OrderSubmissions();
         JobHandle previous = _previousRun.IsCompleted ? default
-            : scheduler.ScheduleFinally(new GroupBoundary(), dependency: _previousRun, options: default);
-        JobHandle root = scheduler.CombineDependencies([dependency, previous]);
+            : _scheduler.ScheduleFinally(new GroupBoundary(), dependency: _previousRun, options: default);
+        JobHandle root = _scheduler.CombineDependencies([dependency, previous]);
         foreach (int i in _order)
         {
-            int[] predecessors = _predecessors[i];
+            List<int> predecessors = _systems[i].ExplicitPredecessors;
             JobHandle before = root;
-            if (predecessors.Length != 0)
+            if (predecessors.Count != 0)
             {
-                Span<JobHandle> dependencies = _dependencies.AsSpan(0, predecessors.Length + 1);
+                Span<JobHandle> dependencies = _dependencies.AsSpan(0, predecessors.Count + 1);
                 dependencies[0] = root;
-                for (int j = 0; j < predecessors.Length; j++) dependencies[j + 1] = _handles[predecessors[j]];
-                before = scheduler.CombineDependencies(dependencies);
+                for (int j = 0; j < predecessors.Count; j++) dependencies[j + 1] = _handles[predecessors[j]];
+                before = _scheduler.CombineDependencies(dependencies);
             }
             _handles[i] = _systems[i].Schedule(before);
         }
-        return _previousRun = scheduler.CombineDependencies(_handles);
+        return _previousRun = _scheduler.CombineDependencies(_handles);
     }
 
-    private void BuildGraph()
+    // Registration order, moved only where an explicit After edge requires a later system first.
+    private void OrderSubmissions()
     {
-        _predecessors = new int[_systems.Count][];
         _handles = new JobHandle[_systems.Count];
         _dependencies = new JobHandle[_systems.Count + 1];
         _order = new int[_systems.Count];
-        foreach (SystemEntry system in _systems) system.RebuildDeclarations();
-        for (int i = 0; i < _systems.Count; i++)
-        {
-            SystemEntry system = _systems[i];
-            List<int> before = new(system.ExplicitPredecessors);
-            for (int j = 0; j < i; j++)
-                if (system.Conflicts(_systems[j]) && !_systems[j].ExplicitPredecessors.Contains(i) && !before.Contains(j)) before.Add(j);
-            _predecessors[i] = before.ToArray();
-        }
         int written = 0;
-        bool[] emitted = new bool[_systems.Count];
+        bool[] submitted = new bool[_systems.Count];
         while (written < _systems.Count)
         {
             int start = written;
             for (int i = 0; i < _systems.Count; i++)
             {
-                if (emitted[i]) continue;
+                if (submitted[i]) continue;
                 bool ready = true;
-                foreach (int before in _predecessors[i]) if (!emitted[before]) { ready = false; break; }
-                if (ready) { emitted[i] = true; _order[written++] = i; }
+                foreach (int before in _systems[i].ExplicitPredecessors) if (!submitted[before]) { ready = false; break; }
+                if (ready) { submitted[i] = true; _order[written++] = i; }
             }
-            if (start == written) throw new InvalidOperationException("System dependencies contain a cycle.");
+            if (start == written) throw new InvalidOperationException("Explicit system order contains a cycle.");
         }
-        _changed = false;
-        GraphBuildCount++;
+        _orderChanged = false;
     }
 
     private readonly struct GroupBoundary : IJob { public void Execute() { } }
 
     private sealed class ScheduledSystemJob<TJob>(World world, Scheduler scheduler, TJob job,
-        SystemAccesses? accesses, bool structureWrite) : SystemEntry(accesses, structureWrite)
+        SystemAccesses? accesses, bool structureWrite) : SystemEntry
         where TJob : struct, IJob
     {
-        protected override void AddComponents() { }
-
         internal override JobHandle Schedule(JobHandle dependency)
         {
             var jobs = (WorldJobs)world.Execution!;
@@ -137,9 +129,9 @@ public sealed partial class SystemGroup(World world, Scheduler scheduler, int ra
             JobHandle work;
             try
             {
-                JobResourceAccess[] declarations = Accesses is null
-                    ? ChangesStructure ? jobs.StructureWrite : jobs.StructureRead
-                    : jobs.CollectAccess(Accesses, ChangesStructure);
+                JobResourceAccess[] declarations = accesses is null
+                    ? structureWrite ? jobs.StructureWrite : jobs.StructureRead
+                    : jobs.CollectAccess(accesses, structureWrite);
                 work = scheduler.Schedule(new RunSystemJob<TJob>(world, State, job), declarations, dependency: dependency);
             }
             catch { jobs.EndUse(); throw; }
@@ -158,44 +150,11 @@ public sealed partial class SystemGroup(World world, Scheduler scheduler, int ra
         }
     }
 
-    private abstract class SystemEntry(SystemAccesses? accesses, bool changesStructure)
+    private abstract class SystemEntry
     {
         internal readonly SystemState State = new();
         internal readonly List<int> ExplicitPredecessors = [];
-        internal readonly List<WorldValueAccess> Values = [];
-        internal readonly SystemAccesses? Accesses = accesses;
-        internal int DeclarationVersion;
-        protected abstract void AddComponents();
         internal abstract JobHandle Schedule(JobHandle dependency);
-
-        protected void AddQueryReads(Query query, int first, int second, int third = -1)
-        {
-            foreach (int type in query.Description.Definition.AccessTypes)
-                if (type != first && type != second && type != third)
-                {
-                    ComponentType component = ComponentTypes.Get(type);
-                    Values.Add(new(type, WorldValueKind.Table, false, false, component.UsesStructureWrites));
-                }
-        }
-
-        internal void RebuildDeclarations()
-        {
-            Values.Clear();
-            AddComponents();
-            if (Accesses is not null) Values.AddRange(Accesses.Values);
-            DeclarationVersion = Accesses?.Revision ?? 0;
-        }
-
-        internal bool Conflicts(SystemEntry other)
-        {
-            if (changesStructure || other.ChangesStructure) return true;
-            foreach (WorldValueAccess first in Values)
-                foreach (WorldValueAccess second in other.Values)
-                    if (first.Kind == second.Kind && first.Type == second.Type && (first.Write || second.Write)) return true;
-            return false;
-        }
-
-        protected bool ChangesStructure => changesStructure;
     }
 
     private readonly struct SystemCompletion(World world, WorldJobs jobs, SystemState state, CommandBatch? commands) : IStagedJob

@@ -20,7 +20,7 @@ internal static partial class ArchiveSystemChecks
         using var world = new World(128, chunkCapacity: 64, execution: new WorldJobs(scheduler));
         var entities = new Entity[128];
         for (int i = 0; i < entities.Length; i++) entities[i] = world.Spawn(new CounterPosition { Counter = new(2, i), Position = new() { X = i } });
-        var group = new SystemGroup(world, scheduler, 64);
+        var group = new SystemGroup(world, 64);
         group.Add(new Advance(), world.Query<SaveCounter, Position>());
         group.Add(new Advance(), world.Query<SaveCounter, Position>());
         var registry = new SerializationRegistry()

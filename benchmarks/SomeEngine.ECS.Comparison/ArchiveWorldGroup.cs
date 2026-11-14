@@ -30,7 +30,7 @@ internal sealed partial class SourceArchiveGroup : ArchiveWorldGroup
     private readonly SystemGroup _group;
     internal SourceArchiveGroup(World world, Scheduler scheduler)
     {
-        _group = new(world, scheduler); Query query = world.Query<Position, Velocity>();
+        _group = new(world); Query query = world.Query<Position, Velocity>();
         _group.Add(new Move(), query);
         _group.Add(new Move(), query);
     }

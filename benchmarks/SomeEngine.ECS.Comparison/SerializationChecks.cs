@@ -96,7 +96,7 @@ internal static partial class SerializationChecks
         var firstEdge = world.CreateRelation(firstParent, entities[0], new ArchiveEdge(31));
         var secondEdge = world.CreateRelation(firstParent, entities[1], new ArchiveEdge(32));
         Relations<ArchiveEdge>.SetOrdered(world, firstParent, RelationAdjacencyRole.Outgoing, true, [secondEdge.Entity, firstEdge.Entity]);
-        var group = new SystemGroup(world, scheduler, 128);
+        var group = new SystemGroup(world, 128);
         SystemState state = group.Add(new AdvanceArchive(), world.Query<ArchiveValue, ArchiveStep>());
         ulong baseline = world.Version;
         group.Execute();
