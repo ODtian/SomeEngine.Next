@@ -74,7 +74,11 @@ internal sealed partial class SomeEngineWorld
                 (dependent ? runner.Schedule(query, action, first, parallel) : first).Complete();
             }
             else if (parallel) runner.ExecuteParallel(query, action);
-            else SystemRunner.Execute(world, action, query);
+            else
+            {
+                using QueryScope scope = query.Open();
+                foreach (QueryChunk chunk in scope) action.Execute(chunk.Write<Position>(), chunk.Read<Velocity>());
+            }
         }
         public void Dispose() { }
     }

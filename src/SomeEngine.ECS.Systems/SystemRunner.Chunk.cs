@@ -21,34 +21,6 @@ public sealed partial class SystemRunner
         Query? query = null) where TAction : struct, IChunkAction
         => Schedule(query ?? _world.Query(ChunkActionTypes<TAction>.Query), action, dependency, parallel);
 
-    public static void Execute<TAction>(World world, in TAction action, Query? query = null)
-        where TAction : struct, IChunkAction
-    {
-        Query selected = ChunkActionTypes<TAction>.Bind(query ?? world.Query(ChunkActionTypes<TAction>.Query));
-        SystemAccesses? additional = TAction.AdditionalAccesses;
-        using WorldAccess structure = world.OpenStructure(false);
-        using WorldAccess values = OpenChunkValues<TAction>(world, selected, additional);
-        world.BeginRead();
-        QueryRanges ranges = QueryRanges.Rent(); ulong version = 0;
-        try
-        {
-            ranges.Build(selected, 1024); ranges.Select(selected.SinceVersion);
-            if (ranges.Count == 0) return;
-            if (world.Execution is WorldJobs jobs)
-                AcquireChunkResources(jobs, ranges, jobs.CurrentAccess, !JobThreads.IsActive, selected.SinceVersion, action);
-            bool scoped = ChunkActionTypes<TAction>.TrackedWrites.Length != 0 || additional?.HasTrackedWrites == true;
-            if (ChunkActionTypes<TAction>.TrackedWrites.Length != 0) version = world.NextVersion();
-            using var batch = scoped ? world.BeginBatchVersion(version) : default;
-            var work = new ChunkActionWork<TAction>(world, action, selected.SinceVersion, version, scoped);
-            for (int i = 0; i < ranges.Count; i++) work.Execute(in ranges.Items[i]);
-        }
-        finally
-        {
-            if (version != 0) MergeChunkWrites<TAction>(ranges, version);
-            ranges.Return(); world.EndRead();
-        }
-    }
-
     public void ExecuteParallel<TAction>(Query query, in TAction action)
         where TAction : struct, IChunkAction
     {
@@ -99,22 +71,6 @@ public sealed partial class SystemRunner
         query = ChunkActionTypes<TAction>.Bind(query);
         WorldJobs jobs = (WorldJobs)_world.Execution!; jobs.BeginUse();
         return _scheduler.ScheduleStages(new ChunkStages<TAction>(this, jobs, query, action, parallel, state), dependency);
-    }
-
-    private static WorldAccess OpenChunkValues<TAction>(World world, Query query, SystemAccesses? additional)
-        where TAction : struct, IChunkAction
-    {
-        Span<WorldValueAccess> values = stackalloc WorldValueAccess[ChunkActionTypes<TAction>.Components.Length
-            + (additional?.Values.Count ?? 0) + ComponentTypes.Count];
-        int count = 0;
-        foreach (ChunkAccess access in ChunkActionTypes<TAction>.Components)
-            values[count++] = new(access.Type, WorldValueKind.Table, access.WritesValue, access.Tracked, access.Structural);
-        for (int type = 0; type < ComponentTypes.Count; type++)
-            if (query.Description.Changed.Has(type) && !ChunkActionTypes<TAction>.Writes.Contains(type)
-                && !ComponentTypes.Get(type).UsesStructureWrites)
-                values[count++] = new(type, WorldValueKind.Changes, false, false);
-        if (additional is not null) foreach (WorldValueAccess access in additional.Values) values[count++] = access;
-        return world.OpenValues(values[..count]);
     }
 
     private static void CollectChunkResources<TAction>(Scheduler scheduler, QueryRanges ranges,

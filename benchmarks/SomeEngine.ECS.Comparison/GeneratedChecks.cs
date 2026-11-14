@@ -60,13 +60,13 @@ internal static class GeneratedChecks
     internal static void Run()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, EnableCounters = false });
-        CheckJobs(scheduler, false); CheckJobs(scheduler, true); CheckValues();
+        CheckJobs(scheduler); CheckValues();
         Console.WriteLine("Generated consumers: entity/chunk work, multiple tracked writes, row identities, enablement, buffers, random write policy, generic jobs, system groups, codecs and owned references passed.");
     }
 
-    private static void CheckJobs(Scheduler scheduler, bool connected)
+    private static void CheckJobs(Scheduler scheduler)
     {
-        using var world = new World(512, chunkCapacity: 128, execution: connected ? new WorldJobs(scheduler) : null);
+        using var world = new World(512, chunkCapacity: 128, execution: new WorldJobs(scheduler));
         var entities = new Entity[512];
         for (int i = 0; i < entities.Length; i++)
         {
@@ -75,24 +75,20 @@ internal static class GeneratedChecks
             if (i % 4 == 0) world.Disable<GeneratedVelocity>(entity);
         }
         var job = new GeneratedAdvance();
-        ulong before = world.Version; job.Execute(world);
+        ulong before = world.Version; job.ExecuteParallel(world);
         Require(world.Version == before + 1, "one generated batch version covers both tracked component columns");
         Require(world.Query(new QueryDescription().WithChanged<GeneratedCounter>(before)).Count == 384
             && world.Query(new QueryDescription().WithChanged<GeneratedOther>(before)).Count == 384,
             "generated writes publish both exact selected row sets");
-        int steps = 1;
-        if (connected)
-        {
-            job.ExecuteParallel(world); steps++;
-            job.Schedule(world).Complete(); steps++;
-            JobHandle first = job.ScheduleParallel(world);
-            job.ScheduleParallel(world, first).Complete(); steps += 2;
-            var group = new SystemGroup(world, scheduler, 128);
-            SystemState a = group.Add(job), b = group.Add(job); group.After(b, a);
-            group.Execute(); steps += 2;
-            Require(group.GraphBuildCount == 1 && a.LastSystemVersion == a.CurrentSystemVersion
-                && b.LastSystemVersion == b.CurrentSystemVersion, "generated systems publish completed graph baselines");
-        }
+        job.Schedule(world).Complete();
+        JobHandle first = job.ScheduleParallel(world);
+        job.ScheduleParallel(world, first).Complete();
+        var group = new SystemGroup(world, scheduler, 128);
+        SystemState a = group.Add(job), b = group.Add(job); group.After(b, a);
+        group.Execute();
+        Require(group.GraphBuildCount == 1 && a.LastSystemVersion == a.CurrentSystemVersion
+            && b.LastSystemVersion == b.CurrentSystemVersion, "generated systems publish completed graph baselines");
+        const int steps = 6;
         for (int i = 0; i < entities.Length; i++)
         {
             int count = i % 4 == 0 ? 0 : steps;
@@ -102,12 +98,12 @@ internal static class GeneratedChecks
         }
         before = world.Version;
         var vectors = new GeneratedVectorAdvance();
-        if (connected) vectors.ExecuteParallel(world); else vectors.Execute(world);
+        vectors.ExecuteParallel(world);
         Require(world.Version == before + 1 && world.Query(new QueryDescription().WithChanged<GeneratedOther>(before)).Count == 384,
             "generated chunk spans retain their query filter and tracked completion");
         before = world.Version;
         var buffers = new GeneratedAppend();
-        if (connected) buffers.ScheduleParallel(world).Complete(); else buffers.Execute(world);
+        buffers.ScheduleParallel(world).Complete();
         Require(world.Version == before + 1 && world.Query(new QueryDescription().WithChangedBuffer<GeneratedElement>(before)).Count == 384,
             "generated buffer writes share the declared batch version and completed summaries");
         for (int i = 0; i < entities.Length; i++)
@@ -118,11 +114,11 @@ internal static class GeneratedChecks
         }
         before = world.Version; int old = world.ReadValue<GeneratedOther>(entities[0]).Value;
         var random = new GeneratedRandomWrite(world, entities[0]);
-        if (connected) random.ScheduleParallel(world).Complete(); else random.Execute(world);
+        random.ScheduleParallel(world).Complete();
         Require(world.Version == before + 1 && world.ReadValue<GeneratedOther>(entities[0]).Value == old + entities.Length
             && world.Query(new QueryDescription().WithChanged<GeneratedOther>(before)).Count == 1,
             "generated random writes select one execution item and retain one tracked batch version");
-        new GeneratedOverwrite<GeneratedOther>(new(42)).Execute(world);
+        new GeneratedOverwrite<GeneratedOther>(new(42)).ExecuteParallel(world);
         foreach (Entity entity in entities) Require(world.ReadValue<GeneratedOther>(entity).Value == 42,
             "generated generic jobs bind their closed component type");
     }

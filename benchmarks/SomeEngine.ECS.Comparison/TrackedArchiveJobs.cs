@@ -70,7 +70,13 @@ internal sealed partial class SourceTrackedArchiveJobs : TrackedArchiveJobs
     internal override void Run(string mode)
     {
         bool dependent = mode == "dependent"; BeginRun(dependent);
-        if (mode == "execute") SystemRunner.Execute(_world, _action, _query);
+        if (mode == "execute")
+        {
+            // The current thread holds the whole World so the body's random lookups need no declaration.
+            using var exclusive = _world.OpenStructureWrite();
+            using QueryScope scope = _query.Open();
+            foreach (QueryChunk chunk in scope) _action.Execute(chunk.Write<SaveCounter>(), chunk.Read<Position>());
+        }
         else if (mode == "parallel") _runner.ExecuteParallel(_query, _action);
         else
         {

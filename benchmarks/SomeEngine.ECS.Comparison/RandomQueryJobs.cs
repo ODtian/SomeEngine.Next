@@ -60,7 +60,7 @@ internal sealed partial class SomeEngineWorld
             : new SourceRandomJobs<WriteRandomJob>(_world, runner, query, new(_world, _entities));
     }
     [JobRead(typeof(Velocity))]
-    private readonly partial struct ReadRandomJob(World world, Entity[] entities) : IJobChunk
+    private readonly partial struct ReadRandomJob(World world, Entity[] entities) : IJobChunk, IColumnPass<Position, Velocity, JobOrdinal>
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<JobOrdinal> ordinals)
         {
@@ -73,7 +73,7 @@ internal sealed partial class SomeEngineWorld
         }
     }
     [JobWrite(typeof(JobExtra))]
-    private readonly partial struct WriteRandomJob(World world, Entity[] entities) : IJobChunk
+    private readonly partial struct WriteRandomJob(World world, Entity[] entities) : IJobChunk, IColumnPass<Position, Velocity, JobOrdinal>
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<JobOrdinal> ordinals)
         {
@@ -86,7 +86,7 @@ internal sealed partial class SomeEngineWorld
         }
     }
     private sealed class SourceRandomJobs<TAction>(World world, SystemRunner runner, Query query, TAction action) : IQueryJobs
-        where TAction : struct, IChunkAction
+        where TAction : struct, IChunkAction, IColumnPass<Position, Velocity, JobOrdinal>
     {
         public void Run(bool scheduled, bool parallel, bool dependent)
         {
@@ -96,7 +96,14 @@ internal sealed partial class SomeEngineWorld
                 (dependent ? runner.Schedule(query, action, first, parallel) : first).Complete();
             }
             else if (parallel) runner.ExecuteParallel(query, action);
-            else SystemRunner.Execute(world, action, query);
+            else
+            {
+                // The current thread holds the whole World so the body's random lookups need no declaration.
+                using var exclusive = world.OpenStructureWrite();
+                using QueryScope scope = query.Open();
+                foreach (QueryChunk chunk in scope)
+                    action.Execute(chunk.Write<Position>(), chunk.Read<Velocity>(), chunk.Read<JobOrdinal>());
+            }
         }
         public void Dispose() { }
     }

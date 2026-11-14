@@ -188,8 +188,6 @@ internal static class JobGenerator
                 : "__column" + i + (entity ? "[__row]" : ""));
         }
         code.Append(");\n"); if (entity) code.Append("}\n"); code.Append("}\n");
-        code.Append("public void Execute(global::SomeEngine.ECS.World world, global::SomeEngine.Job.JobHandle dependency = default, global::SomeEngine.ECS.Query? query = null) { dependency.Complete(); global::SomeEngine.ECS.Systems.SystemRunner.Execute<")
-            .Append(self).Append(">(world, this, query); }\n");
         code.Append("public void ExecuteParallel(global::SomeEngine.ECS.World world, global::SomeEngine.Job.JobHandle dependency = default, global::SomeEngine.ECS.Query? query = null) { dependency.Complete(); new global::SomeEngine.ECS.Systems.SystemRunner(world).ExecuteParallel<")
             .Append(self).Append(">(this, query); }\n");
         foreach (bool parallel in new[] { false, true })

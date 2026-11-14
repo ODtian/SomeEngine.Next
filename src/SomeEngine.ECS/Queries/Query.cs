@@ -268,12 +268,13 @@ public partial struct Query
         return true;
     }
 
+    /// <summary>Opens the matched chunks for reading and writing; every write in the scope shares one World version.</summary>
     public QueryScope Open()
     {
         _world.Execution?.EnterQuery(this, [], writeAll: true);
         _world.BeginRead();
         RefreshIfNeeded();
-        return new QueryScope(_world, _matches, _count, _since);
+        return new QueryScope(_world, _matches, _count, _since, _world.BeginBatchVersion(0));
     }
 
     public QueryScope OpenRead()
@@ -281,7 +282,7 @@ public partial struct Query
         _world.Execution?.EnterQuery(this, [], writeAll: false);
         _world.BeginRead();
         RefreshIfNeeded();
-        return new QueryScope(_world, _matches, _count, _since, write: false);
+        return new QueryScope(_world, _matches, _count, _since, batch: null);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -295,13 +296,17 @@ public ref partial struct QueryScope
     private readonly QueryMatch[] _matches;
     private readonly int _count;
     private readonly ulong _since;
-    private readonly bool _write;
+    private readonly World.BatchVersionScope? _batch;
 
-    internal QueryScope(World world, QueryMatch[] matches, int count, ulong since, bool write = true)
-        => (_world, _matches, _count, _since, _write) = (world, matches, count, since, write);
+    internal QueryScope(World world, QueryMatch[] matches, int count, ulong since, World.BatchVersionScope? batch)
+        => (_world, _matches, _count, _since, _batch) = (world, matches, count, since, batch);
 
-    public ChunkEnumerator GetEnumerator() => new(_matches, _count, _world.HasMultipleChunks, _since, _write);
-    public void Dispose() => _world.EndValueRead();
+    public ChunkEnumerator GetEnumerator() => new(_matches, _count, _world.HasMultipleChunks, _since, _batch.HasValue);
+    public void Dispose()
+    {
+        _batch?.Dispose();
+        _world.EndValueRead();
+    }
 }
 
 public struct ChunkEnumerator

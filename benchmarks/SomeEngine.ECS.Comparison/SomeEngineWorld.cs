@@ -261,7 +261,8 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void IterateOneRanges()
     {
-        new FlipHealth().Execute(_world, query: _one);
+        using QueryScope scope = _one.Open();
+        foreach (QueryChunk chunk in scope) ComponentMath.Flip(chunk.Write<Health>());
     }
 
     internal override void IterateTwo()
@@ -273,7 +274,8 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void IterateTwoRanges()
     {
-        new MovePositions().Execute(_world, query: _two);
+        using QueryScope scope = _two.Open();
+        foreach (QueryChunk chunk in scope) ComponentMath.Move(chunk.Write<Position>(), chunk.Read<Velocity>());
     }
 
     internal override void IterateSimd()
@@ -285,7 +287,8 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void IterateSimdRanges()
     {
-        new MoveVectors().Execute(_world, query: _two);
+        using QueryScope scope = _two.Open();
+        foreach (QueryChunk chunk in scope) ComponentMath.MoveSimd(chunk.Write<Position>(), chunk.Read<Velocity>());
     }
 
     internal override void IterateThree()
@@ -298,7 +301,9 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void IterateThreeRanges()
     {
-        new ReadThreeColumns().Execute(_world, query: _three);
+        using QueryScope scope = _three.Open();
+        foreach (QueryChunk chunk in scope)
+            ComponentMath.ReadThree(chunk.Write<Position>(), chunk.Read<Velocity>(), chunk.Read<Health>());
     }
 
     internal override void IterateFiltered()
@@ -310,7 +315,8 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void IterateFilteredRanges()
     {
-        new FlipHealth().Execute(_world, query: _filtered);
+        using QueryScope scope = _filtered.Open();
+        foreach (QueryChunk chunk in scope) ComponentMath.Flip(chunk.Write<Health>());
     }
 
     internal override void ReadRandom()
@@ -338,28 +344,13 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     internal override void ReplaceBatch()
         => _world.Set<Position>(_lookupEntities, ReplacementPosition);
 
-    private partial struct FlipHealth : IJobChunk
-    {
-        public void Execute(Span<Health> values) => ComponentMath.Flip(values);
-    }
-
     private partial struct MovePositions : IJobChunk
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities)
             => ComponentMath.Move(positions, velocities);
     }
 
-    private partial struct MoveVectors : IJobChunk
-    {
-        public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities)
-            => ComponentMath.MoveSimd(positions, velocities);
-    }
 
-    private partial struct ReadThreeColumns : IJobChunk
-    {
-        public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<Health> health)
-            => ComponentMath.ReadThree(positions, velocities, health);
-    }
 
     internal override void WriteRandom()
     {

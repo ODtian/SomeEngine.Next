@@ -25,9 +25,13 @@ internal static partial class ChunkChecks
         var one = new ChangeHealth();
         var two = new Move();
         var three = new Calculate();
-        one.Execute(world, query: query);
-        two.Execute(world, query: query);
-        three.Execute(world, query: query);
+        using (QueryScope scope = query.Open())
+            foreach (QueryChunk chunk in scope)
+            {
+                one.Execute(chunk.Write<Health>());
+                two.Execute(chunk.Write<Position>(), chunk.Read<Velocity>());
+                three.Execute(chunk.Write<Position>(), chunk.Read<Velocity>(), chunk.Read<Health>());
+            }
         int rowsSeen = 0, ranges = 0;
         long total = 0;
         using (var scope = query.Open())
@@ -84,18 +88,18 @@ internal static partial class ChunkChecks
     {
         if (!condition) throw new InvalidOperationException(message);
     }
-    private partial struct ChangeHealth : IJobChunk
+    private struct ChangeHealth
     {
         public void Execute(Span<Health> values) { foreach (ref var value in values) value.Value++; }
     }
-    private partial struct Move : IJobChunk
+    private struct Move
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities)
         {
             for (int i = 0; i < positions.Length; i++) positions[i].X += velocities[i].X;
         }
     }
-    private partial struct Calculate : IJobChunk
+    private struct Calculate
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<Health> health)
         {

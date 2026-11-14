@@ -162,12 +162,12 @@ internal static partial class SystemChecks
     {
         using var world = new World(execution: new WorldJobs(scheduler));
         Entity original = world.Spawn(new Motion { Position = new() { X = 7 }, Velocity = new() { X = 1 } });
-        var calls = new JobResult<int>();
+        int calls = 0;
         bool rejected = false;
-        try { SystemRunner.Execute(world, new CreateDuringQuery(world, calls), world.Query<Position, Velocity>()); }
+        try { CreateDuringQuery(world, ref calls); }
         catch (JobResourceSafetyException) { rejected = true; }
         Entity created = world.Create(new Position { X = 9 });
-        Require(rejected && calls.Value == 1 && world.EntityCount == 2
+        Require(rejected && calls == 1 && world.EntityCount == 2
             && world.ReadValue<Position>(original).X == 7 && world.ReadValue<Position>(created).X == 9,
             "query structure reads reject callback creation and release access when the callback ends");
     }
@@ -177,24 +177,24 @@ internal static partial class SystemChecks
         using var world = new World(execution: new WorldJobs(scheduler));
         Entity original = world.Spawn(new Motion { Position = new() { X = 7 }, Velocity = new() { X = 1 } });
         using var structure = world.OpenStructureWrite();
-        var calls = new JobResult<int>();
+        int calls = 0;
         bool rejected = false;
-        try { new CreateDuringQuery(world, calls).Execute(world, query: world.Query<Position, Velocity>()); }
+        try { CreateDuringQuery(world, ref calls); }
         catch (InvalidOperationException) { rejected = true; }
         Entity created = world.Create(new Position { X = 9 });
-        Require(rejected && calls.Value == 1 && world.EntityCount == 2
+        Require(rejected && calls == 1 && world.EntityCount == 2
             && world.ReadValue<Position>(original).X == 7 && world.ReadValue<Position>(created).X == 9,
             "queries under structure write access protect borrowed rows until the callback ends");
     }
 
-    private readonly partial struct CreateDuringQuery(World world, JobResult<int> calls) : IJobChunk
+    private static void CreateDuringQuery(World world, ref int calls)
     {
-        public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities)
+        using QueryScope scope = world.Query<Position, Velocity>().Open();
+        foreach (QueryChunk chunk in scope)
         {
-            calls.Value++;
+            calls++;
             world.Create(new Position { X = 17 });
         }
-        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(calls);
     }
 
     private static void CheckScheduledOptionalRead(Scheduler scheduler)

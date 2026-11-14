@@ -346,14 +346,6 @@ internal readonly struct DefaultGrouping : IGroupingBackend<DefaultEcs.Entity, D
 internal sealed partial class SomeEngineWorld
 {
     private Query[]? _groupQueries;
-    private readonly JobResult<GroupPass> _groupPass = new();
-
-    private readonly partial struct GroupPassJob(JobResult<GroupPass> pass) : IJobChunk
-    {
-        public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<GroupedNumber> numbers)
-            => pass.Value.Execute(positions, velocities, numbers);
-        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(pass);
-    }
     private SomeEngine.ECS.Entities.Entity[] _groupChangedEntities = [];
     private GroupedNumber[] _groupChangedValues = [];
     private void PrepareGroups(string workload)
@@ -390,9 +382,11 @@ internal sealed partial class SomeEngineWorld
         GroupProjectionCalls = GroupProjection.Calls;
         for (int i = 0; i < 8; i++)
         {
-            _groupPass.Value = new GroupPass(GroupMembers, GroupMemberCount, i + 4);
-            new GroupPassJob(_groupPass).Execute(_world, query: _groupQueries![i]);
-            FinishGroupPass(in _groupPass.Value);
+            var pass = new GroupPass(GroupMembers, GroupMemberCount, i + 4);
+            using (QueryScope scope = _groupQueries![i].Open())
+                foreach (QueryChunk chunk in scope)
+                    pass.Execute(chunk.Write<Position>(), chunk.Read<Velocity>(), chunk.Read<GroupedNumber>());
+            FinishGroupPass(in pass);
         }
     }
 }

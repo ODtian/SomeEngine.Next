@@ -25,13 +25,6 @@ internal struct SignalPass(int value) : EasyEcs.IForEachBatch<Signal>
 internal sealed partial class SomeEngineWorld
 {
     private Query? _enabledSignals, _disabledSignals;
-    private readonly JobResult<SignalPass> _activeSignalPass = new(), _disabledSignalPass = new();
-
-    private readonly partial struct SignalPassJob(JobResult<SignalPass> pass) : IJobChunk
-    {
-        public void Execute(Span<Signal> values) => pass.Value.Execute(values);
-        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(pass);
-    }
 
     private static class SignalQueries
     {
@@ -58,12 +51,14 @@ internal sealed partial class SomeEngineWorld
             if (_world.Has<Signal>(entity)) stored++;
             total += _world.Read<Signal>(entity).Value;
         }
-        _activeSignalPass.Value = new SignalPass(7);
-        _disabledSignalPass.Value = new SignalPass(43);
-        new SignalPassJob(_activeSignalPass).Execute(_world, query: _enabledSignals.GetValueOrDefault());
-        new SignalPassJob(_disabledSignalPass).Execute(_world, query: _disabledSignals.GetValueOrDefault());
-        EnabledActiveCount = _activeSignalPass.Value.Count;
-        EnabledDisabledCount = _disabledSignalPass.Value.Count;
+        var active = new SignalPass(7);
+        var disabled = new SignalPass(43);
+        using (QueryScope scope = _enabledSignals.GetValueOrDefault().Open())
+            foreach (QueryChunk chunk in scope) active.Execute(chunk.Write<Signal>());
+        using (QueryScope scope = _disabledSignals.GetValueOrDefault().Open())
+            foreach (QueryChunk chunk in scope) disabled.Execute(chunk.Write<Signal>());
+        EnabledActiveCount = active.Count;
+        EnabledDisabledCount = disabled.Count;
         EnabledStoredCount = stored;
         ReadTotal = total;
         for (int i = 0; i < Count; i += 4) _world.Enable<Signal>(_entities[i]);

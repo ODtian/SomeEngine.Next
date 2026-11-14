@@ -99,14 +99,6 @@ internal sealed partial class SomeEngineWorld
 {
     private Query _queryAppend;
     private Body[] _queryAppendBodies = [];
-    private readonly JobResult<QueryAppendPass> _queryAppendPass = new();
-
-    private readonly partial struct QueryAppendJob(JobResult<QueryAppendPass> pass) : IJobChunk
-    {
-        public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<Health> health)
-            => pass.Value.Execute(positions, velocities, health);
-        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(pass);
-    }
     private SomeEngine.ECS.Entities.Entity[] _queryAdded = [];
     private void PrepareQueryAppend(string workload)
     {
@@ -157,9 +149,8 @@ internal sealed partial class SomeEngineWorld
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void QueryBindRanges(ref QueryAppendPass pass)
     {
-        _queryAppendPass.Value = pass;
-        new QueryAppendJob(_queryAppendPass).Execute(_world, query: _queryAppend);
-        pass = _queryAppendPass.Value;
+        using QueryScope scope = _queryAppend.Open();
+        foreach (QueryChunk chunk in scope) pass.Execute(chunk.Write<Position>(), chunk.Read<Velocity>(), chunk.Read<Health>());
     }
 
 }
