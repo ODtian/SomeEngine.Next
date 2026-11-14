@@ -86,13 +86,13 @@ public sealed partial class SystemRunner
         ref JobResourceAccessBuilder resources, ulong since) where TAction : struct, IChunkAction
     {
         if (range.Filter is null)
-            TAction.CollectResources(new(range.Chunk, range.Start, range.End - range.Start, 0), ref resources);
+            TAction.CollectResources(new(range.Chunk, range.Start, range.End - range.Start, ChunkWrites.ReadOnly), ref resources);
         else
         {
             int next = range.Start;
             while (next < range.End && range.Filter.Next(range.Chunk, since, ref next,
                 out int start, out int count, range.End))
-                TAction.CollectResources(new(range.Chunk, start, count, 0), ref resources);
+                TAction.CollectResources(new(range.Chunk, start, count, ChunkWrites.ReadOnly), ref resources);
         }
     }
 
@@ -207,11 +207,15 @@ public sealed partial class SystemRunner
         {
             using var changes = scoped ? world.BeginBatchVersion(version) : default;
             TAction local = action;
-            if (range.Filter is null) { local.Execute(new(range.Chunk, range.Start, range.End - range.Start, version)); return; }
+            if (range.Filter is null)
+            {
+                local.Execute(new(range.Chunk, range.Start, range.End - range.Start, ChunkWrites.MergedAfterJob, version));
+                return;
+            }
             int next = range.Start;
             while (next < range.End && range.Filter.Next(range.Chunk, since, ref next, out int start, out int count, range.End))
             {
-                local.Execute(new(range.Chunk, start, count, version));
+                local.Execute(new(range.Chunk, start, count, ChunkWrites.MergedAfterJob, version));
             }
         }
     }

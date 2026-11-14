@@ -337,12 +337,12 @@ public struct ChunkEnumerator
                 if (_filter is null)
                 {
                     _nextRow = current.Count;
-                    _current = new QueryChunk(current, 0, current.Count, _write);
+                    _current = new QueryChunk(current, 0, current.Count, _write ? ChunkWrites.Published : ChunkWrites.ReadOnly);
                     return true;
                 }
                 if (_filter.Next(current, _since, ref _nextRow, out int start, out int count))
                 {
-                    _current = new QueryChunk(current, start, count, _write);
+                    _current = new QueryChunk(current, start, count, _write ? ChunkWrites.Published : ChunkWrites.ReadOnly);
                     return true;
                 }
             }
@@ -368,29 +368,53 @@ public struct ChunkEnumerator
     public readonly QueryChunk Current => _current;
 }
 
+/// <summary>How a chunk view records the writes made through it.</summary>
+internal enum ChunkWrites : byte
+{
+    /// <summary>A read scope; writes are rejected.</summary>
+    ReadOnly,
+    /// <summary>The current thread checks each access and publishes change summaries immediately.</summary>
+    Published,
+    /// <summary>A job range stamps rows with the job's version; the runner publishes the summaries after the job.</summary>
+    MergedAfterJob,
+}
+
 public readonly partial struct QueryChunk
 {
     private readonly Chunk _chunk;
     private readonly int _start;
-    private readonly bool _write;
-    internal QueryChunk(Chunk chunk, int start, int count, bool write = true)
-        => (_chunk, _start, Count, _write) = (chunk, start, count, write);
+    private readonly ChunkWrites _writes;
+    private readonly ulong _jobVersion;
+    internal QueryChunk(Chunk chunk, int start, int count, ChunkWrites writes, ulong jobVersion = 0)
+        => (_chunk, _start, Count, _writes, _jobVersion) = (chunk, start, count, writes, jobVersion);
     [System.Diagnostics.Conditional("DEBUG")]
-    private void RequireWrite() => DevelopmentCheck.Require(_write, "Open a query write scope before changing its values.");
+    private void RequireWrite()
+        => DevelopmentCheck.Require(_writes != ChunkWrites.ReadOnly, "Open a query write scope before changing its values.");
+    private bool InJob => _writes == ChunkWrites.MergedAfterJob;
+    private ref ComponentChanges ChangesOf(int type) => ref _chunk.Changes![_chunk.Columns[type].ColumnPlusOne - 1];
     public int Count { get; }
     public ReadOnlySpan<SomeEngine.ECS.Entities.Entity> Entities => _chunk.Entities.AsSpan(_start, Count);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Span<T> Write<T>() where T : struct
     {
-        RequireWrite();
-        _chunk.Archetype.World.RequireValue<T>(true);
-        _chunk.Archetype.World.RequireWriteRange(_chunk, _start, Count);
-        if (ComponentType<T>.IsControlledType || ComponentType<T>.IsIndexedType || ComponentType<T>.IsGroupedType) throw new InvalidOperationException("Use the component's typed write view or Set entry.");
-        if (ComponentType<T>.TracksWritesType)
+        if (ComponentType<T>.IsSharedType || ComponentType<T>.IsControlledType || ComponentType<T>.IsIndexedType || ComponentType<T>.IsGroupedType)
+            throw new InvalidOperationException("Use the component's typed write view or Set entry.");
+        if (InJob)
         {
-            ulong version = 0;
-            _chunk.Archetype.World.StampRange<T>(_chunk, _start, Count, ref version);
+            if (ComponentType<T>.TracksWritesType)
+                ChangesOf(ComponentType<T>.TypeId).StampRange(_start, Count, _jobVersion, ComponentType<T>.TracksAddedType, publish: false);
+        }
+        else
+        {
+            RequireWrite();
+            _chunk.Archetype.World.RequireValue<T>(true);
+            _chunk.Archetype.World.RequireWriteRange(_chunk, _start, Count);
+            if (ComponentType<T>.TracksWritesType)
+            {
+                ulong version = 0;
+                _chunk.Archetype.World.StampRange<T>(_chunk, _start, Count, ref version);
+            }
         }
         return ColumnEntry.Span<T>(ref _chunk.Columns[ComponentType<T>.TypeId], _chunk.Count).Slice(_start, Count);
     }
@@ -398,7 +422,7 @@ public readonly partial struct QueryChunk
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ReadOnlySpan<T> Read<T>() where T : struct
     {
-        _chunk.Archetype.World.RequireValue<T>(false);
+        if (!InJob) _chunk.Archetype.World.RequireValue<T>(false);
         if (ComponentType<T>.IsSharedType) throw new InvalidOperationException("Use ReadShared<T>() to read this range's shared values.");
         return ColumnEntry.Span<T>(ref _chunk.Columns[ComponentType<T>.TypeId], _chunk.Count).Slice(_start, Count);
     }
@@ -415,7 +439,7 @@ public readonly partial struct QueryChunk
 
     public ReadOnlyBuffer<T> ReadBuffer<T>(int row) where T : struct
     {
-        _chunk.Archetype.World.RequireValue<Buffer<T>>(false);
+        if (!InJob) _chunk.Archetype.World.RequireValue<Buffer<T>>(false);
         ref Buffer<T> buffer = ref ColumnEntry.At<Buffer<T>>(ref _chunk.Columns[ComponentType<Buffer<T>>.TypeId], _start + row);
         return new(_chunk.Archetype.World, in buffer, false);
     }
@@ -423,14 +447,23 @@ public readonly partial struct QueryChunk
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public BufferRows<T> GetBuffers<T>() where T : struct
     {
-        RequireWrite();
         World world = _chunk.Archetype.World;
-        world.RequireValue<Buffer<T>>(true);
-        world.RequireWriteRange(_chunk, _start, Count);
-        if (ComponentType<Buffer<T>>.TracksWritesType)
+        if (InJob)
         {
-            ulong version = 0;
-            world.StampRange<Buffer<T>>(_chunk, _start, Count, ref version);
+            if (ComponentType<Buffer<T>>.TracksWritesType)
+                ChangesOf(ComponentType<Buffer<T>>.TypeId).StampRange(_start, Count, _jobVersion,
+                    ComponentType<Buffer<T>>.TracksAddedType, publish: false);
+        }
+        else
+        {
+            RequireWrite();
+            world.RequireValue<Buffer<T>>(true);
+            world.RequireWriteRange(_chunk, _start, Count);
+            if (ComponentType<Buffer<T>>.TracksWritesType)
+            {
+                ulong version = 0;
+                world.StampRange<Buffer<T>>(_chunk, _start, Count, ref version);
+            }
         }
         Span<Buffer<T>> values = ColumnEntry.Span<Buffer<T>>(
             ref _chunk.Columns[ComponentType<Buffer<T>>.TypeId], _start + Count).Slice(_start, Count);
@@ -440,14 +473,22 @@ public readonly partial struct QueryChunk
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public DynamicBuffer<T> GetBuffer<T>(int row) where T : struct
     {
-        RequireWrite();
-        _chunk.Archetype.World.RequireValue<Buffer<T>>(true);
-        _chunk.Archetype.World.RequireWriteRow(_chunk, _start + row);
         World world = _chunk.Archetype.World;
         ref ColumnEntry column = ref _chunk.Columns[ComponentType<Buffer<T>>.TypeId];
         ref Buffer<T> buffer = ref ColumnEntry.At<Buffer<T>>(ref column, _start + row);
-        if (ComponentType<Buffer<T>>.TracksWritesType)
-            _chunk.Changes![column.ColumnPlusOne - 1].Stamp(_start + row, world.NextVersion(), false, ComponentType<Buffer<T>>.TracksAddedType);
+        if (InJob)
+        {
+            if (ComponentType<Buffer<T>>.TracksWritesType)
+                _chunk.Changes![column.ColumnPlusOne - 1].StampWord(_start + row, _jobVersion, ComponentType<Buffer<T>>.TracksAddedType);
+        }
+        else
+        {
+            RequireWrite();
+            world.RequireValue<Buffer<T>>(true);
+            world.RequireWriteRow(_chunk, _start + row);
+            if (ComponentType<Buffer<T>>.TracksWritesType)
+                _chunk.Changes![column.ColumnPlusOne - 1].Stamp(_start + row, world.NextVersion(), false, ComponentType<Buffer<T>>.TracksAddedType);
+        }
         if (buffer.Items is null) buffer = world.BufferPool<T>().Rent();
         return new(world, ref buffer, false);
     }

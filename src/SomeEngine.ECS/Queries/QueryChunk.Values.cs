@@ -10,7 +10,7 @@ public readonly partial struct QueryChunk
     {
         DevelopmentCheck.Require(start >= 0 && count >= 0 && start <= Count - count,
             "A query slice stays inside its chunk range.");
-        return new QueryChunk(_chunk, _start + start, count, _write);
+        return new QueryChunk(_chunk, _start + start, count, _writes, _jobVersion);
     }
 
     public bool Has<T>() where T : struct
@@ -20,7 +20,17 @@ public readonly partial struct QueryChunk
     }
 
     public bool Has<T>(int row) where T : struct
-        => Has<T>() && _chunk.Columns[ComponentType<T>.TypeId].Has(_start + row);
+        => ComponentType<T>.IsSparseType ? _chunk.Archetype.World.Has<T>(_chunk.Entities[_start + row])
+            : Has<T>() && _chunk.Columns[ComponentType<T>.TypeId].Has(_start + row);
+
+    /// <summary>Reads one row's value; a sparse value is read from its store.</summary>
+    public ref readonly T Read<T>(int row) where T : struct
+    {
+        if (ComponentType<T>.IsSparseType) return ref _chunk.Archetype.World.Read<T>(_chunk.Entities[_start + row]);
+        if (ComponentType<T>.IsSharedType) throw new InvalidOperationException("Use Shared<T>(row) to read a shared value.");
+        if (!InJob) _chunk.Archetype.World.RequireValue<T>(false);
+        return ref ColumnEntry.At<T>(ref _chunk.Columns[ComponentType<T>.TypeId], _start + row);
+    }
 
     public bool TryRead<T>(out ReadOnlySpan<T> values) where T : struct
     {
@@ -29,15 +39,25 @@ public readonly partial struct QueryChunk
         return true;
     }
 
+    /// <summary>Writes one row's value; a sparse value is written in its store.</summary>
     public ref T Write<T>(int row) where T : struct
     {
-        RequireWrite();
         World world = _chunk.Archetype.World;
-        world.RequireValue<T>(true);
-        world.RequireWriteRow(_chunk, _start + row);
-        if (ComponentType<T>.IsControlledType || ComponentType<T>.IsIndexedType || ComponentType<T>.IsGroupedType)
+        if (ComponentType<T>.IsSparseType) return ref world.Get<T>(_chunk.Entities[_start + row]);
+        if (ComponentType<T>.IsSharedType || ComponentType<T>.IsControlledType || ComponentType<T>.IsIndexedType || ComponentType<T>.IsGroupedType)
             throw new InvalidOperationException("Use the component's typed write view or Set entry.");
-        if (ComponentType<T>.TracksWritesType) World.Stamp<T>(_chunk, _start + row, world.NextVersion());
+        if (InJob)
+        {
+            if (ComponentType<T>.TracksWritesType)
+                ChangesOf(ComponentType<T>.TypeId).StampWord(_start + row, _jobVersion, ComponentType<T>.TracksAddedType);
+        }
+        else
+        {
+            RequireWrite();
+            world.RequireValue<T>(true);
+            world.RequireWriteRow(_chunk, _start + row);
+            if (ComponentType<T>.TracksWritesType) World.Stamp<T>(_chunk, _start + row, world.NextVersion());
+        }
         return ref ColumnEntry.At<T>(ref _chunk.Columns[ComponentType<T>.TypeId], _start + row);
     }
 
