@@ -47,7 +47,7 @@ public sealed class NavigationGridTileSource : NavigationTileSource<NavigationGr
         NavigationGridShape shape, ulong version)
     {
         var result = new NavigationGrid[1];
-        JobSystem.Schedule(new DecodeGrid(bytes, bounds, cellSize, shape, version, result),
+        JobSystem.Current.Schedule(new DecodeGrid(bytes, bounds, cellSize, shape, version, result),
             [JobResourceAccess.Read(bytes.Chunks.Span[0]), JobResourceAccess.Read(bytes.Chunks.Span[1]),
              JobResourceAccess.Write(result)]).Complete();
         return result[0];

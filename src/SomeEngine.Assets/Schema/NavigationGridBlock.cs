@@ -130,7 +130,7 @@ public sealed partial class NavigationGridBlock : AssetBlock, IAssetBlockWriter
                         accesses.Add(JobResourceAccess.Read(tile.Grid.Cells));
                         accesses.Add(JobResourceAccess.Read(tile.Grid.Edges));
                     }
-                    JobSystem.Schedule(new JoinGrid(graph, tiles, result), accesses.ToArray()).Complete();
+                    JobSystem.Current.Schedule(new JoinGrid(graph, tiles, result), accesses.ToArray()).Complete();
                     grid = result[0];
                 }
                 lock (entry) entry.Grid = grid;

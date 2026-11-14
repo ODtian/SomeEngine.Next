@@ -16,7 +16,7 @@ public static class NavigationMeshBuilder
             input.Settings with { BorderSize = MathF.Max(input.Settings.BorderSize, padding) });
         NavigationBuild<NavigationSurfaceBuildState> surface = NavigationSurfaceBuilder.Schedule(padded, dependency, scheduler);
         var state = new NavigationMeshBuildState(profile, policy, settings ?? new());
-        JobHandle completion = scheduler.Schedule(new BuildFromSurface(state, surface.State, scheduler), surface.Completion);
+        JobHandle completion = scheduler.Schedule(new BuildFromSurface(state, surface.State, scheduler), dependency: surface.Completion);
         return new(state, completion);
     }
 

@@ -30,8 +30,7 @@ internal sealed partial class FrameExecutor
                     foreach (RecordingBatch batch in source)
                         if (!TryRepeatBatch(batch)) work[count++] = batch;
                     if (count != 0)
-                        _aheadJobs[wave] = JobSystem.ScheduleParallel(
-                            new RecordBatchJob(this, work, 0), count, AheadBatchSize(work, count));
+                        _aheadJobs[wave] = JobSystem.Current.ScheduleParallel(new RecordBatchJob(this, work, 0), count, AheadBatchSize(work, count));
                 }
             }
 

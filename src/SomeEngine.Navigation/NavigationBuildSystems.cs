@@ -21,8 +21,7 @@ public static class NavigationBuildSystem
     {
         scheduler ??= JobSystem.Default;
         var state = new NavigationRegionUpdate(sources.State.Region);
-        return new(state, scheduler.Schedule(new BeginBuild(state, sources.State, scheduler),
-            JobResourceAccess.Read(scheduler.GetResourceToken(state.Region)), sources.Completion));
+        return new(state, scheduler.Schedule(new BeginBuild(state, sources.State, scheduler), [JobResourceAccess.Read(scheduler.GetResourceToken(state.Region))], sources.Completion));
     }
 
     private readonly struct BeginBuild(NavigationRegionUpdate state, NavigationSourceChanges sources, Scheduler scheduler) : IJob
@@ -48,7 +47,7 @@ public static class NavigationBuildSystem
             }
             NavigationBuild<NavigationSurfaceBuildState> surface = NavigationSurfaceBuilder.Schedule(state.Input.Geometry,
                 state.RebuiltTiles, scheduler: scheduler);
-            scheduler.Schedule(new BuildMesh(state, surface.State, scheduler), surface.Completion);
+            scheduler.Schedule(new BuildMesh(state, surface.State, scheduler), dependency: surface.Completion);
         }
     }
 
@@ -73,7 +72,7 @@ public static class NavigationBuildSystem
                 settings.Profile, settings.Policy, settings.Mesh with { ContentVersion = input.Version },
                 state.Previous?.MeshBuild, input.TileVersions, scheduler);
             state.MeshBuild = mesh.State;
-            scheduler.Schedule(new BuildGraph(state, scheduler), mesh.Completion);
+            scheduler.Schedule(new BuildGraph(state, scheduler), dependency: mesh.Completion);
         }
     }
 
@@ -84,8 +83,7 @@ public static class NavigationBuildSystem
             NavigationRegionSettings settings = state.Input.Settings;
             NavigationBuild<NavigationRegionBuildState> graph = NavigationRegionBuilder.ScheduleRebuild(state.MeshBuild.Mesh,
                 settings.Profile, settings.Policy, settings.Ports, state.Previous?.Mesh.RegionGraph, scheduler);
-            scheduler.Schedule(new CompleteBuild(state, graph.State),
-                JobResourceAccess.Write(scheduler.GetResourceToken(state)), graph.Completion);
+            scheduler.Schedule(new CompleteBuild(state, graph.State), [JobResourceAccess.Write(scheduler.GetResourceToken(state))], graph.Completion);
         }
     }
 

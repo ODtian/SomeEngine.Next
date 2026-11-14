@@ -57,7 +57,7 @@ public sealed class HeadingNavigationMeshTileSource : NavigationTileSource<Headi
         var result = new HeadingNavigationMesh[1];
         var resources = new List<JobResourceAccess> { JobResourceAccess.Write(result) };
         foreach (ReadOnlyMemory<byte> chunk in bytes.Chunks.Span) resources.Add(JobResourceAccess.Read(chunk));
-        JobSystem.Schedule(new DecodeData(bytes, channels, version, result), resources.ToArray()).Complete();
+        JobSystem.Current.Schedule(new DecodeData(bytes, channels, version, result), resources.ToArray()).Complete();
         return result[0];
     }
     internal static HeadingNavigationMesh CombineOnWorker(HeadingNavigationMeshTile[] tiles, HeadingNavigationRegionGraph graph)
@@ -71,7 +71,7 @@ public sealed class HeadingNavigationMeshTileSource : NavigationTileSource<Headi
                 JobResourceAccess.Read(mesh.Portals), JobResourceAccess.Read(mesh.DetailPositions), JobResourceAccess.Read(mesh.DetailTriangles),
                 JobResourceAccess.Read(tile.Mesh.Regions), JobResourceAccess.Read(tile.Mesh.Headings)]);
         }
-        JobSystem.Schedule(new CombineData(tiles, graph, result), resources.ToArray()).Complete();
+        JobSystem.Current.Schedule(new CombineData(tiles, graph, result), resources.ToArray()).Complete();
         return result[0];
     }
     private readonly struct DecodeData(NavigationTileBytes bytes, int channels, ulong version, HeadingNavigationMesh[] result) : IJob

@@ -8,14 +8,9 @@ public sealed partial class Scheduler
 {
     [ThreadStatic] private static int s_synchronousParallelDepth;
 
-    /// <summary>Executes index ranges on this scheduler and the calling thread, returning after every participant exits.</summary>
-    public void ExecuteParallel<T>(in T job, int length, int batchSize = 1,
-        JobScheduleOptions options = default) where T : struct, IJobParallelFor =>
-        ExecuteParallel(job, length, batchSize, ReadOnlySpan<JobResourceAccess>.Empty, options);
-
     /// <summary>Holds the declared accesses through synchronous execution. Nested calls share the current scope's accesses.</summary>
-    public void ExecuteParallel<T>(in T job, int length, int batchSize,
-        ReadOnlySpan<JobResourceAccess> accesses, JobScheduleOptions options = default)
+    public void ExecuteParallel<T>(in T job, int length, int batchSize = 1,
+        ReadOnlySpan<JobResourceAccess> accesses = default, JobScheduleOptions options = default)
         where T : struct, IJobParallelFor
     {
         using Submission submission = EnterSubmission();

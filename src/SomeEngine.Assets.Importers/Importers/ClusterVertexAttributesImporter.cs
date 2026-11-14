@@ -29,7 +29,7 @@ public sealed class ClusterVertexAttributesImporter : IAssetImporter<GltfMesh, G
         ClusterGeometry[] inputs = geometry.Clusters.ToArray();
         ClusterVertexSource[] sources = geometry.Vertices.ToArray();
         var clusters = new ClusterVertexAttributes[inputs.Length];
-        JobSystem.ExecuteParallel(new EncodeAttributeClusters(primitives, sources, inputs, clusters, cancellationToken),
+        JobSystem.Current.ExecuteParallel(new EncodeAttributeClusters(primitives, sources, inputs, clusters, cancellationToken),
             inputs.Length, 16);
         return new ClusterVertexAttributesBlock { VertexIdentity = geometry.VertexIdentity, Clusters = clusters };
     }

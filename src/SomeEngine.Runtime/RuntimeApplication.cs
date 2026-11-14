@@ -789,7 +789,7 @@ internal static class RuntimeApplication
                     }
                     ValueTask work = nextGameUpdate.Current;
                     if (work.IsCompletedSuccessfully) work.GetAwaiter().GetResult();
-                    else nextGameCompletion = JobSystem.CreateExternalFenceHandle(work).WaitAsync().AsTask();
+                    else nextGameCompletion = JobSystem.Current.CreateExternalFenceHandle(work).WaitAsync().AsTask();
                 }
             }
             catch

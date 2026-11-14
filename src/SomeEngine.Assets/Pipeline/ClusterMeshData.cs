@@ -33,7 +33,7 @@ internal sealed class ClusterMeshData
         if (geometry.VertexIdentity != attributes.VertexIdentity || geometry.Clusters.Count != attributes.Clusters.Count)
             throw new InvalidDataException("Cluster geometry and attributes must describe the same vertices.");
         var encoded = new EncodedClusterGeometry[geometry.Clusters.Count];
-        JobSystem.ExecuteParallel(new EncodeClusters(geometry.Clusters, attributes.Clusters, encoded), encoded.Length, 16);
+        JobSystem.Current.ExecuteParallel(new EncodeClusters(geometry.Clusters, attributes.Clusters, encoded), encoded.Length, 16);
         Vector3 minimum = new(float.MaxValue), maximum = new(float.MinValue);
         foreach (EncodedClusterGeometry cluster in encoded)
         {

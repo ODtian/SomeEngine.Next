@@ -57,7 +57,7 @@ public sealed class NavigationMeshTileSource : NavigationTileSource<NavigationMe
         var result = new NavigationMesh[1];
         var accesses = new List<JobResourceAccess> { JobResourceAccess.Write(result) };
         foreach (ReadOnlyMemory<byte> chunk in bytes.Chunks.Span) accesses.Add(JobResourceAccess.Read(chunk));
-        JobSystem.Schedule(new DecodeMeshData(bytes, version, bakedRadius, result), accesses.ToArray()).Complete();
+        JobSystem.Current.Schedule(new DecodeMeshData(bytes, version, bakedRadius, result), accesses.ToArray()).Complete();
         return result[0];
     }
 

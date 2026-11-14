@@ -37,8 +37,7 @@ public static partial class NavigationCostSystem
         scheduler ??= JobSystem.Default;
         policy ??= baseCosts.Policy.Crowd ?? new NavigationCrowdPolicy();
         var state = new NavigationCostBuildState(baseCosts.Grid, baseCosts.Policy, version ?? baseCosts.Version + crowd.State.Version);
-        return new(state, scheduler.Schedule(new ReadCrowd(state, baseCosts, crowd.State, policy, scheduler),
-            JobResourceAccess.Read(scheduler.GetResourceToken(crowd.State)), scheduler.CombineDependencies([crowd.Completion, dependency])));
+        return new(state, scheduler.Schedule(new ReadCrowd(state, baseCosts, crowd.State, policy, scheduler), [JobResourceAccess.Read(scheduler.GetResourceToken(crowd.State))], scheduler.CombineDependencies([crowd.Completion, dependency])));
     }
 
     /// <summary>Installs one completed cost object into every supplied shared-goal flow.</summary>
@@ -78,8 +77,7 @@ public static partial class NavigationCostSystem
         public void Execute()
         {
             NavigationGrid grid = baseCosts.Grid;
-            JobSystem.ExecuteParallel(new FillCrowdCosts(state, baseCosts, crowd, policy), grid.Cells.Length,
-                batchSize: JobScheduleOptions.AutomaticBatchSize);
+            JobSystem.Current.ExecuteParallel(new FillCrowdCosts(state, baseCosts, crowd, policy), grid.Cells.Length, JobScheduleOptions.AutomaticBatchSize);
             state.Costs = new(grid, baseCosts.Policy, state.Cells, state.Edges, state.Version);
         }
     }

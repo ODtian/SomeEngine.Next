@@ -77,7 +77,7 @@ public static partial class ClusterBuilder
         var encoders = new IClusterVertexEncoder?[batchCount];
         for (int batch = 0; batch < batchCount; batch++)
             encoders[batch] = encoder.CreateBatchEncoder();
-        JobSystem.ExecuteParallel(new EncodeAttributeBatches(positions, streams, clusters, sources,
+        JobSystem.Current.ExecuteParallel(new EncodeAttributeBatches(positions, streams, clusters, sources,
             encoder, encoders, new object(), results, clustersPerBatch), batchCount, 1);
         return new ClusterVertexAttributesBlock
         {

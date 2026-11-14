@@ -71,7 +71,7 @@ public sealed partial class SystemGroup(World world, Scheduler scheduler, int ra
             if (system.DeclarationVersion != (system.Accesses?.Revision ?? 0)) _changed = true;
         if (_changed) BuildGraph();
         JobHandle previous = _previousRun.IsCompleted ? default
-            : scheduler.ScheduleFinally(new GroupBoundary(), default, _previousRun);
+            : scheduler.ScheduleFinally(new GroupBoundary(), dependency: _previousRun, options: default);
         JobHandle root = scheduler.CombineDependencies([dependency, previous]);
         foreach (int i in _order)
         {

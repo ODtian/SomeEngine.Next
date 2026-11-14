@@ -78,7 +78,7 @@ public sealed partial class ViewRebuildSystem
         if (scheduler is not null)
             scheduler.ExecuteParallel(job, length, JobScheduleOptions.AutomaticBatchSize);
         else
-            global::SomeEngine.Job.JobSystem.ExecuteParallel(job, length, JobScheduleOptions.AutomaticBatchSize);
+            global::SomeEngine.Job.JobSystem.Current.ExecuteParallel(job, length, JobScheduleOptions.AutomaticBatchSize);
     }
 
     private void RefreshDependencies(World world)

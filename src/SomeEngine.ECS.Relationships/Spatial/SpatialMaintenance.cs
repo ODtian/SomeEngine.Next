@@ -74,8 +74,7 @@ public sealed class SpatialMaintenance<TGeometry, TBoundsReader, TFilter, TGroup
     }
     public JobHandle Schedule(JobHandle dependency = default)
     {
-        _completion = _scheduler.Schedule(new BeginMaintenance(this),
-            _scheduler.CombineDependencies([_completion, dependency]));
+        _completion = _scheduler.Schedule(new BeginMaintenance(this), dependency: _scheduler.CombineDependencies([_completion, dependency]));
         return _completion;
     }
     public JobHandle ScheduleRead<TJob>(in TJob job, ReadOnlySpan<JobResourceAccess> additionalAccesses,

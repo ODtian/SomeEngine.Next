@@ -120,8 +120,7 @@ public unsafe partial class Shader
         var entryBlobs = new ISlangBlob?[codeCount];
         if (generateCode)
             scheduler.ExecuteParallel(new GenerateCode(slangCode, entryCount, unbound,
-                generateLibraryCode, unboundEntries, targetBlobs, entryBlobs),
-                targets.Length + codeCount, options: new() { Category = ShaderCodeJobs.GetCategory(scheduler) });
+                generateLibraryCode, unboundEntries, targetBlobs, entryBlobs), targets.Length + codeCount, options: new() { Category = ShaderCodeJobs.GetCategory(scheduler) });
         return new Shader(
             name,
             slangCode,

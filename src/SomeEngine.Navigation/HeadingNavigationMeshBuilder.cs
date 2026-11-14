@@ -15,7 +15,7 @@ public static class HeadingNavigationMeshBuilder
             input.Settings with { BorderSize = MathF.Max(input.Settings.BorderSize, padding) });
         NavigationBuild<NavigationSurfaceBuildState> surface = NavigationSurfaceBuilder.Schedule(padded, dependency, scheduler);
         var state = new HeadingNavigationMeshBuildState(profile, policy, settings ?? new());
-        return new(state, scheduler.Schedule(new BuildFromSurface(state, surface.State, scheduler), surface.Completion));
+        return new(state, scheduler.Schedule(new BuildFromSurface(state, surface.State, scheduler), dependency: surface.Completion));
     }
 
     public static NavigationBuild<HeadingNavigationMeshBuildState> Schedule(NavigationSurface surface,
@@ -89,7 +89,7 @@ public static class HeadingNavigationMeshBuilder
                  JobResourceAccess.Write(scheduler.GetResourceToken(state.TileHeadings), tile, 1)], scheduler.CombineDependencies(groups));
         }
         JobHandle geometry = NavigationMeshBuilder.ScheduleConnections(state.Geometry, scheduler, built, reads);
-        return scheduler.Schedule(new CreateMesh(state), JobResourceAccess.Read(scheduler.GetResourceToken(state.TileHeadings)), geometry);
+        return scheduler.Schedule(new CreateMesh(state), [JobResourceAccess.Read(scheduler.GetResourceToken(state.TileHeadings))], geometry);
     }
 
     private readonly struct BuildMasks(HeadingNavigationMeshBuildState state, int start, int count) : IJob

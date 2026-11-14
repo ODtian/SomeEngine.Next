@@ -75,7 +75,7 @@ internal static class Program
         bool asyncJobRejected = false;
         try
         {
-            JobSystem.Schedule(new AotAsyncVoidJob()).Complete();
+            JobSystem.Current.Schedule(new AotAsyncVoidJob()).Complete();
         }
         catch (InvalidOperationException)
         {

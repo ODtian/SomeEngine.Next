@@ -53,7 +53,7 @@ public sealed class GltfMeshImporter : IAssetImporter<GltfMesh, GltfMeshSettings
             {
                 PositionRange[] positionRanges = ranges.ToArray();
                 var bounds = new VertexBounds[positionRanges.Length];
-                JobSystem.ExecuteParallel(new ReducePositions(positionRanges, bounds), positionRanges.Length);
+                JobSystem.Current.ExecuteParallel(new ReducePositions(positionRanges, bounds), positionRanges.Length);
                 Vector3 minimum = new(float.MaxValue), maximum = new(float.MinValue);
                 foreach (VertexBounds range in bounds)
                 {

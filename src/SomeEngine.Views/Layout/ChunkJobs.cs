@@ -12,7 +12,7 @@ public static class ChunkJobs
         DevelopmentCheck.Require(count >= 0, "Chunk jobs require a nonnegative element count.");
         DevelopmentCheck.Require(batchSize > 0, "Chunk jobs require a positive batch size.");
         if (parallel && count > batchSize)
-            JobSystem.ExecuteParallel(job, count, batchSize);
+            JobSystem.Current.ExecuteParallel(job, count, batchSize);
         else
             for (int index = 0; index < count; index++) job.Execute(index);
     }

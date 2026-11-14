@@ -107,8 +107,7 @@ public sealed class NavigationGridStreaming : IDisposable
         NavigationTileCoordinate[] removed = resident.Where(tile => !keep.Contains(tile)).ToArray();
         loaded.RemoveAll(tile => !keep.Contains(tile.Tile));
         if (loaded.Count == 0 && removed.Length == 0) return;
-        Applied = _scheduler.Schedule(new ScheduleApply(_flow, loaded.ToArray(), removed, _scheduler),
-            JobResourceAccess.Write(_scheduler.GetResourceToken(_flow)));
+        Applied = _scheduler.Schedule(new ScheduleApply(_flow, loaded.ToArray(), removed, _scheduler), [JobResourceAccess.Write(_scheduler.GetResourceToken(_flow))]);
     }
 
     private readonly struct CollectRoutes(NavigationFlowField? field, NavigationInterestData[] interests,
@@ -182,8 +181,7 @@ public sealed class NavigationGridStreaming : IDisposable
                 input.Costs.Grid.ResidenceVersion + 1);
             if (!flow.ApplyCosts(input, NavigationCostSystem.Regrid(input.Costs, grid))) Retry();
         }
-        private void Retry() => scheduler.Schedule(new ScheduleApply(flow, loaded, removed, scheduler),
-            JobResourceAccess.Write(scheduler.GetResourceToken(flow)));
+        private void Retry() => scheduler.Schedule(new ScheduleApply(flow, loaded, removed, scheduler), [JobResourceAccess.Write(scheduler.GetResourceToken(flow))]);
     }
 }
 

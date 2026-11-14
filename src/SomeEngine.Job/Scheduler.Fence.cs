@@ -15,13 +15,10 @@ public sealed partial class Scheduler
         return CreateExternalFenceHandle(new TaskFence(task), accesses);
     }
 
-    public JobHandle CreateExternalFenceHandle(IJobExternalFence fence) =>
-        CreateExternalFenceHandle(fence, ReadOnlySpan<JobResourceAccess>.Empty);
-
     private const string MissingExternalFenceSignalStateMessage = "External fence signal state is missing.";
     public JobHandle CreateExternalFenceHandle(
         IJobExternalFence fence,
-        ReadOnlySpan<JobResourceAccess> accesses)
+        ReadOnlySpan<JobResourceAccess> accesses = default)
     {
         ArgumentNullException.ThrowIfNull(fence);
         using Submission submissionScope = EnterSubmission();

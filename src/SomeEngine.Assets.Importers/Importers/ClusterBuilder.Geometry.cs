@@ -101,7 +101,7 @@ public static partial class ClusterBuilder
                 partitionPositions, CollectionsMarshal.AsSpan(workingTriangles), workingSources.Select(source => (uint)source.Region).ToArray(),
                 meshlets, indices, CollectionsMarshal.AsSpan(workingLocks), ReadSimplificationAttributes(vertices, workingIdentities));
             var encoded = new ClusterGeometry[meshlets.Count];
-            JobSystem.ExecuteParallel(new EncodeGeometryClusters(meshlets, indices, workingIdentities,
+            JobSystem.Current.ExecuteParallel(new EncodeGeometryClusters(meshlets, indices, workingIdentities,
                 workingSources, partitionPositions, (ClusterDeform)partition, groupOffset, cancellationToken, encoded),
                 encoded.Length, 16);
             clusters.AddRange(encoded);

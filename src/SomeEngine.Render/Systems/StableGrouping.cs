@@ -83,12 +83,7 @@ internal sealed class StableGrouping<TKey>
                 countAccesses[output++] = JobResourceAccess.Write(_partitions[index].Counts);
                 countAccesses[output++] = JobResourceAccess.Write(_partitions[index].Keys);
             }
-            JobHandle counted = JobSystem.ScheduleParallel(
-                in countJob,
-                activePartitions,
-                batchSize: 1,
-                countAccesses.AsSpan(0, countAccessCount),
-                options);
+            JobHandle counted = JobSystem.Current.ScheduleParallel(in countJob, activePartitions, 1, countAccesses.AsSpan(0, countAccessCount), options: options);
 
             int[] groupCountResult = ArrayPool<int>.Shared.Rent(1);
             try
@@ -119,11 +114,7 @@ internal sealed class StableGrouping<TKey>
                         mergeAccesses[mergeAccessIndex++] = JobResourceAccess.Write(_partitions[index].Counts);
                         mergeAccesses[mergeAccessIndex++] = JobResourceAccess.Read(_partitions[index].Keys);
                     }
-                    JobHandle merged = JobSystem.Schedule(
-                        in mergeJob,
-                        mergeAccesses.AsSpan(0, mergeAccessCount),
-                        options,
-                        counted);
+                    JobHandle merged = JobSystem.Current.Schedule(in mergeJob, mergeAccesses.AsSpan(0, mergeAccessCount), counted, options);
 
                     var scatterJob = new ScatterPlacementsJob(
                         source,
@@ -145,13 +136,7 @@ internal sealed class StableGrouping<TKey>
                             scatterAccesses[3 + index] =
                                 JobResourceAccess.Write(_partitions[index].Counts);
                         }
-                        JobSystem.ScheduleParallel(
-                            in scatterJob,
-                            activePartitions,
-                            batchSize: 1,
-                            scatterAccesses.AsSpan(0, scatterAccessCount),
-                            options,
-                            merged).Complete();
+                        JobSystem.Current.ScheduleParallel(in scatterJob, activePartitions, 1, scatterAccesses.AsSpan(0, scatterAccessCount), merged, options).Complete();
                     }
                     finally
                     {

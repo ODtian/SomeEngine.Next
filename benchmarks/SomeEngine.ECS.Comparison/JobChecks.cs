@@ -39,8 +39,8 @@ internal static class JobChecks
             scheduler.ExecuteRanges(items, items.Length, new ResourceVisits(scheduler, resource, visits), access.Handle);
         Require(visits.All(count => count == 1), "all participants inherit the acquired resource access");
 
-        JobHandle first = scheduler.Schedule(new AddValues(scheduler, resource, visits, 2), JobResourceAccess.Write(resource));
-        JobHandle second = scheduler.Schedule(new AddValues(scheduler, resource, visits, 3), JobResourceAccess.Write(resource), first);
+        JobHandle first = scheduler.Schedule(new AddValues(scheduler, resource, visits, 2), [JobResourceAccess.Write(resource)]);
+        JobHandle second = scheduler.Schedule(new AddValues(scheduler, resource, visits, 3), [JobResourceAccess.Write(resource)], first);
         second.Complete();
         Require(visits.All(count => count == 6), "resource dependencies and generic jobs complete in order");
         scheduler.ReleaseResource(resource);
@@ -62,7 +62,7 @@ internal static class JobChecks
         using var waiting = new ManualResetEventSlim();
         using var read = new ManualResetEventSlim();
         SynchronousResourceAccess first = scheduler.AcquireSynchronousAccess([JobResourceAccess.Read(structure)]);
-        JobHandle writer = scheduler.Schedule(new MarkStructureWrite(written), JobResourceAccess.Write(structure));
+        JobHandle writer = scheduler.Schedule(new MarkStructureWrite(written), [JobResourceAccess.Write(structure)]);
         // With zero workers, the waiting synchronous caller executes this signal.
         JobHandle signal = scheduler.Schedule(new SignalSynchronousWait(waiting));
         Task caller = Task.Run(() =>
@@ -84,7 +84,7 @@ internal static class JobChecks
             reached = waiting.Wait(TimeSpan.FromSeconds(30));
             if (reached)
             {
-                reader = scheduler.Schedule(new ObserveFollowingValue(data, observed, read), JobResourceAccess.Read(values));
+                reader = scheduler.Schedule(new ObserveFollowingValue(data, observed, read), [JobResourceAccess.Read(values)]);
                 advanced = read.Wait(TimeSpan.FromSeconds(30));
             }
         }
@@ -187,7 +187,7 @@ internal static class JobChecks
         JobResource values = scheduler.CreateResource("column values");
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
-        JobHandle blocker = scheduler.Schedule(new HoldValues(entered, release), JobResourceAccess.Write(values));
+        JobHandle blocker = scheduler.Schedule(new HoldValues(entered, release), [JobResourceAccess.Write(values)]);
         entered.Wait();
         using var data = new StageData(scheduler, structure, values, items);
         JobHandle dependency = scheduler.Schedule(new SetDependency(data));

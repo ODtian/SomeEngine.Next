@@ -122,7 +122,7 @@ public static partial class ClusterMeshBuilder
             int[][] members = groups.Select(group => group.Select(index => current[index]).ToArray()).ToArray();
             var results = new LodGroupData[groups.Count];
             fixed (Vector3* positionData = positions)
-                JobSystem.ExecuteParallel(new ReduceLodGroups(config, positionData, positions.Length, materialIndicesArray,
+                JobSystem.Current.ExecuteParallel(new ReduceLodGroups(config, positionData, positions.Length, materialIndicesArray,
                     clusters, globalIndices, locks, members, attributes, results), results.Length);
             var next = new List<int>();
             for (int groupIndex = 0; groupIndex < members.Length; groupIndex++)

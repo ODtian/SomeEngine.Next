@@ -205,8 +205,7 @@ public static class NavigationRegionBuilder
         {
             NavigationRegionTile tile = state.Tiles[tileIndex];
             var edges = new NavigationRegionEdge[tile.EntranceCount][];
-            JobSystem.ExecuteParallel(new SearchFromEntrance(state, tileIndex, edges), tile.EntranceCount,
-                batchSize: 1);
+            JobSystem.Current.ExecuteParallel(new SearchFromEntrance(state, tileIndex, edges), tile.EntranceCount, 1);
             state.LocalEdges[tileIndex] = edges.SelectMany(values => values).ToArray();
         }
     }

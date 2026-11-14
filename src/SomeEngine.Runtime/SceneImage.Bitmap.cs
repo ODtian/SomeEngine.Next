@@ -10,8 +10,7 @@ public sealed partial record SceneImage
         int rowBytes = checked(Width * 4);
         int imageBytes = checked(rowBytes * Height);
         byte[] bgra = new byte[imageBytes];
-        JobSystem.ExecuteParallel(new ConvertBitmapRowsJob(Pixels, bgra, rowBytes), Height,
-            JobScheduleOptions.AutomaticBatchSize);
+        JobSystem.Current.ExecuteParallel(new ConvertBitmapRowsJob(Pixels, bgra, rowBytes), Height, JobScheduleOptions.AutomaticBatchSize);
 
         using var writer = new BinaryWriter(new FileStream(path, FileMode.CreateNew, FileAccess.Write));
         writer.Write((ushort)0x4D42);

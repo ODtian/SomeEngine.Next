@@ -60,7 +60,7 @@ internal sealed class NativeArchiveGroup<T, TQuery> : ArchiveWorldGroup
         foreach (NativeSystemProgress state in _states)
         {
             JobHandle rows = _rows.ScheduleSystem(state, true, _last);
-            _last = _scheduler.Schedule(new Publish(state), default(JobScheduleOptions), rows);
+            _last = _scheduler.Schedule(new Publish(state), dependency: rows, options: default(JobScheduleOptions));
         }
         return _last;
     }

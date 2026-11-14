@@ -254,7 +254,7 @@ public sealed partial class EventLog<T> : IDisposable where T : unmanaged
         if (access.Index == 0) { Dispose(); return; }
         if (_disposed) return;
         ClearData();
-        _scheduler!.ScheduleFinally(new ReleaseEvents(this), JobScheduleOptions.Default, access);
+        _scheduler!.ScheduleFinally(new ReleaseEvents(this), dependency: access, options: JobScheduleOptions.Default);
     }
 
     private void ClearData()

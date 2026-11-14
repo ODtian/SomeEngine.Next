@@ -175,8 +175,7 @@ public sealed partial class NavigationNeighborSystem<TMotion, TReader> : IDispos
     public NavigationNeighbors Data { get; }
     public JobHandle Schedule(JobHandle motionReady = default, JobHandle predictionReady = default)
     {
-        JobHandle reset = Scheduler.Schedule(new ResetNeighbors(Data), _dataWrite,
-            Scheduler.CombineDependencies([_completion, motionReady, predictionReady]));
+        JobHandle reset = Scheduler.Schedule(new ResetNeighbors(Data), [_dataWrite], Scheduler.CombineDependencies([_completion, motionReady, predictionReady]));
         JobHandle collected = _runner.Schedule(_actors, new CollectNeighbors(Data), reset, parallel: false);
         JobHandle predicted = _runner.Schedule(_predictedActors, new CollectPredictions(Data), collected, parallel: false);
         _completion = Scheduler.Schedule(new BuildNeighbors(_world, _actors, Data), _buildAccesses, predicted);

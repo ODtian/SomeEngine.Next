@@ -53,7 +53,7 @@ public static class DisplacementBoundsTexture
             uint nextWidth = Math.Max(1u, currentWidth >> 1);
             uint nextHeight = Math.Max(1u, currentHeight >> 1);
             var next = new Vector2[checked((int)((ulong)nextWidth * nextHeight))];
-            JobSystem.ExecuteParallel(new BuildMipRows(current, currentWidth, currentHeight,
+            JobSystem.Current.ExecuteParallel(new BuildMipRows(current, currentWidth, currentHeight,
                 next, nextWidth, nextHeight), (int)nextHeight);
 
             current = next;
@@ -75,7 +75,7 @@ public static class DisplacementBoundsTexture
     {
         Vector2[] ranges = new Vector2[(samples.Length - 1) / SampleBatchSize + 1];
         fixed (float* source = samples)
-            JobSystem.ExecuteParallel(new ReduceSamples(source, samples.Length, values, ranges), ranges.Length);
+            JobSystem.Current.ExecuteParallel(new ReduceSamples(source, samples.Length, values, ranges), ranges.Length);
         float minimum = float.PositiveInfinity;
         float maximum = float.NegativeInfinity;
         foreach (Vector2 range in ranges)

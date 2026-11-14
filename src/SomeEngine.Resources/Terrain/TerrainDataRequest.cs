@@ -32,7 +32,7 @@ internal sealed class TerrainCompletion
         _scheduler = scheduler;
         JobHandle ready = scheduler.CreateExternalFenceHandle(_signal.Task, accesses);
         _sourceResult = ready.GetAwaiter();
-        Handle = scheduler.ScheduleFinally(new CompleteWork(this), accesses, default, ready);
+        Handle = scheduler.ScheduleFinally(new CompleteWork(this), accesses, ready, default);
     }
 
     internal JobHandle Handle { get; }

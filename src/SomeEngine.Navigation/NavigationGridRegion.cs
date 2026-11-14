@@ -166,7 +166,7 @@ public static class NavigationGridRegionBuilder
                 accesses.Add(NavigationJobAccess.Read(scheduler, state.Policy.ActionCosts));
                 jobs[tile] = scheduler.Schedule(new BuildLocalEdges(state, tile), accesses.ToArray());
             }
-            scheduler.Schedule(new JoinGraph(state), scheduler.CombineDependencies(jobs));
+            scheduler.Schedule(new JoinGraph(state), dependency: scheduler.CombineDependencies(jobs));
         }
     }
 
