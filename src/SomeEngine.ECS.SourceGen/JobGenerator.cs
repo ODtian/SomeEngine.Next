@@ -133,6 +133,8 @@ internal static class JobGenerator
                 .Append(component.Value.Kind == "buffer" ? "Buffer" : "").Append('<').Append(EcsGenerator.Name(component.Key))
                 .Append(component.Value.HasResources ? ">(hasResources: true),\n" : ">(),\n");
         code.Append("};\nstatic global::System.ReadOnlySpan<global::SomeEngine.ECS.Systems.ChunkAccess> global::SomeEngine.ECS.Systems.IChunkAction.Components => __ecsComponents;\n");
+        if (collectsAdditional)
+            code.Append("static bool global::SomeEngine.ECS.Systems.IChunkAction.CollectsAdditionalResources => true;\n");
         if (inputs.Any(input => input.Resources is not null))
         {
             code.Append("static void global::SomeEngine.ECS.Systems.IChunkAction.CollectResources(global::SomeEngine.ECS.QueryChunk rows, ref global::SomeEngine.ECS.Systems.JobResourceAccessBuilder resources) {\n");

@@ -17,6 +17,8 @@ public interface IChunkAction
     static abstract ReadOnlySpan<ChunkAccess> Components { get; }
     static virtual SystemAccesses? AdditionalAccesses => null;
     static virtual void CollectResources(QueryChunk rows, ref JobResourceAccessBuilder resources) { }
+    /// <summary>True when the action implements <see cref="CollectAdditionalResources"/>.</summary>
+    static virtual bool CollectsAdditionalResources => false;
     void CollectAdditionalResources(ref JobResourceAccessBuilder resources) { }
     void Execute(QueryChunk rows);
 }
@@ -54,6 +56,8 @@ internal static class ChunkActionTypes<TAction> where TAction : struct, IChunkAc
 {
     private static readonly Dictionary<QueryDefinition, QueryDescription> FilterDescriptions = [];
     internal static readonly ChunkAccess[] Components = TAction.Components.ToArray();
+    /// <summary>Whether running the action needs resources found only at run time, in the action or in component values.</summary>
+    internal static readonly bool CollectsResources = TAction.CollectsAdditionalResources || Components.Any(component => component.HasResources);
     internal static readonly int[] Writes = Components.Where(c => c.WritesValue).Select(c => c.Type).ToArray();
     internal static readonly int[] TrackedWrites = Components.Where(c => c.WritesValue && c.Tracked).Select(c => c.Type).ToArray();
     internal static readonly QueryDescription Query = MakeQuery();

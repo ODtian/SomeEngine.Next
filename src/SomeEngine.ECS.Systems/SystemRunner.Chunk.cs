@@ -216,7 +216,8 @@ public sealed partial class SystemRunner
         private QueryRanges? _ranges;
         private ChunkResourceRange[]? _resourceRanges;
         // The structure read is reserved at submission, so ranges are built in the first stage without waiting for it.
-        public static int StageCount => 2;
+        // Only an action that collects run-time resources needs a second stage to register them.
+        public static int StageCount => ChunkActionTypes<TAction>.CollectsResources ? 2 : 1;
         public void Reserve(ref AccessBuilder<JobResourceAccess> accesses)
             => jobs.ReserveChunkAccesses<TAction>(query, TAction.AdditionalAccesses, ref accesses);
         public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses)
