@@ -12,7 +12,7 @@ internal static class NamedDestroyedReaderChecks
     internal static void Run()
     {
         MemoryProgressFollowsConsumerIdentity();
-        MixedReadersKeepTheirOwnPositions();
+        SavesKeepOnlyNamedProgress();
         NewSerializedConsumersStartAtThrough();
         RemovingNamedReaderKeepsAnonymousOrder();
         RegisteredConsumerObservesAfterPlainLoad();
@@ -40,15 +40,14 @@ internal static class NamedDestroyedReaderChecks
         Require(unread.Count == 1, "the restored consumer retains its unread destroyed identity");
     }
 
-    private static void MixedReadersKeepTheirOwnPositions()
+    // A save outlives the process that registered anonymous readers, so only named progress is saved.
+    private static void SavesKeepOnlyNamedProgress()
     {
         using var source = new World();
-        var anonymousFirst = source.WatchDestroyed();
-        var named = source.WatchDestroyed(First);
-        var anonymousSecond = source.WatchDestroyed();
+        source.WatchDestroyed();
+        source.WatchDestroyed(First);
+        source.WatchDestroyed();
         source.Destroy(source.Create());
-        anonymousFirst.Advance(1);
-        named.Advance(1);
         var registry = new SerializationRegistry().RegisterDestroyedReader(First);
         var serializer = new WorldSerializer(registry);
         var bytes = new ArrayBufferWriter<byte>();
@@ -58,8 +57,8 @@ internal static class NamedDestroyedReaderChecks
         var targetSecond = target.WatchDestroyed();
         var targetNamed = target.WatchDestroyed(First);
         serializer.Load(target, bytes.WrittenSpan);
-        Require(targetFirst.Position == 1 && targetSecond.Position == 0 && targetNamed.Position == 1,
-            "anonymous positions exclude named consumers in a mixed serialized registration");
+        Require(targetNamed.Position == 0 && targetFirst.Position == 1 && targetSecond.Position == 1,
+            "a load restores named progress and starts anonymous readers at the loaded end");
     }
 
     private static void NewSerializedConsumersStartAtThrough()

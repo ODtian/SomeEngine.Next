@@ -328,9 +328,11 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
     {
         writer.WriteUInt64(events.Through); writer.WriteInt32(events.ValueCount);
         foreach (DestroyedEntity value in events.Values.AsSpan(0, events.ValueCount)) { writer.WriteEntity(value.Entity); writer.WriteUInt64(value.Sequence); }
-        // Named readers match by identity; anonymous readers match the target's anonymous readers in registration order.
-        writer.WriteInt32(events.ReaderCount);
+        int count = 0;
         foreach (EventReaderPosition position in events.ReaderPositions.AsSpan(0, events.ReaderCount))
-        { writer.WriteGuid(position.Id); writer.WriteUInt64(position.Position); }
+            if (position.Id != Guid.Empty) count++;
+        writer.WriteInt32(count);
+        foreach (EventReaderPosition position in events.ReaderPositions.AsSpan(0, events.ReaderCount))
+            if (position.Id != Guid.Empty) { writer.WriteGuid(position.Id); writer.WriteUInt64(position.Position); }
     }
 }

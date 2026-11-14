@@ -42,6 +42,8 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
     internal readonly World World;
     internal readonly Entity[] Entities, Edges;
     internal readonly Entity FirstRoot, SecondRoot, Dead;
+    // Destroyed-entity progress is saved only for a named consumer.
+    private static readonly Guid DestroyedConsumer = new("3f6c1a52-7d0e-4b8a-9c41-5e2d8f7a6b13");
     internal readonly SaveSystemVersions Systems = new();
     internal readonly SaveResource InitialResource;
     private readonly ResourceCounter _resourceCounter = new();
@@ -58,7 +60,7 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
         int capacity = count * 2 + 16;
         World = new(capacity, execution: scheduler is null ? null : new WorldJobs(scheduler)); Entities = new Entity[count]; Edges = new Entity[count];
         using var structure = World.OpenStructureWrite();
-        _destroyed = World.WatchDestroyed();
+        _destroyed = World.WatchDestroyed(DestroyedConsumer);
         World.GroupBy<SaveShared>(); World.Index<IndexedNumber, int>();
         for (int i = 0; i < count; i++)
         {
@@ -104,7 +106,7 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
     }
     private SerializationRegistry CreateRegistry(bool raw)
     {
-        var registry = new SerializationRegistry();
+        var registry = new SerializationRegistry().RegisterDestroyedReader(DestroyedConsumer);
         if (raw) registry.Register<Team>(SaveSchema.Key(4, "Team")).Register<Sleeping>(SaveSchema.Key(5, "Sleeping"));
         else registry.Register<Team, EmptyArchiveCodec<Team>>(SaveSchema.Key(4, "Team"))
             .Register<Sleeping, EmptyArchiveCodec<Sleeping>>(SaveSchema.Key(5, "Sleeping"));
