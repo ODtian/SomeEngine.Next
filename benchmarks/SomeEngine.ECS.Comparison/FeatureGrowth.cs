@@ -131,7 +131,7 @@ internal sealed partial class SomeEngineWorld
                 break;
             case GrowthFeature.Shared:
                 foreach (var entity in created)
-                    ObserveGrowth(_world.ReadShared<SharedNumber>(entity).Value);
+                    ObserveGrowth(_world.Read<SharedNumber>(entity).Value);
                 break;
             case GrowthFeature.Index:
                 foreach (var entity in created) ObserveGrowth(_world.Read<IndexedNumber>(entity).Value);

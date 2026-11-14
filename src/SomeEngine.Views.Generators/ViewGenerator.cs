@@ -225,7 +225,6 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
     private static void GenerateSerialization(StringBuilder text, INamedTypeSymbol type)
     {
         string typeName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        string register = UsesSparseStorage(type) ? "RegisterSparse" : "Register";
         bool generic = type.TypeParameters.Length > 0 || GetContainingTypes(type).Any(value => value.TypeParameters.Length > 0);
         string keyParameter = generic ? ", global::SomeEngine.ECS.Serialization.SerializationTypeKey typeKey" : "";
         if (!generic)
@@ -241,8 +240,7 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
             text.Append("    public static void RegisterSerialization").Append(GenerateTypeParameters(type.TypeParameters))
                 .Append("(global::SomeEngine.ECS.Serialization.SerializationRegistry registry").Append(keyParameter).Append(')')
                 .AppendLine(GenerateConstraints(type.TypeParameters)).AppendLine("    {").Append(key)
-                .Append("        registry.").Append(references && register == "Register" ? "RegisterCodec" : register)
-                .Append('<').Append(typeName).Append(", ").Append(codec);
+                .Append("        registry.Register<").Append(typeName).Append(", ").Append(codec);
             if (references)
                 text.Append(", ").Append(codec);
             text.AppendLine(references ? ">(typeKey, default, default);" : ">(typeKey);")
@@ -261,7 +259,7 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
             .AppendLine(GenerateConstraints(type.TypeParameters))
             .Append("        where ").Append(codecParameter).Append(" : struct, global::SomeEngine.ECS.Serialization.IComponentCodec<")
             .Append(typeName).AppendLine(">\n    {").Append(codecKey)
-            .Append("        registry.").Append(register).Append('<').Append(typeName).Append(", ").Append(codecParameter).AppendLine(">(typeKey);")
+            .Append("        registry.Register<").Append(typeName).Append(", ").Append(codecParameter).AppendLine(">(typeKey);")
             .Append("        global::SomeEngine.Views.ViewSerialization.RegisterType<").Append(typeName).AppendLine(">(typeKey);\n    }");
         if (generatedCodec)
             ViewParameterCodecs.Generate(text, type, fields, GenerateTypeParameters(type.TypeParameters), GenerateConstraints(type.TypeParameters));

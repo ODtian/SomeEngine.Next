@@ -51,13 +51,13 @@ internal static class ExternalReferenceChecks
         using var source = new World();
         var entity = source.Create(new AssetReference(original));
         var writeRegistry = new SerializationRegistry()
-            .RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(original)));
+            .Register<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(original)));
         using var output = new MemoryStream();
         new WorldSerializer(writeRegistry).Save(source, output, SavePurpose.DurableSave);
         output.Position = 0;
         using var target = new World();
         var readRegistry = new SerializationRegistry()
-            .RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(resolved)));
+            .Register<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(resolved)));
         new WorldSerializer(readRegistry).Load(target, output);
         Require(ReferenceEquals(target.ReadValue<AssetReference>(entity).Value, resolved),
             "a loaded component uses the resolver instance held by its target registry");
@@ -77,14 +77,14 @@ internal static class ExternalReferenceChecks
             values.Add(default);
         }
         var writeRegistry = new SerializationRegistry()
-            .RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(original)))
-            .RegisterBufferCodec<AssetReference, AssetCodec>(Key(2), new(new AssetResolver(original)));
+            .Register<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(original)))
+            .RegisterBuffer<AssetReference, AssetCodec>(Key(2), new(new AssetResolver(original)));
         var output = new ArrayBufferWriter<byte>();
         new WorldSerializer(writeRegistry).Save(source, output, SavePurpose.DurableSave);
         using var target = new World();
         var readRegistry = new SerializationRegistry()
-            .RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(resolved)))
-            .RegisterBufferCodec<AssetReference, AssetCodec>(Key(2), new(new AssetResolver(resolved)));
+            .Register<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(resolved)))
+            .RegisterBuffer<AssetReference, AssetCodec>(Key(2), new(new AssetResolver(resolved)));
         new WorldSerializer(readRegistry).Load(target, output.WrittenSpan);
         using var elements = target.ReadBuffer<AssetReference>(entity);
         Require(elements.Count == 2 && ReferenceEquals(elements[0].Value, resolved) && elements[1].Value is null,
@@ -97,7 +97,7 @@ internal static class ExternalReferenceChecks
         var asset = new Asset(key, "world stream");
         using var world = new World();
         world.Create(new AssetReference(asset));
-        var registry = new SerializationRegistry().RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
+        var registry = new SerializationRegistry().Register<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
         var references = new HashSet<ExternalReferenceKey>();
         using var output = new MemoryStream();
         new WorldSerializer(registry).Save(world, output,
@@ -114,7 +114,7 @@ internal static class ExternalReferenceChecks
         var asset = new Asset(key, "world buffer");
         using var world = new World();
         world.Create(new AssetReference(asset));
-        var registry = new SerializationRegistry().RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
+        var registry = new SerializationRegistry().Register<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
         var references = new HashSet<ExternalReferenceKey>();
         var output = new ArrayBufferWriter<byte>();
         new WorldSerializer(registry).Save(world, output,
@@ -129,7 +129,7 @@ internal static class ExternalReferenceChecks
         var asset = new Asset(key, "checkpoint stream");
         using var world = new World();
         world.Create(new AssetReference(asset));
-        var registry = new SerializationRegistry().RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
+        var registry = new SerializationRegistry().Register<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
         using var checkpoint = new WorldCheckpoint();
         checkpoint.Capture(world);
         var references = new HashSet<ExternalReferenceKey>();
@@ -145,7 +145,7 @@ internal static class ExternalReferenceChecks
         var asset = new Asset(key, "checkpoint buffer");
         using var world = new World();
         world.Create(new AssetReference(asset));
-        var registry = new SerializationRegistry().RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
+        var registry = new SerializationRegistry().Register<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
         using var checkpoint = new WorldCheckpoint();
         checkpoint.Capture(world);
         var references = new HashSet<ExternalReferenceKey>();
@@ -161,7 +161,7 @@ internal static class ExternalReferenceChecks
         var asset = new Asset(key, "background");
         using var world = new World();
         world.Create(new AssetReference(asset));
-        var registry = new SerializationRegistry().RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
+        var registry = new SerializationRegistry().Register<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
         var references = new HashSet<ExternalReferenceKey>();
         using var output = new MemoryStream();
         new WorldSerializer(registry).SaveAsync(world, output,
@@ -176,7 +176,7 @@ internal static class ExternalReferenceChecks
         var asset = new Asset(key, "file");
         using var world = new World();
         world.Create(new AssetReference(asset));
-        var registry = new SerializationRegistry().RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
+        var registry = new SerializationRegistry().Register<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
         var references = new HashSet<ExternalReferenceKey>();
         DirectoryInfo directory = Directory.CreateTempSubdirectory("ecs-external-");
         try
@@ -197,7 +197,7 @@ internal static class ExternalReferenceChecks
         var asset = new Asset(key, "background file");
         using var world = new World();
         world.Create(new AssetReference(asset));
-        var registry = new SerializationRegistry().RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
+        var registry = new SerializationRegistry().Register<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
         var references = new HashSet<ExternalReferenceKey>();
         DirectoryInfo directory = Directory.CreateTempSubdirectory("ecs-external-");
         try
@@ -217,7 +217,7 @@ internal static class ExternalReferenceChecks
         using var world = new World();
         world.Set(world.Create(), new SparseCount(10));
         world.Set(world.Create(), new SparseCount(20));
-        var registry = new SerializationRegistry().RegisterSparse<SparseCount>(Key(1));
+        var registry = new SerializationRegistry().Register<SparseCount>(Key(1));
         var serializer = new WorldSerializer(registry);
         var output = new ArrayBufferWriter<byte>();
         serializer.Save(world, output, new SerializeOptions(MaximumSparseMemberships: 2));
@@ -232,7 +232,7 @@ internal static class ExternalReferenceChecks
         using var world = new World();
         world.Set(world.Create(), new SparseCount(10));
         world.Set(world.Create(), new SparseCount(20));
-        var registry = new SerializationRegistry().RegisterSparse<SparseCount>(Key(1));
+        var registry = new SerializationRegistry().Register<SparseCount>(Key(1));
         var serializer = new WorldSerializer(registry);
         using var checkpoint = new WorldCheckpoint();
         checkpoint.Capture(world);

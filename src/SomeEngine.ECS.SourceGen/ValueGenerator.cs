@@ -74,8 +74,7 @@ internal static class ValueGenerator
             else Read(code, member.Type, local, ref id);
         }
         code.Append("value = "); Construct(code, self, Enumerable.Range(0, members.Count).Select(i => "__value" + i));
-        string registration = EcsGenerator.HasInterface(type, "SomeEngine.ECS.ISharedComponent") ? "RegisterShared" : "Register";
-        code.Append(";\n}\n}\npublic static global::SomeEngine.ECS.Serialization.SerializationRegistry RegisterCodec(global::SomeEngine.ECS.Serialization.SerializationRegistry registry, global::SomeEngine.ECS.Serialization.SerializationTypeKey key) => registry.").Append(registration).Append('<')
+        code.Append(";\n}\n}\npublic static global::SomeEngine.ECS.Serialization.SerializationRegistry RegisterCodec(global::SomeEngine.ECS.Serialization.SerializationRegistry registry, global::SomeEngine.ECS.Serialization.SerializationTypeKey key) => registry.Register<")
             .Append(self).Append(", Codec>(key);\n");
     }
 

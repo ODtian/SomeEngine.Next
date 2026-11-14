@@ -66,8 +66,8 @@ public static class SpatialCollisionConsumption
         using ReadLookup<Body> values = world.OpenRead<Body>();
         foreach (var pair in pairs)
         {
-            ref readonly Body first = ref values.ReadKnown(pair.Item1);
-            ref readonly Body second = ref values.ReadKnown(pair.Item2);
+            ref readonly Body first = ref values.Read(pair.Item1);
+            ref readonly Body second = ref values.Read(pair.Item2);
             Vector3 overlap = Vector3.Min(first.Bounds.Max, second.Bounds.Max)
                 - Vector3.Max(first.Bounds.Min, second.Bounds.Min);
             if (overlap.X < 0 || overlap.Y < 0 || overlap.Z < 0) continue;

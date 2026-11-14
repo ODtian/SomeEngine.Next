@@ -61,7 +61,7 @@ public sealed class RelationFamilyGenerator : IIncrementalGenerator
         text.AppendLine("    }");
         text.AppendLine($"    public bool Matches(in {row} row)\n    {{");
         text.AppendLine("        if (" + string.Join(" || ", Enumerable.Range(1, arity).Select(index => $"!_read{index}.Has({(arity == 1 ? "row" : $"row.Item{index}")})")) + ") return false;");
-        text.AppendLine("        return _relation.Matches(" + string.Join(", ", Enumerable.Range(1, arity).Select(index => $"in _read{index}.ReadKnown({(arity == 1 ? "row" : $"row.Item{index}")})")) + ");\n    }");
+        text.AppendLine("        return _relation.Matches(" + string.Join(", ", Enumerable.Range(1, arity).Select(index => $"in _read{index}.Read({(arity == 1 ? "row" : $"row.Item{index}")})")) + ");\n    }");
         text.AppendLine("    public void Bind(QueryChunk first, QueryChunk second)\n    {");
         if (arity <= 2)
         {

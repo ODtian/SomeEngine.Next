@@ -315,17 +315,12 @@ public sealed partial class SerializationRegistry
         return RegisterResource<T, RawCodec<T>>(key);
     }
 
-    public SerializationRegistry RegisterShared<T>(SerializationTypeKey key) where T : struct
-    {
-        if (RuntimeHelpers.IsReferenceOrContainsReferences<T>()) throw new ArgumentException("Register a shared value codec for managed fields.");
-        return RegisterShared<T, RawCodec<T>>(key, default, true);
-    }
-    public SerializationRegistry RegisterShared<T, TCodec>(SerializationTypeKey key, TCodec codec = default)
-        where T : struct where TCodec : struct, IComponentCodec<T> => RegisterShared<T, TCodec>(key, codec, false);
     private SerializationRegistry RegisterShared<T, TCodec>(SerializationTypeKey key, TCodec codec, bool raw,
-        IReferencePatcher<T>? patcher = null)
+        IReferencePatcher<T>? patcher)
         where T : struct where TCodec : struct, IComponentCodec<T>
     {
+        if (raw && RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+            throw new ArgumentException("Register a shared value codec for managed fields.");
         patcher ??= ReferencePatchers.DefaultValue<T>();
         _entries.Add(Add(new SavedShared<T, TCodec>(key, codec, raw, patcher)).Describe());
         if (ComponentType<T>.KeepsRemovedType && !Columns.ContainsKey(ComponentType<Removed<T>>.TypeId))
@@ -333,17 +328,12 @@ public sealed partial class SerializationRegistry
                 new(codec), raw, ReferencePatchers.Removed(patcher)));
         return this;
     }
-    public SerializationRegistry RegisterSparse<T>(SerializationTypeKey key) where T : struct
-    {
-        if (RuntimeHelpers.IsReferenceOrContainsReferences<T>()) throw new ArgumentException("Register a sparse value codec for managed fields.");
-        return RegisterSparse<T, RawCodec<T>>(key, default, true);
-    }
-    public SerializationRegistry RegisterSparse<T, TCodec>(SerializationTypeKey key, TCodec codec = default)
-        where T : struct where TCodec : struct, IComponentCodec<T> => RegisterSparse<T, TCodec>(key, codec, false);
     private SerializationRegistry RegisterSparse<T, TCodec>(SerializationTypeKey key, TCodec codec, bool raw,
-        IReferencePatcher<T>? patcher = null)
+        IReferencePatcher<T>? patcher)
         where T : struct where TCodec : struct, IComponentCodec<T>
     {
+        if (raw && RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+            throw new ArgumentException("Register a sparse value codec for managed fields.");
         patcher ??= ReferencePatchers.DefaultValue<T>();
         var binding = Add(new SavedSparse<T, TCodec>(key, codec, raw, patcher));
         _entries.Add(binding.Describe());
@@ -361,14 +351,6 @@ public sealed partial class SerializationRegistry
         Resources.Add(binding.Type, binding);
         return this;
     }
-
-    public SerializationRegistry RegisterShared<T, TCodec, TPatcher>(SerializationTypeKey key, TCodec codec, TPatcher patcher)
-        where T : struct where TCodec : struct, IComponentCodec<T> where TPatcher : struct, IReferencePatcher<T>
-        => RegisterShared<T, TCodec>(key, codec, false, ReferencePatchers.Bind<T, TPatcher>(patcher));
-
-    public SerializationRegistry RegisterSparse<T, TCodec, TPatcher>(SerializationTypeKey key, TCodec codec, TPatcher patcher)
-        where T : struct where TCodec : struct, IComponentCodec<T> where TPatcher : struct, IReferencePatcher<T>
-        => RegisterSparse<T, TCodec>(key, codec, false, ReferencePatchers.Bind<T, TPatcher>(patcher));
 
     public SerializationRegistry RegisterResource<T, TCodec, TPatcher>(SerializationTypeKey key, TCodec codec, TPatcher patcher)
         where TCodec : struct, IValueCodec<T> where TPatcher : struct, IReferencePatcher<T>

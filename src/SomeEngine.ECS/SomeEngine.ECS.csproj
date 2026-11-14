@@ -7,6 +7,10 @@
     <InternalsVisibleTo Include="SomeEngine.ECS.Serialization" />
     <InternalsVisibleTo Include="SomeEngine.ECS.Systems" />
     <InternalsVisibleTo Include="SomeEngine.ECS.Relationships" />
+    <!-- Measurement tools that create entities and reserve layouts from raw component sets. -->
+    <InternalsVisibleTo Include="SomeEngine.ECS.Benchmarks" />
+    <InternalsVisibleTo Include="SomeEngine.ECS.Comparison" />
+    <InternalsVisibleTo Include="SomeEngine.Job.Benchmarks" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Diagnostics/SomeEngine.Diagnostics.csproj" />

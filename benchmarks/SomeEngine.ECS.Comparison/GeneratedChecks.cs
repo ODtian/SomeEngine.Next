@@ -130,7 +130,7 @@ internal static class GeneratedChecks
         world.Set(first, new GeneratedLinks(second, outside, [first, second, outside], [3, 5], "first"));
         world.Set(second, new GeneratedLinks(first, outside, [second, first, outside], [7, 11], null));
         world.Set(first, new GeneratedEnvelope(new GeneratedLinks(second, outside, [first, second, outside], [17, 19], "nested"), 3));
-        world.SetShared(first, new GeneratedShared(7));
+        world.Set(first, new GeneratedShared(7));
         Entity[] copied = new Entity[2]; world.Clone([first, second], copied);
         GeneratedLinks copy = world.ReadValue<GeneratedLinks>(copied[0]);
         Require(copy.Target == copied[1] && copy.Outside == outside

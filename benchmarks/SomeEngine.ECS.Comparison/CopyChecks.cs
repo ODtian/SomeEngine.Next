@@ -15,7 +15,7 @@ internal static class CopyChecks
         Entity outside = source.Create(new Position { X = 30 });
         source.Set(root, new CopiedNode(root, child, outside, 7));
         source.Set(child, new CopiedNode(child, root, outside, 11));
-        source.SetShared(child, new SharedLabel(7));
+        source.Set(child, new SharedLabel(7));
         source.Add(child, new CopiedSignal { Value = 5 }); source.Disable<CopiedSignal>(child);
         source.AddBuffer<LinkedValue>(child);
         using (var values = source.GetBuffer<LinkedValue>(child)) { values.Add(new(root, 1)); values.Add(new(outside, 2)); }
@@ -61,7 +61,7 @@ internal static class CopyChecks
             Require(values.Count == 2 && values[0] == new LinkedValue(copied[0], 1) && values[1] == new LinkedValue(outside, 2),
                 "buffer element references use the same complete copy map");
         Require(world.Read<LinkedValue>(copied[1]) == new LinkedValue(copied[0], 3)
-            && world.ReadShared<SharedLabel>(copied[1]).Value == 7 && !world.IsEnabled<CopiedSignal>(copied[1]),
+            && world.Read<SharedLabel>(copied[1]).Value == 7 && !world.IsEnabled<CopiedSignal>(copied[1]),
             "sparse references, shared values and disabled component values retain their copy semantics");
         Require(Hierarchy<CopyTree>.GetParent(world, copied[1]) == copied[0]
             && world.Read<RelationEndpoints<CopiedLink>>(copied[2]) == new RelationEndpoints<CopiedLink>(copied[0], copied[1])

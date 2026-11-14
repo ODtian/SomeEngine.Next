@@ -79,7 +79,7 @@ internal static partial class SerializationChecks
         world.Index<IndexedNumber, int>();
         world.Set(entities[3], new IndexedNumber(7, 3));
         world.GroupBy<ArchiveShared>();
-        world.SetShared(entities[2], new ArchiveShared(7));
+        world.Set(entities[2], new ArchiveShared(7));
         world.Set(entities[1], new ArchiveLink(entities[0], 11));
         world.AddBuffer<ArchiveLink>(entities[0]);
         using (var values = world.GetBuffer<ArchiveLink>(entities[0])) values.Add(new(entities[1], 21));
@@ -223,8 +223,8 @@ internal static partial class SerializationChecks
         return registry.Register<ArchiveValue, ArchiveValueCodec>(Key(2))
             .Register<ArchiveStep, ArchiveStepCodec>(Key(3))
             .Register<IndexedNumber, ArchiveIndexCodec>(Key(4))
-            .RegisterShared<ArchiveShared, ArchiveSharedCodec>(Key(5))
-            .RegisterSparse<ArchiveLink, ArchiveLinkCodec>(Key(6))
+            .Register<ArchiveShared, ArchiveSharedCodec>(Key(5))
+            .Register<ArchiveLink, ArchiveLinkCodec>(Key(6))
             .RegisterBuffer<ArchiveLink, ArchiveLinkCodec>(Key(7))
             .RegisterResource<ArchiveResource, ArchiveResourceCodec>(Key(8))
             .RegisterHierarchy<ArchiveTree>(Key(9))

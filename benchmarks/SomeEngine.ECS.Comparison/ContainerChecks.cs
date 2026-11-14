@@ -105,7 +105,7 @@ internal static partial class ContainerChecks
         using var world = new World(execution: execution);
         Entity entity = world.Create(new Position { X = 17 });
         Entity missing = world.Create(new Extra());
-        world.SetShared(entity, new ScopedShared(9));
+        world.Set(entity, new ScopedShared(9));
         world.AddBuffer<Element>(entity);
         using (var buffer = world.GetBuffer<Element>(entity)) buffer.Add(new Element { Value = 42 });
         world.RemoveBuffer<Element>(entity);

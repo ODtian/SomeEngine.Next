@@ -150,15 +150,15 @@ internal static class JobGenerator
         {
             code.Append("private static readonly global::SomeEngine.ECS.Systems.SystemAccesses __ecsAdditional = new global::SomeEngine.ECS.Systems.SystemAccesses()");
             foreach (Input input in inputs.Where(input => input.Kind == "sparse"))
-                code.Append(input.Write ? ".WriteSparse<" : ".ReadSparse<").Append(EcsGenerator.Name(input.Type)).Append(">()");
+                code.Append(input.Write ? ".Write<" : ".Read<").Append(EcsGenerator.Name(input.Type)).Append(">()");
             foreach (AttributeData attribute in additional)
             {
                 if (attribute.ConstructorArguments[0].Value is not ITypeSymbol value) continue;
                 int storage = attribute.ConstructorArguments.Length > 1 && attribute.ConstructorArguments[1].Value is int location ? location : 0;
                 bool write = attribute.AttributeClass!.Name == "JobWriteAttribute";
-                if (write && storage == 0 && Controlled(value))
+                if (write && storage == 0 && !Sparse(value) && Controlled(value))
                 { EcsGenerator.Error(output, type, "Record random structural writes in the command producer."); return; }
-                code.Append('.').Append(write ? "Write" : "Read").Append(storage == 1 ? "Sparse" : storage == 2 ? "Resource" : "Random")
+                code.Append('.').Append(write ? "Write" : "Read").Append(storage == 1 ? "Resource" : "")
                     .Append('<').Append(EcsGenerator.Name(value)).Append(">()");
             }
             code.Append(";\nstatic global::SomeEngine.ECS.Systems.SystemAccesses? global::SomeEngine.ECS.Systems.IChunkAction.AdditionalAccesses => __ecsAdditional;\n");

@@ -288,13 +288,21 @@ public sealed partial class SerializationRegistry
 
     public SerializationRegistry Register<T>() where T : struct => Register<T>(RawKey<T>());
     public SerializationRegistry Register<T>(SerializationTypeKey key) where T : struct
-    {
-        return RegisterColumn<T, RawCodec<T>>(key, default, true,
-            ComponentType<T>.IsTagType ? SavedStorage.Tag : SavedStorage.Table);
-    }
+        => RegisterComponent<T, RawCodec<T>>(key, default, true, null);
     public SerializationRegistry Register<T, TCodec>(SerializationTypeKey key, TCodec codec = default)
         where T : struct where TCodec : struct, IComponentCodec<T>
-        => RegisterColumn<T, TCodec>(key, codec, false, ComponentType<T>.IsTagType ? SavedStorage.Tag : SavedStorage.Table);
+        => RegisterComponent<T, TCodec>(key, codec, false, null);
+    public SerializationRegistry Register<T, TCodec, TPatcher>(SerializationTypeKey key, TCodec codec, TPatcher patcher)
+        where T : struct where TCodec : struct, IComponentCodec<T> where TPatcher : struct, IReferencePatcher<T>
+        => RegisterComponent<T, TCodec>(key, codec, false, ReferencePatchers.Bind<T, TPatcher>(patcher));
+
+    /// <summary>The component type decides where its values are saved: shared values, sparse values or table columns.</summary>
+    private SerializationRegistry RegisterComponent<T, TCodec>(SerializationTypeKey key, TCodec codec, bool raw,
+        IReferencePatcher<T>? patcher)
+        where T : struct where TCodec : struct, IComponentCodec<T>
+        => ComponentType<T>.IsSharedType ? RegisterShared(key, codec, raw, patcher)
+            : ComponentType<T>.IsSparseType ? RegisterSparse(key, codec, raw, patcher)
+            : RegisterColumn(key, codec, raw, ComponentType<T>.IsTagType ? SavedStorage.Tag : SavedStorage.Table, patcher);
 
     public SerializationRegistry RegisterDurable<
         [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(
@@ -306,22 +314,15 @@ public sealed partial class SerializationRegistry
             ? Register<T, PackedValueCodec<T>>(key)
             : Register<T, TCodec>(key);
 
+    /// <summary>Registers a codec under the type's build identity; its values stay out of durable saves.</summary>
     public SerializationRegistry RegisterCodec<T, TCodec>(TCodec codec)
         where T : struct where TCodec : struct, IComponentCodec<T>
     {
-        Register<T, TCodec>(RawKey<T>(), codec);
-        Columns[ComponentType<T>.TypeId].SupportsDurable = false;
+        SerializationTypeKey key = RawKey<T>();
+        Register<T, TCodec>(key, codec);
+        ById[key.StableId].SupportsDurable = false;
         return this;
     }
-
-    public SerializationRegistry RegisterCodec<T, TCodec>(SerializationTypeKey typeKey, TCodec codec)
-        where T : struct where TCodec : struct, IComponentCodec<T>
-        => Register<T, TCodec>(typeKey, codec);
-
-    public SerializationRegistry RegisterCodec<T, TCodec, TPatcher>(SerializationTypeKey typeKey, TCodec codec, TPatcher patcher)
-        where T : struct where TCodec : struct, IComponentCodec<T> where TPatcher : struct, IReferencePatcher<T>
-        => RegisterColumn<T, TCodec>(typeKey, codec, false, ComponentType<T>.IsTagType ? SavedStorage.Tag : SavedStorage.Table,
-            ReferencePatchers.Bind<T, TPatcher>(patcher));
 
     private SerializationRegistry RegisterColumn<T, TCodec>(SerializationTypeKey key, TCodec codec, bool raw, SavedStorage kind,
         IReferencePatcher<T>? patcher = null, bool progress = false, bool describe = true)
@@ -352,20 +353,18 @@ public sealed partial class SerializationRegistry
         where T : struct where TCodec : struct, IComponentCodec<T>
         => RegisterColumn<Buffer<T>, BufferCodec<T, TCodec>>(key, new(codec), false, SavedStorage.Buffer);
 
+    public SerializationRegistry RegisterBuffer<T, TCodec, TPatcher>(SerializationTypeKey key, TCodec codec, TPatcher patcher)
+        where T : struct where TCodec : struct, IComponentCodec<T> where TPatcher : struct, IReferencePatcher<T>
+        => RegisterColumn<Buffer<T>, BufferCodec<T, TCodec>>(key, new(codec), false, SavedStorage.Buffer,
+            new BufferReferencePatcher<T>(ReferencePatchers.Bind<T, TPatcher>(patcher)));
+
+    /// <summary>Registers a buffer element codec under the buffer's build identity; its values stay out of durable saves.</summary>
     public SerializationRegistry RegisterBufferCodec<T, TCodec>(TCodec codec)
         where T : struct where TCodec : struct, IComponentCodec<T>
     {
-        RegisterBuffer<T, TCodec>(RawKey<Buffer<T>>(), codec);
-        Columns[ComponentType<Buffer<T>>.TypeId].SupportsDurable = false;
+        SerializationTypeKey key = RawKey<Buffer<T>>();
+        RegisterBuffer<T, TCodec>(key, codec);
+        ById[key.StableId].SupportsDurable = false;
         return this;
     }
-
-    public SerializationRegistry RegisterBufferCodec<T, TCodec>(SerializationTypeKey typeKey, TCodec codec)
-        where T : struct where TCodec : struct, IComponentCodec<T>
-        => RegisterBuffer<T, TCodec>(typeKey, codec);
-
-    public SerializationRegistry RegisterBufferCodec<T, TCodec, TPatcher>(SerializationTypeKey typeKey, TCodec codec, TPatcher patcher)
-        where T : struct where TCodec : struct, IComponentCodec<T> where TPatcher : struct, IReferencePatcher<T>
-        => RegisterColumn<Buffer<T>, BufferCodec<T, TCodec>>(typeKey, new(codec), false, SavedStorage.Buffer,
-            new BufferReferencePatcher<T>(ReferencePatchers.Bind<T, TPatcher>(patcher)));
 }

@@ -115,7 +115,7 @@ public static partial class HandwrittenSpatialCollision
                     var entities = (nodes[firstNode].Entity, nodes[secondNode].Entity);
                     if (!members.Contains(entities.Item1) || !members.Contains(entities.Item2))
                         continue;
-                    if (values.ReadKnown(entities.Item1).Kind != MotionKind.Dynamic && values.ReadKnown(entities.Item2).Kind != MotionKind.Dynamic)
+                    if (values.Read(entities.Item1).Kind != MotionKind.Dynamic && values.Read(entities.Item2).Kind != MotionKind.Dynamic)
                         continue;
                     if (results.Item1.Item2 == GroupMatch.Unknown)
                     {

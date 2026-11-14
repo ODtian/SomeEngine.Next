@@ -46,7 +46,7 @@ internal static class AccessChecks
         world.Set(afterClear, new SparseExtra { Value = 44 });
         using (var values = world.OpenRead<Position>())
             Require(!values.Has(replacement) && !values.Has(second) && values.Has(afterClear)
-                && values.ReadKnown(afterClear).X == 44,
+                && values.Read(afterClear).X == 44,
                 "clear binds the new identity and position through the existing location directory");
         using (var values = world.OpenSparseValues<SparseExtra>())
             Require(values.Count == 1 && values.Entities[0] == afterClear && values.Values[0].Value == 44,

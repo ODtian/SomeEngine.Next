@@ -234,10 +234,7 @@ internal unsafe ref struct CachedReadLookup<T> where T : struct
         }
     }
 
-    /// <summary>Reads a component whose identity and presence are already established for this scope.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ref readonly T ReadKnown(Entity entity) => ref AccessKnown(entity.Id);
-
+    // Callers inside the engine that have already established identity and presence for this scope.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal ref T AccessKnown(int entityId, ulong writeVersion = 0, bool write = false)
     {
@@ -325,13 +322,13 @@ internal ref struct CachedWriteLookup<T> where T : struct
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Set(Entity entity, in T value) => Get(entity) = value;
 
-    /// <summary>Gets a component whose identity and presence are already established for this scope.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ref T GetKnown(Entity entity)
-        => ref _read.AccessKnown(entity.Id, ComponentType<T>.TracksWritesType ? _read.WriteVersion(ref _version) : 0, true);
-
-    public void SetKnown(ReadOnlySpan<Entity> entities, in T value)
-        => _read.SetKnown(entities, value, ComponentType<T>.TracksWritesType && !entities.IsEmpty ? _read.WriteVersion(ref _version) : 0);
+    // The bulk path writes through cached offsets, so every entity is checked before any write.
+    public void Set(ReadOnlySpan<Entity> entities, in T value)
+    {
+        foreach (Entity entity in entities)
+            if (!_read.Has(entity)) throw new ArgumentException("Entity does not have this component.");
+        _read.SetKnown(entities, value, ComponentType<T>.TracksWritesType && !entities.IsEmpty ? _read.WriteVersion(ref _version) : 0);
+    }
 
     public bool Has(Entity entity) => _read.Has(entity);
     public void Dispose() => _read.Dispose();

@@ -30,7 +30,7 @@ public ref struct BitmapRelation<TRelation, TImplementation, TComponent, TPermis
     {
         if (!_values.Has(pair.Item1) || !_values.Has(pair.Item2)) return false;
         return TPermission.Matches<TRelation, TComponent, TImplementation>(in _relation, ref _implementation,
-            in _values.ReadKnown(pair.Item1), in _values.ReadKnown(pair.Item2));
+            in _values.Read(pair.Item1), in _values.Read(pair.Item2));
     }
     public bool Matches(in (Entity, Entity) pair, int first, int second, bool reversed)
     {
@@ -48,7 +48,7 @@ public ref struct BitmapRelation<TRelation, TImplementation, TComponent, TPermis
         where TResult : struct, ICategoryPermissionOutput<(Entity, Entity), TOutput>
     {
         if (!_values.Has(pair.Item1) || !_values.Has(pair.Item2)) return TResult.Unmatched(in pair, ref output);
-        return Evaluate<(Entity, Entity), TOutput, TResult>(in pair, in _values.ReadKnown(pair.Item1), in _values.ReadKnown(pair.Item2), ref output);
+        return Evaluate<(Entity, Entity), TOutput, TResult>(in pair, in _values.Read(pair.Item1), in _values.Read(pair.Item2), ref output);
     }
     internal bool EvaluateBound<TOutput, TResult>(in (Entity, Entity) pair, int first, int second, bool reversed, scoped ref TOutput output)
         where TOutput : allows ref struct

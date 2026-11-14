@@ -114,8 +114,8 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
             registry.Register<Position>(SaveSchema.Key(1, "Position")).Register<Velocity>(SaveSchema.Key(2, "Velocity"))
                 .Register<Health>(SaveSchema.Key(3, "Health")).Register<SaveCounter>(SaveSchema.Key(6, "Counter"))
                 .Register<SaveStep>(SaveSchema.Key(7, "Step")).Register<IndexedNumber>(SaveSchema.Key(8, "Index"))
-                .RegisterShared<SaveShared>(SaveSchema.Key(9, "Shared")).RegisterBuffer<SaveLink>(SaveSchema.Key(13, "Buffer"))
-                .RegisterSparse<SaveLink>(SaveSchema.Key(22, "Sparse"));
+                .Register<SaveShared>(SaveSchema.Key(9, "Shared")).RegisterBuffer<SaveLink>(SaveSchema.Key(13, "Buffer"))
+                .Register<SaveLink>(SaveSchema.Key(22, "Sparse"));
         else
             registry.Register<Position, SaveSchema.PositionCodec>(SaveSchema.Key(1, "Position"))
                 .Register<Velocity, SaveSchema.VelocityCodec>(SaveSchema.Key(2, "Velocity"))
@@ -123,9 +123,9 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
                 .Register<SaveCounter, SaveSchema.CounterCodec>(SaveSchema.Key(6, "Counter"))
                 .Register<SaveStep, SaveSchema.StepCodec>(SaveSchema.Key(7, "Step"))
                 .Register<IndexedNumber, SaveSchema.IndexCodec>(SaveSchema.Key(8, "Index"))
-                .RegisterShared<SaveShared, SaveSchema.SharedCodec>(SaveSchema.Key(9, "Shared"))
+                .Register<SaveShared, SaveSchema.SharedCodec>(SaveSchema.Key(9, "Shared"))
                 .RegisterBuffer<SaveLink, SaveSchema.LinkCodec>(SaveSchema.Key(13, "Buffer"))
-                .RegisterSparse<SaveLink, SaveSchema.LinkCodec>(SaveSchema.Key(22, "Sparse"));
+                .Register<SaveLink, SaveSchema.LinkCodec>(SaveSchema.Key(22, "Sparse"));
         ArchiveResources.Register(registry, _resourceCounter);
         return registry.RegisterResource<SaveResource, SaveSchema.ResourceCodec>(SaveSchema.Key(23, "Resource"))
             .RegisterHierarchy<SaveTree>(SaveSchema.Key(24, "Tree"))

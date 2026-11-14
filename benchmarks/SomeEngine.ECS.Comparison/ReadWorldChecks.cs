@@ -67,11 +67,11 @@ internal static partial class ReadWorldChecks
         source.Destroy(hole);
         var patches = new Counter();
         var registry = new SerializationRegistry()
-            .RegisterCodec<ReferenceValue, ReferenceCodec, ReferencePatcher>(Key(1), new(), new(patches))
-            .RegisterCodec<AutomaticReference, AutomaticCodec>(Key(2), new())
+            .Register<ReferenceValue, ReferenceCodec, ReferencePatcher>(Key(1), new(), new(patches))
+            .Register<AutomaticReference, AutomaticCodec>(Key(2), new())
             .Register<Marker>(Key(3))
-            .RegisterBufferCodec<ReferenceValue, ReferenceCodec, ReferencePatcher>(Key(4), new(), new(patches))
-            .RegisterSparse<SparseReference, SparseCodec, SparsePatcher>(Key(5), new(), new(patches))
+            .RegisterBuffer<ReferenceValue, ReferenceCodec, ReferencePatcher>(Key(4), new(), new(patches))
+            .Register<SparseReference, SparseCodec, SparsePatcher>(Key(5), new(), new(patches))
             .RegisterResource<ResourceReference, ResourceCodec, ResourcePatcher>(Key(6), new(new()), new(patches));
         using var bytes = new MemoryStream();
         new WorldSerializer(registry).Save(source, bytes, progress: CheckpointProgress.Preserve);
@@ -97,7 +97,7 @@ internal static partial class ReadWorldChecks
         Entity expired = source.Create();
         Entity holder = source.Create(new AutomaticReference(expired));
         source.Destroy(expired);
-        var registry = new SerializationRegistry().RegisterCodec<AutomaticReference, AutomaticCodec>(Key(1), new());
+        var registry = new SerializationRegistry().Register<AutomaticReference, AutomaticCodec>(Key(1), new());
         using var bytes = new MemoryStream();
         new WorldSerializer(registry).Save(source, bytes, progress: CheckpointProgress.Preserve);
         bytes.Position = 0;
@@ -125,7 +125,7 @@ internal static partial class ReadWorldChecks
         source.Remove<AutomaticReference>(holder);
         source.Destroy(hole);
         var registry = new SerializationRegistry()
-            .RegisterCodec<AutomaticReference, AutomaticCodec>(Key(1), new()).Register<Marker>(Key(2));
+            .Register<AutomaticReference, AutomaticCodec>(Key(1), new()).Register<Marker>(Key(2));
         using var bytes = new MemoryStream();
         new WorldSerializer(registry).Save(source, bytes, progress: CheckpointProgress.Preserve);
         bytes.Position = 0;
@@ -200,15 +200,15 @@ internal static partial class ReadWorldChecks
         ulong baseline = source.Version;
         Entity first = source.Spawn(new MarkedRow { Marker = new(10), Enabled = new(5), Optional = new(1) });
         Entity second = source.Spawn(new MarkedRow { Marker = new(20), Enabled = new(6), Optional = new(2) });
-        source.SetShared(first, new GroupedReference(firstOwner, 7));
-        source.SetShared(second, new GroupedReference(secondOwner, 7));
+        source.Set(first, new GroupedReference(firstOwner, 7));
+        source.Set(second, new GroupedReference(secondOwner, 7));
         source.GroupBy<GroupedReference>();
         source.Remove<OptionalValue>(second);
         source.Disable<EnabledValue>(second);
         source.Destroy(firstOwner); source.Destroy(secondOwner);
         var registry = new SerializationRegistry().Register<Marker>(Key(1)).Register<EnabledValue>(Key(2))
             .Register<OptionalValue>(Key(3))
-            .RegisterShared<GroupedReference, GroupedCodec, GroupedPatcher>(Key(4), new(), new());
+            .Register<GroupedReference, GroupedCodec, GroupedPatcher>(Key(4), new(), new());
         var savedVersions = new Versions { Last = 7, Current = 11 };
         using var bytes = new MemoryStream();
         new WorldSerializer(registry).Save(source, bytes, SavePurpose.RawCheckpoint, CheckpointProgress.Preserve, savedVersions);

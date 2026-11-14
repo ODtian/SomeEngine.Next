@@ -163,8 +163,8 @@ public sealed partial class NavigationNeighborSystem<TMotion, TReader> : IDispos
             .With<Buffer<NavigationTrajectoryPoint>>());
         _dataWrite = JobResourceAccess.Write(scheduler.GetResourceToken(Data));
         JobResourceAccess[] values = ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses()
-            .ReadRandom<NavigationAgent>().ReadRandom<AvoidanceAgent>().ReadRandom<TMotion>()
-            .ReadRandom<Buffer<NavigationTrajectoryPoint>>());
+            .Read<NavigationAgent>().Read<AvoidanceAgent>().Read<TMotion>()
+            .Read<Buffer<NavigationTrajectoryPoint>>());
         _buildAccesses = new JobResourceAccess[values.Length + 1];
         values.CopyTo(_buildAccesses, 0);
         _buildAccesses[^1] = _dataWrite;

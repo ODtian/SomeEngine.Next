@@ -96,7 +96,7 @@ internal sealed partial class SourceTrackedArchiveJobs : TrackedArchiveJobs
             throw new InvalidOperationException("Source tracked query exact changes and summaries differ.");
     }
     [JobRead(typeof(Parent<SaveTree>))]
-    [JobRead(typeof(SaveLink), JobStorage.Sparse)]
+    [JobRead(typeof(SaveLink))]
     [JobRead(typeof(ResourceData<ArchiveResources.Kind0>), JobStorage.Resource)]
     private readonly partial struct Apply(World world, Entity[] entities, Entity secondRoot) : IJobChunk
     {

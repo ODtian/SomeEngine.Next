@@ -323,7 +323,7 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     {
         long total = 0;
         using var positions = _world.OpenRead<Position>();
-        foreach (ref readonly var entity in _lookupEntities.AsSpan()) total += (int)positions.ReadKnown(entity).X;
+        foreach (ref readonly var entity in _lookupEntities.AsSpan()) total += (int)positions.Read(entity).X;
         ReadTotal = total;
     }
 
@@ -355,7 +355,7 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     internal override void WriteRandom()
     {
         using var positions = _world.OpenWrite<Position>();
-        positions.SetKnown(_lookupEntities, ReplacementPosition);
+        positions.Set(_lookupEntities, ReplacementPosition);
     }
 
     internal override void WriteRandomChecked()
@@ -368,14 +368,14 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     internal override void WriteRandomCached()
     {
         using var positions = _world.OpenWrite<Position>();
-        positions.SetKnown(_lookupEntities, ReplacementPosition);
+        positions.Set(_lookupEntities, ReplacementPosition);
     }
 
     internal override void ReadRandomCached()
     {
         long total = 0;
         using var positions = _world.OpenRead<Position>();
-        foreach (ref readonly var entity in _lookupEntities.AsSpan()) total += (int)positions.ReadKnown(entity).X;
+        foreach (ref readonly var entity in _lookupEntities.AsSpan()) total += (int)positions.Read(entity).X;
         ReadTotal = total;
     }
 
@@ -397,14 +397,14 @@ internal sealed partial class SomeEngineWorld : ComparisonWorld
     {
         long total = 0;
         using var positions = _world.OpenRead<Position>();
-        foreach (ref readonly var entity in _lookupEntities.AsSpan()) total += (int)positions.ReadKnown(entity).X;
+        foreach (ref readonly var entity in _lookupEntities.AsSpan()) total += (int)positions.Read(entity).X;
         ReadTotal = total;
     }
 
     internal override void WriteRandomKnown()
     {
         using var positions = _world.OpenWrite<Position>();
-        positions.SetKnown(_lookupEntities, ReplacementPosition);
+        positions.Set(_lookupEntities, ReplacementPosition);
     }
 
     internal override void AddRemove()

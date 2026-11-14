@@ -4,7 +4,7 @@ using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS;
 
-public interface IBundleWriter<TState> where TState : struct
+internal interface IBundleWriter<TState> where TState : struct
 {
     void Write(BundleWriteView view, in TState state);
 }
@@ -79,10 +79,10 @@ public sealed partial class World
     public void ReserveBundle<TBundle>(int capacity) where TBundle : struct, Components.IComponentBundle<TBundle>
         => ReserveBundle(TBundle.ComponentIds, capacity);
 
-    public void ReserveBundle(ReadOnlySpan<int> componentIds, int capacity)
+    internal void ReserveBundle(ReadOnlySpan<int> componentIds, int capacity)
         => ReserveTypes(new TypeSet(false, componentIds.ToArray()), capacity);
 
-    public Entity ExecuteBundleSpawn<TState, TWriter>(ReadOnlySpan<int> componentIds,
+    internal Entity ExecuteBundleSpawn<TState, TWriter>(ReadOnlySpan<int> componentIds,
         ReadOnlySpan<int> sparseComponentIds, in TState state, in TWriter writer)
         where TState : struct where TWriter : struct, IBundleWriter<TState>
     {
@@ -97,11 +97,11 @@ public sealed partial class World
         return entity;
     }
 
-    public Entity ExecuteBundleSpawn<TState, TWriter>(ReadOnlySpan<int> componentIds, in TState state, in TWriter writer)
+    internal Entity ExecuteBundleSpawn<TState, TWriter>(ReadOnlySpan<int> componentIds, in TState state, in TWriter writer)
         where TState : struct where TWriter : struct, IBundleWriter<TState>
         => ExecuteBundleSpawn(componentIds, [], state, writer);
 
-    public void ExecuteBundleAdd<TState, TWriter>(Entity entity, ReadOnlySpan<int> componentIds,
+    internal void ExecuteBundleAdd<TState, TWriter>(Entity entity, ReadOnlySpan<int> componentIds,
         ReadOnlySpan<int> sparseComponentIds, in TState state, in TWriter writer)
         where TState : struct where TWriter : struct, IBundleWriter<TState>
     {
@@ -123,7 +123,7 @@ public sealed partial class World
         CompleteBundleValues(entity, created: false);
     }
 
-    public void ExecuteBundleReplace<TState, TWriter>(Entity entity, ReadOnlySpan<int> componentIds,
+    internal void ExecuteBundleReplace<TState, TWriter>(Entity entity, ReadOnlySpan<int> componentIds,
         ReadOnlySpan<int> sparseComponentIds, in TState state, in TWriter writer)
         where TState : struct where TWriter : struct, IBundleWriter<TState>
     {
@@ -143,7 +143,7 @@ public sealed partial class World
         CompleteBundleValues(entity, created: false);
     }
 
-    public void ExecuteBundleSpawn<TState, TWriter>(Span<Entity> entities, ReadOnlySpan<int> componentIds,
+    internal void ExecuteBundleSpawn<TState, TWriter>(Span<Entity> entities, ReadOnlySpan<int> componentIds,
         ReadOnlySpan<int> sparseComponentIds, ReadOnlySpan<TState> states, in TWriter writer)
         where TState : struct where TWriter : struct, IBundleWriter<TState>
     {
@@ -171,7 +171,7 @@ public sealed partial class World
     }
 
     /// <summary>Creates one entity per destination element, each written from the same bundle state.</summary>
-    public void ExecuteBundleSpawn<TState, TWriter>(Span<Entity> entities, ReadOnlySpan<int> componentIds,
+    internal void ExecuteBundleSpawn<TState, TWriter>(Span<Entity> entities, ReadOnlySpan<int> componentIds,
         ReadOnlySpan<int> sparseComponentIds, in TState state, in TWriter writer)
         where TState : struct where TWriter : struct, IBundleWriter<TState>
     {
@@ -197,7 +197,7 @@ public sealed partial class World
         }
     }
 
-    public void ExecuteBundleSpawnBatch<TState, TWriter>(ReadOnlySpan<int> componentIds, int count,
+    internal void ExecuteBundleSpawnBatch<TState, TWriter>(ReadOnlySpan<int> componentIds, int count,
         in TState state, in TWriter writer)
         where TState : struct where TWriter : struct, IBundleWriter<TState>
     {

@@ -69,7 +69,7 @@ internal static partial class RelationsSmoke
         Require(within.Count() == 1 && within.Any() &&
             world.Within(numbers).Except(new Total2(4)).Count() == 1, "within where and except terminals");
         using (ReadLookup<Number<int>> point = world.OpenRead<Number<int>>())
-            Require(point.Has(entities[0]) && point.ReadKnown(entities[0]).Value == 1, "native point component read");
+            Require(point.Has(entities[0]) && point.Read(entities[0]).Value == 1, "native point component read");
         new IncreaseNumbers().Schedule(world).Complete();
         var values = new List<int>();
         jobs.Schedule(new ReadNumber(world, entities[0], values), worldJobs.CollectReadAccess(numbers)).Complete();

@@ -53,7 +53,7 @@ internal static partial class RelationsSmoke
 
         world.AcquireSystemVersion();
         var writer = new UpdateBodies(world, b, c, secondCharacter);
-        JobResourceAccess[] writes = worldJobs.CollectAccess(new SystemAccesses().WriteRandom<Body>(), structureWrite: true);
+        JobResourceAccess[] writes = worldJobs.CollectAccess(new SystemAccesses().Write<Body>(), structureWrite: true);
         var updated = jobs.Schedule(writer, writes, consumed);
         consumed = ScheduleFrame(maintenance, pairs, totals, maintenance.Schedule(updated));
         consumed.Complete();
@@ -100,8 +100,8 @@ internal static partial class RelationsSmoke
             using ReadLookup<Body> bodies = world.OpenRead<Body>();
             foreach (var pair in pairs.Pairs)
             {
-                var first = bodies.ReadKnown(pair.Item1).Bounds;
-                var second = bodies.ReadKnown(pair.Item2).Bounds;
+                var first = bodies.Read(pair.Item1).Bounds;
+                var second = bodies.Read(pair.Item2).Bounds;
                 var overlap = Vector3.Min(first.Max, second.Max) - Vector3.Max(first.Min, second.Min);
                 float depth = MathF.Min(overlap.X, MathF.Min(overlap.Y, overlap.Z));
                 if (depth < 0)

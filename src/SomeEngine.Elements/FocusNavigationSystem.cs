@@ -97,7 +97,7 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
         var job = new ReleaseDestroyedJob(world, this);
         if (world.Execution is WorldJobs jobs)
         {
-            JobResourceAccess[] values = jobs.CollectAccess(new SystemAccesses().WriteSparse<Focused>(), structureWrite: true);
+            JobResourceAccess[] values = jobs.CollectAccess(new SystemAccesses().Write<Focused>(), structureWrite: true);
             var accesses = new JobResourceAccess[values.Length + 1];
             values.CopyTo(accesses, 0);
             accesses[^1] = _destroyed.Read;

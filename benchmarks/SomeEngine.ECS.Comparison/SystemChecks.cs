@@ -266,7 +266,7 @@ internal static partial class SystemChecks
                 Position value = world.ReadValue<Position>(entity);
                 value.Y += velocities[row].Y;
                 world.Set(entity, value);
-                writes.GetKnown(entity).X++;
+                writes.Get(entity).X++;
             }
         }
     }

@@ -16,10 +16,10 @@ public sealed class SystemAccesses
         return false;
     }
 
-    public SystemAccesses ReadRandom<T>() where T : struct => Add<T>(WorldValueKind.Table, false);
-    public SystemAccesses WriteRandom<T>() where T : struct => Add<T>(WorldValueKind.Table, true);
-    public SystemAccesses ReadSparse<T>() where T : struct => Add<T>(WorldValueKind.Sparse, false);
-    public SystemAccesses WriteSparse<T>() where T : struct => Add<T>(WorldValueKind.Sparse, true);
+    /// <summary>Declares reads of the component on any entity; the component type decides its storage.</summary>
+    public SystemAccesses Read<T>() where T : struct => Add<T>(false);
+    /// <summary>Declares writes of the component on any entity; the component type decides its storage.</summary>
+    public SystemAccesses Write<T>() where T : struct => Add<T>(true);
 
     public SystemAccesses ReadResource<T>()
     {
@@ -34,8 +34,9 @@ public sealed class SystemAccesses
         return this;
     }
 
-    private SystemAccesses Add<T>(WorldValueKind kind, bool write) where T : struct
+    private SystemAccesses Add<T>(bool write) where T : struct
     {
+        WorldValueKind kind = ComponentType<T>.IsSparseType ? WorldValueKind.Sparse : WorldValueKind.Table;
         bool structural = kind == WorldValueKind.Table && ComponentType<T>.Value.UsesStructureWrites;
         if (structural && write) throw new InvalidOperationException("Record structural writes in the command producer.");
         Values.Add(new(ComponentType<T>.TypeId, kind, write, ComponentType<T>.TracksWritesType, structural));

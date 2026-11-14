@@ -37,15 +37,6 @@ public ref struct ReadLookup<T> where T : struct
         return ref Access(entity);
     }
 
-    /// <summary>Reads an identity whose component presence is established for this scope.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ref readonly T ReadKnown(Entity entity)
-    {
-        if (ComponentType<T>.IsSparseType) return ref _sparse!.Get(entity);
-        if (ComponentType<T>.IsSharedType) return ref _cached.World.ReadSharedValueKnown(entity, _sharedValues!);
-        return ref _cached.AccessKnown(entity.Id);
-    }
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal ref T Access(Entity entity, ulong writeVersion = 0)
     {
@@ -94,18 +85,11 @@ public ref struct WriteLookup<T> where T : struct
         return ref _write.Get(entity);
     }
 
-    /// <summary>Gets an identity whose component presence is established for this scope.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ref T GetKnown(Entity entity)
-    {
-        if (ComponentType<T>.IsSparseType) return ref Get(entity);
-        return ref _write.GetKnown(entity);
-    }
-
-    public void SetKnown(ReadOnlySpan<Entity> entities, in T value)
+    /// <summary>Sets the same value on every entity; each entity must hold the component.</summary>
+    public void Set(ReadOnlySpan<Entity> entities, in T value)
     {
         if (ComponentType<T>.IsSparseType) { foreach (Entity entity in entities) Get(entity) = value; return; }
-        _write.SetKnown(entities, value);
+        _write.Set(entities, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

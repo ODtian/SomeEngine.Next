@@ -342,24 +342,18 @@ public sealed class SerializationGenerator : IIncrementalGenerator
 
         return model.Kind switch
         {
-            SerializableKind.Component when model.ContainsEntityReferences =>
-                $"registry.RegisterCodec<{typeName}, {codec}, {patcher}>({typeKey}, new {codec}(), new {patcher}());",
-            SerializableKind.Component =>
-                $"registry.RegisterDurable<{typeName}, {codec}>({typeKey}, {model.PackedSize}, 0x{model.LayoutProof:X16}ul);",
             SerializableKind.Tag =>
                 $"registry.Register<{typeName}>({typeKey});",
-            SerializableKind.Shared when model.ContainsEntityReferences =>
-                $"registry.RegisterShared<{typeName}, {codec}, {patcher}>({typeKey}, new {codec}(), new {patcher}());",
-            SerializableKind.Shared =>
-                $"registry.RegisterShared<{typeName}, {codec}>({typeKey});",
             SerializableKind.Buffer when model.ContainsEntityReferences =>
-                $"registry.RegisterBufferCodec<{typeName}, {codec}, {patcher}>({typeKey}, new {codec}(), new {patcher}());",
+                $"registry.RegisterBuffer<{typeName}, {codec}, {patcher}>({typeKey}, new {codec}(), new {patcher}());",
             SerializableKind.Buffer =>
                 $"registry.RegisterBuffer<{typeName}, {codec}>({typeKey});",
-            SerializableKind.Sparse when model.ContainsEntityReferences =>
-                $"registry.RegisterSparse<{typeName}, {codec}, {patcher}>({typeKey}, new {codec}(), new {patcher}());",
-            SerializableKind.Sparse =>
-                $"registry.RegisterSparse<{typeName}, {codec}>({typeKey});",
+            SerializableKind.Component or SerializableKind.Shared or SerializableKind.Sparse when model.ContainsEntityReferences =>
+                $"registry.Register<{typeName}, {codec}, {patcher}>({typeKey}, new {codec}(), new {patcher}());",
+            SerializableKind.Component =>
+                $"registry.RegisterDurable<{typeName}, {codec}>({typeKey}, {model.PackedSize}, 0x{model.LayoutProof:X16}ul);",
+            SerializableKind.Shared or SerializableKind.Sparse =>
+                $"registry.Register<{typeName}, {codec}>({typeKey});",
             _ => throw new InvalidOperationException("Unsupported serializable kind."),
         };
     }
