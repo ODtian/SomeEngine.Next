@@ -190,7 +190,9 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
     }
     internal override void CheckDisposed()
     {
-        if (World.EntityCount != 0 || !_destroyed.IsCompleted)
+        bool rejected = false;
+        try { _ = World.EntityCount; } catch (ObjectDisposedException) { rejected = true; }
+        if (!rejected || !_destroyed.IsCompleted)
             throw new InvalidOperationException("Source mixed lifecycle final completion differs.");
     }
     internal override void Check(bool preserved, bool maintained = false)
@@ -249,7 +251,8 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
         ArchiveResources.Check(ArchiveResources.Capture(new SourceArchiveResources(World, _resourceCounter)));
         using (var facts = _destroyed.Open())
         {
-            if (facts.Count != (preserved ? 1 : 0)) throw new InvalidOperationException("Source archive destruction progress differs.");
+            if (facts.Count != (preserved ? 1 : 0))
+                throw new InvalidOperationException($"Source archive destruction progress differs: {facts.Count} unread, preserve={preserved}, maintained={maintained}.");
             foreach (DestroyedEntity fact in facts) if (fact.Entity != Dead) throw new InvalidOperationException("Source archive destruction identity differs.");
         }
         for (int i = 0; i < growth; i++)

@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using System.Buffers;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Serialization;
@@ -76,14 +77,14 @@ internal static class ExternalReferenceChecks
             values.Add(default);
         }
         var writeRegistry = new SerializationRegistry()
-            .RegisterCodec<AssetReference, AssetCodec>(new(new AssetResolver(original)))
-            .RegisterBufferCodec<AssetReference, AssetCodec>(new(new AssetResolver(original)));
+            .RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(original)))
+            .RegisterBufferCodec<AssetReference, AssetCodec>(Key(2), new(new AssetResolver(original)));
         var output = new ArrayBufferWriter<byte>();
         new WorldSerializer(writeRegistry).Save(source, output, SavePurpose.DurableSave);
         using var target = new World();
         var readRegistry = new SerializationRegistry()
-            .RegisterCodec<AssetReference, AssetCodec>(new(new AssetResolver(resolved)))
-            .RegisterBufferCodec<AssetReference, AssetCodec>(new(new AssetResolver(resolved)));
+            .RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(resolved)))
+            .RegisterBufferCodec<AssetReference, AssetCodec>(Key(2), new(new AssetResolver(resolved)));
         new WorldSerializer(readRegistry).Load(target, output.WrittenSpan);
         using var elements = target.ReadBuffer<AssetReference>(entity);
         Require(elements.Count == 2 && ReferenceEquals(elements[0].Value, resolved) && elements[1].Value is null,
@@ -214,9 +215,9 @@ internal static class ExternalReferenceChecks
     private static void WorldSaveBoundsSparseMemberships()
     {
         using var world = new World();
-        world.Set(world.Create(), 10);
-        world.Set(world.Create(), 20);
-        var registry = new SerializationRegistry().RegisterSparse<int>(Key(1));
+        world.Set(world.Create(), new SparseCount(10));
+        world.Set(world.Create(), new SparseCount(20));
+        var registry = new SerializationRegistry().RegisterSparse<SparseCount>(Key(1));
         var serializer = new WorldSerializer(registry);
         var output = new ArrayBufferWriter<byte>();
         serializer.Save(world, output, new SerializeOptions(MaximumSparseMemberships: 2));
@@ -229,9 +230,9 @@ internal static class ExternalReferenceChecks
     private static void CheckpointSaveBoundsSparseMemberships()
     {
         using var world = new World();
-        world.Set(world.Create(), 10);
-        world.Set(world.Create(), 20);
-        var registry = new SerializationRegistry().RegisterSparse<int>(Key(1));
+        world.Set(world.Create(), new SparseCount(10));
+        world.Set(world.Create(), new SparseCount(20));
+        var registry = new SerializationRegistry().RegisterSparse<SparseCount>(Key(1));
         var serializer = new WorldSerializer(registry);
         using var checkpoint = new WorldCheckpoint();
         checkpoint.Capture(world);
@@ -297,6 +298,7 @@ internal static class ExternalReferenceChecks
 
     private sealed record Asset(ExternalReferenceKey Key, string Name);
     private readonly record struct AssetReference(Asset? Value);
+    private readonly record struct SparseCount(int Value) : ISparseComponent;
 
     private sealed class AssetResolver(Asset asset) : IExternalResolver
     {

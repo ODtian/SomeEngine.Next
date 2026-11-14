@@ -95,6 +95,9 @@ internal static partial class SystemChecks
             staged[i] = rentStaged.Invoke(null, [scheduler, default(JobHandle), new PoolProbeJob(states[i])])!;
         }
         Require(staged.Distinct(ReferenceEqualityComparer.Instance).Count() == count, "simultaneously rented staged objects are distinct");
+        // A rented stage has two holders: the scheduling call and the completion record. The scheduling call returns
+        // here; the completion record returns the last reference on another thread.
+        foreach (object item in staged) releaseStaged.Invoke(item, null);
         OnOtherThread(() => { foreach (object item in staged) releaseStaged.Invoke(item, null); });
         for (int i = 0; i < count; i++)
             Require(states[i].Releases == 1 && states[i].ReleaseThread != submittingThread
@@ -107,10 +110,10 @@ internal static partial class SystemChecks
         for (int i = 0; i < count; i++)
         {
             staged[i] = rentStaged.Invoke(null, [scheduler, default(JobHandle), new PoolProbeJob(new(stagedLock))])!;
-            Require(stagedSet.Remove(staged[i]) && (int)refsField.GetValue(staged[i])! == 1,
+            Require(stagedSet.Remove(staged[i]) && (int)refsField.GetValue(staged[i])! == 2,
                 "submitting thread reuses every cross-thread returned staged object exactly once");
         }
-        foreach (object item in staged) releaseStaged.Invoke(item, null);
+        foreach (object item in staged) { releaseStaged.Invoke(item, null); releaseStaged.Invoke(item, null); }
 
         Type rangesType = typeof(SystemRunner).Assembly.GetType("SomeEngine.ECS.Systems.QueryRanges")!;
         MethodInfo rentRanges = rangesType.GetMethod("Rent", statics)!;

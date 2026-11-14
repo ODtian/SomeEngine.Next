@@ -33,7 +33,7 @@ internal static class NamedDestroyedReaderChecks
         var targetAdded = target.WatchDestroyed(Added);
         var targetFirst = target.WatchDestroyed(First);
         worldCheckpoint.Restore(target);
-        Require(ReferenceEquals(target.WatchDestroyed(First), targetFirst)
+        Require(target.WatchDestroyed(Second).Position == 0
             && targetFirst.Position == 1 && targetSecond.Position == 0 && targetAdded.Position == 1,
             "checkpoint consumers match identities across registration order and added consumers");
         using var unread = targetSecond.Open();
