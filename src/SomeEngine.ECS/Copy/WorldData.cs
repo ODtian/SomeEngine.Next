@@ -162,6 +162,6 @@ public sealed partial class World
         {
             Values = events.Values, Count = events.ValueCount, Through = events.Through,
             Readers = events.ReaderPositions, ReaderCount = events.ReaderCount,
-        }, Execution?.CurrentAccess ?? default, restoreAnonymousReaders: true);
+        }, Execution?.CurrentAccess ?? default);
     }
 }
