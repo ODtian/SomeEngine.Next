@@ -27,19 +27,19 @@ internal sealed partial class NativeFullArchiveWorld<TValues>
 
 internal sealed partial class SourceArchiveGroup : ArchiveWorldGroup
 {
-    private readonly SystemGroup _group;
+    private readonly SystemGroup<ImmediateSystemContext> _group;
     internal SourceArchiveGroup(World world, Scheduler scheduler)
     {
-        _group = new(world); Query query = world.Query<Position, Velocity>();
-        _group.Add(new Move(), query);
-        _group.Add(new Move(), query);
+        _group = new(new ImmediateSystemDriver(world)); Query query = world.Query<Position, Velocity>();
+        _group.AddJob(new Move(), query);
+        _group.AddJob(new Move(), query);
     }
     private readonly partial struct Move : IJobChunk
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities)
             => ComponentMath.Move(positions, velocities);
     }
-    internal override JobHandle Schedule() => _group.Schedule();
+    internal override JobHandle Schedule() => _group.Update();
     public override void Complete() => _group.Complete();
     public override void CopyVersions(Span<ulong> versions) => _group.CopyVersions(versions);
     public override void RestoreVersions(ReadOnlySpan<ulong> versions) => _group.RestoreVersions(versions);

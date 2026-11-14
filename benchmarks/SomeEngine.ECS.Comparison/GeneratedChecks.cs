@@ -83,9 +83,9 @@ internal static class GeneratedChecks
         job.Schedule(world).Complete();
         JobHandle first = job.ScheduleParallel(world);
         job.ScheduleParallel(world, first).Complete();
-        var group = new SystemGroup(world, 128);
-        SystemState a = group.Add(job), b = group.Add(job); group.After(b, a);
-        group.Execute();
+        var group = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world), 128);
+        SystemState a = group.GetState(group.AddJob(job)), b = group.GetState(group.AddJob(job));
+        group.Update().Complete();
         Require(a.LastSystemVersion == a.CurrentSystemVersion
             && b.LastSystemVersion == b.CurrentSystemVersion, "generated systems publish completed graph baselines");
         const int steps = 6;

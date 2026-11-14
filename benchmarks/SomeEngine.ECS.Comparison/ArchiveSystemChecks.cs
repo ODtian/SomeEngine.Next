@@ -20,36 +20,36 @@ internal static partial class ArchiveSystemChecks
         using var world = new World(128, chunkCapacity: 64, execution: new WorldJobs(scheduler));
         var entities = new Entity[128];
         for (int i = 0; i < entities.Length; i++) entities[i] = world.Spawn(new CounterPosition { Counter = new(2, i), Position = new() { X = i } });
-        var group = new SystemGroup(world, 64);
-        group.Add(new Advance(), world.Query<SaveCounter, Position>());
-        group.Add(new Advance(), world.Query<SaveCounter, Position>());
+        var group = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world), 64);
+        group.AddJob(new Advance(), world.Query<SaveCounter, Position>());
+        group.AddJob(new Advance(), world.Query<SaveCounter, Position>());
         var registry = new SerializationRegistry()
             .Register<SaveCounter, SaveSchema.CounterCodec>(SaveSchema.Key(1, "SystemCounter"))
             .Register<Position, SaveSchema.PositionCodec>(SaveSchema.Key(2, "SystemPosition"));
         var serializer = new WorldSerializer(registry);
         using var snapshot = new WorldCheckpoint();
 
-        JobHandle pending = group.Schedule();
+        JobHandle pending = group.Update();
         snapshot.Capture(world, CheckpointProgress.Preserve, group);
         Require(pending.IsCompleted, "memory capture completes the bound system group");
         ulong[] versions = Versions(group);
         Check(world, entities, group, versions, 4);
-        pending = group.Schedule();
+        pending = group.Update();
         snapshot.Restore(world, group);
         Require(pending.IsCompleted, "memory restore completes the previous bound system run");
         Check(world, entities, group, versions, 4);
 
-        pending = group.Schedule();
+        pending = group.Update();
         var bytes = new ArrayBufferWriter<byte>();
         serializer.Save(world, bytes, SavePurpose.RawCheckpoint, CheckpointProgress.Preserve, group);
         Require(pending.IsCompleted, "binary save completes the bound system group");
         versions = Versions(group);
-        pending = group.Schedule();
+        pending = group.Update();
         serializer.Load(world, bytes.WrittenSpan, null, group);
         Require(pending.IsCompleted, "binary load completes the previous bound system run");
         Check(world, entities, group, versions, 6);
 
-        pending = group.Schedule();
+        pending = group.Update();
         using var stream = new MemoryStream();
         Task saving = serializer.SaveAsync(world, stream, SavePurpose.DurableSave, CheckpointProgress.Preserve, group);
         Require(pending.IsCompleted, "background save completes system progress during caller capture");
@@ -111,7 +111,7 @@ internal static partial class ArchiveSystemChecks
         return values;
     }
 
-    private static void Check(World world, Entity[] entities, SystemGroup group, ulong[] versions, int expected)
+    private static void Check(World world, Entity[] entities, SystemGroup<ImmediateSystemContext> group, ulong[] versions, int expected)
     {
         foreach (Entity entity in entities)
             Require(world.ReadValue<SaveCounter>(entity).Value == expected, "captured system rows restore together");

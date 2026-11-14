@@ -96,10 +96,10 @@ internal static partial class SerializationChecks
         var firstEdge = world.CreateRelation(firstParent, entities[0], new ArchiveEdge(31));
         var secondEdge = world.CreateRelation(firstParent, entities[1], new ArchiveEdge(32));
         Relations<ArchiveEdge>.SetOrdered(world, firstParent, RelationAdjacencyRole.Outgoing, true, [secondEdge.Entity, firstEdge.Entity]);
-        var group = new SystemGroup(world, 128);
-        SystemState state = group.Add(new AdvanceArchive(), world.Query<ArchiveValue, ArchiveStep>());
+        var group = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world), 128);
+        SystemState state = group.GetState(group.AddJob(new AdvanceArchive(), world.Query<ArchiveValue, ArchiveStep>()));
         ulong baseline = world.Version;
-        group.Execute();
+        group.Update().Complete();
         world.Remove<ArchiveValue>(entities[5]);
         Hierarchy<ArchiveTree>.SetParentDeferred(world, entities[0], firstParent, 0);
         Hierarchy<ArchiveTree>.SetParentDeferred(world, entities[1], secondParent);
@@ -176,7 +176,7 @@ internal static partial class SerializationChecks
         world.ClearRemoved<Buffer<ArchiveLink>>();
         Hierarchy<ArchiveTree>.Maintain(world);
         world.MaintainRelations<ArchiveEdge>();
-        group.Execute();
+        group.Update().Complete();
         Entity later = world.Create(new Position { X = 999 });
         Restore();
 

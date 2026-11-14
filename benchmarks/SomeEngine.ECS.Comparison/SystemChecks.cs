@@ -220,10 +220,10 @@ internal static partial class SystemChecks
         for (int i = 0; i < entities.Length; i++)
             entities[i] = world.Spawn(new RandomSystemRow { Value = new(i), Step = new(1), Random = new(2) });
         Query query = world.Query(new QueryDescription().With<SystemValue>().With<SystemStep>().Optional<RandomValue>());
-        var group = new SystemGroup(world);
-        group.Add(new SetRandomFive(), world.Query<RandomValue, SystemStep>());
-        group.Add(new ReadRandom(world, entities), query);
-        group.Execute();
+        var group = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        group.AddJob(new SetRandomFive(), world.Query<RandomValue, SystemStep>());
+        group.AddJob(new ReadRandom(world, entities), query);
+        group.Update().Complete();
         for (int i = 0; i < entities.Length; i++)
             Require(world.ReadValue<SystemValue>(entities[i]).Value == i + 6, "optional query reads follow the preceding writer in the system graph");
     }
@@ -431,36 +431,34 @@ internal static partial class SystemChecks
         Entity parent = world.Spawn(new SystemRow { Value = new(0), Step = new(1) });
         using var commands = new CommandBatch(world, 1);
         var result = new GroupResult();
-        var group = new SystemGroup(world, rangeRows: 128);
-        SystemState first = group.Add(new RecordChild(commands[0], parent, result), world.Query<SystemValue, SystemStep>(),
-            commands, parallel: false);
-        SystemState maintenance = group.AddJob(new MaintainChildren(world), structureWrite: true);
-        group.After(maintenance, first);
-        SystemState second = group.Add(new ObserveChildren(world, parent, result), world.Query<SystemValue, SystemStep>());
-        group.After(second, maintenance);
-        JobHandle finished = group.Schedule();
+        var group = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world), 128);
+        SystemState first = group.GetState(group.AddJob(new RecordChild(commands[0], parent, result), world.Query<SystemValue, SystemStep>(),
+            commands, parallel: false));
+        group.AddJob(new MaintainChildren(world), structureWrite: true);
+        SystemState second = group.GetState(group.AddJob(new ObserveChildren(world, parent, result), world.Query<SystemValue, SystemStep>()));
+        JobHandle finished = group.Update();
         finished.Complete();
         Require(result.Children == 1 && world.IsAlive(result.Created.Resolve()), "group completion publishes commands, retained results and maintained children");
         Require(first.LastSystemVersion == first.CurrentSystemVersion && second.LastSystemVersion > first.LastSystemVersion,
             "each system commits its observation upper bound after its completion stages");
-        group.Execute();
+        group.Update().Complete();
         Require(result.Children == 2, "repeated execution reuses the declared system graph");
-        group.Execute();
+        group.Update().Complete();
         Require(result.Children == 3, "generated declarations keep the system graph across runs");
 
-        var failing = new SystemGroup(world);
-        SystemState failed = failing.Add(new RecordChild(commands[0], parent, result), world.Query<SystemValue, SystemStep>(),
-            commands, parallel: false);
+        var failing = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        SystemState failed = failing.GetState(failing.AddJob(new RecordChild(commands[0], parent, result), world.Query<SystemValue, SystemStep>(),
+            commands, parallel: false));
         result.Fail = true;
         bool threw = false;
-        try { failing.Execute(); }
+        try { failing.Update().Complete(); }
         catch (InvalidOperationException error) when (error.Message == "group work failed") { threw = true; }
         Require(threw && failed.LastSystemVersion == 0 && commands[0].Count == 0,
             "failed work releases commands while retaining the prior observation baseline");
         using (var children = Hierarchy<DefaultHierarchyDomain>.GetChildren(world, parent))
             Require(children.Entities.Length == 3, "failed work leaves the completed hierarchy available");
         result.Fail = false;
-        failing.Execute();
+        failing.Update().Complete();
         Require(failed.LastSystemVersion == failed.CurrentSystemVersion && world.IsAlive(result.Created.Resolve()),
             "the next successful run advances the retained baseline");
         Console.WriteLine("System group: cached graph, declaration changes, commands, maintenance, completion handles, success baselines and failure cleanup passed.");
