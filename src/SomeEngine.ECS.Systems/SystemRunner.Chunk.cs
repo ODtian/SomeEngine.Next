@@ -216,6 +216,8 @@ public sealed partial class SystemRunner
         private QueryRanges? _ranges;
         private ChunkResourceRange[]? _resourceRanges;
         public static int StageCount => 3;
+        public void Reserve(ref AccessBuilder<JobResourceAccess> accesses)
+            => jobs.ReserveChunkAccesses<TAction>(query, TAction.AdditionalAccesses, ref accesses);
         public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses)
         {
             if (stage == 0) accesses.Add(JobResourceAccess.Read(jobs.Structure));

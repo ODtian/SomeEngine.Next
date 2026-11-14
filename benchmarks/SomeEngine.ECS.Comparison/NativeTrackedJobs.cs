@@ -165,6 +165,7 @@ internal sealed class NativeTrackedArchiveJobs<T, TQuery> : TrackedArchiveJobs
     {
         private NativeQueryRanges<T>? _ranges;
         public static int StageCount => 2;
+        public void Reserve(ref AccessBuilder<JobResourceAccess> accesses) { }
         public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses)
         {
             if (stage == 0) accesses.Add(JobResourceAccess.Read(jobs._context.Structure));

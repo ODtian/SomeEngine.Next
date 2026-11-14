@@ -2,15 +2,14 @@ namespace SomeEngine.ECS.Systems;
 
 using SomeEngine.Diagnostics;
 using SomeEngine.ECS.Commands;
-using SomeEngine.ECS.Storage;
 using SomeEngine.Job;
 
 public sealed partial class SystemGroup<TContext>
 {
     /// <summary>
-    /// Adds a generated chunk job as a system. At its turn the group schedules it without waiting, after earlier job
-    /// systems whose declared accesses conflict with it. The command batch plays back and the system's versions are
-    /// recorded when the job completes.
+    /// Adds a generated chunk job as a system. At its turn the group submits it without waiting; the scheduler orders it
+    /// after earlier submissions whose accesses conflict with it. The command batch plays back and the system's versions
+    /// are recorded when the job completes.
     /// </summary>
     public int AddJob<TAction>(in TAction job, Query? query = null, CommandBatch? commands = null, bool parallel = true)
         where TAction : struct, IChunkAction
@@ -20,7 +19,7 @@ public sealed partial class SystemGroup<TContext>
             job, commands, parallel));
     }
 
-    /// <summary>Adds a job with declared World accesses as a system; it is scheduled at its turn like a chunk job.</summary>
+    /// <summary>Adds a job with declared World accesses as a system; it is submitted at its turn like a chunk job.</summary>
     public int AddJob<TJob>(in TJob job, SystemAccesses? accesses = null, bool structureWrite = false)
         where TJob : struct, IJob
         => AddNode(new WorldJobNode<TJob>(JobWorld(), job, accesses, structureWrite));
@@ -31,40 +30,34 @@ public sealed partial class SystemGroup<TContext>
     private Scheduler JobScheduler => ((WorldJobs)_driver.World!.Execution!).Scheduler;
 
     /// <summary>
-    /// Completes after the previous update's job work whatever its outcome. Its failure was already reported by that
-    /// update's handle and the systems' own work, so the next update and Complete do not inherit it.
+    /// Completes after the previous update's job work whatever its outcome. That update's handle and the systems' own
+    /// work already report its failure, so Complete does not report it again.
     /// </summary>
     private JobHandle AfterPreviousUpdate() => _previousUpdate.IsCompleted ? default
-        : JobScheduler.ScheduleFinally(new UpdateBoundary(), dependency: _previousUpdate, options: default);
+        : JobScheduler.ScheduleFinally(new RunBoundary(), dependency: _previousUpdate, options: default);
 
-    private readonly struct UpdateBoundary : IJob { public void Execute() { } }
+    private readonly struct RunBoundary : IJob { public void Execute() { } }
 
-    // A staged job registers its exact accesses only when its stage runs, so submission order alone does not order
-    // conflicting systems. The group orders job systems by their declared accesses instead.
-    private static bool Conflicts(JobSystemNode first, JobSystemNode second)
-    {
-        if (first.ChangesStructure || second.ChangesStructure) return true;
-        foreach (WorldValueAccess a in first.Values)
-            foreach (WorldValueAccess b in second.Values)
-                if (a.Type == b.Type && (a.Write || b.Write) && (a.Kind == b.Kind || ReadsChangesOf(a, b) || ReadsChangesOf(b, a)))
-                    return true;
-        return false;
-    }
-
-    private static bool ReadsChangesOf(in WorldValueAccess changes, in WorldValueAccess value)
-        => changes.Kind == WorldValueKind.Changes && value.Kind == WorldValueKind.Table && value.Write && value.Tracked;
-
-    /// <summary>A system that schedules a job at its turn; the job's completion stage writes the system's versions.</summary>
+    /// <summary>
+    /// A system that submits a job at its turn. Its next run starts after the previous one, so the two never touch the
+    /// system's versions together; the job's completion stage writes those versions.
+    /// </summary>
     private abstract unsafe class JobSystemNode(TraceSite trace) : SystemNode<TContext>(&NoUpdate, trace)
     {
-        internal readonly List<WorldValueAccess> Values = [];
-        internal bool ChangesStructure;
+        private JobHandle _previous;
         private static void NoUpdate(SystemNode<TContext> node, ref TContext context) { }
         public override void OnCreate(ref TContext context) { }
         public override void OnDestroy(ref TContext context) { }
-        /// <summary>Collects the World values the next run declares.</summary>
-        internal abstract void CollectValues();
-        internal abstract JobHandle Schedule(SystemState state, JobHandle dependency);
+
+        internal JobHandle Schedule(SystemState state, Scheduler scheduler)
+        {
+            // A failed previous run is reported by its own handle; the next run does not inherit it.
+            JobHandle previous = _previous.IsCompleted ? default
+                : scheduler.ScheduleFinally(new RunBoundary(), dependency: _previous, options: default);
+            return _previous = Schedule(state, previous);
+        }
+
+        protected abstract JobHandle Schedule(SystemState state, JobHandle previous);
     }
 
     private sealed class ChunkJobNode<TAction>(World world, int rangeRows, Query query, TAction job,
@@ -74,25 +67,12 @@ public sealed partial class SystemGroup<TContext>
         private readonly SystemRunner _runner = new(world, rangeRows);
         public override Type SystemType => typeof(TAction);
 
-        internal override void CollectValues()
-        {
-            Values.Clear();
-            ChangesStructure = commands is not null;
-            foreach (ChunkAccess component in ChunkActionTypes<TAction>.Components)
-                Values.Add(new(component.Type, WorldValueKind.Table, component.WritesValue, component.Tracked, component.Structural));
-            foreach (int type in query.Description.Definition.AccessTypes)
-                Values.Add(new(type, WorldValueKind.Table, false, false, ComponentTypes.Get(type).UsesStructureWrites));
-            for (int type = 0; type < ComponentTypes.Count; type++)
-                if (query.Description.Changed.Has(type)) Values.Add(new(type, WorldValueKind.Changes, false, false));
-            if (TAction.AdditionalAccesses is { } additional) Values.AddRange(additional.Values);
-        }
-
-        internal override JobHandle Schedule(SystemState state, JobHandle dependency)
+        protected override JobHandle Schedule(SystemState state, JobHandle previous)
         {
             var jobs = (WorldJobs)world.Execution!;
             jobs.BeginUse();
             JobHandle rows;
-            try { rows = _runner.Schedule(query, job, dependency, parallel, state); }
+            try { rows = _runner.Schedule(query, job, previous, parallel, state); }
             catch { commands?.Clear(); jobs.EndUse(); throw; }
             return jobs.Scheduler.ScheduleStages(new SystemCompletion(world, jobs, state, commands), rows);
         }
@@ -104,14 +84,7 @@ public sealed partial class SystemGroup<TContext>
         private static readonly TraceSite Trace = new("system", typeof(TJob).ToString(), detail: true);
         public override Type SystemType => typeof(TJob);
 
-        internal override void CollectValues()
-        {
-            Values.Clear();
-            ChangesStructure = structureWrite;
-            if (accesses is not null) Values.AddRange(accesses.Values);
-        }
-
-        internal override JobHandle Schedule(SystemState state, JobHandle dependency)
+        protected override JobHandle Schedule(SystemState state, JobHandle previous)
         {
             var jobs = (WorldJobs)world.Execution!;
             jobs.BeginUse();
@@ -121,7 +94,7 @@ public sealed partial class SystemGroup<TContext>
                 JobResourceAccess[] declarations = accesses is null
                     ? structureWrite ? jobs.StructureWrite : jobs.StructureRead
                     : jobs.CollectAccess(accesses, structureWrite);
-                work = jobs.Scheduler.Schedule(new RunSystemJob(world, state, job), declarations, dependency: dependency);
+                work = jobs.Scheduler.Schedule(new RunSystemJob(world, state, job), declarations, dependency: previous);
             }
             catch { jobs.EndUse(); throw; }
             return jobs.Scheduler.ScheduleStages(new SystemCompletion(world, jobs, state, null), work);
@@ -141,6 +114,11 @@ public sealed partial class SystemGroup<TContext>
     private readonly struct SystemCompletion(World world, WorldJobs jobs, SystemState state, CommandBatch? commands) : IStagedJob
     {
         public static int StageCount => 1;
+        // Playback is a structure write; reserving it at submission orders every later submission after it.
+        public void Reserve(ref AccessBuilder<JobResourceAccess> accesses)
+        {
+            if (commands is not null) jobs.AddStructureAccess(true, ref accesses);
+        }
         public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses)
         {
             if (commands is not null) jobs.AddStructureAccess(true, ref accesses);

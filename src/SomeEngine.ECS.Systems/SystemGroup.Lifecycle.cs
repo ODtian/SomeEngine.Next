@@ -16,9 +16,7 @@ public sealed partial class SystemGroup<TContext> : IDisposable, ISystemVersions
 
     private readonly ISystemDriver<TContext> _driver;
     private readonly int _rangeRows;
-    private readonly List<JobSystemNode> _scheduledNodes = [];
     private readonly List<JobHandle> _scheduledJobs = [];
-    private readonly List<JobHandle> _dependencies = [];
     private JobHandle _previousUpdate;
     private readonly object _gate = new();
     private readonly List<SystemNode<TContext>> _nodes = new();
@@ -331,9 +329,7 @@ public sealed partial class SystemGroup<TContext> : IDisposable, ISystemVersions
             ThrowIfDisposed();
             Volatile.Write(ref _lifecycleControlState, LifecycleControlActive);
         }
-        _scheduledNodes.Clear();
         _scheduledJobs.Clear();
-        JobHandle unfinished = AfterPreviousUpdate();
         try
         {
             // Each group update is one step of the World's event producers.
@@ -351,27 +347,13 @@ public sealed partial class SystemGroup<TContext> : IDisposable, ISystemVersions
                 SystemNode<TContext> node = _nodes[i];
                 using var trace = EngineTrace.Begin(node.UpdateTrace);
                 using JobSubmissionScope submissions = state.RequireJobLifetime().EnterSubmissionScope();
+                // Job systems reserve their World accesses at submission, and a plain system's World calls register
+                // after them, so the scheduler keeps registration order between conflicting systems of both kinds.
                 if (node is JobSystemNode job)
                 {
-                    // After the previous update's jobs and the earlier job systems it conflicts with.
-                    job.CollectValues();
-                    _dependencies.Clear();
-                    _dependencies.Add(unfinished);
-                    for (int k = 0; k < _scheduledNodes.Count; k++)
-                        if (Conflicts(job, _scheduledNodes[k])) _dependencies.Add(_scheduledJobs[k]);
-                    JobHandle scheduled = job.Schedule(state, JobScheduler.CombineDependencies(
-                        System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_dependencies)));
-                    _scheduledNodes.Add(job);
-                    _scheduledJobs.Add(scheduled);
+                    _scheduledJobs.Add(job.Schedule(state, JobScheduler));
                     state.Created = true;
                     continue;
-                }
-                // A plain system declares no accesses, so it observes all job work registered before it.
-                if (_scheduledJobs.Count != 0 || !unfinished.IsCompleted)
-                {
-                    unfinished.Complete();
-                    foreach (JobHandle earlier in _scheduledJobs) earlier.Complete();
-                    unfinished = default;
                 }
                 EnterLifecycleCallback();
                 try
@@ -414,7 +396,6 @@ public sealed partial class SystemGroup<TContext> : IDisposable, ISystemVersions
         }
         if (_scheduledJobs.Count == 0) return _previousUpdate = default;
         _previousUpdate = JobScheduler.CombineDependencies(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_scheduledJobs));
-        _scheduledNodes.Clear();
         _scheduledJobs.Clear();
         return _previousUpdate;
     }

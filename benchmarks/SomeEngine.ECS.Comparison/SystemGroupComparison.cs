@@ -101,6 +101,7 @@ internal sealed class NativeSystemGroupJobs<T, TQuery, TEntity, THandle, TComman
     private readonly struct Completion(JobResource structure, NativeSystemProgress state, Action? playback, Action? finish, Action? clear) : IStagedJob
     {
         public static int StageCount => 1;
+        public void Reserve(ref AccessBuilder<JobResourceAccess> accesses) { }
         public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses)
         { if (playback is not null || finish is not null) accesses.Add(JobResourceAccess.Write(structure)); }
         public void Execute() { playback?.Invoke(); finish?.Invoke(); state.Last = state.Current; }

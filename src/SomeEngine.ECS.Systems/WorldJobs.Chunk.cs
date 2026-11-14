@@ -5,6 +5,30 @@ namespace SomeEngine.ECS.Systems;
 
 public sealed partial class WorldJobs
 {
+    /// <summary>
+    /// Whole-type accesses covering everything <see cref="BuildChunkAccesses{TAction}"/> can register for this query.
+    /// A chunk job reserves them at submission, so later submissions that conflict with it run after it.
+    /// </summary>
+    internal void ReserveChunkAccesses<TAction>(Query query, SystemAccesses? additional, ref AccessBuilder<JobResourceAccess> accesses)
+        where TAction : struct, IChunkAction
+    {
+        accesses.Add(JobResourceAccess.Read(_structure));
+        foreach (ChunkAccess component in ChunkActionTypes<TAction>.Components)
+        {
+            if (component.Structural) continue;
+            JobResource values = Resource(WorldValueKind.Table, component.Type);
+            accesses.Add(component.WritesValue ? JobResourceAccess.Write(values) : JobResourceAccess.Read(values));
+            if (!component.Tracked) continue;
+            JobResource changes = Resource(WorldValueKind.Changes, component.Type);
+            accesses.Add(component.WritesValue ? JobResourceAccess.Write(changes) : JobResourceAccess.Read(changes));
+        }
+        for (int type = 0; type < ComponentTypes.Count; type++)
+            if (query.Description.Changed.Has(type) && !ChunkActionTypes<TAction>.TrackedWrites.Contains(type)
+                && !ComponentTypes.Get(type).UsesStructureWrites)
+                accesses.Add(JobResourceAccess.Read(Resource(WorldValueKind.Changes, type)));
+        if (additional is not null) foreach (WorldValueAccess access in additional.Values) AddValue(ref accesses, access);
+    }
+
     internal void BuildChunkAccesses<TAction>(Query query, QueryRanges ranges, SystemAccesses? additional,
         ref AccessBuilder<JobResourceAccess> accesses, bool wholeTypes = true) where TAction : struct, IChunkAction
     {

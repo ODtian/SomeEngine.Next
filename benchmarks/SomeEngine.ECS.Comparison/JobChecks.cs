@@ -243,6 +243,7 @@ internal static class JobChecks
     private readonly struct StageWork(StageData data) : IStagedJob
     {
         public static int StageCount => 2;
+        public void Reserve(ref AccessBuilder<JobResourceAccess> accesses) { }
         public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses)
         {
             Require(Volatile.Read(ref data.Dependency) == 1, "explicit dependency completes before preparing resources");
