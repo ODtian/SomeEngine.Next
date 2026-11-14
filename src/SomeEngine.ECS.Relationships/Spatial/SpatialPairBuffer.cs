@@ -89,9 +89,9 @@ public sealed class SpatialPairBuffer<TPartition> : IDisposable where TPartition
         source.Prepare(queries);
         PartitionCount = source.CreatePartitions(_partitions);
         JobHandle access = source.World.Execution?.CurrentAccess ?? default;
-        var work = new PartitionWork<TEnumerable>(source, this, since, false);
-        if (parallel) _scheduler.ExecuteRanges(_partitionIndices, PartitionCount, work, access);
-        else for (int index = 0; index < PartitionCount; index++) work.Execute(in _partitionIndices[index]);
+        var work = new PartitionWork<TEnumerable>(source, this, _partitionIndices, since, false);
+        if (parallel) _scheduler.ExecuteParallel(work, PartitionCount, grant: access);
+        else for (int index = 0; index < PartitionCount; index++) work.Execute(index);
         _offsets[0] = 0;
         int fillCount = 0;
         for (int index = 0; index < PartitionCount; index++)
@@ -102,20 +102,21 @@ public sealed class SpatialPairBuffer<TPartition> : IDisposable where TPartition
         Count = _offsets[PartitionCount];
         if (_pairs.Length < Count) Array.Resize(ref _pairs, Math.Max(Count, _pairs.Length * 2));
         FilledPartitionCount = fillCount;
-        work = new(source, this, since, true);
-        if (parallel) _scheduler.ExecuteRanges(_fillPartitions, fillCount, work, access);
-        else for (int index = 0; index < fillCount; index++) work.Execute(in _fillPartitions[index]);
+        work = new(source, this, _fillPartitions, since, true);
+        if (parallel) _scheduler.ExecuteParallel(work, fillCount, grant: access);
+        else for (int index = 0; index < fillCount; index++) work.Execute(index);
     }
-    private readonly struct PartitionWork<TEnumerable> : IRangeWork<int>
+    private readonly struct PartitionWork<TEnumerable> : IJobParallelFor
         where TEnumerable : struct, ISpatialPartitionEnumerable<TPartition>
     {
         private readonly TEnumerable _source;
         private readonly SpatialPairBuffer<TPartition> _buffer;
         private readonly Query _access, _first, _second;
         private readonly bool _fill;
-        internal PartitionWork(TEnumerable source, SpatialPairBuffer<TPartition> buffer, ulong? since, bool fill)
+        private readonly int[] _partitionIndices;
+        internal PartitionWork(TEnumerable source, SpatialPairBuffer<TPartition> buffer, int[] partitionIndices, ulong? since, bool fill)
         {
-            _source = source; _buffer = buffer; _fill = fill;
+            _source = source; _buffer = buffer; _partitionIndices = partitionIndices; _fill = fill;
             _first = source.GetQuery(0); _second = source.QueryCount == 2 ? source.GetQuery(1) : default;
             if (since is { } version) { _first = _first.Since(version); if (source.QueryCount == 2) _second = _second.Since(version); }
             QueryDescription reads = source.AddReads(new QueryDescription(), 0);
@@ -127,8 +128,9 @@ public sealed class SpatialPairBuffer<TPartition> : IDisposable where TPartition
             }
             _access = source.World.Query(reads);
         }
-        public void Execute(in int index)
+        public void Execute(int item)
         {
+            int index = _partitionIndices[item];
             using QueryScope access = _access.OpenRead();
             using QueryScope first = _first.OpenRead();
             if (_source.QueryCount == 1) Execute(index, new(_source.World, access, first, default));

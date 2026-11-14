@@ -33,10 +33,10 @@ internal readonly struct WorldExecutionQueryPolicy(WorldExecution execution) : I
 
 public abstract class WorldExecution
 {
-    /// <summary>Executes row ranges under this World's current access scope.</summary>
-    public void ExecuteRanges<TWork, TItem>(TItem[] items, int count, in TWork work, JobScheduleOptions options = default)
-        where TWork : struct, IRangeWork<TItem>
-        => Scheduler!.ExecuteRanges(items, count, work, CurrentAccess, options);
+    /// <summary>Executes one index per item under this World's current access grant.</summary>
+    public void ExecuteParallel<TJob>(in TJob job, int length, JobScheduleOptions options = default)
+        where TJob : struct, IJobParallelFor
+        => Scheduler!.ExecuteParallel(job, length, options: options, grant: CurrentAccess);
 
     public virtual Scheduler? Scheduler => null;
     public virtual JobResourceAccess[] StructureRead => [];

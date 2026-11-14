@@ -7,12 +7,12 @@ namespace SomeEngine.Job;
 public sealed partial class Scheduler
 {
     /// <summary>Executes the first count items on this scheduler and the calling thread, sharing the current access scope.</summary>
-    public void ExecuteRanges<TWork, TItem>(TItem[] items, int count, in TWork work)
+    internal void ExecuteRanges<TWork, TItem>(TItem[] items, int count, in TWork work)
         where TWork : struct, IRangeWork<TItem> =>
         ExecuteRanges(items, count, work, GetCurrentScope());
 
     /// <summary>Uses the supplied resource grant for every item and returns after all executing participants exit.</summary>
-    public void ExecuteRanges<TWork, TItem>(TItem[] items, int count, in TWork work,
+    internal void ExecuteRanges<TWork, TItem>(TItem[] items, int count, in TWork work,
         JobHandle access, JobScheduleOptions options = default)
         where TWork : struct, IRangeWork<TItem>
     {

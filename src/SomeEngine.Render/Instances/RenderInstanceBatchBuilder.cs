@@ -311,6 +311,23 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
 
     private readonly record struct InstanceRange(QueryChunk Chunk, int OutputStart, ulong Since);
 
+    /// <summary>Work applied to one instance range of the batch.</summary>
+    private interface IInstanceRangeWork
+    {
+        void Execute(in InstanceRange range);
+    }
+
+    /// <summary>Runs range work for the instance range at each index.</summary>
+    private readonly struct InstanceRangeJob<TWork>(InstanceRange[] ranges, TWork work) : IJobParallelFor
+        where TWork : struct, IInstanceRangeWork
+    {
+        public void Execute(int index)
+        {
+            TWork local = work;
+            local.Execute(in ranges[index]);
+        }
+    }
+
     private void CollectRanges(scoped QueryScope source, ulong since)
     {
         foreach (QueryChunk chunk in source)
@@ -328,7 +345,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
     }
 
     private void Execute<TWork>(RenderPrepareSystemContext context, in TWork work)
-        where TWork : struct, IRangeWork<InstanceRange>
+        where TWork : struct, IInstanceRangeWork
     {
         if (_rowCount <= InlinePacketRowLimit || context.World.World.Execution is null)
         {
@@ -339,7 +356,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
             }
         }
         else
-            context.World.World.Execution.ExecuteRanges(_ranges, _rangeCount, work, _jobOptions);
+            context.World.World.Execution.ExecuteParallel(new InstanceRangeJob<TWork>(_ranges, work), _rangeCount, _jobOptions);
     }
 
     private bool UpdateRanges<TComposer>(
@@ -817,7 +834,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
 
     private readonly struct DetectChangesJob<TComposer>(
         TComposer composer,
-        int[] result) : IRangeWork<InstanceRange>
+        int[] result) : IInstanceRangeWork
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
         public void Execute(in InstanceRange range)
@@ -837,7 +854,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
 
     private readonly struct CountGroupsJob<TComposer>(
         TComposer composer,
-        int[] counts) : IRangeWork<InstanceRange>
+        int[] counts) : IInstanceRangeWork
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
         public void Execute(in InstanceRange range)
@@ -878,7 +895,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         TComposer composer,
         int[] counts,
         int[] offsets,
-        TGroupKey[] keys) : IRangeWork<InstanceRange>
+        TGroupKey[] keys) : IInstanceRangeWork
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
         public void Execute(in InstanceRange range)
@@ -908,7 +925,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         TComposer composer,
         int[] entityOffsets,
         RenderInstanceBatchAddress<TGroupKey>[] addresses,
-        int[] mismatch) : IRangeWork<InstanceRange>
+        int[] mismatch) : IInstanceRangeWork
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
         public void Execute(in InstanceRange range)
@@ -948,7 +965,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         int[] offsets,
         TGroupKey[] keys,
         StableGroupPlacement[] placements,
-        RenderInstanceWriteSlice[] destinations) : IRangeWork<InstanceRange>
+        RenderInstanceWriteSlice[] destinations) : IInstanceRangeWork
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
         public void Execute(in InstanceRange range)
@@ -981,7 +998,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         int[] entityOffsets,
         RenderInstanceBatchAddress<TGroupKey>[] addresses,
         RenderInstanceWriteSlice[] destinations,
-        bool writeAll) : IRangeWork<InstanceRange>
+        bool writeAll) : IInstanceRangeWork
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
         public void Execute(in InstanceRange range)

@@ -1,6 +1,6 @@
 namespace SomeEngine.Job;
 
-public interface IRangeWork<TItem>
+internal interface IRangeWork<TItem>
 {
     void Execute(in TItem item);
 }

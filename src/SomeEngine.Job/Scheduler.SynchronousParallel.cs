@@ -8,9 +8,12 @@ public sealed partial class Scheduler
 {
     [ThreadStatic] private static int s_synchronousParallelDepth;
 
-    /// <summary>Holds the declared accesses through synchronous execution. Nested calls share the current scope's accesses.</summary>
+    /// <summary>
+    /// Executes index batches on this scheduler and the calling thread, returning after every participant exits.
+    /// The declared accesses are held through execution; a caller that already holds a grant passes it instead.
+    /// </summary>
     public void ExecuteParallel<T>(in T job, int length, int batchSize = 1,
-        ReadOnlySpan<JobResourceAccess> accesses = default, JobScheduleOptions options = default)
+        ReadOnlySpan<JobResourceAccess> accesses = default, JobScheduleOptions options = default, JobHandle grant = default)
         where T : struct, IJobParallelFor
     {
         using Submission submission = EnterSubmission();
@@ -25,12 +28,13 @@ public sealed partial class Scheduler
             : batchSize;
         int count = CalculateParallelBatchCount(length, resolvedSize);
         SynchronousResourceAccess resources = default;
-        JobHandle access = GetCurrentScope();
-        if (JobThreads.IsActive)
+        JobHandle access = grant;
+        if (access.Index == 0 && JobThreads.IsActive)
         {
+            access = GetCurrentScope();
             foreach (JobResourceAccess declared in accesses) RequireCurrentAccess(declared, requireSingleWorkItem: false);
         }
-        else
+        else if (access.Index == 0)
         {
             resources = accesses.IsEmpty ? default : AcquireSynchronousAccess(accesses);
             access = resources.Handle;

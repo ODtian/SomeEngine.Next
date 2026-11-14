@@ -245,9 +245,9 @@ public sealed partial class WorldSerializer
             else ((SavedSparse)column.Type).AllocateAppend(target, membersCreated, column.Members);
         }
         var references = new EntityGroupReferences(sources, membersCreated, options.MissingReferenceMode);
-        var work = new ReadEntityColumns(target, membersCreated, references, reader.Budget);
-        if (target.Execution is { } execution) execution.ExecuteRanges(columns, columns.Length, work);
-        else JobSystem.Default.ExecuteRanges(columns, columns.Length, work);
+        var work = new ReadEntityColumns(target, columns, membersCreated, references, reader.Budget);
+        if (target.Execution is { } execution) execution.ExecuteParallel(work, columns.Length);
+        else JobSystem.Default.ExecuteParallel(work, columns.Length);
         foreach (EntityReadColumn column in columns)
             if (column.Enabled is { } enabled)
                 for (int index = 0; index < enabled.Length; index++)
@@ -260,11 +260,12 @@ public sealed partial class WorldSerializer
         return membersCreated;
     }
 
-    private readonly struct ReadEntityColumns(World world, Entity[] entities, EntityGroupReferences references,
-        SerializationReadBudget budget) : IRangeWork<EntityReadColumn>
+    private readonly struct ReadEntityColumns(World world, EntityReadColumn[] columns, Entity[] entities,
+        EntityGroupReferences references, SerializationReadBudget budget) : IJobParallelFor
     {
-        public void Execute(in EntityReadColumn column)
+        public void Execute(int item)
         {
+            EntityReadColumn column = columns[item];
             var reader = new DataReader(column.Bytes.Span, budget) { ValuesWorld = world };
             reader.BindEntityReferences(references);
             foreach (int index in column.Members)
