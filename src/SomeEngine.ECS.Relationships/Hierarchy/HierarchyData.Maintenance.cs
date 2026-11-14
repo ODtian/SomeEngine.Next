@@ -75,7 +75,7 @@ internal sealed partial class HierarchyData<TDomain>
         ReleaseProjected(entity);
         if (deferred)
         {
-            _hasDeferredChanges = true;
+            RecordDeferredChange();
             Children<TDomain> children = ReadChildren(entity);
             if (children.Count != 0) _retiredChildren.Add(entity, Children<TDomain>.Copy(children));
             _differences.Remove(entity);

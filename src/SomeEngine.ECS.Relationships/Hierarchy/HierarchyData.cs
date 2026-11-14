@@ -30,6 +30,15 @@ internal sealed partial class HierarchyData<TDomain> : IWorldLifecycle where TDo
         if (!_hasDeferredChanges) _version = _world.Version;
     }
 
+    // Maintain finds unapplied writes by version. Edits in one batch share a version, so the watermark stays below
+    // every deferred write even when applied edits earlier in the same batch confirmed that version.
+    private void RecordDeferredChange()
+    {
+        _hasDeferredChanges = true;
+        ulong current = _world.Version;
+        if (current != 0 && _version >= current) _version = current - 1;
+    }
+
     internal HierarchyData(World world)
     {
         HierarchySerializationType<TDomain>.Register();
@@ -186,7 +195,7 @@ internal sealed partial class HierarchyData<TDomain> : IWorldLifecycle where TDo
         }
         if (deferred)
         {
-            _hasDeferredChanges = true;
+            RecordDeferredChange();
             _differences.Set(child, parent == Applied(child).Parent ? Entity.Null : parent);
         }
         else

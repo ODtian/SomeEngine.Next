@@ -151,7 +151,7 @@ internal sealed partial class RelationData<T>
         }
         if (deferred)
         {
-            _hasDeferredChanges = true;
+            RecordDeferredChange();
             foreach (var edit in final)
             {
                 AppliedEdge before = Applied(edit.Key);

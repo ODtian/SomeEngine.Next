@@ -47,7 +47,7 @@ internal sealed partial class RelationData<T>
                 Apply(entity, default);
             }
         }
-        if (deferred) _hasDeferredChanges = true;
+        if (deferred) RecordDeferredChange();
         else
         {
             RemoveIncidents(entity);
