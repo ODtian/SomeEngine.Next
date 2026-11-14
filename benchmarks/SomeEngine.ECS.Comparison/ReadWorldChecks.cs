@@ -24,7 +24,7 @@ internal static partial class ReadWorldChecks
         static void IEntityReferenceValue<AutomaticReference>.Remap(ref AutomaticReference value, in EntityMap entities)
             => value = new(entities.Map(value.Link));
     }
-    private readonly record struct SparseReference(Entity Link);
+    private readonly record struct SparseReference(Entity Link) : ISparseComponent;
     private readonly record struct PreservedIndex(int Key) : IIndexedComponent<int>
     { public int GetKey() => Key; }
     private readonly record struct GroupedReference(Entity GroupEntity, int Kind) : ISharedComponent, IGroupComponent

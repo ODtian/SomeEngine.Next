@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using System.Runtime.CompilerServices;
 using Friflo.Engine.ECS;
 
@@ -245,14 +246,14 @@ internal readonly ref struct ReferenceSparseRead<T, TEntity, TAccess>
 }
 
 internal interface ISparseOrdinal { int Ordinal { get; } }
-internal struct SparseNumber(ResourceCounter counter, int value, int ordinal) : IDisposable, ISparseOrdinal
+internal struct SparseNumber(ResourceCounter counter, int value, int ordinal) : ISparseComponent, IDisposable, ISparseOrdinal
 {
     internal ResourceCounter Counter = counter;
     internal int Value = value;
     public int Ordinal { get; } = ordinal;
     public void Dispose() => Counter.Count++;
 }
-internal readonly record struct SparseWeight(int Value);
+internal readonly record struct SparseWeight(int Value) : ISparseComponent;
 
 internal readonly struct EasySparseAccess(EasyEcs.World world) : IReferenceSparseAccess<EasyEcs.Entity>
 {

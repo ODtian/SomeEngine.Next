@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.ECS.Comparison;
@@ -56,7 +57,7 @@ internal static class SparseQueryChecks
         if (!condition) throw new InvalidOperationException(behavior);
     }
 
-    private struct Attachment : IAddedComponent, IRemovedComponent { internal int Value; }
-    private struct OtherAttachment { }
-    private struct CleanupAttachment : ICleanupComponent { internal int Value; }
+    private struct Attachment : ISparseComponent, IAddedComponent, IRemovedComponent { internal int Value; }
+    private struct OtherAttachment : ISparseComponent { }
+    private struct CleanupAttachment : ISparseComponent, ICleanupComponent { internal int Value; }
 }

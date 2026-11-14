@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
@@ -141,7 +142,7 @@ internal static class CommandChecks
     }
 
     private readonly record struct BufferValue(int Value);
-    private readonly record struct SparseValue(int Value);
+    private readonly record struct SparseValue(int Value) : ISparseComponent;
     private struct Switch : IEnableableComponent { internal int Value; }
     private readonly struct CommandTree : IHierarchyDomain;
     [RelationSchema(RelationDirection.Directed, RelationCardinality.OneToOne)]

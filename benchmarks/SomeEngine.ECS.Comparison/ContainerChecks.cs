@@ -146,7 +146,7 @@ internal static partial class ContainerChecks
     }
     private struct Element : IAddedComponent, IRemovedComponent { internal int Value; }
     private sealed class ReleaseCount { internal int Count; }
-    private readonly struct ResourceCounter(ReleaseCount releases, int value) : IDisposable
+    private readonly struct ResourceCounter(ReleaseCount releases, int value) : ISparseComponent, IDisposable
     {
         internal int Value { get; } = value;
         public void Dispose() => releases.Count++;

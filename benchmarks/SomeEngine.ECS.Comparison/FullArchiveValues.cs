@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using System.Buffers;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
@@ -10,7 +11,7 @@ public record struct SaveCounter(int Value, int Ordinal) : IAddedComponent, IRem
 public readonly record struct SaveStep(int Value) : IEnableableComponent, EasyEcs.IComponent, Friflo.Engine.ECS.IComponent;
 public readonly record struct SaveShared(int Value) : ISharedComponent, IGroupComponent
 { public int GetGroup() => Value; }
-public readonly record struct SaveLink(Entity Entity, long Value) : IAddedComponent, IRemovedComponent;
+public readonly record struct SaveLink(Entity Entity, long Value) : ISparseComponent, IAddedComponent, IRemovedComponent;
 internal readonly record struct SaveSparseRow(SaveLink Value, ulong Added, ulong Written);
 public readonly record struct SaveNativeFlags(bool Disabled) : EasyEcs.IComponent, Friflo.Engine.ECS.IComponent;
 public record struct SaveNativeVersions(ulong Added, ulong Written) : EasyEcs.IComponent, Friflo.Engine.ECS.IComponent;

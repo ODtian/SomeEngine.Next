@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Relations;
@@ -78,7 +79,7 @@ internal static class CopyChecks
         public static void Remap(ref CopiedNode value, in EntityMap entities)
             => value = value with { Self = entities.Map(value.Self), Inside = entities.Map(value.Inside), Outside = entities.Map(value.Outside) };
     }
-    private readonly record struct LinkedValue(Entity Entity, long Value) : IEntityReferenceValue<LinkedValue>
+    private readonly record struct LinkedValue(Entity Entity, long Value) : ISparseComponent, IEntityReferenceValue<LinkedValue>
     {
         public static void Remap(ref LinkedValue value, in EntityMap entities) => value = value with { Entity = entities.Map(value.Entity) };
     }

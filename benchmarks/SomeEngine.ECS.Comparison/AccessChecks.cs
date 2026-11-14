@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.ECS.Comparison;
@@ -16,17 +17,17 @@ internal static class AccessChecks
             Require(values.Has(first) && values.Read(first).X == 11 && values.Read(second).X == 22,
                 "both write scopes update the component subsequently read through the location cache");
 
-        world.Set(first, new Extra { Value = 10 });
+        world.Set(first, new SparseExtra { Value = 10 });
         world.Set(first, new Label { Value = "first" });
-        world.Set(second, new Extra { Value = 20 });
-        world.Remove<Extra>(first);
-        using (var values = world.OpenSparseValues<Extra>())
+        world.Set(second, new SparseExtra { Value = 20 });
+        world.Remove<SparseExtra>(first);
+        using (var values = world.OpenSparseValues<SparseExtra>())
             Require(values.Count == 1 && values.Entities[0] == second && values.Values[0].Value == 20,
                 "sparse removal compacts entity and value arrays together");
-        using (var values = world.OpenWrite<Extra>()) values.Get(second).Value = 21;
+        using (var values = world.OpenWrite<SparseExtra>()) values.Get(second).Value = 21;
         world.Destroy(first);
         Entity replacement = world.Create(new Position { X = 33 });
-        Require(!world.Has<Label>(replacement) && world.Read<Extra>(second).Value == 21,
+        Require(!world.Has<Label>(replacement) && world.Read<SparseExtra>(second).Value == 21,
             "destroy releases every attached type while preserving another entity's sparse value");
         using (var values = world.OpenRead<Position>())
             Require(!values.Has(first) && values.Has(replacement) && values.Read(replacement).X == 33
@@ -35,19 +36,19 @@ internal static class AccessChecks
         for (int i = 0; i < 4200; i++)
         {
             Entity entity = world.Create();
-            world.Set(entity, new Extra { Value = i });
+            world.Set(entity, new SparseExtra { Value = i });
         }
-        using (var values = world.OpenSparseValues<Extra>())
+        using (var values = world.OpenSparseValues<SparseExtra>())
             Require(values.Count == 4201 && values.Values[^1].Value == 4199,
                 "sparse pages and dense arrays grow with their attached entities");
         world.Clear();
         Entity afterClear = world.Create(new Position { X = 44 });
-        world.Set(afterClear, new Extra { Value = 44 });
+        world.Set(afterClear, new SparseExtra { Value = 44 });
         using (var values = world.OpenRead<Position>())
             Require(!values.Has(replacement) && !values.Has(second) && values.Has(afterClear)
                 && values.ReadKnown(afterClear).X == 44,
                 "clear binds the new identity and position through the existing location directory");
-        using (var values = world.OpenSparseValues<Extra>())
+        using (var values = world.OpenSparseValues<SparseExtra>())
             Require(values.Count == 1 && values.Entities[0] == afterClear && values.Values[0].Value == 44,
                 "clear reuses sparse storage with only the new members");
         Console.WriteLine("Bound write and sparse lifecycle behavior: passed.");
@@ -58,5 +59,6 @@ internal static class AccessChecks
         if (!value) throw new InvalidOperationException(behavior);
     }
 
-    private struct Label { internal string Value; }
+    private struct Label : ISparseComponent { internal string Value; }
+    private struct SparseExtra : ISparseComponent { internal int Value; }
 }
