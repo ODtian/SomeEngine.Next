@@ -4,7 +4,7 @@ namespace SomeEngine.Job;
 
 internal interface IStagedJob : IJob
 {
-    static abstract int StageCount { get; }
+    int StageCount { get; }
     /// <summary>
     /// Accesses registered at submission. They take their place in resource order then, so later submissions that
     /// conflict with them run after this job; stage accesses inside them register nothing more.
@@ -262,7 +262,7 @@ public sealed partial class Scheduler
         {
             Scheduler scheduler = _scheduler;
             JobHandle handle = Handle;
-            if (_stage == T.StageCount)
+            if (_stage == _job.StageCount)
             {
                 ExceptionDispatchInfo? error = null;
                 try { _job.Execute(); }

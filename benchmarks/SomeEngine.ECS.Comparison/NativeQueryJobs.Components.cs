@@ -114,7 +114,7 @@ internal sealed class NativeQueryJobs<T, TQuery, TAction> : IQueryJobs
     private struct Stages(NativeQueryJobs<T, TQuery, TAction> jobs, bool parallel) : IStagedJob
     {
         private NativeQueryRanges<T>? _ranges;
-        public static int StageCount => 2;
+        public int StageCount => 2;
         public void Reserve(ref AccessBuilder<JobResourceAccess> accesses) { }
         public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses)
         {

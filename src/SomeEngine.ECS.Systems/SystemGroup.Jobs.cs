@@ -72,7 +72,7 @@ public sealed partial class SystemGroup<TContext>
             var jobs = (WorldJobs)world.Execution!;
             jobs.BeginUse();
             JobHandle rows;
-            try { rows = _runner.Schedule(query, job, previous, parallel, state); }
+            try { rows = _runner.ScheduleInSubmissionOrder(query, job, previous, parallel, state); }
             catch { commands?.Clear(); jobs.EndUse(); throw; }
             return jobs.Scheduler.ScheduleStages(new SystemCompletion(world, jobs, state, commands), rows);
         }
@@ -113,7 +113,7 @@ public sealed partial class SystemGroup<TContext>
 
     private readonly struct SystemCompletion(World world, WorldJobs jobs, SystemState state, CommandBatch? commands) : IStagedJob
     {
-        public static int StageCount => 1;
+        public int StageCount => 1;
         // Playback is a structure write; reserving it at submission orders every later submission after it.
         public void Reserve(ref AccessBuilder<JobResourceAccess> accesses)
         {

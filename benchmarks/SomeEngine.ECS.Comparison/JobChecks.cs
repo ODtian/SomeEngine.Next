@@ -242,7 +242,7 @@ internal static class JobChecks
 
     private readonly struct StageWork(StageData data) : IStagedJob
     {
-        public static int StageCount => 2;
+        public int StageCount => 2;
         public void Reserve(ref AccessBuilder<JobResourceAccess> accesses) { }
         public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses)
         {

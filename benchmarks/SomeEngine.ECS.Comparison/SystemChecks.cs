@@ -56,7 +56,7 @@ internal static partial class SystemChecks
     private struct PoolProbeJob(PoolProbeState state) : IStagedJob
     {
         internal PoolProbeState? State = state;
-        public static int StageCount => 0;
+        public int StageCount => 0;
         public void Reserve(ref AccessBuilder<JobResourceAccess> accesses) { }
         public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses) { }
         public void Execute() { }

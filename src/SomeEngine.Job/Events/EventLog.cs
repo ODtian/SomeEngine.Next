@@ -200,7 +200,7 @@ public sealed partial class EventLog<T> : IDisposable where T : unmanaged
     private struct EnsureWriteSpace(EventLog<T> log, ulong through) : IStagedJob
     {
         public void Reserve(ref AccessBuilder<JobResourceAccess> accesses) { }
-        public static int StageCount => 2;
+        public int StageCount => 2;
         public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses)
         {
             if (stage == 0) accesses.Add(JobResourceAccess.Write(log._changes));

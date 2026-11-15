@@ -100,7 +100,7 @@ internal sealed class NativeSystemGroupJobs<T, TQuery, TEntity, THandle, TComman
     { for (int i = 0; i < 2; i++) { _states[i].Last = versions[i * 2]; _states[i].Current = versions[i * 2 + 1]; } }
     private readonly struct Completion(JobResource structure, NativeSystemProgress state, Action? playback, Action? finish, Action? clear) : IStagedJob
     {
-        public static int StageCount => 1;
+        public int StageCount => 1;
         public void Reserve(ref AccessBuilder<JobResourceAccess> accesses) { }
         public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses)
         { if (playback is not null || finish is not null) accesses.Add(JobResourceAccess.Write(structure)); }
