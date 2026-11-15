@@ -208,7 +208,8 @@ public sealed partial class WorldSerializer
                 if (EnterFrame(ref reader, ReadSectionType<SavedShared>(ref reader, types), out SavedShared? shared, out long start, out int length))
                 { shared.ReadValues(ref reader, world); reader.EndFrame(start, length); }
             int tableCount = reader.Budget.TopologyPayloadCount(reader.ReadInt32());
-            Dictionary<Archetype, int>? nextChunks = completeWorld ? new() : null;
+            // Saved tables can restore into one table once a retired column is dropped, so chunks are appended per table.
+            var nextChunks = new Dictionary<Archetype, int>();
             var readEntities = new bool[header.Used + 1];
             foreach (int id in header.Free) readEntities[id] = true;
             int entityCount = 0;

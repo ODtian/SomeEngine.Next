@@ -117,6 +117,67 @@ public sealed class RetiredTypeTests
         Assert.Equal(5, loaded.Read<HolderMark>(entity).Number);
     }
 
+    [Fact]
+    public void Tables_that_become_one_after_a_retired_column_is_dropped_keep_every_entity()
+    {
+        using var source = new World();
+        (Entity both, Entity markOnly, Entity retiredOnly) = CreateMergingTables(source);
+        using var stream = new MemoryStream();
+        new WorldSerializer(WrittenRegistry()).Save(source, stream, new SerializeOptions(Purpose: SavePurpose.DurableSave));
+        stream.Position = 0;
+
+        using World loaded = WorldSerializer.ReadWorld(stream, ReadRegistry());
+
+        Assert.Equal((1, 2, true), (loaded.Read<HolderMark>(both).Number, loaded.Read<HolderMark>(markOnly).Number, loaded.IsAlive(retiredOnly)));
+    }
+
+    [Fact]
+    public void Tables_that_become_one_after_a_retired_column_is_dropped_keep_every_entity_when_loaded_into_a_world()
+    {
+        using var source = new World();
+        (Entity both, Entity markOnly, Entity retiredOnly) = CreateMergingTables(source);
+        using var stream = new MemoryStream();
+        new WorldSerializer(WrittenRegistry()).Save(source, stream, new SerializeOptions(Purpose: SavePurpose.DurableSave));
+        stream.Position = 0;
+        using var loaded = new World();
+
+        new WorldSerializer(ReadRegistry()).Load(loaded, stream);
+
+        Assert.Equal((1, 2, true), (loaded.Read<HolderMark>(both).Number, loaded.Read<HolderMark>(markOnly).Number, loaded.IsAlive(retiredOnly)));
+    }
+
+    [Fact]
+    public void A_retired_type_is_skipped_when_the_load_also_overrides_codecs()
+    {
+        using var source = new World();
+        Entity entity = WithMark(source, created => source.Add(created, new CargoBefore { Count = 3 }));
+        using var stream = new MemoryStream();
+        new WorldSerializer(WrittenRegistry()).Save(source, stream, new SerializeOptions(Purpose: SavePurpose.DurableSave));
+        stream.Position = 0;
+
+        using World loaded = WorldSerializer.ReadWorld(stream, ReadRegistry(),
+            new WorldLoadOptions(Codecs: [ComponentCodec.Create<HolderMark, HolderMarkCodec>(Key(Mark), default)]));
+
+        Assert.Equal(5, loaded.Read<HolderMark>(entity).Number);
+    }
+
+    private static (Entity Both, Entity MarkOnly, Entity RetiredOnly) CreateMergingTables(World world)
+    {
+        Entity both = world.Create(new HolderMark { Number = 1 });
+        world.Add(both, new CargoBefore { Count = 3 });
+        Entity markOnly = world.Create(new HolderMark { Number = 2 });
+        Entity retiredOnly = world.Create(new CargoBefore { Count = 4 });
+        return (both, markOnly, retiredOnly);
+    }
+
+    private static SerializationRegistry WrittenRegistry() => new SerializationRegistry()
+        .RegisterDurable<HolderMark, HolderMarkCodec>(Key(Mark))
+        .RegisterDurable<CargoBefore, CargoBeforeCodec>(Key(Retired));
+
+    private static SerializationRegistry ReadRegistry() => new SerializationRegistry()
+        .RegisterDurable<HolderMark, HolderMarkCodec>(Key(Mark))
+        .RetireType(Guid.Parse(Retired));
+
     private static SerializationTypeKey Key(string id) => new(Guid.Parse(id), id, 1);
 
     private static Entity WithMark(World world, Action<Entity> add)

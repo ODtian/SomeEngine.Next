@@ -11,6 +11,7 @@ public sealed partial class SerializationRegistry
         var selected = new Dictionary<(SavedStorage Storage, int Type), SavedType>();
         var services = new Dictionary<int, SavedService>();
         var result = new SerializationRegistry();
+        if (source is not null) result.RetiredTypes.UnionWith(source.RetiredTypes);
         if (source is null)
         {
             for (int index = 0; index < ComponentTypes.Count; index++)
