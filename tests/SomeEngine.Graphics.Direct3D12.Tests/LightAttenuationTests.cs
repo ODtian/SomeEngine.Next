@@ -2,8 +2,7 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-[Xunit.Collection("Direct3D12 shader compilation")]
-public sealed class LightAttenuationTests(D3D12TestCompiler shaderCompiler)
+public sealed class LightAttenuationTests(D3D12TestCompiler shaderCompiler) : Xunit.IClassFixture<D3D12TestCompiler>
 {
     [Fact]
     public void LocalLightsFadeContinuouslyBeforeTheirRangeBoundary()

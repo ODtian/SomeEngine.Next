@@ -6,8 +6,7 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-[Xunit.Collection("Direct3D12 shader compilation")]
-public sealed class WarpWorkGraphTests(D3D12TestCompiler shaderCompiler)
+public sealed class WarpWorkGraphTests(D3D12TestCompiler shaderCompiler) : Xunit.IClassFixture<D3D12TestCompiler>
 {
     private static readonly TimeSpan GpuTimeout = TimeSpan.FromSeconds(10);
 

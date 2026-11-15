@@ -6,8 +6,7 @@ using static SomeEngine.Graphics.Direct3D12.Tests.D3D12TestCompute;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-[Xunit.Collection("Direct3D12 shader compilation")]
-public sealed class VirtualShadowInvalidationTests(D3D12TestCompiler shaderCompiler)
+public sealed class VirtualShadowInvalidationTests(D3D12TestCompiler shaderCompiler) : Xunit.IClassFixture<D3D12TestCompiler>
 {
     [Theory]
     [InlineData(-0.5f, -0.5f, 2f, 0.5f, 0.5f, 3f, false)]

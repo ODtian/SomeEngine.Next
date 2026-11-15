@@ -8,8 +8,7 @@ using NativePrebuildInfo = Silk.NET.Direct3D12.RaytracingAccelerationStructurePr
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-[Xunit.Collection("Direct3D12 shader compilation")]
-public sealed class WarpRayTracingTests(D3D12TestCompiler shaderCompiler)
+public sealed class WarpRayTracingTests(D3D12TestCompiler shaderCompiler) : Xunit.IClassFixture<D3D12TestCompiler>
 {
     [Fact]
     public void Dxr_local_parameter_groups_execute_two_exports_with_descriptors_and_ordinary_data()

@@ -5,8 +5,7 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-[Xunit.Collection("Direct3D12 shader compilation")]
-public sealed unsafe class WarpNativeAccessTests(D3D12TestCompiler shaderCompiler)
+public sealed unsafe class WarpNativeAccessTests(D3D12TestCompiler shaderCompiler) : Xunit.IClassFixture<D3D12TestCompiler>
 {
     [Fact]
     public void Native_getters_and_command_list_borrow_expose_exact_borrowed_objects_and_dirty_state()

@@ -5,8 +5,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-[Xunit.Collection("Direct3D12 shader compilation")]
-public sealed class ClusterTessellationBinningTests(D3D12TestCompiler shaderCompiler)
+public sealed class ClusterTessellationBinningTests(D3D12TestCompiler shaderCompiler) : Xunit.IClassFixture<D3D12TestCompiler>
 {
     [Fact]
     public void Material_and_pattern_bins_preserve_every_patch_and_generate_bounded_dice_and_indexed_draws()

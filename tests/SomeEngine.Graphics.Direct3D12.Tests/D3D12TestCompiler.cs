@@ -4,7 +4,8 @@ using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-// Slang's native global session outlives all sessions created by this collection.
+// One per test class. A Slang global session and everything created from it may only be used by one
+// thread at a time, and test classes run in parallel; the session outlives all sessions created from it.
 // Each compilation creates its own session, source and component data.
 public sealed class D3D12TestCompiler : IDisposable
 {
@@ -12,7 +13,7 @@ public sealed class D3D12TestCompiler : IDisposable
 
     public void Dispose()
     {
-        // Release the collection's COM compilation data while its native parent remains alive.
+        // Release the class's COM compilation data while its native parent remains alive.
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.KeepAlive(_globalSession);

@@ -7,8 +7,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-[Collection("Direct3D12 shader compilation")]
-public sealed class GraphParameterUpdateTests(D3D12TestCompiler shaderCompiler)
+public sealed class GraphParameterUpdateTests(D3D12TestCompiler shaderCompiler) : Xunit.IClassFixture<D3D12TestCompiler>
 {
     [Fact]
     public void IndependentParameterBlocksPreservePixelsAcrossResourceAndOrdinaryDataChanges()
