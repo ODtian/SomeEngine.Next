@@ -11,7 +11,6 @@
   <Project Path="src\SomeEngine.Core\SomeEngine.Core.csproj" />
   <Project Path="src\SomeEngine.Typography\SomeEngine.Typography.csproj" />
   <Project Path="tests\SomeEngine.Typography.Tests\SomeEngine.Typography.Tests.csproj" />
-  <Project Path="tools\SomeEngine.Typography.AotSmoke\SomeEngine.Typography.AotSmoke.csproj" />
   <Project Path="src\SomeEngine.Animation.Pose\SomeEngine.Animation.Pose.csproj" />
   <Project Path="src\SomeEngine.Animation.Pose.Importers\SomeEngine.Animation.Pose.Importers.csproj" />
   <Project Path="tests\SomeEngine.Animation.Pose.Tests\SomeEngine.Animation.Pose.Tests.csproj" />
@@ -22,11 +21,7 @@
   <Project Path="tests\SomeEngine.Resources.Tests\SomeEngine.Resources.Tests.csproj" />
   <Project Path="src\SomeEngine.Assets.Importers\SomeEngine.Assets.Importers.csproj" />
   <Project Path="src\SomeEngine.Serialization\SomeEngine.Serialization.csproj" />
-  <Project Path="tools\SomeEngine.Assets.AotSmoke\SomeEngine.Assets.AotSmoke.csproj" />
-  <Project Path="tools\SomeEngine.Serialization.AotSmoke\SomeEngine.Serialization.AotSmoke.csproj" />
   <Project Path="tools\SomeEngine.Serialization.Benchmarks\SomeEngine.Serialization.Benchmarks.csproj" />
-  <Project Path="tools\SomeEngine.ECS.AotSmoke\SomeEngine.ECS.AotSmoke.csproj" />
-  <Project Path="tools\SomeEngine.Views.AotSmoke\SomeEngine.Views.AotSmoke.csproj" />
   <Project Path="src\SomeEngine.ECS\SomeEngine.ECS.csproj" />
   <Project Path="src\SomeEngine.ECS.Relationships\SomeEngine.ECS.Relationships.csproj" />
   <Project Path="src\SomeEngine.Physics\SomeEngine.Physics.csproj" />
@@ -58,16 +53,11 @@
   <Project Path="src\SomeEngine.Runtime\SomeEngine.Runtime.csproj" />
   <Project Path="tests\SomeEngine.Runtime.Tests\SomeEngine.Runtime.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Tests\SomeEngine.ECS.Tests.csproj" />
-  <Project Path="tests\SomeEngine.ECS.Relations.Tests\SomeEngine.ECS.Relations.Tests.csproj" />
+  <Project Path="tests\SomeEngine.Job.Tests\SomeEngine.Job.Tests.csproj" />
   <Project Path="tests\SomeEngine.Physics.Tests\SomeEngine.Physics.Tests.csproj" />
-  <Project Path="tests\SomeEngine.ECS.Systems.Tests\SomeEngine.ECS.Systems.Tests.csproj" />
   <Project Path="tests\SomeEngine.Views.Tests\SomeEngine.Views.Tests.csproj" />
   <Project Path="tests\SomeEngine.Views.Solid.Tests\SomeEngine.Views.Solid.Tests.csproj" />
   <Project Path="tests\SomeEngine.Views.Generators.Tests\SomeEngine.Views.Generators.Tests.csproj" />
-  <Project Path="tests\SomeEngine.ECS.Serialization.Tests\SomeEngine.ECS.Serialization.Tests.csproj" />
-  <Project Path="tests\SomeEngine.ECS.Fuzz.Tests\SomeEngine.ECS.Fuzz.Tests.csproj" />
-  <Project Path="tests\SomeEngine.ECS.SourceGen.Tests\SomeEngine.ECS.SourceGen.Tests.csproj" />
-  <Project Path="tests\SomeEngine.Job.Tests\SomeEngine.Job.Tests.csproj" />
   <Project Path="tests\SomeEngine.Assets.Tests\SomeEngine.Assets.Tests.csproj" />
   <Project Path="tests\SomeEngine.Serialization.Tests\SomeEngine.Serialization.Tests.csproj" />
   <Project Path="tests\SomeEngine.Core.Tests\SomeEngine.Core.Tests.csproj" />
@@ -100,25 +90,16 @@
   <Folder Name="/src/" />
   <Folder Name="/templates/" />
   <Folder Name="/tests/">
-    <Project Path="tests/SomeEngine.TestRules.Tests/SomeEngine.TestRules.Tests.csproj" />
-    <Project Path="tests/SomeEngine.ArchitectureRules.Tests/SomeEngine.ArchitectureRules.Tests.csproj" />
     <Project Path="tests/SomeEngine.Assets.Consumer.Tests/SomeEngine.Assets.Consumer.Tests.csproj" />
-    <Project Path="tests/SomeEngine.ECS.Benchmarks.Tests/SomeEngine.ECS.Benchmarks.Tests.csproj" />
     <Project Path="tests/SomeEngine.Graphics.Benchmarks.Tests/SomeEngine.Graphics.Benchmarks.Tests.csproj" />
     <Project Path="tests/SomeEngine.Assets.ImporterSets.Tests/SomeEngine.Assets.ImporterSets.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
-    <Project Path="tools/SomeEngine.Transparency.Research/SomeEngine.Transparency.Research.csproj" />
-    <Project Path="tools/SomeEngine.Transparency.Measurements/SomeEngine.Transparency.Measurements.csproj" />
-    <Project Path="tools/TestRules/SomeEngine.TestRules.csproj" />
-    <Project Path="tools/ArchitectureRules/SomeEngine.ArchitectureRules.csproj" />
     <Project Path="tools/GenerateDefaultAssets/SomeEngine.GenerateDefaultAssets.csproj" />
     <Project Path="tools/SomeEngine.Job.Benchmarks/SomeEngine.Job.Benchmarks.csproj" />
     <Project Path="tools/SomeEngine.SceneContent/SomeEngine.SceneContent.csproj" />
     <Project Path="tools/SomeEngine.RenderScenarios/SomeEngine.RenderScenarios.csproj" />
-    <Project Path="tools/RhiTypeGraph/RhiTypeGraph.csproj" />
     <Project Path="tools/SomeEngine.Assets.Benchmarks/SomeEngine.Assets.Benchmarks.csproj" />
-    <Project Path="tools/SomeEngine.Views.AotReference/SomeEngine.Views.AotReference.csproj" />
     <Project Path="tools/SomeEngine.Core.Benchmarks/SomeEngine.Core.Benchmarks.csproj" />
   </Folder>
   <Project Path="benchmarks\SomeEngine.ECS.Benchmarks\SomeEngine.ECS.Benchmarks.csproj" />
