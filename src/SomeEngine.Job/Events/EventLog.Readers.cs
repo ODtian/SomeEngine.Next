@@ -148,9 +148,10 @@ public sealed partial class EventLog<T> where T : unmanaged
 
     /// <summary>
     /// Restores retained events and reader positions. Named positions bind their consumer; anonymous positions apply to
-    /// this log's anonymous readers in registration order, and positions without a live reader are dropped.
+    /// this log's anonymous readers in registration order. Memory checkpoints add the anonymous readers the target lacks,
+    /// so a world restored into a candidate and back keeps its readers' unread events; saves drop those positions.
     /// </summary>
-    internal void RestoreData(EventLogData<T> data, JobHandle access)
+    internal void RestoreData(EventLogData<T> data, JobHandle access, bool restoreAnonymousReaders = false)
     {
         using SynchronousResourceAccess acquired = EnterAccess(JobAccessMode.Write, 0, 0, whole: true, access);
         lock (_gate)
@@ -178,6 +179,7 @@ public sealed partial class EventLog<T> where T : unmanaged
                 else
                 {
                     while (anonymous < _readerCount && _readers[anonymous].Id != Guid.Empty) anonymous++;
+                    if (anonymous >= _readerCount && restoreAnonymousReaders) AddReader(Guid.Empty, _through);
                     reader = anonymous < _readerCount ? _readers[anonymous++].Reader : null;
                 }
                 if (reader is not null) _readers[reader.Index].Position = saved.Position;

@@ -74,7 +74,7 @@ public sealed partial class World
                 data.MembershipLog = new(_eventScheduler);
                 if (Execution is not null) Execution.RegisterEventAccess(data.MembershipLog.Write);
             }
-            data.MembershipLog.RestoreData(events, Execution?.CurrentAccess ?? default);
+            data.MembershipLog.RestoreData(events, Execution?.CurrentAccess ?? default, restoreAnonymousReaders: true);
         }
     }
 
