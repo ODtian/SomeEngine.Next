@@ -66,6 +66,7 @@ internal sealed class TopologyFile
                 { EntityFields.Add(checked((int)stream.Position)); reader.ReadBytes(8); }
                 foreach (int type in types)
                 {
+                    reader.ReadInt32(); // type data length
                     SkipMask(reader, rows);
                     byte storage = Types[type].Storage;
                     if (storage == 0)
@@ -86,6 +87,7 @@ internal sealed class TopologyFile
         for (int type = 0; type < topology; type++)
         {
             int index = reader.ReadInt32();
+            reader.ReadInt32(); // type data length
             int rows = reader.ReadInt32();
             for (int row = 0; row < rows; row++)
             {
@@ -111,6 +113,7 @@ internal sealed class TopologyFile
         {
             ServiceIndices.Add(checked((int)stream.Position));
             int index = reader.ReadInt32();
+            reader.ReadInt32(); // type data length
             if (Types[index].Storage == 6) SkipHierarchy(reader);
             else SkipRelation(reader);
         }

@@ -10,13 +10,16 @@ namespace SomeEngine.ECS.Serialization;
 public ref struct DataWriter
 {
     private static readonly Encoding Utf8 = new UTF8Encoding(false, true);
-    private readonly IBufferWriter<byte> _output;
+    private IBufferWriter<byte> _output;
     private readonly ISet<ExternalReferenceKey>? _references;
     private Span<byte> _bytes;
     private int _offset;
     private long _committed;
     private long _byteLimit;
     private int _spanLength;
+    private IBufferWriter<byte>? _frameParent;
+    private ArrayBufferWriter<byte>? _frame;
+    private long _frameStart;
 
     public DataWriter(IBufferWriter<byte> output, ISet<ExternalReferenceKey>? references = null)
     {
@@ -27,6 +30,9 @@ public ref struct DataWriter
         _committed = 0;
         _byteLimit = long.MaxValue;
         _spanLength = 0;
+        _frameParent = null;
+        _frame = null;
+        _frameStart = 0;
     }
     public DataWriter(Stream output, ISet<ExternalReferenceKey>? references = null)
         : this(new StreamDataOutput(output), references) { }
@@ -77,6 +83,37 @@ public ref struct DataWriter
         _byteLimit = long.MaxValue;
         _spanLength = 0;
     }
+    /// <summary>
+    /// Starts one type's data. <see cref="EndFrame"/> writes its byte length in front of it, so a reader
+    /// can step over the data of a type the current game no longer has.
+    /// </summary>
+    internal void BeginFrame()
+    {
+        if (_frameParent is not null) throw new InvalidOperationException("Type data frames do not nest.");
+        _output.Advance(_offset);
+        _committed += _offset;
+        _offset = 0;
+        _frameStart = _committed;
+        _frameParent = _output;
+        _frame ??= new ArrayBufferWriter<byte>();
+        _frame.ResetWrittenCount();
+        _output = _frame;
+        _bytes = GetBytes(4096);
+    }
+
+    internal void EndFrame()
+    {
+        _output.Advance(_offset);
+        _offset = 0;
+        ArrayBufferWriter<byte> frame = _frame!;
+        _output = _frameParent!;
+        _frameParent = null;
+        _committed = _frameStart;
+        _bytes = GetBytes(4096);
+        WriteInt32(frame.WrittenCount);
+        WriteRawBytes(frame.WrittenSpan);
+    }
+
     public void Flush()
     {
         _output.Advance(_offset);

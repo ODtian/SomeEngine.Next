@@ -35,7 +35,7 @@ public sealed partial class WorldSerializer
         var reader = new DataReader(input, options.ReadLimits);
         try
         {
-            SavedType[] types = new WorldSerializer(registry).ReadManifest(ref reader, options.RequiredPurpose, payloadKind: 1);
+            SavedType?[] types = new WorldSerializer(registry).ReadManifest(ref reader, options.RequiredPurpose, payloadKind: 1);
             if (types.Length != 1 || types[0] is not IStoredValueCodec<T> codec)
                 throw SerializationErrors.CreateDataException(SerializationError.SchemaMismatch, "The saved component type differs from the requested type.");
             try

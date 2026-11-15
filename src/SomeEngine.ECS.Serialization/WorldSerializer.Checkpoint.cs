@@ -157,17 +157,17 @@ public sealed partial class WorldSerializer
         writer.WriteInt32(sharedCount);
         foreach (SavedType type in _used)
             if (type is SavedShared shared)
-            { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); shared.WriteValues(ref writer, captured.Shared[type.Type]!); }
+            { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); writer.BeginFrame(); shared.WriteValues(ref writer, captured.Shared[type.Type]!); writer.EndFrame(); }
         writer.WriteInt32(_checkpointTableCount);
         foreach (CapturedTable table in CheckpointTables) WriteTable(ref writer, table);
         writer.WriteInt32(sparseCount);
         foreach (SavedType type in _used)
             if (type is SavedSparse sparse)
-            { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); sparse.Write(ref writer, captured.Sparse[type.Type]!); }
+            { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); writer.BeginFrame(); sparse.Write(ref writer, captured.Sparse[type.Type]!); writer.EndFrame(); }
         writer.WriteInt32(resourceCount);
         foreach (SavedType type in _used)
             if (type is SavedResource resource)
-            { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); resource.Write(ref writer, captured.Resources.Get(type.Type)!); }
+            { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); writer.BeginFrame(); resource.Write(ref writer, captured.Resources.Get(type.Type)!); writer.EndFrame(); }
         long topologyBytesRemaining = options.MaximumTopologyPayloadBytes;
         WriteCapturedTopology(ref writer, options.MaximumTopologyPayloadBytes != 0, ref topologyBytesRemaining);
         WriteEvents(ref writer, captured.Events);
@@ -175,12 +175,14 @@ public sealed partial class WorldSerializer
         foreach (var service in _capturedServices)
         {
             writer.WriteInt32(_fileTypes[registry.GetOrder(service.Binding.Type)]);
+            writer.BeginFrame();
             bool bounded = options.MaximumTopologyPayloadBytes != 0 && service.Binding.Type.Storage is SavedStorage.Parent or SavedStorage.Endpoints;
             long start = writer.Position;
             if (bounded) writer.LimitBytes(topologyBytesRemaining);
             try { service.Binding.WriteData(ref writer, service.Data); }
             finally { if (bounded) writer.EndByteLimit(); }
             if (bounded) topologyBytesRemaining -= writer.Position - start;
+            writer.EndFrame();
         }
         writer.WriteInt32(captured.SystemCount);
         for (int i = 0; i < captured.SystemCount; i++)
@@ -216,12 +218,14 @@ public sealed partial class WorldSerializer
                 int source = table.ColumnIndices[i];
                 ComponentType type = chunk.Components[source];
                 ref ColumnEntry column = ref chunk.Columns[source];
+                writer.BeginFrame();
                 WriteMask(ref writer, column.Presence, chunk.Count);
                 if (binding.Storage is not (SavedStorage.Parent or SavedStorage.Endpoints or SavedStorage.Children))
                     binding.Write(ref writer, ref column, chunk.Count);
                 WriteMask(ref writer, chunk.Enabled is { } enabled ? enabled[source] : null, chunk.Count);
                 SavedChanges.Write(ref writer, chunk.Changes is { } changes ? changes[source] : default,
                     chunk.Count, type.TracksWrites, type.TracksAdded);
+                writer.EndFrame();
             }
         }
     }
@@ -245,6 +249,7 @@ public sealed partial class WorldSerializer
                     if (chunk.Columns[column].Presence is null) rows += chunk.Count;
                     else for (int row = 0; row < chunk.Count; row++) if (chunk.Columns[column].Has(row)) rows++;
             }
+            writer.BeginFrame();
             writer.WriteInt32(rows);
             long start = writer.Position;
             if (bounded) writer.LimitBytes(bytesRemaining);
@@ -261,6 +266,7 @@ public sealed partial class WorldSerializer
             finally { if (bounded) writer.EndByteLimit(); }
             if (bounded) bytesRemaining -= writer.Position - start;
             writer.WriteInt32(checked((int)(writer.Position - start)));
+            writer.EndFrame();
         }
     }
 

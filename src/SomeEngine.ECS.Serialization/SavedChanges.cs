@@ -38,7 +38,15 @@ internal static class SavedChanges
         bool preserve, ulong baseline)
     {
         byte flags = reader.ReadByte();
-        if (flags != ((written ? 1 : 0) | (added ? 2 : 0))) throw new InvalidDataException("Component tracking differs from its registered schema.");
+        if (flags != ((written ? 1 : 0) | (added ? 2 : 0)))
+        {
+            // Saved versions only matter when progress is kept. Otherwise every row starts at the baseline, so a
+            // component that started or stopped tracking changes since the save still loads.
+            if (preserve || flags > 3) throw new InvalidDataException("Component tracking differs from its registered schema.");
+            if ((flags & 1) != 0) reader.Skip((long)count * ((flags & 2) != 0 ? 16 : 8));
+            if (written) Baseline(ref target, count, added, baseline);
+            return;
+        }
         if (!written) return;
         Array.Clear(target.Words);
         Array.Clear(target.Blocks);
@@ -50,6 +58,19 @@ internal static class SavedChanges
             if (added) Unsafe.As<RowVersions[]>(target.Rows)[row] = new()
             { Added = preserve ? addedVersion : baseline, Written = preserve ? writtenVersion : baseline };
             else Unsafe.As<ulong[]>(target.Rows)[row] = preserve ? writtenVersion : baseline;
+            target.Copy(row, ref target, row, added);
+        }
+    }
+
+    private static void Baseline(ref ComponentChanges target, int count, bool added, ulong baseline)
+    {
+        Array.Clear(target.Words);
+        Array.Clear(target.Blocks);
+        target.LastWrite = 0;
+        for (int row = 0; row < count; row++)
+        {
+            if (added) Unsafe.As<RowVersions[]>(target.Rows)[row] = new() { Added = baseline, Written = baseline };
+            else Unsafe.As<ulong[]>(target.Rows)[row] = baseline;
             target.Copy(row, ref target, row, added);
         }
     }

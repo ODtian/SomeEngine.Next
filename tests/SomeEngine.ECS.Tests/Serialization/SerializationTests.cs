@@ -366,7 +366,7 @@ public class SerializationTests
         using (var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true))
         {
             Assert.Equal(0x53434553u, reader.ReadUInt32());
-            Assert.Equal(6, reader.ReadUInt16());
+            Assert.Equal(7, reader.ReadUInt16());
             Assert.Equal((byte)SavePurpose.DurableSave, reader.ReadByte());
             _ = reader.ReadByte();
             Assert.Equal(16, reader.ReadBytes(16).Length);
@@ -1109,7 +1109,7 @@ public class SerializationTests
         using var stream = new MemoryStream(bytes, writable: false);
         using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
         Assert.Equal(0x53434553u, reader.ReadUInt32());
-        Assert.Equal((ushort)6, reader.ReadUInt16());
+        Assert.Equal((ushort)7, reader.ReadUInt16());
         _ = reader.ReadByte();
         Assert.Equal((byte)SavedPayloadKind.Component, reader.ReadByte());
         Assert.Equal(16, reader.ReadBytes(16).Length);
@@ -1134,7 +1134,7 @@ public class SerializationTests
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, SaveBytes.Utf8, leaveOpen: true);
         writer.Write(0x53434553u);
-        writer.Write((ushort)6);
+        writer.Write((ushort)7);
         writer.Write((byte)SavePurpose.DurableSave);
         writer.Write((byte)SavedPayloadKind.Component);
         writer.Write(stackalloc byte[16]);

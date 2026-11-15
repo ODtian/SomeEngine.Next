@@ -11,7 +11,7 @@ namespace SomeEngine.ECS.Serialization;
 public sealed partial class WorldSerializer(SerializationRegistry registry)
 {
     private const uint Magic = 0x53434553;
-    private const ushort FormatVersion = 6;
+    private const ushort FormatVersion = 7;
     private readonly List<TableBinding> _tables = [];
     private readonly List<SavedType> _used = [];
     private readonly List<SavedService> _services = [];
@@ -181,18 +181,18 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
             writer.WriteInt32(sharedCount);
             foreach (SavedType type in _used)
                 if (type is SavedShared shared)
-                { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); shared.WriteValues(ref writer, world.SharedTypes[type.Type]!); }
+                { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); writer.BeginFrame(); shared.WriteValues(ref writer, world.SharedTypes[type.Type]!); writer.EndFrame(); }
 
             writer.WriteInt32(_tables.Count);
             foreach (TableBinding binding in _tables) WriteTable(ref writer, binding);
             writer.WriteInt32(sparseCount);
             foreach (SavedType type in _used)
                 if (type is SavedSparse sparse)
-                { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); sparse.Write(ref writer, world.SparseTypes!.Types[type.Type]!); }
+                { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); writer.BeginFrame(); sparse.Write(ref writer, world.SparseTypes!.Types[type.Type]!); writer.EndFrame(); }
             writer.WriteInt32(resourceCount);
             foreach (SavedType type in _used)
                 if (type is SavedResource resource)
-                { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); resource.Write(ref writer, world.ResourceValues.Get(type.Type)!); }
+                { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); writer.BeginFrame(); resource.Write(ref writer, world.ResourceValues.Get(type.Type)!); writer.EndFrame(); }
             long topologyBytesRemaining = options.MaximumTopologyPayloadBytes;
             WriteTopology(ref writer, world, options.MaximumTopologyPayloadBytes != 0, ref topologyBytesRemaining);
             WriteEvents(ref writer, progress == CheckpointProgress.Preserve ? world.CopyEvents() : new([], world.DestroyedSequence, []));
@@ -200,12 +200,14 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
             foreach (SavedService service in _services)
             {
                 writer.WriteInt32(_fileTypes[registry.GetOrder(service.Type)]);
+                writer.BeginFrame();
                 bool bounded = options.MaximumTopologyPayloadBytes != 0 && service.Type.Storage is SavedStorage.Parent or SavedStorage.Endpoints;
                 long start = writer.Position;
                 if (bounded) writer.LimitBytes(topologyBytesRemaining);
                 try { service.Write(ref writer, world, progress == CheckpointProgress.Preserve); }
                 finally { if (bounded) writer.EndByteLimit(); }
                 if (bounded) topologyBytesRemaining -= writer.Position - start;
+                writer.EndFrame();
             }
             writer.WriteInt32(systems.Length);
             foreach (ISystemVersions system in systems)
@@ -296,6 +298,7 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
             {
                 ComponentType type = ComponentTypes.Get(bindingColumn.Type);
                 ref ColumnEntry column = ref chunk.Columns[type.Id];
+                writer.BeginFrame();
                 WriteMask(ref writer, column.Presence, chunk.Count);
                 if (bindingColumn.Storage is not (SavedStorage.Parent or SavedStorage.Endpoints or SavedStorage.Children))
                     bindingColumn.Write(ref writer, ref column, chunk.Count);
@@ -303,6 +306,7 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
                 WriteMask(ref writer, enabled, chunk.Count);
                 SavedChanges.Write(ref writer, chunk.Changes is { } changes ? changes[column.ColumnPlusOne - 1] : default,
                     chunk.Count, type.TracksWrites, type.TracksAdded);
+                writer.EndFrame();
             }
         }
     }
@@ -323,6 +327,7 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
                     foreach (Chunk chunk in table.Table.AllChunks)
                         if (chunk.Columns[type.Type].Presence is null) rows += chunk.Count;
                         else for (int row = 0; row < chunk.Count; row++) if (chunk.Columns[type.Type].Has(row)) rows++;
+            writer.BeginFrame();
             writer.WriteInt32(rows);
             long start = writer.Position;
             if (bounded) writer.LimitBytes(bytesRemaining);
@@ -336,6 +341,7 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
             finally { if (bounded) writer.EndByteLimit(); }
             if (bounded) bytesRemaining -= writer.Position - start;
             writer.WriteInt32(checked((int)(writer.Position - start)));
+            writer.EndFrame();
         }
     }
 

@@ -162,9 +162,9 @@ public sealed partial class WorldSerializer
         column.Members.Add(member);
     }
 
-    private sealed class EntityReadColumn(SavedType type, int[] members, bool[]? enabled, int length)
+    private sealed class EntityReadColumn(SavedType? type, int[] members, bool[]? enabled, int length)
     {
-        internal readonly SavedType Type = type;
+        internal readonly SavedType? Type = type;
         internal readonly int[] Members = members;
         internal readonly bool[]? Enabled = enabled;
         internal readonly int Length = length;
@@ -176,7 +176,7 @@ public sealed partial class WorldSerializer
     private Entity[] ReadEntityGroup(ref DataReader reader, ReadOnlyMemory<byte> input, World target,
         SerializationReadOptions options)
     {
-        SavedType[] types = ReadManifest(ref reader, options.RequiredPurpose, EntityPayload);
+        SavedType?[] types = ReadManifest(ref reader, options.RequiredPurpose, out SavedStorage[] storages, EntityPayload);
         int count = reader.Budget.EntityCount(reader.ReadInt32());
         var sources = new Entity[count];
         for (int index = 0; index < count; index++) sources[index] = reader.ReadEntity();
@@ -185,21 +185,22 @@ public sealed partial class WorldSerializer
         for (int groupIndex = 0; groupIndex < groups.Length; groupIndex++)
         {
             int typeCount = reader.Budget.EntityItemCount(reader.ReadInt32());
-            int[] components = new int[typeCount];
-            for (int index = 0; index < components.Length; index++)
-                components[index] = ((SavedColumn)types[reader.Budget.Count(reader.ReadInt32(), types.Length - 1, "entity type")]).Type;
+            var components = new List<int>(typeCount);
+            for (int index = 0; index < typeCount; index++)
+                if (types[reader.Budget.Count(reader.ReadInt32(), types.Length - 1, "entity type")] is { } type)
+                    components.Add(((SavedColumn)type).Type);
             int memberCount = reader.Budget.Count(reader.ReadInt32(), count, "group member");
             int[] members = new int[memberCount];
             for (int index = 0; index < members.Length; index++)
                 members[index] = reader.Budget.Count(reader.ReadInt32(), count - 1, "group entity");
-            groups[groupIndex] = new(new TypeSet(false, components), members);
+            groups[groupIndex] = new(new TypeSet(false, components.ToArray()), members);
         }
         int columnCount = reader.Budget.Count(reader.ReadInt32(), types.Length, "entity column");
         var columns = new EntityReadColumn[columnCount];
         for (int columnIndex = 0; columnIndex < columns.Length; columnIndex++)
         {
             int typeIndex = reader.Budget.Count(reader.ReadInt32(), types.Length - 1, "entity column type");
-            SavedType type = types[typeIndex];
+            SavedType? type = types[typeIndex];
             int membersCount = reader.Budget.Count(reader.ReadInt32(), count, "column member");
             var members = new int[membersCount];
             for (int index = 0; index < members.Length; index++)
@@ -207,7 +208,7 @@ public sealed partial class WorldSerializer
                 int member = members[index] = reader.Budget.Count(reader.ReadInt32(), count - 1, "column entity");
             }
             bool[]? enabled = null;
-            if (type is SavedColumn)
+            if (storages[typeIndex] is not SavedStorage.Sparse)
             {
                 enabled = new bool[members.Length];
                 for (int index = 0; index < enabled.Length; index++) enabled[index] = reader.ReadBoolean();
@@ -228,9 +229,11 @@ public sealed partial class WorldSerializer
             }
             offset = checked(offset + column.Length);
         }
+        // A retired type's column was read past above and is not restored.
+        columns = Array.FindAll(columns, static column => column.Type is not null);
         using WorldAccess structure = target.OpenStructure();
         using World.BatchVersionScope version = target.BeginBatchVersion(0);
-        foreach (SavedType type in types) type.Activate(target);
+        foreach (SavedType? type in types) type?.Activate(target);
         var bound = new Archetype[count];
         foreach (EntityReadGroup group in groups)
         {

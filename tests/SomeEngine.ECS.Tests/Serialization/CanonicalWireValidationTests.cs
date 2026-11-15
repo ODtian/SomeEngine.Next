@@ -125,7 +125,7 @@ public sealed class CanonicalWireValidationTests
         var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, SaveBytes.Utf8, leaveOpen: true);
         writer.Write(0x53434553u);
-        writer.Write((ushort)6);
+        writer.Write((ushort)7);
         writer.Write((byte)SavePurpose.DurableSave);
         writer.Write((byte)kind);
         writer.Write(stackalloc byte[16]);

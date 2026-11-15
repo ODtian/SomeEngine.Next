@@ -49,7 +49,19 @@ public ref struct DataReader
     public readonly SavedFieldMap? FindSavedFieldMap(Guid type)
         => SavedFieldMaps is { } maps && maps.TryGetValue(type, out SavedFieldMap? map) ? map : null;
     internal readonly bool HasSavedFieldMaps => SavedFieldMaps is not null;
-    internal void Skip(int count) => Take(count);
+    internal void Skip(long count)
+    {
+        for (; count > 0; count -= Math.Min(count, 4096)) Take((int)Math.Min(count, 4096));
+    }
+
+    /// <summary>Reads the byte length written in front of one type's data.</summary>
+    internal int ReadFrameLength() => Budget.PayloadLength(ReadInt32());
+
+    /// <summary>Checks that a type's data used exactly the bytes its frame declared.</summary>
+    internal readonly void EndFrame(long start, int length)
+    {
+        if (Position - start != length) throw new InvalidDataException("A type's saved data differs from its declared length.");
+    }
 
     internal bool PatchesValues => Identities is not null || NormalizeShared || _entityReferences is not null;
 

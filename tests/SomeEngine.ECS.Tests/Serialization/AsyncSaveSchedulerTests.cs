@@ -55,6 +55,28 @@ public sealed class AsyncSaveSchedulerTests
         await Assert.ThrowsAsync<NotSupportedException>(() => save);
     }
 
+    [Fact]
+    public async Task SaveAsync_writes_the_same_bytes_as_Save()
+    {
+        SerializationRegistry registry = CreateRegistry().RegisterResource<SupplyBefore,
+            global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_SupplyBefore>(
+            new SerializationTypeKey(Guid.Parse("0c4f8e2a-61d3-4b97-a5e0-3f9d2c7b1100"), "Supply", 1));
+        using var world = new World();
+        Entity root = world.Create();
+        Entity row = world.Create(new SavedRow { Value = 7, Target = root });
+        world.Set(row, new NoteBefore { Page = 1, Text = "note" });
+        world.Set(row, new ShelfBefore { Row = 2 });
+        world.SetResource(new SupplyBefore { Stock = 9 });
+        var options = new SerializeOptions(Purpose: SavePurpose.DurableSave);
+        using var direct = new MemoryStream();
+        using var captured = new MemoryStream();
+
+        new WorldSerializer(registry).Save(world, direct, options);
+        await new WorldSerializer(registry).SaveAsync(world, captured, options);
+
+        Assert.Equal(direct.ToArray(), captured.ToArray());
+    }
+
     private static SerializationRegistry CreateRegistry()
     {
         var registry = new SerializationRegistry();

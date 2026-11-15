@@ -279,6 +279,23 @@ public sealed partial class SerializationRegistry
     internal readonly Dictionary<Guid, SavedType> ById = [];
     private readonly Dictionary<(SavedStorage Storage, int Type), int> _orders = [];
     internal int GetOrder(SavedType type) => _orders[(type.Storage, type.Type)];
+    /// <summary>Types that older saves contain but the game no longer has; loading skips their data.</summary>
+    internal readonly HashSet<Guid> RetiredTypes = [];
+
+    /// <summary>
+    /// Declares a type that older saves contain but the game no longer has, so loading skips its data instead of
+    /// failing. A saved type that is neither registered nor retired still fails the load, which catches a
+    /// forgotten registration before the next save would drop that type's data for good.
+    /// </summary>
+    public SerializationRegistry RetireType(Guid id)
+    {
+        if (ById.ContainsKey(id)) throw new ArgumentException("A registered type cannot also be retired.", nameof(id));
+        RetiredTypes.Add(id);
+        // Its enable flags, children, removed values and relation endpoints are saved under derived ids.
+        foreach (byte role in (ReadOnlySpan<byte>)[8, 16, 32, 64])
+            RetiredTypes.Add(Derived(new SerializationTypeKey(id, string.Empty, 1), role, string.Empty).StableId);
+        return this;
+    }
     internal int Version;
 
     private TBinding Add<TBinding>(TBinding type) where TBinding : SavedType
