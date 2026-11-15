@@ -117,6 +117,31 @@ public sealed class RelationMaintenanceSystemTests : JobTest
     }
 
     [Fact]
+    public void ReplacingTheDefaultSchedulerKeepsTheWorldsExplicitScheduler()
+    {
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
+        using var world = new World(execution: new WorldJobs(scheduler));
+        Entity source = world.Create(), target = world.Create();
+        Span<RelationEdge<DirectedA>> created = stackalloc RelationEdge<DirectedA>[1];
+        Relations<DirectedA>.Edit(world, [EndpointEdit.Create(source, target)], created, deferred: true);
+        int workers = JobSystem.WorkerCount;
+        JobSafetyMode safety = JobSystem.SafetyMode;
+        ManagedPayloadPolicy payload = JobSystem.ManagedPayloadPolicy;
+        try
+        {
+            JobSystem.Initialize(new JobConfiguration { WorkerCount = 1 });
+            world.Execution!.Scheduler!.Schedule(new Maintain<DirectedA>(world), world.Execution.StructureWrite).Complete();
+            Assert.Same(scheduler, world.Execution.Scheduler);
+            Assert.Equal([created[0].Entity], Incoming<DirectedA>(world, target));
+            JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
+            world.Execution.Scheduler!.Schedule(new Maintain<DirectedA>(world), world.Execution.StructureWrite).Complete();
+            Assert.Same(scheduler, world.Execution.Scheduler);
+            Assert.Equal([created[0].Entity], Incoming<DirectedA>(world, target));
+        }
+        finally { JobSystem.Initialize(new JobConfiguration { WorkerCount = workers, SafetyMode = safety, ManagedPayloadPolicy = payload }); }
+    }
+
+    [Fact]
     public void TheManagedPayloadPolicyAppliesToConcreteMaintenanceJobs()
     {
         World world = CreateJobWorld();

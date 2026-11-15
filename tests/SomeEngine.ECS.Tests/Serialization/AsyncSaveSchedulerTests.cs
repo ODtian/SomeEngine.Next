@@ -1,0 +1,64 @@
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
+
+namespace SomeEngine.ECS.Serialization.Tests;
+
+public sealed class AsyncSaveSchedulerTests
+{
+    [Fact]
+    public async Task A_world_with_a_scheduler_saves_asynchronously_and_reads_back()
+    {
+        SerializationRegistry registry = CreateRegistry();
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        using var world = new World(execution: new WorldJobs(scheduler));
+        Entity root = world.Create();
+        Entity row = world.Create(new SavedRow { Value = 7, Target = root });
+        using var stream = new MemoryStream();
+
+        await new WorldSerializer(registry).SaveAsync(world, stream);
+
+        stream.Position = 0;
+        using World restored = WorldSerializer.ReadWorld(stream, registry);
+        Assert.Equal(7, restored.Read<SavedRow>(row).Value);
+        Assert.Equal(root, restored.Read<SavedRow>(row).Target);
+    }
+
+    [Fact]
+    public void A_world_without_a_scheduler_finishes_its_save_before_SaveAsync_returns()
+    {
+        SerializationRegistry registry = CreateRegistry();
+        using var world = new World();
+        Entity root = world.Create();
+        Entity row = world.Create(new SavedRow { Value = 7, Target = root });
+        using var stream = new MemoryStream();
+
+        Task save = new WorldSerializer(registry).SaveAsync(world, stream);
+
+        Assert.True(save.IsCompletedSuccessfully);
+        stream.Position = 0;
+        using World restored = WorldSerializer.ReadWorld(stream, registry);
+        Assert.Equal(7, restored.Read<SavedRow>(row).Value);
+    }
+
+    [Fact]
+    public async Task A_failed_save_of_a_world_without_a_scheduler_faults_the_returned_task()
+    {
+        SerializationRegistry registry = CreateRegistry();
+        using var world = new World();
+        world.Create(new SavedRow { Value = 7 });
+        using var readOnly = new MemoryStream([], writable: false);
+
+        Task save = new WorldSerializer(registry).SaveAsync(world, readOnly);
+
+        Assert.True(save.IsFaulted);
+        await Assert.ThrowsAsync<NotSupportedException>(() => save);
+    }
+
+    private static SerializationRegistry CreateRegistry()
+    {
+        var registry = new SerializationRegistry();
+        GameSerializationModule.RegisterAll(registry);
+        return registry;
+    }
+}

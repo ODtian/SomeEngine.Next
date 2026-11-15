@@ -91,6 +91,30 @@ public sealed class HierarchyMaintenanceSystemTests : JobTest
     }
 
     [Fact]
+    public void ReplacingTheDefaultSchedulerKeepsTheWorldsExplicitScheduler()
+    {
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
+        using var world = new World(execution: new WorldJobs(scheduler));
+        Entity parent = world.Create(), child = world.Create();
+        int workers = JobSystem.WorkerCount;
+        JobSafetyMode safety = JobSystem.SafetyMode;
+        ManagedPayloadPolicy payload = JobSystem.ManagedPayloadPolicy;
+        try
+        {
+            Hierarchy<DomainA>.SetParentDeferred(world, child, parent);
+            JobSystem.Initialize(new JobConfiguration { WorkerCount = 1 });
+            world.Execution!.Scheduler!.Schedule(new Maintain<DomainA>(world), world.Execution.StructureWrite).Complete();
+            Assert.Same(scheduler, world.Execution.Scheduler);
+            Assert.Equal([child], Children<DomainA>(world, parent));
+            JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
+            world.Execution.Scheduler!.Schedule(new Maintain<DomainA>(world), world.Execution.StructureWrite).Complete();
+            Assert.Same(scheduler, world.Execution.Scheduler);
+            Assert.Equal([child], Children<DomainA>(world, parent));
+        }
+        finally { JobSystem.Initialize(new JobConfiguration { WorkerCount = workers, SafetyMode = safety, ManagedPayloadPolicy = payload }); }
+    }
+
+    [Fact]
     public void TheManagedPayloadPolicyAppliesToConcreteMaintenanceJobs()
     {
         World world = CreateJobWorld();
