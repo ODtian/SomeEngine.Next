@@ -13,14 +13,18 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.13.0" PrivateAssets="all" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
     <Compile Include="../Shared/TestSignal.cs" Link="TestSignal.cs" />
-  </ItemGroup>
-  <ItemGroup>
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenKeyPairs.cs" Link="Relations/HandwrittenKeyPairs.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/BitmapCollisionExample.cs" Link="Relations/BitmapCollisionExample.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/BitmapCandidatePairs.cs" Link="Relations/BitmapCandidatePairs.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/BitmapCollisionConsumption.cs" Link="Relations/BitmapCollisionConsumption.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenBitmapCollision.cs" Link="Relations/HandwrittenBitmapCollision.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\SomeEngine.ECS\SomeEngine.ECS.csproj" />
@@ -28,6 +32,8 @@
     <ProjectReference Include="..\..\src\SomeEngine.ECS.Systems\SomeEngine.ECS.Systems.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.ECS.Serialization\SomeEngine.ECS.Serialization.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Job\SomeEngine.Job.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.Serialization\SomeEngine.Serialization.csproj" />
+    <Reference Include="SomeEngine.ECS.SourceGen" HintPath="..\..\src\SomeEngine.ECS.SourceGen\bin\$(Configuration)\netstandard2.0\SomeEngine.ECS.SourceGen.dll" />
     <ProjectReference Include="..\..\src\SomeEngine.ECS.SourceGen\SomeEngine.ECS.SourceGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>
