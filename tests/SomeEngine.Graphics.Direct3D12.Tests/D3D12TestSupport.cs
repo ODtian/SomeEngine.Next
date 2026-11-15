@@ -1,5 +1,7 @@
+using Silk.NET.Core.Native;
 using SomeEngine.Graphics.Direct3D12;
 using Xunit;
+using Dxgi = Silk.NET.DXGI;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
@@ -26,9 +28,41 @@ internal static class D3D12TestSupport
             : throw new NotSupportedException("The Direct3D 12 WARP adapter is unavailable.");
     }
 
+    /// <summary>Reads the WARP adapter id from DXGI.</summary>
+    /// <remarks>Enumerating through the backend tests every hardware adapter for Direct3D 12 support,
+    /// which takes several hundred milliseconds per call; WARP is all these tests need.</remarks>
+    internal static unsafe AdapterId WarpAdapterId()
+    {
+        using Dxgi.DXGI dxgi = Dxgi.DXGI.GetApi((Silk.NET.Core.Contexts.INativeWindowSource)null!);
+        Dxgi.IDXGIFactory4* factory = null;
+        Guid factoryId = Dxgi.IDXGIFactory4.Guid;
+        SilkMarshal.ThrowHResult(dxgi.CreateDXGIFactory2(0, &factoryId, (void**)&factory));
+        try
+        {
+            Dxgi.IDXGIAdapter1* adapter = null;
+            Guid adapterId = Dxgi.IDXGIAdapter1.Guid;
+            SilkMarshal.ThrowHResult(factory->EnumWarpAdapter(&adapterId, (void**)&adapter));
+            try
+            {
+                Dxgi.AdapterDesc1 description;
+                SilkMarshal.ThrowHResult(adapter->GetDesc1(&description));
+                return new AdapterId(
+                    description.AdapterLuid.Low,
+                    unchecked((ulong)(long)description.AdapterLuid.High));
+            }
+            finally
+            {
+                adapter->Release();
+            }
+        }
+        finally
+        {
+            factory->Release();
+        }
+    }
+
     internal static Device CreateWarpDevice(IGraphicsBackend backend)
     {
-        AdapterInfo adapter = SelectWarp(backend);
         DeviceQueueDesc[] queues =
         [
             new(QueueType.Graphics),
@@ -36,7 +70,7 @@ internal static class D3D12TestSupport
             new(QueueType.Copy),
         ];
         return backend.CreateDevice(new DeviceDesc(
-            adapter.Id,
+            WarpAdapterId(),
             queues,
             optionalFeatures: DeviceFeatures.Presentation |
                               DeviceFeatures.SparseResources |
