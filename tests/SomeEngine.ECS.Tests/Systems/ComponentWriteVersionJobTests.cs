@@ -12,8 +12,8 @@ public sealed class ComponentWriteVersionJobTests
     [InlineData(true)]
     public void GeneratedJobAdvancesWrittenTableAndSparseVersions(bool parallel)
     {
-        using var jobs = new JobWorkers();
-        var world = new World(execution: new WorldJobs(JobSystem.Default));
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        var world = new World(execution: new WorldJobs(jobs));
         Entity entity = world.Create(new VersionedValue { Value = 1 });
         world.Set(entity, new SparseValue { Value = 2 });
         ulong tableVersion = world.ComponentWriteVersion<VersionedValue>(entity);
@@ -35,8 +35,8 @@ public sealed class ComponentWriteVersionJobTests
     [InlineData(true)]
     public void ReadOnlyJobPreservesTableAndSparseVersions(bool parallel)
     {
-        using var jobs = new JobWorkers();
-        var world = new World(execution: new WorldJobs(JobSystem.Default));
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        var world = new World(execution: new WorldJobs(jobs));
         var entity = world.Create(new VersionedValue { Value = 1 });
         world.Set(entity, new SparseValue { Value = 2 });
         ulong tableVersion = world.ComponentWriteVersion<VersionedValue>(entity);
@@ -54,8 +54,8 @@ public sealed class ComponentWriteVersionJobTests
     [Fact]
     public void SparseCallbackJobAdvancesBorrowedVersions()
     {
-        using var jobs = new JobWorkers();
-        var world = new World(execution: new WorldJobs(JobSystem.Default));
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        var world = new World(execution: new WorldJobs(jobs));
         var entity = world.Create();
         world.Set(entity, new SparseValue { Value = 1 });
         ulong version = world.ComponentWriteVersion<SparseValue>(entity);
@@ -70,8 +70,8 @@ public sealed class ComponentWriteVersionJobTests
     [Fact]
     public void ParallelJobPreservesEveryWriteAfterStructuralReplay()
     {
-        using var jobs = new JobWorkers();
-        var world = new World(execution: new WorldJobs(JobSystem.Default));
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 2 });
+        var world = new World(execution: new WorldJobs(jobs));
         var entities = new Entity[256];
         var versions = new ulong[entities.Length];
         for (int i = 0; i < entities.Length; i++)
@@ -93,31 +93,6 @@ public sealed class ComponentWriteVersionJobTests
             Assert.NotEqual(versions[i], world.ComponentWriteVersion<SparseValue>(entities[i]));
             Assert.Equal(i + 1, world.ReadValue<VersionedValue>(entities[i]).Value);
             Assert.Equal(i + 1, world.ReadValue<SparseValue>(entities[i]).Value);
-        }
-    }
-
-    private sealed class JobWorkers : IDisposable
-    {
-        private readonly JobSafetyMode _safety = JobSystem.SafetyMode;
-        private readonly ManagedPayloadPolicy _payload = JobSystem.ManagedPayloadPolicy;
-
-        internal JobWorkers()
-        {
-            JobSystem.Initialize(new JobConfiguration
-            {
-                WorkerCount = 2,
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-            });
-        }
-
-        public void Dispose()
-        {
-            JobSystem.Initialize(new JobConfiguration
-            {
-                SafetyMode = _safety,
-                ManagedPayloadPolicy = _payload,
-            });
         }
     }
 

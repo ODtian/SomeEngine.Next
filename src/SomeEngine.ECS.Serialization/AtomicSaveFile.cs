@@ -78,15 +78,11 @@ public sealed partial class WorldSerializer
     public Task SaveFileAsync(World world, string path, SerializeOptions options,
         CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
     {
-        Scheduler scheduler = JobSystem.Current;
         ValidateWriteOptions(options);
         var checkpoint = new WorldCheckpoint();
         try { checkpoint.Capture(world, registry, options, progress, systems); }
         catch { checkpoint.Dispose(); throw; }
-        try
-        {
-            return scheduler.Schedule(new SaveFileJob(registry, checkpoint, path, options)).CompleteAsync().AsTask();
-        }
+        try { return RunOnWorldScheduler(world, new SaveFileJob(registry, checkpoint, path, options)); }
         catch { checkpoint.Dispose(); throw; }
     }
 

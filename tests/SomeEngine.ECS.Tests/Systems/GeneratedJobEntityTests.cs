@@ -582,7 +582,7 @@ public sealed class GeneratedJobEntityTests : JobTest
         public void Execute()
         {
             JobResourceAccess[] accesses = _world.Execution!.StructureWrite;
-            JobSystem.Current.Schedule(
+            _world.Execution!.Scheduler!.Schedule(
                 new CreateMovingEntityJob(_world, _capture),
                 accesses);
         }

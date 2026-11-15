@@ -247,7 +247,7 @@ public sealed partial class WorldSerializer
         var references = new EntityGroupReferences(sources, membersCreated, options.MissingReferenceMode);
         var work = new ReadEntityColumns(target, columns, membersCreated, references, reader.Budget);
         if (target.Execution is { } execution) execution.ExecuteParallel(work, columns.Length);
-        else JobSystem.Default.ExecuteParallel(work, columns.Length);
+        else for (int index = 0; index < columns.Length; index++) work.Execute(index);
         foreach (EntityReadColumn column in columns)
             if (column.Enabled is { } enabled)
                 for (int index = 0; index < enabled.Length; index++)

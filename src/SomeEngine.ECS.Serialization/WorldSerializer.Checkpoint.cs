@@ -274,16 +274,28 @@ public sealed partial class WorldSerializer
         if (!options.Codecs.IsDefaultOrEmpty)
             return new WorldSerializer(SerializationRegistry.Bind(registry, options.Codecs))
                 .SaveAsync(world, output, options with { Codecs = default }, progress, systems);
-        Scheduler scheduler = JobSystem.Current;
         ValidateWriteOptions(options);
         var checkpoint = new WorldCheckpoint();
         try { checkpoint.Capture(world, registry, options, progress, systems); }
         catch { checkpoint.Dispose(); throw; }
+        try { return RunOnWorldScheduler(world, new SaveStreamJob(registry, checkpoint, output, options)); }
+        catch { checkpoint.Dispose(); throw; }
+    }
+
+    /// <summary>Runs a save on the World's scheduler, or on the calling thread when the World has none.</summary>
+    private static Task RunOnWorldScheduler<TJob>(World world, in TJob job) where TJob : struct, IJob
+    {
+        if (world.Execution?.Scheduler is { } scheduler)
+            return scheduler.Schedule(job).CompleteAsync().AsTask();
         try
         {
-            return scheduler.Schedule(new SaveStreamJob(registry, checkpoint, output, options)).CompleteAsync().AsTask();
+            job.Execute();
+            return Task.CompletedTask;
         }
-        catch { checkpoint.Dispose(); throw; }
+        catch (Exception exception)
+        {
+            return Task.FromException(exception);
+        }
     }
 
     private readonly struct SaveStreamJob(SerializationRegistry registry, WorldCheckpoint checkpoint,

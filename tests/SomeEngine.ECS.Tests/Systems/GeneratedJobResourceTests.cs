@@ -86,7 +86,7 @@ public sealed class GeneratedJobResourceTests : JobTest
     {
         var heights = new HeightSamples([17]);
         var resource = new WeakReference(heights);
-        JobHandle handle = new SampleHeightWithChild(heights, fence).ScheduleParallel(world);
+        JobHandle handle = new SampleHeightWithChild(heights, fence, world.Execution!.Scheduler!).ScheduleParallel(world);
         return (handle, resource);
     }
 
@@ -131,16 +131,17 @@ internal sealed class ResourceChildFence : IJobExternalFence, IDisposable
     public void Dispose() => Registered.Dispose();
 }
 
-internal partial struct SampleHeightWithChild(HeightSamples heights, ResourceChildFence fence) : IJobEntity
+internal partial struct SampleHeightWithChild(HeightSamples heights, ResourceChildFence fence, Scheduler scheduler) : IJobEntity
 {
     private readonly HeightSamples _heights = heights;
     private readonly ResourceChildFence _fence = fence;
+    private readonly Scheduler _scheduler = scheduler;
     public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Read(_heights.Values.AsMemory());
 
     public void Execute(ref ResourceSample sample)
     {
         sample.Value = _heights.Values[sample.Index];
-        JobSystem.Current.CreateExternalFenceHandle(_fence);
+        _scheduler.CreateExternalFenceHandle(_fence);
     }
 }
 
