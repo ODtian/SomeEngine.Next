@@ -19,7 +19,6 @@ namespace SomeEngine.Graphics;
 /// capabilities throw <see cref="NotSupportedException"/>, and native failures throw
 /// <see cref="GraphicsException"/>.</para>
 /// <para><b>After Dispose:</b> No receiver operation is available and the backend runtime never reopens.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public partial interface IGraphicsBackend : IDisposable
 {

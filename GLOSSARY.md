@@ -108,13 +108,13 @@
 
 **行为部件**：可挂到任意节点上的公开行为，例如 `Pressable`、`Draggable`、`Focusable`。行为部件声明所需数据，由对应系统处理。
 
-**焦点**：当前 World 接收键盘和手柄确认输入的界面节点，状态以节点上的 `Focused` sparse 标记表达。候选节点通过 `Focusable` 行为部件声明；导航与释放规则见 [Input and Behaviors](wiki/architecture/someui/Input-and-Behaviors.md)。
+**焦点**：当前 World 接收键盘和手柄确认输入的界面节点，状态以节点上的 `Focused` sparse 标记表达。候选节点通过 `Focusable` 行为部件声明。
 
-**可编辑文本**（`EditableText`）：节点上由输入阶段写入的已提交文字、光标、选区锚点、独立输入法组合文字与编辑计数。`TextEditing` 行为声明这些数据与焦点数据，调用方通过 `Edited(out text)` 消费新编辑；规则见 [Input and Behaviors](wiki/architecture/someui/Input-and-Behaviors.md)。
+**可编辑文本**（`EditableText`）：节点上由输入阶段写入的已提交文字、光标、选区锚点、独立输入法组合文字与编辑计数。`TextEditing` 行为声明这些数据与焦点数据，调用方通过 `Edited(out text)` 消费新编辑。
 
 **复合部件**：组成复合控件的一组公开视图，由调用方拼装，例如 `Dialog`、`DialogTitle`、`DialogActions`。
 
-**无障碍角色与名称**（`AccessibleRole`、`AccessibleName`）：节点上的公开语义数据，角色表达控件或内容的用途，名称表达显示文字或业务标签。默认数据与用户修饰见 [Accessibility](wiki/architecture/someui/Accessibility.md)。
+**无障碍角色与名称**（`AccessibleRole`、`AccessibleName`）：节点上的公开语义数据，角色表达控件或内容的用途，名称表达显示文字或业务标签。
 
 **通道**（`Channel<T>`）：组件中的一个可写叶值，由组件身份与字段身份共同确定，包含普通字段、嵌套字段和可写属性。
 
@@ -176,7 +176,7 @@
 
 **图集页**（`AtlasPage`）：尺寸固定、每像素一字节的距离场数据，像素行从上到下排列。
 
-**图片**（`Image`）：以纹理资产身份声明的布局视图，通过 `ImageTextures` 取得应用已就绪的纹理，用固有尺寸测量。`ImageFit` 表达拉伸、等比适应与等比填充；绘制矩形和 UV 通过统一画布提取送达 Rendering world，规则见 [Render Path](wiki/architecture/someui/Render-Path.md)。
+**图片**（`Image`）：以纹理资产身份声明的布局视图，通过 `ImageTextures` 取得应用已就绪的纹理，用固有尺寸测量。`ImageFit` 表达拉伸、等比适应与等比填充；绘制矩形和 UV 通过统一画布提取送达 Rendering world。
 
 **图集新增区域**（`AtlasDirtyRegion`）：供渲染提取读取的页编号与像素矩形，由图集调用方在提取完成后清空。
 

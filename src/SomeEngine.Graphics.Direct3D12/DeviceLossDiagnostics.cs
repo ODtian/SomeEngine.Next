@@ -11,7 +11,6 @@ namespace SomeEngine.Graphics.Direct3D12;
 /// <para><b>Thread safety:</b> Thread-safe. Immutable diagnostic values may be shared.</para>
 /// <para><b>Ownership:</b> Owns only copied managed strings and arrays.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; copied diagnostic data remains readable.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public sealed class D3D12BreadcrumbReport
 {
@@ -44,7 +43,6 @@ public sealed class D3D12BreadcrumbReport
 /// <para><b>Thread safety:</b> Thread-safe. Immutable diagnostic values may be shared.</para>
 /// <para><b>Ownership:</b> Owns only copied managed strings.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; copied diagnostic data remains readable.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public sealed class D3D12PageFaultAllocationReport
 {
@@ -68,7 +66,6 @@ public sealed class D3D12PageFaultAllocationReport
 /// <para><b>Thread safety:</b> Thread-safe. Immutable diagnostic values may be shared.</para>
 /// <para><b>Ownership:</b> Owns copied managed arrays and text; no DRED pointers escape.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; the report remains readable after Device disposal.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public sealed class D3D12DeviceLossReport
 {

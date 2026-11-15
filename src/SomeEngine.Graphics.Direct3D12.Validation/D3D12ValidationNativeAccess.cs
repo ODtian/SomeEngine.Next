@@ -12,7 +12,6 @@ namespace SomeEngine.Graphics.Validation;
 /// synchronously, and recorded native work retains the resources it needs through completion.</para>
 /// <para><b>After Dispose:</b> This type has no Dispose state; disposing the layer or owning object
 /// invalidates every pointer and borrow obtained through it.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public static unsafe class D3D12ValidationNativeAccess
 {
