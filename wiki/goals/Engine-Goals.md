@@ -11,6 +11,6 @@
 - 资产管线（C#、ECS、流式加载）
 - UI/编辑器（框架 UI 选择：SomeUI 与 ImGui；SomeUI 用于正式 UI、HUD 和未来编辑器，ImGui 用于临时调试）
 
-参见 [[ECS-Architecture]]、[[Structural-Optimization]]。
+参见 [[Structural-Optimization]]。
 
 [UI 与编辑器职责决策](../../docs/adr/0008-someui-and-imgui-roles.md)；SomeUI 设计见 [[architecture/SomeUI|SomeUI]]。

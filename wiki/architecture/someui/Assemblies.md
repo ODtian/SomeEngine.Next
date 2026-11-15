@@ -131,7 +131,7 @@ Compose 自动生成的视图与内容子视图进入同一注册生成流程，
 和 `ChildSource.Caller`，并通过正常构建重新登记依赖。
 视图的计算列表、依赖与异步流程由新 World 中的构建重新建立。
 
-整 World 持久化沿用 [[architecture/ECS/Save-Contracts|ECS 存档边界]]：
+整 World 持久化沿用 ECS 存档边界：
 参与整 World 保存的参数和值组件采用无托管引用的数据。
 含 `string` 等托管引用的视图参数可经组件或实体序列化入口使用生成或应用 codec；
 长期存档使用显式 schema 与字段 codec。

@@ -88,4 +88,4 @@ cluster 构建按四种 Deform 类别分区。复用现有 meshoptimizer cluster
 蒙皮影响与形变增量通过同一几何映射保存所有来源分量，并提供可由材质 Importer 选择的编码字节；公开读取、来源切线和保存行为见 [Deformation Import](../cluster/Deformation-Import.md)。
 
 ## Relations
-[[architecture/Assets/Block-Division|Block Division]] · [[architecture/Assets/Asset-Meshes|Mesh]] · [[architecture/ECS/Coordinate-System|Coordinate System]] · ADR 0016 · ADR 0017
+[[architecture/Assets/Block-Division|Block Division]] · [[architecture/Assets/Asset-Meshes|Mesh]] · ADR 0016 · ADR 0017
