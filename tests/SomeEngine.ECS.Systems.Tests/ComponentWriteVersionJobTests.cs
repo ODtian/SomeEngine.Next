@@ -15,19 +15,19 @@ public sealed class ComponentWriteVersionJobTests
         using var jobs = new JobWorkers();
         var world = new World(execution: new WorldJobs(JobSystem.Default));
         Entity entity = world.Create(new VersionedValue { Value = 1 });
-        world.SetSparse(entity, new SparseValue { Value = 2 });
-        ulong tableVersion = world.ComponentDataWriteVersion<VersionedValue>(entity);
-        ulong sparseVersion = world.ComponentDataWriteVersion<SparseValue>(entity);
+        world.Set(entity, new SparseValue { Value = 2 });
+        ulong tableVersion = world.ComponentWriteVersion<VersionedValue>(entity);
+        ulong sparseVersion = world.ComponentWriteVersion<SparseValue>(entity);
 
         if (parallel)
-            new SystemRunner(world, rangeRows: 1).Schedule(new IncrementValuesJob(), dependency: default, parallel: true).Complete();
+            new SystemRunner(world, rangeRows: 1).Schedule(null, new IncrementValuesJob(), dependency: default, parallel: true).Complete();
         else
             new IncrementValuesJob().Schedule(world).Complete();
 
-        Assert.NotEqual(tableVersion, world.ComponentDataWriteVersion<VersionedValue>(entity));
-        Assert.NotEqual(sparseVersion, world.ComponentDataWriteVersion<SparseValue>(entity));
-        Assert.Equal(2, world.ReadComponentData<VersionedValue>(entity).Value);
-        Assert.Equal(3, world.ReadComponentData<SparseValue>(entity).Value);
+        Assert.NotEqual(tableVersion, world.ComponentWriteVersion<VersionedValue>(entity));
+        Assert.NotEqual(sparseVersion, world.ComponentWriteVersion<SparseValue>(entity));
+        Assert.Equal(2, world.ReadValue<VersionedValue>(entity).Value);
+        Assert.Equal(3, world.ReadValue<SparseValue>(entity).Value);
     }
 
     [Theory]
@@ -38,17 +38,17 @@ public sealed class ComponentWriteVersionJobTests
         using var jobs = new JobWorkers();
         var world = new World(execution: new WorldJobs(JobSystem.Default));
         var entity = world.Create(new VersionedValue { Value = 1 });
-        world.SetSparse(entity, new SparseValue { Value = 2 });
-        ulong tableVersion = world.ComponentDataWriteVersion<VersionedValue>(entity);
-        ulong sparseVersion = world.ComponentDataWriteVersion<SparseValue>(entity);
+        world.Set(entity, new SparseValue { Value = 2 });
+        ulong tableVersion = world.ComponentWriteVersion<VersionedValue>(entity);
+        ulong sparseVersion = world.ComponentWriteVersion<SparseValue>(entity);
 
         if (parallel)
             new ReadValuesJob().ScheduleParallel(world).Complete();
         else
             new ReadValuesJob().Schedule(world).Complete();
 
-        Assert.Equal(tableVersion, world.ComponentDataWriteVersion<VersionedValue>(entity));
-        Assert.Equal(sparseVersion, world.ComponentDataWriteVersion<SparseValue>(entity));
+        Assert.Equal(tableVersion, world.ComponentWriteVersion<VersionedValue>(entity));
+        Assert.Equal(sparseVersion, world.ComponentWriteVersion<SparseValue>(entity));
     }
 
     [Fact]
@@ -57,14 +57,14 @@ public sealed class ComponentWriteVersionJobTests
         using var jobs = new JobWorkers();
         var world = new World(execution: new WorldJobs(JobSystem.Default));
         var entity = world.Create();
-        world.SetSparse(entity, new SparseValue { Value = 1 });
-        ulong version = world.ComponentDataWriteVersion<SparseValue>(entity);
+        world.Set(entity, new SparseValue { Value = 1 });
+        ulong version = world.ComponentWriteVersion<SparseValue>(entity);
 
         world.Execution!.Scheduler!.Schedule(new IncrementSparseValuesJob(world),
-            ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteSparse<SparseValue>())).Complete();
+            ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<SparseValue>())).Complete();
 
-        Assert.NotEqual(version, world.ComponentDataWriteVersion<SparseValue>(entity));
-        Assert.Equal(2, world.ReadComponentData<SparseValue>(entity).Value);
+        Assert.NotEqual(version, world.ComponentWriteVersion<SparseValue>(entity));
+        Assert.Equal(2, world.ReadValue<SparseValue>(entity).Value);
     }
 
     [Fact]
@@ -77,8 +77,8 @@ public sealed class ComponentWriteVersionJobTests
         for (int i = 0; i < entities.Length; i++)
         {
             entities[i] = world.Create(new VersionedValue { Value = i });
-            world.SetSparse(entities[i], new SparseValue { Value = i });
-            versions[i] = world.ComponentDataWriteVersion<SparseValue>(entities[i]);
+            world.Set(entities[i], new SparseValue { Value = i });
+            versions[i] = world.ComponentWriteVersion<SparseValue>(entities[i]);
         }
         using (var commands = new CommandBuffer(world))
         {
@@ -86,13 +86,13 @@ public sealed class ComponentWriteVersionJobTests
             commands.Playback();
         }
 
-        new SystemRunner(world, rangeRows: 1).Schedule(new IncrementValuesJob(), dependency: default, parallel: true).Complete();
+        new SystemRunner(world, rangeRows: 1).Schedule(null, new IncrementValuesJob(), dependency: default, parallel: true).Complete();
 
         for (int i = 0; i < entities.Length; i++)
         {
-            Assert.NotEqual(versions[i], world.ComponentDataWriteVersion<SparseValue>(entities[i]));
-            Assert.Equal(i + 1, world.ReadComponentData<VersionedValue>(entities[i]).Value);
-            Assert.Equal(i + 1, world.ReadComponentData<SparseValue>(entities[i]).Value);
+            Assert.NotEqual(versions[i], world.ComponentWriteVersion<SparseValue>(entities[i]));
+            Assert.Equal(i + 1, world.ReadValue<VersionedValue>(entities[i]).Value);
+            Assert.Equal(i + 1, world.ReadValue<SparseValue>(entities[i]).Value);
         }
     }
 
@@ -125,7 +125,7 @@ public sealed class ComponentWriteVersionJobTests
     {
         public void Execute()
         {
-            using var values = world.OpenSparseWrite<SparseValue>();
+            using var values = world.OpenSparseValueWrites<SparseValue>();
             foreach (ref SparseValue value in values.Values) value.Value++;
         }
     }

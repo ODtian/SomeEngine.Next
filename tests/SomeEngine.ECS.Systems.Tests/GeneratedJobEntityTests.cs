@@ -18,17 +18,17 @@ public sealed class GeneratedJobEntityTests : JobTest
         ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = CreateMovingWorld(32, out Entity[] entities);
         foreach (Entity entity in entities)
-            world.SetSparse(entity, new GeneratedSparse { Value = 3 });
+            world.Set(entity, new GeneratedSparse { Value = 3 });
         ulong sparseVersion = world.ComponentWriteVersion(ComponentId<GeneratedSparse>.Value);
         ulong positionVersion = world.ComponentWriteVersion(ComponentId<GeneratedPosition>.Value);
         ulong before = world.Version;
 
-        new SystemRunner(world, rangeRows: rowsPerPacket).Schedule(new GeneratedSparseJob(), dependency: default, parallel: true).Complete();
+        new SystemRunner(world, rangeRows: rowsPerPacket).Schedule(null, new GeneratedSparseJob(), dependency: default, parallel: true).Complete();
 
         Assert.Equal(before + 1, world.ComponentWriteVersion(ComponentId<GeneratedSparse>.Value));
         Assert.True(world.ComponentWriteVersion(ComponentId<GeneratedSparse>.Value) > sparseVersion);
         Assert.Equal(positionVersion, world.ComponentWriteVersion(ComponentId<GeneratedPosition>.Value));
-        Assert.All(entities, entity => Assert.Equal(13, world.ReadComponentData<GeneratedSparse>(entity).Value));
+        Assert.All(entities, entity => Assert.Equal(13, world.ReadValue<GeneratedSparse>(entity).Value));
     }
 
     [Theory]
@@ -42,12 +42,12 @@ public sealed class GeneratedJobEntityTests : JobTest
         ulong velocityVersion = world.ComponentWriteVersion(ComponentId<GeneratedVelocity>.Value);
         ulong before = world.Version;
 
-        new SystemRunner(world, rangeRows: rowsPerPacket).Schedule(new IntegrateGeneratedJob(), dependency: default, parallel: true).Complete();
+        new SystemRunner(world, rangeRows: rowsPerPacket).Schedule(null, new IntegrateGeneratedJob(), dependency: default, parallel: true).Complete();
 
         Assert.Equal(before + 1, world.ComponentWriteVersion(ComponentId<GeneratedPosition>.Value));
         Assert.True(world.ComponentWriteVersion(ComponentId<GeneratedPosition>.Value) > positionVersion);
         Assert.Equal(velocityVersion, world.ComponentWriteVersion(ComponentId<GeneratedVelocity>.Value));
-        Assert.All(entities, entity => Assert.Equal(1, world.ReadComponentData<GeneratedPosition>(entity).Value));
+        Assert.All(entities, entity => Assert.Equal(1, world.ReadValue<GeneratedPosition>(entity).Value));
     }
 
 
@@ -58,15 +58,15 @@ public sealed class GeneratedJobEntityTests : JobTest
         using var commands = new CommandBatch(world, entities.Max(entity => entity.Id) + 1);
         using var data = new CallbackData<GeneratedCommandData>(new(commands));
         new GeneratedCommandJob(data).Schedule(world).Complete();
-        Assert.All(entities, entity => Assert.Equal(0, world.ReadComponentData<GeneratedPosition>(entity).Value));
+        Assert.All(entities, entity => Assert.Equal(0, world.ReadValue<GeneratedPosition>(entity).Value));
         Assert.Equal(entities.Length, entities.Sum(entity => commands[entity.Id].Count));
         commands.Playback();
-        Assert.All(entities, entity => Assert.Equal(99, world.ReadComponentData<GeneratedPosition>(entity).Value));
+        Assert.All(entities, entity => Assert.Equal(99, world.ReadValue<GeneratedPosition>(entity).Value));
         commands.Clear();
-        new SystemRunner(world, rangeRows: 1).Schedule(new GeneratedCommandJob(data), parallel: true).Complete();
+        new SystemRunner(world, rangeRows: 1).Schedule(null, new GeneratedCommandJob(data), parallel: true).Complete();
         Assert.Equal(entities.Length, entities.Sum(entity => commands[entity.Id].Count));
         commands.Playback();
-        Assert.All(entities, entity => Assert.Equal(99, world.ReadComponentData<GeneratedPosition>(entity).Value));
+        Assert.All(entities, entity => Assert.Equal(99, world.ReadValue<GeneratedPosition>(entity).Value));
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public sealed class GeneratedJobEntityTests : JobTest
         World world = CreateMovingWorld(16, out _);
         using var attempted = new ManualResetEventSlim();
         using var data = new CallbackData<GeneratedTopologyData>(new GeneratedTopologyData(16));
-        JobHandle handle = new SystemRunner(world, rangeRows: 1).Schedule(new GeneratedTopologyJob(data), dependency: default, parallel: true);
+        JobHandle handle = new SystemRunner(world, rangeRows: 1).Schedule(null, new GeneratedTopologyJob(data), dependency: default, parallel: true);
         Task<Entity>? writer = null;
         try
         {
@@ -110,12 +110,12 @@ public sealed class GeneratedJobEntityTests : JobTest
         ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = world.Create(new GeneratedPosition { Value = 4 });
-        world.SetSparse(entity, new GeneratedSparse { Value = 9 });
+        world.Set(entity, new GeneratedSparse { Value = 9 });
         var job = new GeneratedBoundaryProbeJob(world, entity);
         JobHandle handle = job.ScheduleParallel(world);
         Assert.Throws<JobResourceSafetyException>(handle.Complete);
 
-        Assert.Equal(9, world.ReadComponentData<GeneratedSparse>(entity).Value);
+        Assert.Equal(9, world.ReadValue<GeneratedSparse>(entity).Value);
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public sealed class GeneratedJobEntityTests : JobTest
         Assert.Equal(1, reads.Value.Count);
         Assert.Throws<JobResourceSafetyException>(() =>
             new GeneratedFilterWriteProbe(world, entities[0]).Schedule(world, query: query).Complete());
-        Assert.Equal(1, world.ReadComponentData<GeneratedVelocity>(entities[0]).Value);
+        Assert.Equal(1, world.ReadValue<GeneratedVelocity>(entities[0]).Value);
     }
 
     [Fact]
@@ -149,11 +149,11 @@ public sealed class GeneratedJobEntityTests : JobTest
             world.Add(entities[i], default(GeneratedExcludedTag));
         QueryDescription filter = new QueryDescription().Without<GeneratedExcludedTag>();
 
-        new SystemRunner(world, rangeRows: 2).Schedule(new IntegrateGeneratedJob(), dependency: default, parallel: true, query: world.Query(filter)).Complete();
+        new SystemRunner(world, rangeRows: 2).Schedule(world.Query(filter), new IntegrateGeneratedJob(), dependency: default, parallel: true).Complete();
 
         for (int i = 0; i < entities.Length; i++)
         {
-            Assert.Equal((i & 1) == 0 ? 0 : 1, world.ReadComponentData<GeneratedPosition>(entities[i]).Value);
+            Assert.Equal((i & 1) == 0 ? 0 : 1, world.ReadValue<GeneratedPosition>(entities[i]).Value);
         }
 
         QueryDescription invalidAccess = new QueryDescription().WithStored<GeneratedVelocity>();
@@ -171,10 +171,10 @@ public sealed class GeneratedJobEntityTests : JobTest
             world.Set(entities[i], new GeneratedVelocity { Value = 2 });
         QueryDescription filter = new QueryDescription().WithChanged<GeneratedVelocity>(0);
 
-        new SystemRunner(world, rangeRows: 2).Schedule(new IntegrateGeneratedJob(), dependency: default, parallel: true, query: world.Query(filter).Since(baseline)).Complete();
+        new SystemRunner(world, rangeRows: 2).Schedule(world.Query(filter).Since(baseline), new IntegrateGeneratedJob(), dependency: default, parallel: true).Complete();
 
         for (int i = 0; i < entities.Length; i++)
-            Assert.Equal((i & 1) == 0 ? 2 : 0, world.ReadComponentData<GeneratedPosition>(entities[i]).Value);
+            Assert.Equal((i & 1) == 0 ? 2 : 0, world.ReadValue<GeneratedPosition>(entities[i]).Value);
     }
 
     [Fact]
@@ -187,7 +187,7 @@ public sealed class GeneratedJobEntityTests : JobTest
         new IntegrateGeneratedJob().Schedule(world).Complete();
         Assert.Equal(tickBefore, world.Version);
 
-        new SystemRunner(world, rangeRows: 1).Schedule(new IntegrateGeneratedJob(), dependency: default, parallel: true).Complete();
+        new SystemRunner(world, rangeRows: 1).Schedule(null, new IntegrateGeneratedJob(), dependency: default, parallel: true).Complete();
         Assert.Equal(tickBefore, world.Version);
     }
 
@@ -204,10 +204,10 @@ public sealed class GeneratedJobEntityTests : JobTest
         QueryDescription filter = new QueryDescription().With<GeneratedEnableable>();
         ulong tickBefore = world.Version;
 
-        new SystemRunner(world, rangeRows: 1024).Schedule(new IntegrateGeneratedJob(), dependency: default, parallel: false, query: world.Query(filter)).Complete();
+        new SystemRunner(world, rangeRows: 1024).Schedule(world.Query(filter), new IntegrateGeneratedJob(), dependency: default, parallel: false).Complete();
         Assert.Equal(tickBefore, world.Version);
 
-        new SystemRunner(world, rangeRows: 1).Schedule(new IntegrateGeneratedJob(), dependency: default, parallel: true, query: world.Query(filter)).Complete();
+        new SystemRunner(world, rangeRows: 1).Schedule(world.Query(filter), new IntegrateGeneratedJob(), dependency: default, parallel: true).Complete();
         Assert.Equal(tickBefore, world.Version);
     }
 
@@ -219,7 +219,7 @@ public sealed class GeneratedJobEntityTests : JobTest
         QueryDescription filter = new QueryDescription().WithChanged<GeneratedVelocity>(0);
         ulong tickBefore = world.Version;
 
-        new SystemRunner(world, rangeRows: 1).Schedule(new IntegrateGeneratedJob(), dependency: default, parallel: true, query: world.Query(filter).Since(tickBefore)).Complete();
+        new SystemRunner(world, rangeRows: 1).Schedule(world.Query(filter).Since(tickBefore), new IntegrateGeneratedJob(), dependency: default, parallel: true).Complete();
 
         Assert.Equal(tickBefore, world.Version);
     }
@@ -237,7 +237,7 @@ public sealed class GeneratedJobEntityTests : JobTest
         Assert.Equal(tickBefore, world.Version);
         data.Value.Count = 0;
 
-        new SystemRunner(world, rangeRows: 1).Schedule(new GeneratedReadOnlyProbeJob(data), dependency: default, parallel: true).Complete();
+        new SystemRunner(world, rangeRows: 1).Schedule(null, new GeneratedReadOnlyProbeJob(data), dependency: default, parallel: true).Complete();
         Assert.Equal(entities.Length, data.Value.Count);
         Assert.Equal(tickBefore, world.Version);
         data.Value.Count = 0;
@@ -256,10 +256,10 @@ public sealed class GeneratedJobEntityTests : JobTest
         }
         QueryDescription filter = new QueryDescription().With<GeneratedEnableable>();
 
-        new SystemRunner(world, rangeRows: 2).Schedule(new IntegrateGeneratedJob(), dependency: default, parallel: true, query: world.Query(filter)).Complete();
+        new SystemRunner(world, rangeRows: 2).Schedule(world.Query(filter), new IntegrateGeneratedJob(), dependency: default, parallel: true).Complete();
 
         for (int i = 0; i < entities.Length; i++)
-            Assert.Equal((i & 1) == 0 ? 0 : 1, world.ReadComponentData<GeneratedPosition>(entities[i]).Value);
+            Assert.Equal((i & 1) == 0 ? 0 : 1, world.ReadValue<GeneratedPosition>(entities[i]).Value);
     }
 
     [Fact]
@@ -269,12 +269,12 @@ public sealed class GeneratedJobEntityTests : JobTest
         ulong baseline = world.Version;
         world.Set(entities[1], new GeneratedPosition { Value = 4 });
         Query query = world.Query(new QueryDescription().WithChanged<GeneratedPosition>(baseline));
-        new SystemRunner(world, rangeRows: 1).Schedule(new GeneratedPositionIncrementJob(), query: query).Complete();
-        Assert.Equal([0, 5, 0, 0], entities.Select(entity => world.ReadComponentData<GeneratedPosition>(entity).Value));
+        new SystemRunner(world, rangeRows: 1).Schedule(query, new GeneratedPositionIncrementJob()).Complete();
+        Assert.Equal([0, 5, 0, 0], entities.Select(entity => world.ReadValue<GeneratedPosition>(entity).Value));
         baseline = world.Version;
         world.Set(entities[2], new GeneratedPosition { Value = 7 });
         new GeneratedPositionIncrementJob().Schedule(world, query: query.Since(baseline)).Complete();
-        Assert.Equal([0, 5, 8, 0], entities.Select(entity => world.ReadComponentData<GeneratedPosition>(entity).Value));
+        Assert.Equal([0, 5, 8, 0], entities.Select(entity => world.ReadValue<GeneratedPosition>(entity).Value));
     }
 
     [Fact]
@@ -283,14 +283,14 @@ public sealed class GeneratedJobEntityTests : JobTest
         ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(128, out Entity[] entities);
         using var data = new CallbackData<GeneratedConcurrencyData>(new GeneratedConcurrencyData());
-        JobHandle handle = new SystemRunner(world, rangeRows: 1).Schedule(new GeneratedConcurrencyJob(data), dependency: default, parallel: true);
+        JobHandle handle = new SystemRunner(world, rangeRows: 1).Schedule(null, new GeneratedConcurrencyJob(data), dependency: default, parallel: true);
         try
         {
             Assert.True(data.Value.Arrivals.Wait(TimeSpan.FromSeconds(5)));
             data.Value.Release.Set();
             handle.Complete();
             foreach (var entity in entities)
-                Assert.Equal(1, world.ReadComponentData<GeneratedPosition>(entity).Value);
+                Assert.Equal(1, world.ReadValue<GeneratedPosition>(entity).Value);
         }
         finally
         {
@@ -310,7 +310,7 @@ public sealed class GeneratedJobEntityTests : JobTest
             new BlockingDependencyJob(dependencyStarted, releaseDependency));
         Assert.True(dependencyStarted.Wait(TimeSpan.FromSeconds(5)));
 
-        JobHandle generated = new SystemRunner(world, rangeRows: 1).Schedule(new IntegrateGeneratedJob(), dependency: dependency, parallel: true);
+        JobHandle generated = new SystemRunner(world, rangeRows: 1).Schedule(null, new IntegrateGeneratedJob(), dependency: dependency, parallel: true);
 
         Task<Entity> mutation = Task.Run(() =>
         {
@@ -324,7 +324,7 @@ public sealed class GeneratedJobEntityTests : JobTest
         generated.Complete();
         dependency.Complete();
 
-        Assert.Equal(2, world.ReadComponentData<GeneratedPosition>(mutatedEntity).Value);
+        Assert.Equal(2, world.ReadValue<GeneratedPosition>(mutatedEntity).Value);
     }
 
     [Fact]
@@ -336,11 +336,11 @@ public sealed class GeneratedJobEntityTests : JobTest
         JobHandle dependency = Jobs.Schedule(
             new DynamicTopologyDependencyJob(world, capture));
 
-        new SystemRunner(world, rangeRows: 1).Schedule(new IntegrateGeneratedJob(), dependency: dependency, parallel: true).Complete();
+        new SystemRunner(world, rangeRows: 1).Schedule(null, new IntegrateGeneratedJob(), dependency: dependency, parallel: true).Complete();
 
         dependency.Complete();
         Assert.NotEqual(Entity.Null, capture.Entity);
-        Assert.Equal(3, world.ReadComponentData<GeneratedPosition>(capture.Entity).Value);
+        Assert.Equal(3, world.ReadValue<GeneratedPosition>(capture.Entity).Value);
     }
 
     [Fact]
@@ -354,7 +354,7 @@ public sealed class GeneratedJobEntityTests : JobTest
             new BlockingDependencyJob(workerOccupied, releaseWorker));
         Assert.True(workerOccupied.Wait(TimeSpan.FromSeconds(5)));
 
-        JobHandle generated = new SystemRunner(world, rangeRows: 1).Schedule(new IntegrateGeneratedJob(), dependency: default, parallel: true);
+        JobHandle generated = new SystemRunner(world, rangeRows: 1).Schedule(null, new IntegrateGeneratedJob(), dependency: default, parallel: true);
 
         // The writer registers before the generated job binds its component ranges.
         var writerCapture = new EntityCapture();
@@ -372,8 +372,8 @@ public sealed class GeneratedJobEntityTests : JobTest
         Assert.NotEqual(Entity.Null, writerCapture.Entity);
         Assert.All(
             originalEntities,
-            entity => Assert.Equal(1, world.ReadComponentData<GeneratedPosition>(entity).Value));
-        Assert.Equal(3, world.ReadComponentData<GeneratedPosition>(writerCapture.Entity).Value);
+            entity => Assert.Equal(1, world.ReadValue<GeneratedPosition>(entity).Value));
+        Assert.Equal(3, world.ReadValue<GeneratedPosition>(writerCapture.Entity).Value);
     }
 
     [Fact]
@@ -389,7 +389,7 @@ public sealed class GeneratedJobEntityTests : JobTest
 
         dependency.Complete();
         Assert.NotEqual(Entity.Null, capture.Entity);
-        Assert.Equal(3, world.ReadComponentData<GeneratedPosition>(capture.Entity).Value);
+        Assert.Equal(3, world.ReadValue<GeneratedPosition>(capture.Entity).Value);
     }
 
     [Fact]
@@ -399,14 +399,14 @@ public sealed class GeneratedJobEntityTests : JobTest
         World world = CreateMovingWorld(128, out Entity[] entities);
         using (var commands = new CommandBuffer(world)) { commands.Create(); commands.Playback(); }
         using var data = new CallbackData<GeneratedConcurrencyData>(new GeneratedConcurrencyData());
-        JobHandle handle = new SystemRunner(world, rangeRows: 1).Schedule(new GeneratedConcurrencyJob(data), dependency: default, parallel: true);
+        JobHandle handle = new SystemRunner(world, rangeRows: 1).Schedule(null, new GeneratedConcurrencyJob(data), dependency: default, parallel: true);
         try
         {
             Assert.True(data.Value.Arrivals.Wait(TimeSpan.FromSeconds(5)));
             data.Value.Release.Set();
             handle.Complete();
             foreach (var entity in entities)
-                Assert.Equal(1, world.ReadComponentData<GeneratedPosition>(entity).Value);
+                Assert.Equal(1, world.ReadValue<GeneratedPosition>(entity).Value);
         }
         finally
         {
@@ -421,16 +421,16 @@ public sealed class GeneratedJobEntityTests : JobTest
         ConfigureJobs(new JobConfiguration { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(12, out Entity[] entities);
         for (int i = 0; i < entities.Length; i += 2)
-            world.SetSparse(entities[i], new GeneratedSparse { Value = i });
+            world.Set(entities[i], new GeneratedSparse { Value = i });
 
-        new SystemRunner(world, rangeRows: 2).Schedule(new GeneratedSparseJob(), dependency: default, parallel: true).Complete();
+        new SystemRunner(world, rangeRows: 2).Schedule(null, new GeneratedSparseJob(), dependency: default, parallel: true).Complete();
 
         for (int i = 0; i < entities.Length; i++)
         {
             if ((i & 1) == 0)
-                Assert.Equal(i + 10, world.ReadComponentData<GeneratedSparse>(entities[i]).Value);
+                Assert.Equal(i + 10, world.ReadValue<GeneratedSparse>(entities[i]).Value);
             else
-                Assert.False(world.HasSparse<GeneratedSparse>(entities[i]));
+                Assert.False(world.Has<GeneratedSparse>(entities[i]));
         }
     }
 
@@ -445,7 +445,7 @@ public sealed class GeneratedJobEntityTests : JobTest
             { using (var buffer = world.GetBuffer<GeneratedBufferElement>(entity)) { buffer.Add(new GeneratedBufferElement { Value = 3 }); } };
         }
 
-        new SystemRunner(world, rangeRows: 2).Schedule(new GeneratedBufferJob(), dependency: default, parallel: true).Complete();
+        new SystemRunner(world, rangeRows: 2).Schedule(null, new GeneratedBufferJob(), dependency: default, parallel: true).Complete();
 
         foreach (Entity entity in entities)
         {
@@ -464,15 +464,15 @@ public sealed class GeneratedJobEntityTests : JobTest
         {
             world.AddBuffer<GeneratedBufferElement>(entity);
             { using (var buffer = world.GetBuffer<GeneratedBufferElement>(entity)) { buffer.Add(new GeneratedBufferElement { Value = 1 }); } };
-            world.SetSparse(entity, new GeneratedSparse { Value = 1 });
+            world.Set(entity, new GeneratedSparse { Value = 1 });
         }
         ulong baseline = world.Version;
-        new SystemRunner(world, rangeRows: 1).Schedule(new GeneratedStorageJob(), dependency: default, parallel: true).Complete();
+        new SystemRunner(world, rangeRows: 1).Schedule(null, new GeneratedStorageJob(), dependency: default, parallel: true).Complete();
         Assert.Equal(baseline + 1, world.Version);
         foreach (var entity in entities)
         {
-            Assert.Equal(1, world.ReadComponentData<GeneratedPosition>(entity).Value);
-            Assert.Equal(2, world.ReadComponentData<GeneratedSparse>(entity).Value);
+            Assert.Equal(1, world.ReadValue<GeneratedPosition>(entity).Value);
+            Assert.Equal(2, world.ReadValue<GeneratedSparse>(entity).Value);
             { using (var buffer = world.ReadBuffer<GeneratedBufferElement>(entity)) { Assert.Equal(2, buffer[0].Value); } };
         }
         var changed = world.Query(new QueryDescription().WithChanged<GeneratedPosition>(0));
@@ -582,7 +582,7 @@ public sealed class GeneratedJobEntityTests : JobTest
         public void Execute()
         {
             JobResourceAccess[] accesses = _world.Execution!.StructureWrite;
-            JobSystem.Schedule(
+            JobSystem.Current.Schedule(
                 new CreateMovingEntityJob(_world, _capture),
                 accesses);
         }
@@ -669,7 +669,7 @@ public partial struct GeneratedBoundaryProbeJob(World world, Entity entity) : IJ
     public void Execute(in GeneratedPosition position)
     {
         _ = position.Value;
-        _ = world.ReadComponentData<GeneratedSparse>(entity);
+        _ = world.ReadValue<GeneratedSparse>(entity);
     }
 }
 

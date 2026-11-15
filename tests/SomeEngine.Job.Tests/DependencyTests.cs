@@ -17,9 +17,9 @@ public sealed class DependencyTests
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         var dependency = scheduler.Schedule(new DependencyData.BlockingJob(_data, gate, started),
-            new JobScheduleOptions(JobPriority.Low));
+            options: new JobScheduleOptions(JobPriority.Low));
         var dependent = scheduler.Schedule(new DependencyData.DependentJob(_data),
-            new JobScheduleOptions(JobPriority.High), dependency);
+            options: new JobScheduleOptions(JobPriority.High), dependency: dependency);
         Task completing = Task.Run(dependent.Complete);
         try
         {
@@ -38,10 +38,10 @@ public sealed class DependencyTests
     [Fact]
     public void CombineTwoHandlesCompletesAfterBothInputs()
     {
-        var a = JobSystem.Schedule(new DependencyData.IncrementJob(_data));
-        var b = JobSystem.Schedule(new DependencyData.IncrementJob(_data));
+        var a = JobSystem.Current.Schedule(new DependencyData.IncrementJob(_data));
+        var b = JobSystem.Current.Schedule(new DependencyData.IncrementJob(_data));
 
-        JobSystem.CombineDependencies([a, b]).Complete();
+        JobSystem.Current.CombineDependencies([a, b]).Complete();
 
         Assert.Equal(2, _data.Counter);
     }
@@ -52,10 +52,10 @@ public sealed class DependencyTests
         var handles = new JobHandle[64];
         for (var i = 0; i < handles.Length; i++)
         {
-            handles[i] = JobSystem.Schedule(new DependencyData.IncrementJob(_data));
+            handles[i] = JobSystem.Current.Schedule(new DependencyData.IncrementJob(_data));
         }
 
-        JobSystem.CombineDependencies(handles).Complete();
+        JobSystem.Current.CombineDependencies(handles).Complete();
 
         Assert.Equal(handles.Length, _data.Counter);
     }
@@ -63,7 +63,7 @@ public sealed class DependencyTests
     [Fact]
     public void EmptyCombineReturnsCompletedHandle()
     {
-        var handle = JobSystem.CombineDependencies([]);
+        var handle = JobSystem.Current.CombineDependencies([]);
 
         Assert.True(handle.IsCompleted);
         handle.Complete();
@@ -72,8 +72,8 @@ public sealed class DependencyTests
     [Fact]
     public void DuplicateCombineInputIsHandledOnce()
     {
-        var dependency = JobSystem.Schedule(new DependencyData.IncrementJob(_data));
-        var combined = JobSystem.CombineDependencies([dependency, dependency, dependency]);
+        var dependency = JobSystem.Current.Schedule(new DependencyData.IncrementJob(_data));
+        var combined = JobSystem.Current.CombineDependencies([dependency, dependency, dependency]);
 
         combined.Complete();
 
@@ -83,8 +83,8 @@ public sealed class DependencyTests
     [Fact]
     public void FaultedDependencyPreventsDependentExecutionAndPropagatesFault()
     {
-        var dependency = JobSystem.Schedule(new DependencyData.ThrowingJob());
-        var dependent = JobSystem.Schedule(new DependencyData.DependentJob(_data), dependency);
+        var dependency = JobSystem.Current.Schedule(new DependencyData.ThrowingJob());
+        var dependent = JobSystem.Current.Schedule(new DependencyData.DependentJob(_data), dependency: dependency);
 
         var ex = Assert.Throws<InvalidOperationException>(() => dependent.Complete());
 
@@ -94,11 +94,11 @@ public sealed class DependencyTests
     [Fact]
     public void CleanupRunsAfterFaultedDependencyAndCanRethrowIt()
     {
-        var dependency = JobSystem.Schedule(new DependencyData.ThrowingJob());
-        var finalizer = JobSystem.ScheduleFinally(
+        var dependency = JobSystem.Current.Schedule(new DependencyData.ThrowingJob());
+        var finalizer = JobSystem.Current.ScheduleFinally(
             new DependencyData.ObservingFinalizerJob(_data, dependency),
-            JobScheduleOptions.Default,
-            dependency);
+            options: JobScheduleOptions.Default,
+            dependency: dependency);
 
         var ex = Assert.Throws<InvalidOperationException>(() => finalizer.Complete());
 
@@ -116,7 +116,7 @@ public sealed class DependencyTests
         for (int i = 0; i < 32; i++)
         {
             JobHandle input = scheduler.Schedule(new DependencyData.ThrowingJob());
-            JobHandle output = scheduler.Schedule(new DependencyData.DependentJob(_data), input);
+            JobHandle output = scheduler.Schedule(new DependencyData.DependentJob(_data), dependency: input);
             Assert.Throws<InvalidOperationException>(output.Complete);
         }
         Assert.False(_data.DependentRan);

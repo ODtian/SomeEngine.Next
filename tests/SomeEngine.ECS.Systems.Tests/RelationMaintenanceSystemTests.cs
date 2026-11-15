@@ -14,7 +14,7 @@ public sealed class RelationMaintenanceSystemTests : JobTest
         RelationEdge<DirectedA> edge = world.CreateRelation(source, oldTarget, default(DirectedA));
         Entity[] earlier = Incoming<DirectedA>(world, oldTarget);
         Jobs.Schedule(new Retarget(world, edge, source, newTarget), world.Execution!.StructureWrite).Complete();
-        Assert.Equal(newTarget, world.ReadComponentData<RelationEndpoints<DirectedA>>(edge.Entity).Target);
+        Assert.Equal(newTarget, world.ReadValue<RelationEndpoints<DirectedA>>(edge.Entity).Target);
         Assert.Equal([edge.Entity], Incoming<DirectedA>(world, oldTarget));
         Assert.Empty(Incoming<DirectedA>(world, newTarget));
         var relaxed = new EdgeResult();
@@ -85,9 +85,9 @@ public sealed class RelationMaintenanceSystemTests : JobTest
         Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(mutation).Complete());
         Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(mutation, other.Execution!.StructureWrite).Complete());
         Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(mutation, world.Execution!.StructureRead).Complete());
-        Assert.Equal(oldTarget, world.ReadComponentData<RelationEndpoints<DirectedA>>(edge.Entity).Target);
+        Assert.Equal(oldTarget, world.ReadValue<RelationEndpoints<DirectedA>>(edge.Entity).Target);
         Jobs.Schedule(mutation, world.Execution!.StructureWrite).Complete();
-        Assert.Equal(newTarget, world.ReadComponentData<RelationEndpoints<DirectedA>>(edge.Entity).Target);
+        Assert.Equal(newTarget, world.ReadValue<RelationEndpoints<DirectedA>>(edge.Entity).Target);
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public sealed class RelationMaintenanceSystemTests : JobTest
         RelationEdge<DirectedA> edge = world.CreateRelation(source, oldTarget, default(DirectedA));
         JobHandle work = Jobs.ScheduleParallel(new ParallelRetarget(world, edge, source, newTarget), 2, 1, world.Execution!.StructureWrite);
         Assert.Throws<JobResourceSafetyException>(work.Complete);
-        Assert.Equal(oldTarget, world.ReadComponentData<RelationEndpoints<DirectedA>>(edge.Entity).Target);
+        Assert.Equal(oldTarget, world.ReadValue<RelationEndpoints<DirectedA>>(edge.Entity).Target);
     }
 
     [Fact]

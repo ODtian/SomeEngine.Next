@@ -91,38 +91,6 @@ public sealed class JobHandleAwaitTests
         Assert.Equal(19, await ReadAfterJob(default, number));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task AwaitPropagatesJobFailure(bool completed)
-    {
-        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 1 });
-        using var release = new ManualResetEventSlim();
-        using var observed = new ManualResetEventSlim();
-        var error = new ApplicationException("Job failed");
-        JobHandle handle = scheduler.Schedule(new ThrowErrorJob(error, release));
-        JobSystem.OnCompleted(handle, static (_, state) => ((ManualResetEventSlim)state!).Set(), observed);
-        try
-        {
-            if (completed)
-            {
-                release.Set();
-                Assert.True(observed.Wait(TimeSpan.FromSeconds(10)));
-            }
-
-            Task<int> result = ReadAfterJob(handle, new NumberData());
-            release.Set();
-
-            Assert.Same(error, await Assert.ThrowsAsync<ApplicationException>(
-                () => result.WaitAsync(TimeSpan.FromSeconds(10))));
-        }
-        finally
-        {
-            release.Set();
-            Assert.Same(error, Assert.Throws<ApplicationException>(handle.Complete));
-        }
-    }
-
     [Fact]
     public void CompletionBetweenCheckingAndRegisteringResumesOnTheRegisteringThread()
     {

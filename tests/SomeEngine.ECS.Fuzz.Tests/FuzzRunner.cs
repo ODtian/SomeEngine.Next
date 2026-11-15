@@ -433,22 +433,22 @@ internal sealed class EcsFuzzRunner
                 _world.Disable<FuzzEnableable>(GetActual(command.EntityId));
                 break;
             case FuzzCommandKind.AddSparse:
-                _world.AddSparse(GetActual(command.EntityId), new FuzzSparse { Value = command.Value });
+                _world.Add(GetActual(command.EntityId), new FuzzSparse { Value = command.Value });
                 break;
             case FuzzCommandKind.ReplaceSparse:
-                _world.ReplaceSparse(GetActual(command.EntityId), new FuzzSparse { Value = command.Value });
+                _world.Set(GetActual(command.EntityId), new FuzzSparse { Value = command.Value });
                 break;
             case FuzzCommandKind.RemoveSparse:
-                _world.RemoveSparse<FuzzSparse>(GetActual(command.EntityId));
+                _world.Remove<FuzzSparse>(GetActual(command.EntityId));
                 break;
             case FuzzCommandKind.AddShared:
                 _world.Add(GetActual(command.EntityId), new FuzzShared(command.Value));
                 break;
             case FuzzCommandKind.ReplaceShared:
-                _world.SetShared(GetActual(command.EntityId), new FuzzShared(command.Value));
+                _world.Set(GetActual(command.EntityId), new FuzzShared(command.Value));
                 break;
             case FuzzCommandKind.RemoveShared:
-                _world.RemoveShared<FuzzShared>(GetActual(command.EntityId));
+                _world.Remove<FuzzShared>(GetActual(command.EntityId));
                 break;
             case FuzzCommandKind.AddIndexed:
                 _world.Add(GetActual(command.EntityId), new FuzzIndexed(command.Value));
@@ -741,16 +741,16 @@ internal sealed class EcsFuzzRunner
         Entity entity,
         ModelEntity expected)
     {
-        bool hasSparse = _world.HasSparse<FuzzSparse>(entity);
+        bool hasSparse = _world.Has<FuzzSparse>(entity);
         if (hasSparse != (expected.Sparse is not null) ||
-            hasSparse && _world.ReadSparse<FuzzSparse>(entity).Value != expected.Sparse)
+            hasSparse && _world.Read<FuzzSparse>(entity).Value != expected.Sparse)
         {
             Fail(stepIndex, "sparse-state", $"Logical entity {logicalId}/{entity} sparse state differed.");
         }
 
         bool hasShared = _world.Has<FuzzShared>(entity);
         if (hasShared != (expected.Shared is not null) ||
-            hasShared && _world.ReadShared<FuzzShared>(entity).Value != expected.Shared)
+            hasShared && _world.Read<FuzzShared>(entity).Value != expected.Shared)
         {
             Fail(stepIndex, "shared-state", $"Logical entity {logicalId}/{entity} shared state differed.");
         }
@@ -846,7 +846,7 @@ internal sealed class EcsFuzzRunner
                 Fail(stepIndex, "relation-identity", $"Relation {source}>{target} had no live edge.");
             }
             RelationEndpoints<FuzzRelation> endpoints =
-                _world.ReadComponentData<RelationEndpoints<FuzzRelation>>(edge.Entity);
+                _world.ReadValue<RelationEndpoints<FuzzRelation>>(edge.Entity);
             if (endpoints.Source != GetActual(source) || endpoints.Target != GetActual(target) ||
                 _world.Read<FuzzRelation>(edge.Entity).Value != _reference.RelationValue(source, target))
             {

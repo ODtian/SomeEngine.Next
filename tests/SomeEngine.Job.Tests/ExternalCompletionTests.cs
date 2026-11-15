@@ -104,7 +104,7 @@ public sealed class ExternalCompletionTests
             source.Complete();
         JobHandle handle = scheduler.CreateExternalFenceHandle(source.Wait());
         int[] values = [0];
-        JobHandle read = scheduler.Schedule(new ReadNumber(source, values), handle);
+        JobHandle read = scheduler.Schedule(new ReadNumber(source, values), dependency: handle);
         if (!completed)
             source.Complete();
         read.Complete();

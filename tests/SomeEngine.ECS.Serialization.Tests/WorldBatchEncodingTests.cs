@@ -46,7 +46,7 @@ public sealed class WorldBatchEncodingTests
     public void SharedCodecStateRetainsItsWriteOrderAndExternalReferences()
     {
         var state = new WriteCount();
-        var registry = new SerializationRegistry().RegisterCodec<CountedRow, CountedRowCodec>(
+        var registry = new SerializationRegistry().Register<CountedRow, CountedRowCodec>(
             new(Guid.Parse("395299C1-7327-41CB-9CB0-9670193668EF"), "counted rows", 0x1810202600000001ul), new(state));
         using var world = new World();
         var entities = new Entity[1024];

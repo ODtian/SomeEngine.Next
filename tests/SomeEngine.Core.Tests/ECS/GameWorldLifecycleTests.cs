@@ -16,7 +16,7 @@ public sealed class GameWorldLifecycleTests
         var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
         var jobs = (WorldJobs)gameWorld.World.Execution!;
         _ = jobs.Scheduler.Schedule(new BlockingJob(state),
-            jobs.CollectAccess(new SystemAccesses().ReadRandom<LocalTransform>()));
+            jobs.CollectAccess(new SystemAccesses().Read<LocalTransform>()));
         Assert.True(state.Started.Wait(TimeSpan.FromSeconds(5)));
 
         Task<Exception?> disposal = StartLongRunning(gameWorld.Dispose);
@@ -90,7 +90,7 @@ public sealed class GameWorldLifecycleTests
         using var runtime = new JobRuntimeScope();
         var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
 
-        JobHandle disposer = JobSystem.Schedule(new DisposeGameWorldJob(gameWorld));
+        JobHandle disposer = JobSystem.Current.Schedule(new DisposeGameWorldJob(gameWorld));
         InvalidOperationException error =
             Assert.Throws<InvalidOperationException>(() => disposer.Complete());
 

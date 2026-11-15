@@ -14,7 +14,7 @@ public sealed class PayloadLaneTests
     {
         var sink = new List<string>();
 
-        JobSystem.Schedule(new RefContainingPayloadJob(sink, "ran")).Complete();
+        JobSystem.Current.Schedule(new RefContainingPayloadJob(sink, "ran")).Complete();
 
         Assert.Equal(["ran"], sink);
     }
@@ -25,14 +25,14 @@ public sealed class PayloadLaneTests
         var sink = new List<string>();
 
         JobSystem.ManagedPayloadPolicy = ManagedPayloadPolicy.Warn;
-        JobSystem.Schedule(new RefContainingPayloadJob(sink, "warned")).Complete();
+        JobSystem.Current.Schedule(new RefContainingPayloadJob(sink, "warned")).Complete();
 
         Assert.Equal(["warned"], sink);
         Assert.Equal(1, JobSystem.GetStats().ManagedPayloadWarnings);
 
         JobSystem.ManagedPayloadPolicy = ManagedPayloadPolicy.Reject;
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            JobSystem.Schedule(new RefContainingPayloadJob(sink, "rejected")));
+            JobSystem.Current.Schedule(new RefContainingPayloadJob(sink, "rejected")));
 
         Assert.Equal(["warned"], sink);
     }
@@ -67,7 +67,7 @@ public sealed class PayloadLaneTests
         var target = new object();
         var weak = new WeakReference(target);
 
-        JobSystem.Schedule(new RefContainingLifetimeJob(target)).Complete();
+        JobSystem.Current.Schedule(new RefContainingLifetimeJob(target)).Complete();
         target = null;
 
         return weak;
@@ -79,7 +79,7 @@ public sealed class PayloadLaneTests
         var target = new object();
         var weak = new WeakReference(target);
 
-        JobSystem.ScheduleParallel(new RefContainingParallelLifetimeJob(target), 4, 1).Complete();
+        JobSystem.Current.ScheduleParallel(new RefContainingParallelLifetimeJob(target), 4, 1).Complete();
         target = null;
 
         return weak;

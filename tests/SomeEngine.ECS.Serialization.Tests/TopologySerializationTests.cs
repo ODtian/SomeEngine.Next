@@ -93,7 +93,7 @@ public sealed class TopologySerializationTests
     [Fact]
     public void RegisterRelationTopology_CustomKeyRequiresOrdinaryTablePayload()
     {
-        var registry = new SerializationRegistry().RegisterSparse<NonTableRelationPayload>(SaveTypes.Key<NonTableRelationPayload>());
+        var registry = new SerializationRegistry().Register<NonTableRelationPayload>(SaveTypes.Key<NonTableRelationPayload>());
         var topologyKey = new SerializationTypeKey(
             Guid.Parse("1B129490-A7B3-40CC-99ED-C6229FE8F9F5"),
             "non-table-relation-topology",

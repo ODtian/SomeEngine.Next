@@ -14,13 +14,13 @@ public sealed class EventLogTests
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         using var written = new ManualResetEventSlim();
-        JobHandle reading = scheduler.Schedule(new HoldEmptyRead(reader, empty, entered, release), empty.Read, dependency: empty.Ready);
+        JobHandle reading = scheduler.Schedule(new HoldEmptyRead(reader, empty, entered, release), [empty.Read], dependency: empty.Ready);
         JobHandle published = default;
         try
         {
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
             EventWriteRange next = log.ReserveRange(1);
-            JobHandle writing = scheduler.Schedule(new FillEvents(log, next, [47], written), next.Write, dependency: next.Ready);
+            JobHandle writing = scheduler.Schedule(new FillEvents(log, next, [47], written), [next.Write], dependency: next.Ready);
             published = log.Publish(next, writing);
             Assert.True(written.Wait(TimeSpan.FromSeconds(5)));
             release.Set();
@@ -153,14 +153,14 @@ public sealed class EventLogTests
         using var written = new ManualResetEventSlim();
         int[] observed = new int[2];
         JobHandle reading = scheduler.Schedule(new HoldRead(reader, earlier, observed, entered, release),
-            earlier.Read, dependency: earlier.Ready);
+            [earlier.Read], dependency: earlier.Ready);
         JobHandle published = default;
         try
         {
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
             EventWriteRange next = log.ReserveRange(1);
             next.Ready.Complete();
-            JobHandle writing = scheduler.Schedule(new FillEvents(log, next, [23], written), next.Write,
+            JobHandle writing = scheduler.Schedule(new FillEvents(log, next, [23], written), [next.Write],
                 dependency: next.Ready);
             published = log.Publish(next, writing);
             Assert.True(written.Wait(TimeSpan.FromSeconds(5)));
@@ -188,13 +188,13 @@ public sealed class EventLogTests
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         int[] observed = new int[2];
-        JobHandle reading = scheduler.Schedule(new HoldRead(reader, earlier, observed, entered, release), earlier.Read);
+        JobHandle reading = scheduler.Schedule(new HoldRead(reader, earlier, observed, entered, release), [earlier.Read]);
         JobHandle published = default;
         try
         {
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
             EventWriteRange next = log.ReserveRange(2);
-            JobHandle writing = scheduler.Schedule(new FillEvents(log, next, [5, 6]), next.Write, dependency: next.Ready);
+            JobHandle writing = scheduler.Schedule(new FillEvents(log, next, [5, 6]), [next.Write], dependency: next.Ready);
             published = log.Publish(next, writing);
             release.Set();
             published.Complete();
@@ -234,7 +234,7 @@ public sealed class EventLogTests
         int[] values = [0];
         JobResourceAccess write = JobResourceAccess.Write(scheduler, values);
         JobResourceAccess read = JobResourceAccess.Read(scheduler, values);
-        JobHandle produced = scheduler.Schedule(new SetValue(values), write);
+        JobHandle produced = scheduler.Schedule(new SetValue(values), [write]);
         var access = new StepAccess(produced, [read]);
         int[] result = [0];
         scheduler.Schedule(new ReadValue(values, result), access.Reads, dependency: access.Completed).Complete();
@@ -247,12 +247,12 @@ public sealed class EventLogTests
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
         using var log = new EventLog<int>(scheduler);
         using EventReader<int> reader = log.Watch();
-        JobHandle failed = scheduler.Schedule(new CommitPrefixAndFail(log), log.Write);
+        JobHandle failed = scheduler.Schedule(new CommitPrefixAndFail(log), [log.Write]);
         Assert.Throws<InvalidOperationException>(failed.Complete);
         EventReadRange range = reader.Capture();
         range.Ready.Complete();
         int[] result = [0];
-        scheduler.Schedule(new CopyEvent(reader, range, result), range.Read, dependency: range.Ready).Complete();
+        scheduler.Schedule(new CopyEvent(reader, range, result), [range.Read], dependency: range.Ready).Complete();
         Assert.Equal(73, result[0]);
         Assert.Equal(1ul, range.Through);
     }

@@ -283,7 +283,7 @@ public class SerializationTests
             Guid.Parse("A1000000-0000-0000-0000-00000000000B"),
             "Strict.Utf8.Component",
             0x1122334455667788ul);
-        var registry = new SerializationRegistry().RegisterCodec<SerName, SerNameCodec>(key, new SerNameCodec(calls));
+        var registry = new SerializationRegistry().Register<SerName, SerNameCodec>(key, new SerNameCodec(calls));
         using var stream = new MemoryStream();
 
         Assert.Throws<EncoderFallbackException>(() =>
@@ -748,7 +748,7 @@ public class SerializationTests
         world.Set(live, new SerVisible { Value = 5 });
         world.Disable<SerVisible>(live);
         world.Set(live, default(SerPlayerTag));
-        world.SetShared(live, new SerScene { Value = 11 });
+        world.Set(live, new SerScene { Value = 11 });
         world.AddBuffer<SerElement>(live);
         WriteBufferValues(
             world,
@@ -756,7 +756,7 @@ public class SerializationTests
             new SerElement { Value = 4 },
             new SerElement { Value = 5 },
             new SerElement { Value = 6 });
-        world.SetSparse(live, new SerSparse { Value = 12 });
+        world.Set(live, new SerSparse { Value = 12 });
         world.Set(live, new SerRelation { Value = 13 });
 
         using var first = new MemoryStream();
@@ -775,9 +775,9 @@ public class SerializationTests
         Assert.Equal(1, loaded.Read<SerPosition>(live).X);
         Assert.False(loaded.IsEnabled<SerVisible>(live));
         Assert.True(loaded.Has<SerPlayerTag>(live));
-        Assert.Equal(11, loaded.ReadShared<SerScene>(live).Value);
+        Assert.Equal(11, loaded.Read<SerScene>(live).Value);
         Assert.Equal([4, 5, 6], ReadBufferValues(loaded, live).Select(x => x.Value));
-        Assert.Equal(12, loaded.ReadSparse<SerSparse>(live).Value);
+        Assert.Equal(12, loaded.Read<SerSparse>(live).Value);
         Assert.Equal(13, loaded.Read<SerRelation>(live).Value);
 
         var reused = loaded.Create();
@@ -840,7 +840,7 @@ public class SerializationTests
             .Register<SerPosition, SerPositionFullCodec>(
                 new SerializationTypeKey(stableId, "SerPosition", 1));
         var readRegistry = new SerializationRegistry()
-            .RegisterCodec<SerPosition, SerPositionFullCodec>(
+            .Register<SerPosition, SerPositionFullCodec>(
                 new SerializationTypeKey(stableId, "SerPosition", 2), new SerPositionFullCodec(calls));
         using var stream = new MemoryStream();
 
@@ -876,7 +876,7 @@ public class SerializationTests
             "legacy-guid",
             0x1020304050607080ul);
         var registry = new SerializationRegistry()
-            .RegisterCodec<SerPosition, SerPositionFullCodec>(key, new SerPositionFullCodec(calls));
+            .Register<SerPosition, SerPositionFullCodec>(key, new SerPositionFullCodec(calls));
         byte[] envelope = CreateManualComponentEnvelope(key, legacyGuidEncoding: true);
 
         using var stream = new MemoryStream(envelope, writable: false);
@@ -895,7 +895,7 @@ public class SerializationTests
             "xy",
             0x2131415161718191ul);
         var registry = new SerializationRegistry()
-            .RegisterCodec<SerPosition, SerPositionFullCodec>(key, new SerPositionFullCodec(calls));
+            .Register<SerPosition, SerPositionFullCodec>(key, new SerPositionFullCodec(calls));
         byte[] envelope = CreateManualComponentEnvelope(key, legacyStringEncoding: true);
 
         using var stream = new MemoryStream(envelope, writable: false);
@@ -913,7 +913,7 @@ public class SerializationTests
             "legacy-schema32",
             0x31415161718191A1ul);
         var registry = new SerializationRegistry()
-            .RegisterCodec<SerPosition, SerPositionFullCodec>(key, new SerPositionFullCodec(calls));
+            .Register<SerPosition, SerPositionFullCodec>(key, new SerPositionFullCodec(calls));
         byte[] envelope = CreateManualComponentEnvelope(key, legacySchemaHash: 0x89ABCDEFu);
 
         using var stream = new MemoryStream(envelope, writable: false);
@@ -1079,9 +1079,9 @@ public class SerializationTests
             .Register<SerPosition>()
             .Register<SerVisible>()
             .Register<SerPlayerTag>()
-            .RegisterShared<SerScene>(SaveTypes.Key<SerScene>())
+            .Register<SerScene>(SaveTypes.Key<SerScene>())
             .RegisterBuffer<SerElement>(SaveTypes.Key<SerElement>())
-            .RegisterSparse<SerSparse>(SaveTypes.Key<SerSparse>())
+            .Register<SerSparse>(SaveTypes.Key<SerSparse>())
             .Register<SerRelation>();
     }
 

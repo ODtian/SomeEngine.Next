@@ -496,7 +496,7 @@ public sealed class DurableSaveStoreTests : IDisposable
         WritePositionGenerations(store, writeRegistry);
         var calls = new CodecCalls();
         var readRegistry = new SerializationRegistry()
-            .RegisterCodec<SerPosition, CancelingPositionCodec>(key, new CancelingPositionCodec(calls));
+            .Register<SerPosition, CancelingPositionCodec>(key, new CancelingPositionCodec(calls));
 
         Assert.Throws<OperationCanceledException>(
             () => LoadWorld(store, readRegistry));
@@ -516,7 +516,7 @@ public sealed class DurableSaveStoreTests : IDisposable
         WritePositionGenerations(store, writeRegistry);
         var calls = new CodecCalls();
         var readRegistry = new SerializationRegistry()
-            .RegisterCodec<SerPosition, OutOfMemoryPositionCodec>(key, new OutOfMemoryPositionCodec(calls));
+            .Register<SerPosition, OutOfMemoryPositionCodec>(key, new OutOfMemoryPositionCodec(calls));
 
         Assert.Throws<OutOfMemoryException>(
             () => LoadWorld(store, readRegistry));

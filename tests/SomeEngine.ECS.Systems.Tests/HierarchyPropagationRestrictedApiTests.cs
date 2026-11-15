@@ -41,10 +41,10 @@ public sealed class HierarchyPropagationRestrictedApiTests : JobTest
         Entity second = world.Create(new EscapeValue { Value = 22 });
         ulong before = world.Version;
         JobHandle propagation = HierarchyPropagation<EscapeDomain>.Schedule(world, [first, second],
-            new ReadOtherRoot(first, second), new SystemAccesses().WriteRandom<EscapeValue>());
+            new ReadOtherRoot(first, second), new SystemAccesses().Write<EscapeValue>());
         Assert.Throws<InvalidOperationException>(propagation.Complete);
-        Assert.Equal(11, world.ReadComponentData<EscapeValue>(first).Value);
-        Assert.Equal(22, world.ReadComponentData<EscapeValue>(second).Value);
+        Assert.Equal(11, world.ReadValue<EscapeValue>(first).Value);
+        Assert.Equal(22, world.ReadValue<EscapeValue>(second).Value);
         Assert.Equal(before, world.Version);
     }
 
@@ -56,10 +56,10 @@ public sealed class HierarchyPropagationRestrictedApiTests : JobTest
         Entity second = world.Create(new EscapeValue { Value = 22 });
         ulong before = world.Version;
         JobHandle propagation = HierarchyPropagation<EscapeDomain>.Schedule(world, [first, second],
-            new WriteOtherRoot(world, first, second), new SystemAccesses().WriteRandom<EscapeValue>());
+            new WriteOtherRoot(world, first, second), new SystemAccesses().Write<EscapeValue>());
         Assert.Throws<JobResourceSafetyException>(propagation.Complete);
-        Assert.Equal(11, world.ReadComponentData<EscapeValue>(first).Value);
-        Assert.Equal(22, world.ReadComponentData<EscapeValue>(second).Value);
+        Assert.Equal(11, world.ReadValue<EscapeValue>(first).Value);
+        Assert.Equal(22, world.ReadValue<EscapeValue>(second).Value);
         Assert.Equal(before, world.Version);
     }
 
@@ -67,14 +67,15 @@ public sealed class HierarchyPropagationRestrictedApiTests : JobTest
     public void PrebuiltQueryRequiresItsComponentReadDeclaration()
     {
         World world = CreateJobWorld();
-        Entity root = world.Create(new EscapeValue { Value = 11 }, new OtherValue { Value = 22 });
+        Entity root = world.Create(new EscapeValue { Value = 11 });
+        world.Add(root, new OtherValue { Value = 22 });
         Query query = world.Query(new QueryDescription().With<OtherValue>());
         var result = new PropagationResult();
         JobHandle propagation = HierarchyPropagation<EscapeDomain>.Schedule(world, [root],
-            new ReadUndeclaredQuery(query, result), new SystemAccesses().ReadRandom<EscapeValue>());
+            new ReadUndeclaredQuery(query, result), new SystemAccesses().Read<EscapeValue>());
         Assert.Throws<JobResourceSafetyException>(propagation.Complete);
         Assert.Empty(result.Entities);
-        Assert.Equal(22, world.ReadComponentData<OtherValue>(root).Value);
+        Assert.Equal(22, world.ReadValue<OtherValue>(root).Value);
     }
 
     [Fact]
@@ -87,10 +88,10 @@ public sealed class HierarchyPropagationRestrictedApiTests : JobTest
         JobHandle propagation = HierarchyPropagation<EscapeDomain>.Schedule(world, [first, second],
             new RecordCommands(commands, first, second), new SystemAccesses());
         propagation.Complete();
-        Assert.Equal(22, world.ReadComponentData<EscapeValue>(second).Value);
+        Assert.Equal(22, world.ReadValue<EscapeValue>(second).Value);
         Assert.Equal(1, commands.Count);
         commands.Playback();
-        Assert.Equal(999, world.ReadComponentData<EscapeValue>(second).Value);
+        Assert.Equal(999, world.ReadValue<EscapeValue>(second).Value);
     }
 
     [Fact]

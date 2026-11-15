@@ -183,7 +183,7 @@ public sealed class CollisionMaintenanceTests
         using var started = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         var move = new MoveBodyJob(writes, b, Box(0.6f), started, release);
-        JobHandle movement = jobs.Schedule(in move, ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Body>()));
+        JobHandle movement = jobs.Schedule(in move, ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<Body>()));
         try
         {
             Assert.True(started.Wait(TimeSpan.FromSeconds(10)));

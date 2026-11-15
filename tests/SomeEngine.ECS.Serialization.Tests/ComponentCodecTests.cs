@@ -31,8 +31,8 @@ public sealed class ComponentCodecTests
         using var world = new World();
         Entity referenced = world.Create(new DescribedPosition { Value = 2 });
         Entity entity = world.Create(new DescribedPosition { Value = 7, Target = referenced });
-        world.SetShared(entity, new DescribedGroup { Value = 4 });
-        world.SetSparse(entity, new DescribedLabel { Value = "stored" });
+        world.Set(entity, new DescribedGroup { Value = 4 });
+        world.Set(entity, new DescribedLabel { Value = "stored" });
         world.Add(entity, new DescribedVisibility());
         world.Disable<DescribedVisibility>(entity);
         world.AddBuffer<DescribedElement>(entity);
@@ -52,8 +52,8 @@ public sealed class ComponentCodecTests
         Assert.Equal(2, restored.Query<DescribedPosition>().Count);
         Entity target = restored.Read<DescribedPosition>(result).Target;
         Assert.Equal(2, restored.Read<DescribedPosition>(target).Value);
-        Assert.Equal(4, restored.ReadShared<DescribedGroup>(result).Value);
-        Assert.Equal("stored", restored.ReadSparse<DescribedLabel>(result).Value);
+        Assert.Equal(4, restored.Read<DescribedGroup>(result).Value);
+        Assert.Equal("stored", restored.Read<DescribedLabel>(result).Value);
         Assert.False(restored.IsEnabled<DescribedVisibility>(result));
         Assert.Equal(0, restored.Query<DescribedVisibility>().Count);
         Assert.Equal(1, restored.Query(new QueryDescription().WithDisabled<DescribedVisibility>()).Count);
@@ -67,7 +67,7 @@ public sealed class ComponentCodecTests
     {
         using var world = new World();
         Entity entity = world.Create(new DescribedPosition { Value = 12 });
-        world.SetSparse(entity, new DescribedLabel { Value = "default" });
+        world.Set(entity, new DescribedLabel { Value = "default" });
         var format = new SerializationTypeKey(new Guid("abca3391-45df-4b49-af0e-08acd1219041"), "shifted-position", 1);
         ComponentCodec write = ComponentCodec.Create<DescribedPosition, ShiftedPositionCodec>(format, new(11));
         ComponentCodec read = ComponentCodec.Create<DescribedPosition, ShiftedPositionCodec>(format, new(4));
@@ -80,7 +80,7 @@ public sealed class ComponentCodecTests
         Assert.Same(ComponentType.Of<DescribedPosition>(), write.Component);
         Assert.Equal(format, write.Format);
         Assert.Equal(19, restored.Read<DescribedPosition>(entity).Value);
-        Assert.Equal("default", restored.ReadSparse<DescribedLabel>(entity).Value);
+        Assert.Equal("default", restored.Read<DescribedLabel>(entity).Value);
         Assert.Equal(1, restored.Query<DescribedPosition>().Count);
     }
 

@@ -720,8 +720,8 @@ public sealed class PropertyAnimationTests
 
         Tick(systems, world, 0.5);
 
-        Assert.Equal(7, world.ReadSparse<SparseVisual>(target).Number);
-        Assert.Equal(0.5f, world.ReadSparse<SparseVisual>(target).Opacity);
+        Assert.Equal(7, world.Read<SparseVisual>(target).Number);
+        Assert.Equal(0.5f, world.Read<SparseVisual>(target).Opacity);
         Assert.NotEqual(before, world.ComponentDataWriteVersion<SparseVisual>(target));
     }
 

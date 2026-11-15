@@ -16,7 +16,7 @@ public struct RootPosition : global::SomeEngine.ECS.IComponent
     public int X;
 }
 
-public struct RootComponentBundle : global::SomeEngine.ECS.Components.IComponentBundle
+public partial struct RootComponentBundle : global::SomeEngine.ECS.Components.IComponentBundle
 {
     public RootPosition Position;
 }
@@ -38,7 +38,7 @@ public struct Position : SomeEngine.ECS.IComponent
     public int X;
 }
 
-public struct DuplicateBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct DuplicateBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public Position First;
     public Position Second;
@@ -59,7 +59,7 @@ public struct Likes : SomeEngine.ECS.IComponent
     public int Value;
 }
 
-public struct RelationBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct RelationBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public Likes Relation;
 }
@@ -76,7 +76,7 @@ using SomeEngine.ECS.Components;
 
 public readonly struct Scene : global::SomeEngine.ECS.Hierarchy.IHierarchyDomain { }
 
-public struct InvalidRelationshipBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct InvalidRelationshipBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public global::SomeEngine.ECS.Hierarchy.Parent<Scene> Parent;
     public global::SomeEngine.ECS.Hierarchy.Children<Scene> Children;
@@ -92,7 +92,7 @@ public struct InvalidRelationshipBundle : SomeEngine.ECS.Components.IComponentBu
         var diagnostics = RunGenerator("""
 using SomeEngine.ECS.Components;
 
-public struct InvalidBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct InvalidBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public int Count;
 }
@@ -107,7 +107,7 @@ public struct InvalidBundle : SomeEngine.ECS.Components.IComponentBundle
         var diagnostics = RunGenerator("""
 using SomeEngine.ECS.Components;
 
-public struct RecursiveBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct RecursiveBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public RecursiveBundle Self;
 }
@@ -127,7 +127,7 @@ public struct Item : SomeEngine.ECS.Components.IBufferElement
     public int Value;
 }
 
-public struct InvalidBufferBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct InvalidBufferBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public Item Item;
 }
@@ -147,7 +147,7 @@ public struct Scene : SomeEngine.ECS.ISharedComponent
     public int Value;
 }
 
-public struct InvalidSharedBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct InvalidSharedBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public Scene Scene;
 }

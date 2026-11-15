@@ -12,7 +12,7 @@ public sealed class CleanupResourceTests
         JobResource resource = scheduler.CreateResource();
         int[] values = [0];
         JobHandle cleanup = scheduler.ScheduleFinally(new RestoreValue(result, values),
-            [JobResourceAccess.Write(resource)], JobScheduleOptions.Default, dependency);
+            [JobResourceAccess.Write(resource)], options: JobScheduleOptions.Default, dependency: dependency);
         source.SetCanceled();
 
         Assert.ThrowsAny<OperationCanceledException>(cleanup.Complete);
@@ -31,7 +31,7 @@ public sealed class CleanupResourceTests
         int[] values = [0];
         JobHandle cleanup = scheduler.ScheduleFinally(
             new StartChild(scheduler, dependency.GetAwaiter(), resource, values, entered, release),
-            [JobResourceAccess.Write(resource)], JobScheduleOptions.Default, dependency);
+            [JobResourceAccess.Write(resource)], options: JobScheduleOptions.Default, dependency: dependency);
         Task completion = Task.Run(cleanup.Complete);
         try
         {
@@ -61,7 +61,7 @@ public sealed class CleanupResourceTests
         scheduler.CreateExternalFenceHandle(source.Task, [JobResourceAccess.Write(resource)]);
         int[] values = [0];
         JobHandle cleanup = scheduler.ScheduleFinally(new RestoreValue(result, values),
-            [JobResourceAccess.Write(resource)], JobScheduleOptions.Default, dependency);
+            [JobResourceAccess.Write(resource)], options: JobScheduleOptions.Default, dependency: dependency);
         try
         {
             Assert.Same(failure, Assert.Throws<ApplicationException>(dependency.Complete));
@@ -71,7 +71,7 @@ public sealed class CleanupResourceTests
 
             Assert.Same(failure, Assert.Throws<ApplicationException>(cleanup.Complete));
             int[] restored = [0];
-            scheduler.Schedule(new ReadValue(values, restored), JobResourceAccess.Read(resource)).Complete();
+            scheduler.Schedule(new ReadValue(values, restored), [JobResourceAccess.Read(resource)]).Complete();
             Assert.Equal(7, restored[0]);
         }
         finally
@@ -107,7 +107,7 @@ public sealed class CleanupResourceTests
         public void Execute()
         {
             Result.GetResult();
-            Scheduler.Schedule(new WriteAfterSignal(Values, Entered, Release), JobResourceAccess.Write(Resource));
+            Scheduler.Schedule(new WriteAfterSignal(Values, Entered, Release), [JobResourceAccess.Write(Resource)]);
         }
     }
 

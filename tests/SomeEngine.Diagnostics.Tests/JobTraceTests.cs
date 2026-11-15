@@ -17,7 +17,7 @@ public sealed class JobTraceTests
             using (EngineTrace.Start(path))
             {
                 JobHandle handle;
-                using (EngineTrace.BeginFrame(1)) handle = JobSystem.Schedule(new TracedJob());
+                using (EngineTrace.BeginFrame(1)) handle = JobSystem.Current.Schedule(new TracedJob());
                 using (EngineTrace.BeginFrame(2)) handle.Complete();
             }
             TraceAnalysis analysis = TraceAnalyzer.Analyze(TraceFile.Read(path));

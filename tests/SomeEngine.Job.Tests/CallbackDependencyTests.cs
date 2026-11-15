@@ -8,9 +8,9 @@ public sealed class CallbackDependencyTests
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         int value = 0;
         JobHandle input = scheduler.Schedule(
-            new CallbackJob(() => value = 7), new JobScheduleOptions(JobPriority.Low));
+            new CallbackJob(() => value = 7), options: new JobScheduleOptions(JobPriority.Low));
         JobHandle callback = scheduler.Schedule(
-            new CallbackJob(input.Complete), new JobScheduleOptions(JobPriority.High));
+            new CallbackJob(input.Complete), options: new JobScheduleOptions(JobPriority.High));
 
         Assert.Throws<InvalidOperationException>(callback.Complete);
         input.Complete();
@@ -32,12 +32,12 @@ public sealed class CallbackDependencyTests
             scheduler.Schedule(new CallbackJob(() =>
             {
                 submissionFailure = Record.Exception(() =>
-                    scheduler.Schedule(new CallbackJob(() => { }), combined));
+                    scheduler.Schedule(new CallbackJob(() => { }), dependency: combined));
                 submissionFinished.Set();
             }));
         }));
-        JobHandle successor = scheduler.Schedule(new CallbackJob(() => { }), parent);
-        JobHandle otherSuccessor = scheduler.Schedule(new CallbackJob(() => { }), parent);
+        JobHandle successor = scheduler.Schedule(new CallbackJob(() => { }), dependency: parent);
+        JobHandle otherSuccessor = scheduler.Schedule(new CallbackJob(() => { }), dependency: parent);
         combined = scheduler.CombineDependencies([successor, otherSuccessor]);
         inputsReady.Set();
 

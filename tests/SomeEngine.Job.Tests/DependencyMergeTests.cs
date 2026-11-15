@@ -27,14 +27,14 @@ public sealed class DependencyMergeTests
         JobHandle[] inputs = new JobHandle[512];
         for (int index = 0; index < values.Length; index++)
         {
-            JobHandle source = scheduler.Schedule(new WriteValue(values, index), new JobScheduleOptions(JobPriority.Low));
+            JobHandle source = scheduler.Schedule(new WriteValue(values, index), options: new JobScheduleOptions(JobPriority.Low));
             inputs[index] = source;
             inputs[inputs.Length - index - 1] = source;
         }
         int total = 0;
         JobHandle combined = scheduler.CombineDependencies(inputs);
         JobHandle consumer = scheduler.Schedule(new CallbackJob(() => total = values.Sum()),
-            new JobScheduleOptions(JobPriority.High), combined);
+            options: new JobScheduleOptions(JobPriority.High), dependency: combined);
 
         consumer.Complete();
 
@@ -57,7 +57,7 @@ public sealed class DependencyMergeTests
         inputs[256] = failed;
         bool consumerRan = false;
         JobHandle consumer = scheduler.Schedule(new CallbackJob(() => consumerRan = true),
-            scheduler.CombineDependencies(inputs));
+            dependency: scheduler.CombineDependencies(inputs));
 
         Assert.Throws<InvalidOperationException>(consumer.Complete);
         Assert.False(consumerRan);

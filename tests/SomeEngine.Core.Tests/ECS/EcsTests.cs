@@ -38,7 +38,7 @@ public class EcsTests
             var jobs = (WorldJobs)context.World.Execution!;
             JobHandle advanced = jobs.Scheduler.Schedule(
                 new AdvanceJob(context.World, entity, (float)context.DeltaTime),
-                jobs.CollectAccess(new SystemAccesses().WriteRandom<LocalTransform>()));
+                jobs.CollectAccess(new SystemAccesses().Write<LocalTransform>()));
             if (!context.World.Has<UpdatedTag>(entity))
             {
                 var commands = new global::SomeEngine.ECS.Commands.CommandBuffer(context.World);

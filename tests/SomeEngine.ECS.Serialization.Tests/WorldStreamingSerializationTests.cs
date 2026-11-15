@@ -241,13 +241,13 @@ public sealed class WorldStreamingSerializationTests
     {
         var registry = new SerializationRegistry()
             .Register<SerPosition>()
-            .RegisterSparse<SerSparse>(SaveTypes.Key<SerSparse>());
+            .Register<SerSparse>(SaveTypes.Key<SerSparse>());
         var first = new World();
         Entity firstEntity = first.Create(new SerPosition { X = 1, Y = 2 });
-        first.SetSparse(firstEntity, new SerSparse { Value = 3 });
+        first.Set(firstEntity, new SerSparse { Value = 3 });
         var second = new World();
         Entity secondEntity = second.Create(new SerPosition { X = 1, Y = 2 });
-        second.SetSparse(secondEntity, new SerSparse { Value = 3 });
+        second.Set(secondEntity, new SerSparse { Value = 3 });
 
         Digest256 firstHash = WorldSerializer.ComputeWorldStateHash(first, registry);
         Digest256 repeatedHash = WorldSerializer.ComputeWorldStateHash(first, registry);
@@ -407,7 +407,7 @@ public sealed class WorldStreamingSerializationTests
         const int entityCount = 20_000;
         var registry = new SerializationRegistry()
             .Register<SerPosition>()
-            .RegisterSparse<SerSparse>(SaveTypes.Key<SerSparse>());
+            .Register<SerSparse>(SaveTypes.Key<SerSparse>());
         using var world = new World(entityCount);
         var entities = new Entity[entityCount];
         for (int i = 0; i < entityCount; i++)
@@ -415,7 +415,7 @@ public sealed class WorldStreamingSerializationTests
             Entity entity = world.Create(new SerPosition { X = i, Y = -i });
             entities[i] = entity;
             if (i % 3 == 0)
-                world.SetSparse(entity, new SerSparse { Value = i });
+                world.Set(entity, new SerSparse { Value = i });
         }
 
         using var output = new NonSeekableWriteStream();
@@ -430,21 +430,21 @@ public sealed class WorldStreamingSerializationTests
             Assert.Equal(i, loaded.Read<SerPosition>(entities[i]).X);
             Assert.Equal(-i, loaded.Read<SerPosition>(entities[i]).Y);
             if (i % 3 == 0)
-                Assert.Equal(i, loaded.ReadSparse<SerSparse>(entities[i]).Value);
+                Assert.Equal(i, loaded.Read<SerSparse>(entities[i]).Value);
             else
-                Assert.False(loaded.HasSparse<SerSparse>(entities[i]));
+                Assert.False(loaded.Has<SerSparse>(entities[i]));
         }
     }
 
     [Fact]
     public void SparseMembershipWorkingSet_RespectsConfiguredLimit()
     {
-        var registry = new SerializationRegistry().RegisterSparse<SerSparse>(SaveTypes.Key<SerSparse>());
+        var registry = new SerializationRegistry().Register<SerSparse>(SaveTypes.Key<SerSparse>());
         var world = new World();
         for (int i = 0; i < 3; i++)
         {
             Entity entity = world.Create();
-            world.SetSparse(entity, new SerSparse { Value = i });
+            world.Set(entity, new SerSparse { Value = i });
         }
 
         using var rejected = new MemoryStream();
@@ -584,11 +584,11 @@ public sealed class WorldStreamingSerializationTests
     {
         var registry = new SerializationRegistry()
             .Register<SavedTrackedPosition>()
-            .RegisterSparse<SerSparse>(SaveTypes.Key<SerSparse>());
+            .Register<SerSparse>(SaveTypes.Key<SerSparse>());
         var world = new World();
         Entity first = world.Create(new SavedTrackedPosition { X = 1, Y = 2 });
         Entity second = world.Create(new SavedTrackedPosition { X = 3, Y = 4 });
-        world.SetSparse(second, new SerSparse { Value = 5 });
+        world.Set(second, new SerSparse { Value = 5 });
         ulong versionBefore = world.Version;
         ulong tickBefore = world.Version;
 

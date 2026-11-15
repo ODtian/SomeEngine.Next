@@ -13,7 +13,7 @@ public sealed class JobScopeTests
     [Fact]
     public void ParentWaitsForChildScheduledFromJobBody()
     {
-        JobSystem.Schedule(new ScopeData.ParentSchedulesChildJob(_data)).Complete();
+        JobSystem.Current.Schedule(new ScopeData.ParentSchedulesChildJob(_data)).Complete();
 
         Assert.Equal(1, _data.ChildCount);
     }
@@ -21,7 +21,7 @@ public sealed class JobScopeTests
     [Fact]
     public void ParentWaitsForGrandchildScheduledFromChildJob()
     {
-        JobSystem.Schedule(new ScopeData.ParentSchedulesGrandchildJob(_data)).Complete();
+        JobSystem.Current.Schedule(new ScopeData.ParentSchedulesGrandchildJob(_data)).Complete();
 
         Assert.Equal(1, _data.ChildCount);
         Assert.Equal(1, _data.GrandchildCount);
@@ -30,7 +30,7 @@ public sealed class JobScopeTests
     [Fact]
     public void RecursiveDynamicFanoutCompletesExpectedCount()
     {
-        JobSystem.Schedule(new ScopeData.RecursiveFanoutJob(_data, 4)).Complete();
+        JobSystem.Current.Schedule(new ScopeData.RecursiveFanoutJob(_data, 4)).Complete();
 
         Assert.Equal(5, _data.RecursiveCount);
     }
@@ -38,7 +38,7 @@ public sealed class JobScopeTests
     [Fact]
     public void ChildExceptionFaultsParentHandle()
     {
-        var handle = JobSystem.Schedule(new ScopeData.ParentSchedulesThrowingChildJob());
+        var handle = JobSystem.Current.Schedule(new ScopeData.ParentSchedulesThrowingChildJob());
 
         var ex = Assert.Throws<InvalidOperationException>(() => handle.Complete());
     }
@@ -64,7 +64,7 @@ public sealed class JobScopeTests
 
             public void Execute()
             {
-                JobSystem.Schedule(new ChildJob(_data));
+                JobSystem.Current.Schedule(new ChildJob(_data));
             }
         }
 
@@ -76,7 +76,7 @@ public sealed class JobScopeTests
 
             public void Execute()
             {
-                JobSystem.Schedule(new ChildSchedulesGrandchildJob(_data));
+                JobSystem.Current.Schedule(new ChildSchedulesGrandchildJob(_data));
             }
         }
 
@@ -84,7 +84,7 @@ public sealed class JobScopeTests
         {
             public void Execute()
             {
-                JobSystem.Schedule(new ThrowingChildJob());
+                JobSystem.Current.Schedule(new ThrowingChildJob());
             }
         }
 
@@ -105,7 +105,7 @@ public sealed class JobScopeTests
                 Interlocked.Increment(ref _data.RecursiveCount);
                 if (_remaining > 0)
                 {
-                    JobSystem.Schedule(new RecursiveFanoutJob(_data, _remaining - 1));
+                    JobSystem.Current.Schedule(new RecursiveFanoutJob(_data, _remaining - 1));
                 }
             }
         }
@@ -131,7 +131,7 @@ public sealed class JobScopeTests
             public void Execute()
             {
                 Interlocked.Increment(ref _data.ChildCount);
-                JobSystem.Schedule(new GrandchildJob(_data));
+                JobSystem.Current.Schedule(new GrandchildJob(_data));
             }
         }
 

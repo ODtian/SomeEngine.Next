@@ -35,10 +35,10 @@ public sealed class BufferJobAccessTests : JobTest
         JobHandle first = default;
         try
         {
-            first = world.Execution!.Scheduler!.Schedule(new BlockingReadJob<Element>(world, entity, firstStarted, releaseFirst), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().ReadRandom<Buffer<Element>>()));
+            first = world.Execution!.Scheduler!.Schedule(new BlockingReadJob<Element>(world, entity, firstStarted, releaseFirst), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Read<Buffer<Element>>()));
             Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            JobHandle second = world.Execution!.Scheduler!.Schedule(new SignalReadJob<Element>(world, entity, secondStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().ReadRandom<Buffer<Element>>()));
+            JobHandle second = world.Execution!.Scheduler!.Schedule(new SignalReadJob<Element>(world, entity, secondStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Read<Buffer<Element>>()));
             Assert.True(secondStarted.Wait(TimeSpan.FromSeconds(5)));
             second.Complete();
         }
@@ -66,11 +66,11 @@ public sealed class BufferJobAccessTests : JobTest
         JobHandle writer = default;
         try
         {
-            writer = world.Execution!.Scheduler!.Schedule(new BlockingWriteJob<Element>(world, entity, writerStarted, releaseWriter), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Buffer<Element>>()));
+            writer = world.Execution!.Scheduler!.Schedule(new BlockingWriteJob<Element>(world, entity, writerStarted, releaseWriter), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<Buffer<Element>>()));
             Assert.True(writerStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            JobHandle reader = world.Execution!.Scheduler!.Schedule(new SignalJob(readerStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().ReadRandom<Buffer<Element>>()));
-            JobHandle laterWriter = world.Execution!.Scheduler!.Schedule(new SignalJob(laterWriterStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Buffer<Element>>()));
+            JobHandle reader = world.Execution!.Scheduler!.Schedule(new SignalJob(readerStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Read<Buffer<Element>>()));
+            JobHandle laterWriter = world.Execution!.Scheduler!.Schedule(new SignalJob(laterWriterStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<Buffer<Element>>()));
 
             releaseWriter.Set();
             reader.Complete();
@@ -108,11 +108,11 @@ public sealed class BufferJobAccessTests : JobTest
         JobHandle blocker = default;
         try
         {
-            blocker = world.Execution!.Scheduler!.Schedule(new BlockingWriteJob<Element>(world, entity, blockerStarted, releaseBlocker), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Buffer<Element>>()));
+            blocker = world.Execution!.Scheduler!.Schedule(new BlockingWriteJob<Element>(world, entity, blockerStarted, releaseBlocker), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<Buffer<Element>>()));
             Assert.True(blockerStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            JobHandle otherType = world.Execution!.Scheduler!.Schedule(new SignalWriteJob<OtherElement>(world, otherTypeEntity, otherTypeStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Buffer<OtherElement>>()));
-            JobHandle otherWorldHandle = otherWorld.Execution!.Scheduler!.Schedule(new SignalWriteJob<Element>(otherWorld, otherWorldEntity, otherWorldStarted), ((WorldJobs)otherWorld.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Buffer<Element>>()));
+            JobHandle otherType = world.Execution!.Scheduler!.Schedule(new SignalWriteJob<OtherElement>(world, otherTypeEntity, otherTypeStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<Buffer<OtherElement>>()));
+            JobHandle otherWorldHandle = otherWorld.Execution!.Scheduler!.Schedule(new SignalWriteJob<Element>(otherWorld, otherWorldEntity, otherWorldStarted), ((WorldJobs)otherWorld.Execution!).CollectAccess(new SystemAccesses().Write<Buffer<Element>>()));
 
             Assert.True(otherTypeStarted.Wait(TimeSpan.FromSeconds(5)));
             Assert.True(otherWorldStarted.Wait(TimeSpan.FromSeconds(5)));
@@ -141,7 +141,7 @@ public sealed class BufferJobAccessTests : JobTest
         // the synchronous logical storage owner was released.
         world.Add(entity, new ProbeComponent { Value = 1 });
         using var started = new ManualResetEventSlim();
-        world.Execution!.Scheduler!.Schedule(new SignalWriteJob<Element>(world, entity, started), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Buffer<Element>>()))
+        world.Execution!.Scheduler!.Schedule(new SignalWriteJob<Element>(world, entity, started), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<Buffer<Element>>()))
             .Complete();
         Assert.True(started.IsSet);
     }
@@ -211,7 +211,7 @@ public sealed class BufferJobAccessTests : JobTest
             mutationThread.Start();
             Assert.True(hookStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            later = world.Execution!.Scheduler!.Schedule(new SignalWriteJob<Element>(world, entity, laterJobStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Buffer<Element>>()));
+            later = world.Execution!.Scheduler!.Schedule(new SignalWriteJob<Element>(world, entity, laterJobStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<Buffer<Element>>()));
             laterRegistered.Set();
 
             Assert.True(nestedBorrowCompleted.Wait(TimeSpan.FromSeconds(5)));

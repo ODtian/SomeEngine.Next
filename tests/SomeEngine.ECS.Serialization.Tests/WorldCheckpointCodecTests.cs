@@ -18,10 +18,10 @@ public sealed class WorldCheckpointCodecTests
         Entity first = source.Create(new SerPosition { X = 1.25f, Y = -3.5f });
         source.Set(first, new SerVisible { Value = 17 });
         source.Set(first, default(SerPlayerTag));
-        source.SetShared(first, new SerScene { Value = 91 });
+        source.Set(first, new SerScene { Value = 91 });
         source.AddBuffer<SerElement>(first);
         WriteBuffer(source, first, 2, 4, 8, 16);
-        source.SetSparse(first, new SerSparse { Value = 123 });
+        source.Set(first, new SerSparse { Value = 123 });
         Entity second = source.Create(new SerPosition { X = 7, Y = 9 });
         source.Destroy(second);
 
@@ -41,9 +41,9 @@ public sealed class WorldCheckpointCodecTests
         Assert.Equal(-3.5f, loaded.Read<SerPosition>(first).Y);
         Assert.Equal(17, loaded.Read<SerVisible>(first).Value);
         Assert.True(loaded.Has<SerPlayerTag>(first));
-        Assert.Equal(91, loaded.ReadShared<SerScene>(first).Value);
+        Assert.Equal(91, loaded.Read<SerScene>(first).Value);
         Assert.Equal(new[] { 2, 4, 8, 16 }, ReadBuffer(loaded, first));
-        Assert.Equal(123, loaded.ReadSparse<SerSparse>(first).Value);
+        Assert.Equal(123, loaded.Read<SerSparse>(first).Value);
     }
 
     [Fact]
@@ -409,9 +409,9 @@ public sealed class WorldCheckpointCodecTests
             .RegisterCodec<SerPosition, SerPositionFullCodec>(default)
             .RegisterCodec<SerVisible, VisibleCheckpointCodec>(default)
             .Register<SerPlayerTag>()
-            .RegisterShared<SerScene, SceneCheckpointCodec>(SaveTypes.Key<SerScene>())
+            .Register<SerScene, SceneCheckpointCodec>(SaveTypes.Key<SerScene>())
             .RegisterBuffer<SerElement, ElementCheckpointCodec>(SaveTypes.Key<SerElement>())
-            .RegisterSparse<SerSparse, SparseCheckpointCodec>(SaveTypes.Key<SerSparse>());
+            .Register<SerSparse, SparseCheckpointCodec>(SaveTypes.Key<SerSparse>());
 
     private static SerializationRegistry PositionRegistry() =>
         new SerializationRegistry().RegisterCodec<SerPosition, SerPositionFullCodec>(default);

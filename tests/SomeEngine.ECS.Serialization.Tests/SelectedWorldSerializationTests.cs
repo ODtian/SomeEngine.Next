@@ -15,7 +15,8 @@ public sealed class SelectedWorldSerializationTests
     {
         var calls = new ResourceCalls();
         using var source = new World();
-        Entity member = source.Create(new SerPosition { X = 11, Y = 17 }, new UnstoredResource(calls));
+        Entity member = source.Create(new SerPosition { X = 11, Y = 17 });
+        source.Add(member, new UnstoredResource(calls));
         source.Create(new SerVelocity { X = 23 });
         calls.Clones = calls.Releases = 0;
         calls.RejectClone = true;
@@ -44,7 +45,7 @@ public sealed class SelectedWorldSerializationTests
     public void SelectedWorldPayloadRestoresItsMembersStorageAndTopology()
     {
         var registry = new SerializationRegistry().Register<SerPosition>()
-            .RegisterShared<SerScene>(SaveTypes.Key<SerScene>()).RegisterSparse<SerSparse>(SaveTypes.Key<SerSparse>())
+            .Register<SerScene>(SaveTypes.Key<SerScene>()).Register<SerSparse>(SaveTypes.Key<SerSparse>())
             .RegisterBuffer<SerElement>(SaveTypes.Key<SerElement>()).Register<EntityGroupKey>()
             .RegisterHierarchy<EntityGroupDomain>(SaveTypes.Key<EntityGroupDomain>())
             .Register<EntityGroupLink>().RegisterRelation<EntityGroupLink>();
@@ -54,10 +55,10 @@ public sealed class SelectedWorldSerializationTests
         Entity excluded = source.Create(new SerPosition { X = 3 });
         Hierarchy<EntityGroupDomain>.SetParent(source, child, parent);
         RelationEdge<EntityGroupLink> edge = Relations<EntityGroupLink>.CreateEdge(source, parent, child, new() { Value = 13 });
-        source.SetShared(excluded, new SerScene { Value = 7 });
-        source.SetShared(child, new SerScene { Value = 31 });
-        source.SetSparse(excluded, new SerSparse { Value = 41 });
-        source.SetSparse(child, new SerSparse { Value = 37 });
+        source.Set(excluded, new SerScene { Value = 7 });
+        source.Set(child, new SerScene { Value = 31 });
+        source.Set(excluded, new SerSparse { Value = 41 });
+        source.Set(child, new SerSparse { Value = 37 });
         source.Set(child, new EntityGroupKey { Value = 29 });
         source.AddBuffer<SerElement>(child);
         using (DynamicBuffer<SerElement> buffer = source.GetBuffer<SerElement>(child)) buffer.Add(new() { Value = 43 });
@@ -70,8 +71,8 @@ public sealed class SelectedWorldSerializationTests
         Assert.Equal(3, restored.EntityCount);
         Assert.False(restored.IsAlive(excluded));
         Assert.Equal(2, restored.Read<SerPosition>(child).X);
-        Assert.Equal(31, restored.ReadShared<SerScene>(child).Value);
-        Assert.Equal(37, restored.ReadSparse<SerSparse>(child).Value);
+        Assert.Equal(31, restored.Read<SerScene>(child).Value);
+        Assert.Equal(37, restored.Read<SerSparse>(child).Value);
         using (ReadOnlyBuffer<SerElement> buffer = restored.ReadBuffer<SerElement>(child)) Assert.Equal(43, buffer[0].Value);
         using (IndexMembers members = restored.Index<EntityGroupKey, int>().Find(29)) Assert.Equal([child], members.Entities.ToArray());
         Assert.Equal(parent, Hierarchy<EntityGroupDomain>.GetParent(restored, child));

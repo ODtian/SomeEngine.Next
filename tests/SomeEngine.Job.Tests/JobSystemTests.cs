@@ -8,7 +8,7 @@ public sealed class JobSystemTests
     public void SchedulingOneJobIncrementsItsResultOnce()
     {
         int[] counts = [0];
-        JobSystem.Schedule(new IncrementJob(counts)).Complete();
+        JobSystem.Current.Schedule(new IncrementJob(counts)).Complete();
         Assert.Equal(1, counts[0]);
     }
 
@@ -16,7 +16,7 @@ public sealed class JobSystemTests
     public void ParallelDispatchWritesEveryIndex()
     {
         var values = new int[100];
-        JobSystem.ScheduleParallel(new WriteIndexJob(values), values.Length, 10).Complete();
+        JobSystem.Current.ScheduleParallel(new WriteIndexJob(values), values.Length, 10).Complete();
         Assert.Equal(Enumerable.Range(0, values.Length).Select(index => index * 2), values);
     }
 
@@ -24,7 +24,7 @@ public sealed class JobSystemTests
     public void RecursiveCompletionWaitsForEveryChild()
     {
         int[] counts = [0];
-        JobSystem.Schedule(new RecursiveJob(counts, 10)).Complete();
+        JobSystem.Current.Schedule(new RecursiveJob(counts, 10)).Complete();
         Assert.Equal(11, counts[0]);
     }
 
@@ -33,7 +33,7 @@ public sealed class JobSystemTests
     {
         int[] counts = [0];
         for (int index = 0; index < 17_000; index++)
-            JobSystem.Schedule(new IncrementJob(counts)).Complete();
+            JobSystem.Current.Schedule(new IncrementJob(counts)).Complete();
         Assert.Equal(17_000, counts[0]);
     }
 
@@ -43,8 +43,8 @@ public sealed class JobSystemTests
         int[] counts = [0];
         for (int index = 0; index < 17_000; index++)
         {
-            JobHandle first = JobSystem.Schedule(new IncrementJob(counts));
-            JobSystem.Schedule(new IncrementJob(counts), first).Complete();
+            JobHandle first = JobSystem.Current.Schedule(new IncrementJob(counts));
+            JobSystem.Current.Schedule(new IncrementJob(counts), dependency: first).Complete();
         }
         Assert.Equal(34_000, counts[0]);
     }
@@ -64,7 +64,7 @@ public sealed class JobSystemTests
         public void Execute()
         {
             Interlocked.Increment(ref counts[0]);
-            if (depth > 0) JobSystem.Schedule(new RecursiveJob(counts, depth - 1));
+            if (depth > 0) JobSystem.Current.Schedule(new RecursiveJob(counts, depth - 1));
         }
     }
 }

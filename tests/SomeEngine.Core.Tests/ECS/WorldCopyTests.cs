@@ -26,7 +26,7 @@ public sealed class WorldCopyTests
         Assert.False(world.Has<CopyExtra>(target));
         Assert.Equal(2, world.Read<BundlePosition>(target).X);
         Assert.Equal(7, world.ReadShared<BundleScene>(target).Value);
-        Assert.Equal(3, world.ReadSparse<BundleDamage>(target).Amount);
+        Assert.Equal(3, world.Read<BundleDamage>(target).Amount);
         using (IndexMembers matches = names.Find("source")) Assert.Equal([source, target], matches.Entities.ToArray());
         var values = world.GetBuffer<BundleItem>(target);
         try { values[0] = new(40); }

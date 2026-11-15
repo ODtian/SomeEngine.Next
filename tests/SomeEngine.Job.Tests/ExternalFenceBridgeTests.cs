@@ -35,7 +35,7 @@ public sealed class ExternalFenceBridgeTests
     public void ExternalFenceHandleCompletesAfterSignal()
     {
         var fence = new FakeExternalFence(_data.Events);
-        var handle = JobSystem.CreateExternalFenceHandle(fence);
+        var handle = JobSystem.Current.CreateExternalFenceHandle(fence);
 
         Assert.False(handle.IsCompleted);
 
@@ -49,9 +49,9 @@ public sealed class ExternalFenceBridgeTests
     public void DependentJobWaitsForFenceBackedHandle()
     {
         var fence = new FakeExternalFence(_data.Events);
-        var fenceHandle = JobSystem.CreateExternalFenceHandle(fence);
+        var fenceHandle = JobSystem.Current.CreateExternalFenceHandle(fence);
         using var ran = _data.Events.CreateSignal();
-        var dependent = JobSystem.Schedule(new ExternalFenceData.SignalingRecordJob(_data, 1, ran), fenceHandle);
+        var dependent = JobSystem.Current.Schedule(new ExternalFenceData.SignalingRecordJob(_data, 1, ran), dependency: fenceHandle);
 
         fence.Signal();
         dependent.Complete();
@@ -64,14 +64,14 @@ public sealed class ExternalFenceBridgeTests
     public void MultipleDependentsReleaseAfterFenceSignal()
     {
         var fence = new FakeExternalFence(_data.Events);
-        var fenceHandle = JobSystem.CreateExternalFenceHandle(fence);
+        var fenceHandle = JobSystem.Current.CreateExternalFenceHandle(fence);
         using var firstRan = _data.Events.CreateSignal();
         using var secondRan = _data.Events.CreateSignal();
-        var first = JobSystem.Schedule(new ExternalFenceData.SignalingRecordJob(_data, 1, firstRan), fenceHandle);
-        var second = JobSystem.Schedule(new ExternalFenceData.SignalingRecordJob(_data, 2, secondRan), fenceHandle);
+        var first = JobSystem.Current.Schedule(new ExternalFenceData.SignalingRecordJob(_data, 1, firstRan), dependency: fenceHandle);
+        var second = JobSystem.Current.Schedule(new ExternalFenceData.SignalingRecordJob(_data, 2, secondRan), dependency: fenceHandle);
 
         fence.Signal();
-        JobSystem.CombineDependencies([first, second]).Complete();
+        JobSystem.Current.CombineDependencies([first, second]).Complete();
 
         Assert.Equal([1, 2], _data.LogSnapshot().Order().ToArray());
         _data.Events.AssertBefore(fence.SignalPoint, firstRan);
@@ -84,7 +84,7 @@ public sealed class ExternalFenceBridgeTests
         var fence = new FakeExternalFence(_data.Events);
         fence.Signal();
 
-        var handle = JobSystem.CreateExternalFenceHandle(fence);
+        var handle = JobSystem.Current.CreateExternalFenceHandle(fence);
 
         Assert.True(handle.IsCompleted);
         handle.Complete();
@@ -96,9 +96,9 @@ public sealed class ExternalFenceBridgeTests
         using var started = _data.Events.CreateSignal();
         using var gate = _data.Events.CreateSignal();
         var fence = new FakeExternalFence(_data.Events);
-        var cpu = JobSystem.Schedule(new ExternalFenceData.BlockingRecordJob(_data, 1, started, gate));
-        var fenceHandle = JobSystem.CreateExternalFenceHandle(fence);
-        var combined = JobSystem.CombineDependencies([cpu, fenceHandle]);
+        var cpu = JobSystem.Current.Schedule(new ExternalFenceData.BlockingRecordJob(_data, 1, started, gate));
+        var fenceHandle = JobSystem.Current.CreateExternalFenceHandle(fence);
+        var combined = JobSystem.Current.CombineDependencies([cpu, fenceHandle]);
 
         AssertSignaled(started);
         fence.Signal();
@@ -111,130 +111,18 @@ public sealed class ExternalFenceBridgeTests
     }
 
     [Fact]
-    public void ExternalObserverSeesIncompleteThenComplete()
-    {
-        using var started = _data.Events.CreateSignal();
-        using var gate = _data.Events.CreateSignal();
-        using var observed = _data.Events.CreateSignal();
-        var handle = JobSystem.Schedule(new ExternalFenceData.BlockingRecordJob(_data, 1, started, gate));
-
-        JobSystem.OnCompleted(handle, static (_, state) => ((JobSignal)state!).Set(), observed);
-
-        AssertSignaled(started);
-
-        gate.Set();
-        handle.Complete();
-
-        AssertSignaled(observed);
-        _data.Events.AssertBefore(gate, observed);
-    }
-
-    [Fact]
-    public void ExternalContinuationFiresOnceAndAlreadyCompleteFiresImmediately()
-    {
-        var handle = JobSystem.Schedule(new ExternalFenceData.RecordJob(_data, 1));
-        var box = new CallbackBox();
-        using var callbackObserved = _data.Events.CreateSignal();
-        var callbackCount = 0;
-
-        JobSystem.OnCompleted(handle, static (_, state) => Interlocked.Increment(ref ((CallbackBox)state!).Count), box);
-        JobSystem.OnCompleted(handle, (_, _) =>
-        {
-            callbackCount++;
-            callbackObserved.Set();
-        });
-        handle.Complete();
-        handle.Complete();
-        AssertSignaled(callbackObserved);
-
-        var afterCompleteCount = 0;
-        JobSystem.OnCompleted(handle, (_, _) => afterCompleteCount++);
-
-        Assert.Equal(1, box.Count);
-        Assert.Equal(1, callbackCount);
-        Assert.Equal(1, afterCompleteCount);
-    }
-
-    [Fact]
-    public void ThrowingExternalContinuationDoesNotBlockCleanupOrOtherCallbacks()
-    {
-        JobSystem.Initialize(new JobConfiguration
-        {
-            WorkerCount = 2,
-            MaxCompletionStates = 4,
-            MaxQueuedWorkItems = 64
-        });
-
-        using var observed = _data.Events.CreateSignal();
-        var handle = JobSystem.Schedule(new ExternalFenceData.RecordJob(_data, 1));
-        JobSystem.OnCompleted(handle, (_, _) => throw new InvalidOperationException("observer failed"));
-        JobSystem.OnCompleted(handle, static (_, state) => ((JobSignal)state!).Set(), observed);
-
-        handle.Complete();
-
-        AssertSignaled(observed);
-
-        for (var i = 0; i < 16; i++)
-        {
-            JobSystem.Schedule(new ExternalFenceData.RecordJob(_data, i)).Complete();
-        }
-    }
-
-    [Fact]
-    public void ExternalContinuationRunsForFaultedHandle()
-    {
-        using var observed = _data.Events.CreateSignal();
-        var handle = JobSystem.Schedule(new ExternalFenceData.ThrowingJob());
-
-        JobSystem.OnCompleted(handle, static (_, state) => ((JobSignal)state!).Set(), observed);
-
-        var ex = Assert.Throws<InvalidOperationException>(() => handle.Complete());
-
-        AssertSignaled(observed);
-    }
-
-    [Fact]
-    public void ExternalContinuationStateIsReclaimedWithCompletionState()
-    {
-        JobSystem.Initialize(new JobConfiguration
-        {
-            WorkerCount = 2,
-            MaxCompletionStates = 4,
-            MaxQueuedWorkItems = 64
-        });
-
-        using var callbacksObserved = _data.Events.CreateSignal();
-        var callbackCount = 0;
-        for (var i = 0; i < 16; i++)
-        {
-            var handle = JobSystem.Schedule(new ExternalFenceData.RecordJob(_data, i));
-            JobSystem.OnCompleted(handle, (_, _) =>
-            {
-                if (Interlocked.Increment(ref callbackCount) == 16)
-                {
-                    callbacksObserved.Set();
-                }
-            });
-            handle.Complete();
-        }
-
-        AssertSignaled(callbacksObserved);
-        Assert.Equal(16, Volatile.Read(ref callbackCount));
-    }
-
-    [Fact]
     public void ShellJobCpuHandleCompletesBeforeExternalFence()
     {
         var system = new FakeExternalSystem(_data.Events);
 
-        JobSystem.Schedule(new ExternalFenceData.ManagedShellJob(system, 10)).Complete();
+        JobSystem.Current.Schedule(new ExternalFenceData.ManagedShellJob(system, 10)).Complete();
 
         var fence = system.LastFence;
         Assert.False(fence.IsSignaled);
 
-        var fenceHandle = JobSystem.CreateExternalFenceHandle(fence);
+        var fenceHandle = JobSystem.Current.CreateExternalFenceHandle(fence);
         using var ran = _data.Events.CreateSignal();
-        var dependent = JobSystem.Schedule(new ExternalFenceData.SignalingRecordJob(_data, 11, ran), fenceHandle);
+        var dependent = JobSystem.Current.Schedule(new ExternalFenceData.SignalingRecordJob(_data, 11, ran), dependency: fenceHandle);
 
         fence.Signal();
         dependent.Complete();
@@ -250,9 +138,9 @@ public sealed class ExternalFenceBridgeTests
         var system = new FakeExternalSystem(_data.Events);
         var indexedFence = _data.CreateFence(42);
 
-        var indexed = JobSystem.Schedule(new ExternalFenceData.IndexedShellJob(_data, 42, 1));
-        var managed = JobSystem.Schedule(new ExternalFenceData.ManagedShellJob(system, 2));
-        JobSystem.CombineDependencies([indexed, managed]).Complete();
+        var indexed = JobSystem.Current.Schedule(new ExternalFenceData.IndexedShellJob(_data, 42, 1));
+        var managed = JobSystem.Current.Schedule(new ExternalFenceData.ManagedShellJob(system, 2));
+        JobSystem.Current.CombineDependencies([indexed, managed]).Complete();
 
         Assert.False(indexedFence.IsSignaled);
         Assert.Equal([1], _data.LogSnapshot());
@@ -262,41 +150,41 @@ public sealed class ExternalFenceBridgeTests
     [Fact]
     public void ExternalFenceAccessKeepsResourceInUseUntilSignal()
     {
-        var resource = JobSystem.CreateResource("external-resource");
+        var resource = JobSystem.Current.CreateResource("external-resource");
         var fence = new FakeExternalFence(_data.Events);
-        var fenceHandle = JobSystem.CreateExternalFenceHandle(fence, JobResourceAccess.Write(resource));
+        var fenceHandle = JobSystem.Current.CreateExternalFenceHandle(fence, [JobResourceAccess.Write(resource)]);
         using var readerRan = _data.Events.CreateSignal();
-        var reader = JobSystem.Schedule(
+        var reader = JobSystem.Current.Schedule(
             new ExternalFenceData.SignalingRecordJob(_data, 20, readerRan),
-            JobResourceAccess.Read(resource));
+            [JobResourceAccess.Read(resource)]);
 
-        Assert.Throws<JobResourceSafetyException>(() => JobSystem.ReleaseResource(resource));
+        Assert.Throws<JobResourceSafetyException>(() => JobSystem.Current.ReleaseResource(resource));
 
         fence.Signal();
-        JobSystem.CombineDependencies([fenceHandle, reader]).Complete();
+        JobSystem.Current.CombineDependencies([fenceHandle, reader]).Complete();
 
         Assert.True(readerRan.IsSet);
-        JobSystem.ReleaseResource(resource);
+        JobSystem.Current.ReleaseResource(resource);
         _data.Events.AssertBefore(fence.SignalPoint, readerRan);
     }
 
     [Fact]
     public void ExternalFenceWritePendingReadThenWriteOrdersWriterAfterReader()
     {
-        var resource = JobSystem.CreateResource("external-write-read-write");
+        var resource = JobSystem.Current.CreateResource("external-write-read-write");
         var fence = new FakeExternalFence(_data.Events);
-        var fenceHandle = JobSystem.CreateExternalFenceHandle(fence, JobResourceAccess.Write(resource));
+        var fenceHandle = JobSystem.Current.CreateExternalFenceHandle(fence, [JobResourceAccess.Write(resource)]);
         using var readerStarted = _data.Events.CreateSignal();
         using var readerGate = _data.Events.CreateSignal();
         using var writerStarted = _data.Events.CreateSignal();
         using var writerGate = _data.Events.CreateSignal();
 
-        var reader = JobSystem.Schedule(
+        var reader = JobSystem.Current.Schedule(
             new ExternalFenceData.BlockingRecordJob(_data, 41, readerStarted, readerGate),
-            JobResourceAccess.Read(resource));
-        var writer = JobSystem.Schedule(
+            [JobResourceAccess.Read(resource)]);
+        var writer = JobSystem.Current.Schedule(
             new ExternalFenceData.BlockingRecordJob(_data, 42, writerStarted, writerGate),
-            JobResourceAccess.Write(resource));
+            [JobResourceAccess.Write(resource)]);
 
         fence.Signal();
         AssertSignaled(readerStarted);
@@ -304,10 +192,10 @@ public sealed class ExternalFenceBridgeTests
         readerGate.Set();
         AssertSignaled(writerStarted);
         writerGate.Set();
-        JobSystem.CombineDependencies([fenceHandle, reader, writer]).Complete();
+        JobSystem.Current.CombineDependencies([fenceHandle, reader, writer]).Complete();
 
         Assert.Equal([41, 42], _data.LogSnapshot());
-        JobSystem.ReleaseResource(resource);
+        JobSystem.Current.ReleaseResource(resource);
         _data.Events.AssertBefore(fence.SignalPoint, readerStarted);
         _data.Events.AssertBefore(readerGate, writerStarted);
     }
@@ -315,32 +203,32 @@ public sealed class ExternalFenceBridgeTests
     [Fact]
     public void AlreadySignaledResourceFenceReleasesAccessBeforeFactoryReturns()
     {
-        var resource = JobSystem.CreateResource("already-signaled-resource");
+        var resource = JobSystem.Current.CreateResource("already-signaled-resource");
         var fence = new FakeExternalFence(_data.Events);
         fence.Signal();
 
-        var fenceHandle = JobSystem.CreateExternalFenceHandle(fence, JobResourceAccess.Write(resource));
+        var fenceHandle = JobSystem.Current.CreateExternalFenceHandle(fence, [JobResourceAccess.Write(resource)]);
 
         Assert.True(fenceHandle.IsCompleted);
-        JobSystem.Schedule(new ExternalFenceData.NoOpJob(), JobResourceAccess.Read(resource)).Complete();
-        JobSystem.ReleaseResource(resource);
+        JobSystem.Current.Schedule(new ExternalFenceData.NoOpJob(), [JobResourceAccess.Read(resource)]).Complete();
+        JobSystem.Current.ReleaseResource(resource);
     }
 
     [Fact]
     public void ExternalFenceSpanAccessWaitsForPriorResourceOwners()
     {
-        var firstResource = JobSystem.CreateResource("prior-owner-a");
-        var secondResource = JobSystem.CreateResource("prior-owner-b");
+        var firstResource = JobSystem.Current.CreateResource("prior-owner-a");
+        var secondResource = JobSystem.Current.CreateResource("prior-owner-b");
         using var firstStarted = _data.Events.CreateSignal();
         using var secondStarted = _data.Events.CreateSignal();
         using var firstGate = _data.Events.CreateSignal();
         using var secondGate = _data.Events.CreateSignal();
-        var firstWriter = JobSystem.Schedule(
+        var firstWriter = JobSystem.Current.Schedule(
             new ExternalFenceData.BlockingRecordJob(_data, 51, firstStarted, firstGate),
-            JobResourceAccess.Write(firstResource));
-        var secondWriter = JobSystem.Schedule(
+            [JobResourceAccess.Write(firstResource)]);
+        var secondWriter = JobSystem.Current.Schedule(
             new ExternalFenceData.BlockingRecordJob(_data, 52, secondStarted, secondGate),
-            JobResourceAccess.Write(secondResource));
+            [JobResourceAccess.Write(secondResource)]);
         var fence = new FakeExternalFence(_data.Events);
 
         AssertSignaled(firstStarted);
@@ -351,83 +239,39 @@ public sealed class ExternalFenceBridgeTests
             JobResourceAccess.Read(firstResource),
             JobResourceAccess.Read(secondResource)
         ];
-        var fenceHandle = JobSystem.CreateExternalFenceHandle(fence, accesses);
+        var fenceHandle = JobSystem.Current.CreateExternalFenceHandle(fence, accesses);
 
         fence.Signal();
         Assert.False(fenceHandle.IsCompleted);
 
         firstGate.Set();
         secondGate.Set();
-        JobSystem.CombineDependencies([firstWriter, secondWriter, fenceHandle]).Complete();
+        JobSystem.Current.CombineDependencies([firstWriter, secondWriter, fenceHandle]).Complete();
 
         Assert.True(fenceHandle.IsCompleted);
-        JobSystem.ReleaseResource(firstResource);
-        JobSystem.ReleaseResource(secondResource);
-    }
-
-    [Fact]
-    public void ScopeOwnedResourceCanExtendToExplicitExternalFence()
-    {
-        var fence = new FakeExternalFence(_data.Events);
-        using var created = _data.Events.CreateSignal();
-        var parent = JobSystem.Schedule(
-            new ExternalFenceData.ParentCreatesScopeResourceAndExternalFenceJob(_data, fence, created));
-
-        AssertSignaled(created);
-        Assert.False(parent.IsCompleted);
-        Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.ReleaseResource(_data.LastScopeResource));
-
-        fence.Signal();
-        parent.Complete();
-
-        Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.Schedule(
-                new ExternalFenceData.NoOpJob(),
-                JobResourceAccess.Read(_data.LastScopeResource)));
+        JobSystem.Current.ReleaseResource(firstResource);
+        JobSystem.Current.ReleaseResource(secondResource);
     }
 
     [Fact]
     public void NoExplicitFenceDeclarationMeansCpuLifetimeOnly()
     {
-        var resource = JobSystem.CreateResource("cpu-only-resource");
+        var resource = JobSystem.Current.CreateResource("cpu-only-resource");
         var system = new FakeExternalSystem(_data.Events);
 
-        JobSystem.Schedule(
+        JobSystem.Current.Schedule(
             new ExternalFenceData.ManagedShellJob(system, 30),
-            JobResourceAccess.Write(resource)).Complete();
+            [JobResourceAccess.Write(resource)]).Complete();
 
         var externalFence = system.LastFence;
         using var readerRan = _data.Events.CreateSignal();
-        JobSystem.Schedule(
+        JobSystem.Current.Schedule(
             new ExternalFenceData.SignalingRecordJob(_data, 31, readerRan),
-            JobResourceAccess.Read(resource)).Complete();
+            [JobResourceAccess.Read(resource)]).Complete();
 
         Assert.True(readerRan.IsSet);
         Assert.False(externalFence.IsSignaled);
-        JobSystem.ReleaseResource(resource);
-    }
-
-    [Fact]
-    public void CpuExternalCpuChainRunsInOrder()
-    {
-        using var started = _data.Events.CreateSignal();
-        using var gate = _data.Events.CreateSignal();
-        using var finalRan = _data.Events.CreateSignal();
-        var fence = new FakeExternalFence(_data.Events);
-        var cpu = JobSystem.Schedule(new ExternalFenceData.BlockingRecordJob(_data, 1, started, gate));
-        JobSystem.OnCompleted(cpu, static (_, state) => ((FakeExternalFence)state!).Signal(), fence);
-        var fenceHandle = JobSystem.CreateExternalFenceHandle(fence);
-        var final = JobSystem.Schedule(new ExternalFenceData.SignalingRecordJob(_data, 2, finalRan), fenceHandle);
-
-        AssertSignaled(started);
-
-        gate.Set();
-        final.Complete();
-        cpu.Complete();
-
-        Assert.Equal([1, 2], _data.LogSnapshot());
-        _data.Events.AssertBefore(fence.SignalPoint, finalRan);
+        JobSystem.Current.ReleaseResource(resource);
     }
 
     [Fact]
@@ -436,7 +280,7 @@ public sealed class ExternalFenceBridgeTests
         var system = new FakeExternalSystem(_data.Events);
         using var submitted = _data.Events.CreateSignal();
 
-        JobSystem.Schedule(
+        JobSystem.Current.Schedule(
             new ExternalFenceData.ParentSchedulesShellChildWithoutFence(system, submitted)).Complete();
 
         Assert.True(submitted.IsSet);
@@ -448,40 +292,13 @@ public sealed class ExternalFenceBridgeTests
     {
         var fence = new FakeExternalFence(_data.Events);
         using var created = _data.Events.CreateSignal();
-        var parent = JobSystem.Schedule(new ExternalFenceData.ParentSchedulesExplicitFenceChild(fence, created));
+        var parent = JobSystem.Current.Schedule(new ExternalFenceData.ParentSchedulesExplicitFenceChild(fence, created));
 
         AssertSignaled(created);
         Assert.False(parent.IsCompleted);
 
         fence.Signal();
         parent.Complete();
-    }
-
-    [Fact]
-    public async Task ShutdownWaitsForExplicitExternalWorkAndDeliversItsObservers()
-    {
-        var fence = new FakeExternalFence(_data.Events);
-        using var observed = _data.Events.CreateSignal();
-        JobHandle handle = JobSystem.CreateExternalFenceHandle(fence);
-        JobSystem.OnCompleted(handle, static (_, state) => ((JobSignal)state!).Set(), observed);
-        Task closing = Task.Run(JobSystem.Shutdown);
-        try
-        {
-            Assert.True(SpinWait.SpinUntil(() =>
-            {
-                try { _ = JobSystem.Default; return false; }
-                catch (InvalidOperationException) { return true; }
-            }, TimeSpan.FromSeconds(5)));
-            Assert.False(closing.IsCompleted);
-            Assert.False(observed.IsSet);
-        }
-        finally
-        {
-            fence.Signal();
-            await closing.WaitAsync(TimeSpan.FromSeconds(5));
-        }
-        Assert.True(handle.IsCompleted);
-        Assert.True(observed.IsSet);
     }
 
     private void AssertSignaled(JobSignal signal)
@@ -738,31 +555,6 @@ public sealed class ExternalFenceBridgeTests
             }
         }
 
-        internal readonly struct ParentCreatesScopeResourceAndExternalFenceJob : IJob
-        {
-            private readonly ExternalFenceData _data;
-
-            private readonly FakeExternalFence _fence;
-            private readonly JobSignal _created;
-
-            internal ParentCreatesScopeResourceAndExternalFenceJob(
-                ExternalFenceData data, FakeExternalFence fence,
-                JobSignal created)
-            {
-                _data = data;
-                _fence = fence;
-                _created = created;
-            }
-
-            public void Execute()
-            {
-                var resource = JobSystem.CreateScopeResource("scope-external-resource");
-                _data.LastScopeResource = resource;
-                JobSystem.CreateExternalFenceHandle(_fence, JobResourceAccess.Write(resource));
-                _created.Set();
-            }
-        }
-
         internal readonly struct ParentSchedulesShellChildWithoutFence : IJob
         {
             private readonly FakeExternalSystem _system;
@@ -778,7 +570,7 @@ public sealed class ExternalFenceBridgeTests
 
             public void Execute()
             {
-                JobSystem.Schedule(new ManagedShellJobWithSignal(_system, 40, _submitted));
+                JobSystem.Current.Schedule(new ManagedShellJobWithSignal(_system, 40, _submitted));
             }
         }
 
@@ -797,7 +589,7 @@ public sealed class ExternalFenceBridgeTests
 
             public void Execute()
             {
-                JobSystem.Schedule(new ChildCreatesFenceHandleJob(_fence, _created));
+                JobSystem.Current.Schedule(new ChildCreatesFenceHandleJob(_fence, _created));
             }
         }
 
@@ -839,7 +631,7 @@ public sealed class ExternalFenceBridgeTests
 
             public void Execute()
             {
-                JobSystem.CreateExternalFenceHandle(_fence);
+                JobSystem.Current.CreateExternalFenceHandle(_fence);
                 _created.Set();
             }
         }

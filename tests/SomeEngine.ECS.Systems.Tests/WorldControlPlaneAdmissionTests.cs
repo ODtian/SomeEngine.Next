@@ -25,7 +25,7 @@ public sealed class WorldControlPlaneAdmissionTests : JobTest
             ulong acquired = await Task.Run(world.AcquireSystemVersion).WaitAsync(TimeSpan.FromSeconds(5));
             release.Set();
             await mutation.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.Equal(acquired + 1, world.ComponentDataWriteVersion<VersionedValue>(entity));
+            Assert.Equal(acquired + 1, world.ComponentWriteVersion<VersionedValue>(entity));
             Assert.Equal(acquired + 1, world.Version);
         }
         finally { release.Set(); await mutation.WaitAsync(TimeSpan.FromSeconds(10)); }
@@ -69,7 +69,7 @@ public sealed class WorldControlPlaneAdmissionTests : JobTest
             await Task.WhenAll(mutation, reading).WaitAsync(TimeSpan.FromSeconds(10));
             Assert.Equal(["write range ended", "query read"], events);
             Assert.Equal(7, value);
-            Assert.Equal(world.ComponentDataWriteVersion<VersionedValue>(entity), readVersion);
+            Assert.Equal(world.ComponentWriteVersion<VersionedValue>(entity), readVersion);
             Assert.Equal(world.Version, readVersion);
         }
         finally { release.Set(); await Task.WhenAll(mutation, reading).WaitAsync(TimeSpan.FromSeconds(10)); }

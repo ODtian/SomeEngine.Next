@@ -12,14 +12,14 @@ public sealed class SchedulerResourceBindingTests
         using var release = new ManualResetEventSlim();
         JobHandle writer = scheduler.Schedule(
             new WriteValue(values, 1, 17, entered, release),
-            JobResourceAccess.Write(scheduler, values, values.AsSpan(1, 1)));
+            [JobResourceAccess.Write(scheduler, values, values.AsSpan(1, 1))]);
         try
         {
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
             ReadOnlyMemory<int> memory = values.AsMemory(1, 2);
             JobHandle reader = scheduler.Schedule(
                 new CopyValue(memory, result),
-                JobResourceAccess.Read(scheduler, memory, 0, 1));
+                [JobResourceAccess.Read(scheduler, memory, 0, 1)]);
             release.Set();
             reader.Complete();
 
@@ -42,7 +42,7 @@ public sealed class SchedulerResourceBindingTests
         int[] result = new int[2];
 
         JobHandle incremented = first.Schedule(new IncrementValues(firstData.Values),
-            JobResourceAccess.Write<CounterData, CounterResources>(first, ref firstData));
+            [JobResourceAccess.Write<CounterData, CounterResources>(first, ref firstData)]);
         JobHandle scaled = first.ScheduleParallel(new ScaleValues(firstData.Values), 2, 1,
             [JobResourceAccess.Write(first, firstData.Values)], incremented);
         JobHandle added = first.ScheduleParallel(new AddValues(firstData.Values), 2, 1,
@@ -50,7 +50,7 @@ public sealed class SchedulerResourceBindingTests
         first.ScheduleParallel(new CopyValues(firstData.Values, result), 2, 1,
             [JobResourceAccess.Read(first, firstData.Values), JobResourceAccess.Write(first, result)], added).Complete();
         second.Schedule(new IncrementValues(secondData.Values),
-            JobResourceAccess.Write<CounterData, CounterResources>(second, ref secondData)).Complete();
+            [JobResourceAccess.Write<CounterData, CounterResources>(second, ref secondData)]).Complete();
 
         Assert.Equal([9, 11, 6, 8], result.Concat(secondData.Values));
     }

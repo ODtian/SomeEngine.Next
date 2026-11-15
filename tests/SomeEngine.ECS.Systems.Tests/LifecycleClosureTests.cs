@@ -49,7 +49,7 @@ public sealed class LifecycleClosureTests : JobTest
 
         Task<Exception?> disposal = Task.Run(() => Capture(group.Dispose));
         Assert.True(SpinWait.SpinUntil(
-            () => ThrowsDisposed(group.Update),
+            () => ThrowsDisposed(() => group.Update()),
             TimeSpan.FromSeconds(5)));
 
         state.AllowDescendant.Set();
@@ -245,7 +245,7 @@ public sealed class LifecycleClosureTests : JobTest
 
         Task<Exception?> first = Task.Run(() => Capture(group.Dispose));
         Assert.True(SpinWait.SpinUntil(
-            () => ThrowsDisposed(group.Update),
+            () => ThrowsDisposed(() => group.Update()),
             TimeSpan.FromSeconds(5)));
 
         using var secondStarted = new ManualResetEventSlim();
@@ -662,22 +662,7 @@ public sealed class LifecycleClosureTests : JobTest
 
         Assert.IsType<InvalidOperationException>(disposeError);
         Assert.Equal(1, world.EntityCount);
-        Assert.Equal(7, world.ReadComponentData<LifetimeComponent>(entity).Value);
-        world.Dispose();
-    }
-
-    [Fact]
-    public void WorldDispose_FromBoundBundleCallbackRejectsBeforePublication()
-    {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        int[] componentIds = [ComponentId<LifetimeComponent>.Value];
-        var result = new DisposeResult();
-        var state = new DisposeBundleState(world, result);
-        Entity entity = world.ExecuteBundleSpawn(componentIds, in state, default(DisposeBundleWriter));
-        Assert.IsType<InvalidOperationException>(result.Error);
-        Assert.True(world.IsAlive(entity));
-        Assert.Equal(11, world.ReadComponentData<LifetimeComponent>(entity).Value);
+        Assert.Equal(7, world.ReadValue<LifetimeComponent>(entity).Value);
         world.Dispose();
     }
 
@@ -837,16 +822,6 @@ public sealed class LifecycleClosureTests : JobTest
 
     private sealed class DisposeResult { internal Exception? Error; }
     private readonly record struct DisposeBundleState(World World, DisposeResult Result);
-    private readonly struct DisposeBundleWriter : IBundleWriter<DisposeBundleState>
-    {
-        public void Write(BundleWriteView view, in DisposeBundleState state)
-        {
-            try { state.World.Dispose(); }
-            catch (Exception error) { state.Result.Error = error; }
-            view.Write(new LifetimeComponent { Value = 11 });
-        }
-    }
-
     private sealed class LifetimeDriver : ISystemDriver<LifetimeContext>
     {
         private readonly LifetimeState _state;

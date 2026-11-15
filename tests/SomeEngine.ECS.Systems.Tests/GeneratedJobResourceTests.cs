@@ -14,11 +14,11 @@ public sealed class GeneratedJobResourceTests : JobTest
         var heights = new HeightSamples([2, 5, 8]);
         JobHandle written = Jobs.Schedule(
             new SetHeight(heights.Values, 1, 13),
-            JobResourceAccess.Write(Jobs, heights.Values.AsMemory(1, 1)));
+            [JobResourceAccess.Write(Jobs, heights.Values.AsMemory(1, 1))]);
 
         new SampleHeight(heights, 1, 1).Schedule(world, written).Complete();
 
-        Assert.Equal(13, world.ReadComponentData<ResourceSample>(entity).Value);
+        Assert.Equal(13, world.ReadValue<ResourceSample>(entity).Value);
     }
 
     [Fact]
@@ -30,9 +30,9 @@ public sealed class GeneratedJobResourceTests : JobTest
             .ToArray();
         var heights = new HeightSamples([11, 22, 33, 44]);
 
-        new SystemRunner(world, rangeRows: 1).Schedule(new SampleHeight(heights), parallel: true).Complete();
+        new SystemRunner(world, rangeRows: 1).Schedule(null, new SampleHeight(heights), parallel: true).Complete();
 
-        Assert.Equal([11, 22, 33, 44], entities.Select(entity => world.ReadComponentData<ResourceSample>(entity).Value));
+        Assert.Equal([11, 22, 33, 44], entities.Select(entity => world.ReadValue<ResourceSample>(entity).Value));
     }
 
     [Fact]
@@ -52,8 +52,8 @@ public sealed class GeneratedJobResourceTests : JobTest
 
         Assert.Equal([11, 22], new[]
         {
-            firstWorld.ReadComponentData<ResourceSample>(first).Value,
-            secondWorld.ReadComponentData<ResourceSample>(second).Value,
+            firstWorld.ReadValue<ResourceSample>(first).Value,
+            secondWorld.ReadValue<ResourceSample>(second).Value,
         });
     }
 
@@ -67,7 +67,7 @@ public sealed class GeneratedJobResourceTests : JobTest
         try
         {
             Assert.True(fence.Registered.Wait(TimeSpan.FromSeconds(5)));
-            _ = world.ReadComponentData<ResourceSample>(entity);
+            _ = world.ReadValue<ResourceSample>(entity);
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
@@ -140,7 +140,7 @@ internal partial struct SampleHeightWithChild(HeightSamples heights, ResourceChi
     public void Execute(ref ResourceSample sample)
     {
         sample.Value = _heights.Values[sample.Index];
-        JobSystem.CreateExternalFenceHandle(_fence);
+        JobSystem.Current.CreateExternalFenceHandle(_fence);
     }
 }
 

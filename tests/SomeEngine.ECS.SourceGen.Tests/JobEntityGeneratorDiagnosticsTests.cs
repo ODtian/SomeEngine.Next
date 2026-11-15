@@ -39,7 +39,7 @@ public static class Consumer
             var entity = world.Create(new Position { X = 7 });
             world.Add(entity, new Velocity { X = 3 });
             new Integrate().ScheduleParallel(world).Complete();
-            return world.ReadComponentData<Position>(entity).X - entity.Id;
+            return world.ReadValue<Position>(entity).X - entity.Id;
         }
         finally { SomeEngine.Job.JobSystem.Shutdown(); }
     }

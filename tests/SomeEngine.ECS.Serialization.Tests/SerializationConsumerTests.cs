@@ -106,9 +106,10 @@ public sealed class SerializationConsumerTests
     public void WorldSaveKeepsEveryEntityAndOnlyRegisteredValues()
     {
         using var source = new World();
-        Entity selected = source.Create(new SerPosition { X = 11, Y = 17 }, new SerVelocity { X = 23, Y = 29 });
-        source.SetShared(selected, new SerScene { Value = 31 });
-        source.SetSparse(selected, new SerSparse { Value = 37 });
+        Entity selected = source.Create(new SerPosition { X = 11, Y = 17 });
+        source.Add(selected, new SerVelocity { X = 23, Y = 29 });
+        source.Set(selected, new SerScene { Value = 31 });
+        source.Set(selected, new SerSparse { Value = 37 });
         Entity other = source.Create(new SerVelocity { X = 41, Y = 43 });
         var registry = new SerializationRegistry().Register<SerPosition>();
         using var direct = new MemoryStream();
@@ -129,7 +130,7 @@ public sealed class SerializationConsumerTests
             Assert.False(loaded.Has<SerVelocity>(selected));
             Assert.False(loaded.Has<SerVelocity>(other));
             Assert.False(loaded.Has<SerScene>(selected));
-            Assert.False(loaded.HasSparse<SerSparse>(selected));
+            Assert.False(loaded.Has<SerSparse>(selected));
         }
     }
 

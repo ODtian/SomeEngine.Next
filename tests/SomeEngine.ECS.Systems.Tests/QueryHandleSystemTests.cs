@@ -20,11 +20,11 @@ public class QueryHandleSystemTests
         group.Add(system);
 
         group.Update();
-        Assert.Equal(3, world.ReadComponentData<SystemPosition>(entity).Value);
+        Assert.Equal(3, world.ReadValue<SystemPosition>(entity).Value);
         Assert.Equal(1, system.LastDirtyCount);
 
         group.Update();
-        Assert.Equal(5, world.ReadComponentData<SystemPosition>(entity).Value);
+        Assert.Equal(5, world.ReadValue<SystemPosition>(entity).Value);
         Assert.Equal(0, system.LastDirtyCount);
     }
 

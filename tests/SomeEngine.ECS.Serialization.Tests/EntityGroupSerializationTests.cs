@@ -17,8 +17,8 @@ public sealed class EntityGroupSerializationTests
         Entity child = source.Create(new DescribedPosition { Value = 7, Target = parent });
         Hierarchy<EntityGroupDomain>.SetParent(source, child, parent);
         RelationEdge<EntityGroupLink> edge = Relations<EntityGroupLink>.CreateEdge(source, parent, child, new() { Value = 13 });
-        source.SetShared(child, new DescribedGroup { Value = 4 });
-        source.SetSparse(child, new DescribedLabel { Value = "member" });
+        source.Set(child, new DescribedGroup { Value = 4 });
+        source.Set(child, new DescribedLabel { Value = "member" });
         source.Set(child, new EntityGroupKey { Value = 27 });
         source.AddBuffer<DescribedElement>(child);
         using (DynamicBuffer<DescribedElement> elements = source.GetBuffer<DescribedElement>(child))
@@ -28,7 +28,7 @@ public sealed class EntityGroupSerializationTests
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var target = new World(execution: new WorldJobs(scheduler));
         Entity business = target.Create(new DescribedPosition { Value = 91 });
-        target.SetShared(business, new DescribedGroup { Value = 8 });
+        target.Set(business, new DescribedGroup { Value = 8 });
         ValueIndex<EntityGroupKey, int> index = target.Index<EntityGroupKey, int>();
 
         Entity[] first = WorldSerializer.ReadEntities(output.ToArray().AsMemory(), target);
@@ -36,10 +36,10 @@ public sealed class EntityGroupSerializationTests
         Entity[] second = WorldSerializer.ReadEntities(output, target);
 
         Assert.Equal(7, target.EntityCount);
-        Assert.Equal(91, target.ReadComponentData<DescribedPosition>(business).Value);
-        Assert.Equal(8, target.ReadComponentData<DescribedGroup>(business).Value);
-        Assert.Equal(first[0], target.ReadComponentData<DescribedPosition>(first[1]).Target);
-        Assert.Equal(second[0], target.ReadComponentData<DescribedPosition>(second[1]).Target);
+        Assert.Equal(91, target.ReadValue<DescribedPosition>(business).Value);
+        Assert.Equal(8, target.ReadValue<DescribedGroup>(business).Value);
+        Assert.Equal(first[0], target.ReadValue<DescribedPosition>(first[1]).Target);
+        Assert.Equal(second[0], target.ReadValue<DescribedPosition>(second[1]).Target);
         Assert.NotEqual(first[0], second[0]);
         Assert.Equal(first[0], Hierarchy<EntityGroupDomain>.GetParent(target, first[1]));
         Assert.Equal(second[0], Hierarchy<EntityGroupDomain>.GetParent(target, second[1]));
@@ -47,9 +47,9 @@ public sealed class EntityGroupSerializationTests
             Assert.Equal([first[1]], children.Entities.ToArray());
         using (RelationRead outgoing = Relations<EntityGroupLink>.Outgoing(target, first[0]))
             Assert.Equal([new RelationEntry(first[1], first[2])], outgoing.Entries.ToArray());
-        Assert.Equal(13, target.ReadComponentData<EntityGroupLink>(first[2]).Value);
-        Assert.Equal(4, target.ReadComponentData<DescribedGroup>(first[1]).Value);
-        Assert.Equal("member", target.ReadComponentData<DescribedLabel>(first[1]).Value);
+        Assert.Equal(13, target.ReadValue<EntityGroupLink>(first[2]).Value);
+        Assert.Equal(4, target.ReadValue<DescribedGroup>(first[1]).Value);
+        Assert.Equal("member", target.ReadValue<DescribedLabel>(first[1]).Value);
         using (ReadOnlyBuffer<DescribedElement> elements = target.ReadBuffer<DescribedElement>(first[1]))
             Assert.Equal(new DescribedElement { Value = 9, Target = first[0] }, elements[0]);
         using (IndexMembers found = index.Find(27))

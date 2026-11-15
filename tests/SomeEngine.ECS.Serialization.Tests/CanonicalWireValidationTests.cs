@@ -16,7 +16,7 @@ public sealed class CanonicalWireValidationTests
         var wireKey = new SerializationTypeKey(stableId, "altered-position", fingerprint);
         var calls = new CodecCalls();
         var registry = new SerializationRegistry()
-            .RegisterCodec<SerPosition, SerPositionFullCodec>(registeredKey, new SerPositionFullCodec(calls));
+            .Register<SerPosition, SerPositionFullCodec>(registeredKey, new SerPositionFullCodec(calls));
         byte[] envelope = CreateComponentEnvelope(wireKey);
 
         using var input = new MemoryStream(envelope, writable: false);

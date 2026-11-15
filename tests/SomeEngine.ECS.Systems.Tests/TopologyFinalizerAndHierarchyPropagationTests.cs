@@ -232,7 +232,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         writerStarted.SetCallback = () => events.Enqueue("writer");
         JobHandle propagation = HierarchyPropagation<Domain>.Schedule(world,
             [leaf, orderedChild, orderedRoot, second, unorderedRoot, orderedRoot], new RecordPropagation(state),
-            new SystemAccesses().WriteRandom<PropagationValue>(), rootsPerRange: 1);
+            new SystemAccesses().Write<PropagationValue>(), rootsPerRange: 1);
         JobHandle writer = default;
         try
         {
@@ -242,10 +242,10 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         finally { release.Set(); propagation.Complete(); writer.Complete(); }
         Assert.True(state.Maximum >= 2);
         Assert.Equal(new Visit(orderedRoot, 1), state.Visited[organization]);
-        Assert.Equal(2, world.ReadComponentData<PropagationValue>(leaf).Depth);
-        Assert.Equal(1, world.ReadComponentData<PropagationValue>(orderedChild).Depth);
-        Assert.Equal(1, world.ReadComponentData<PropagationValue>(first).Depth);
-        Assert.Equal(1, world.ReadComponentData<PropagationValue>(second).Depth);
+        Assert.Equal(2, world.ReadValue<PropagationValue>(leaf).Depth);
+        Assert.Equal(1, world.ReadValue<PropagationValue>(orderedChild).Depth);
+        Assert.Equal(1, world.ReadValue<PropagationValue>(first).Depth);
+        Assert.Equal(1, world.ReadValue<PropagationValue>(second).Depth);
         Assert.Equal([orderedRoot, orderedChild, organization, leaf], state.Order[orderedRoot].ToArray());
         Assert.Equal(new HashSet<Entity> { unorderedRoot, first, second }, state.Order[unorderedRoot].ToHashSet());
         string[] sequence = events.ToArray();
@@ -267,7 +267,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         {
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
             propagation = HierarchyPropagation<Domain>.Schedule(world, [root], new RecordPropagation(state),
-                new SystemAccesses().WriteRandom<PropagationValue>(), maintenance);
+                new SystemAccesses().Write<PropagationValue>(), maintenance);
             Assert.False(propagation.IsCompleted);
         }
         finally { release.Set(); propagation.Complete(); blocker.Complete(); }
@@ -283,7 +283,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         Entity root = world.Create();
         ulong before = world.Version;
         JobHandle propagation = HierarchyPropagation<Domain>.Schedule(world, [root], new MissingComponent(write),
-            new SystemAccesses().WriteRandom<PropagationValue>());
+            new SystemAccesses().Write<PropagationValue>());
         Assert.Throws<InvalidOperationException>(propagation.Complete);
         Assert.Equal(before, world.Version);
     }
@@ -297,10 +297,10 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         Hierarchy<Domain>.SetParent(world, root, ancestor);
         Hierarchy<Domain>.SetParent(world, child, root);
         HierarchyPropagation<Domain>.Schedule(world, [root], new CopyAncestor(ancestor),
-            new SystemAccesses().WriteRandom<PropagationValue>()).Complete();
-        Assert.Equal(73, world.ReadComponentData<PropagationValue>(root).Depth);
-        Assert.Equal(73, world.ReadComponentData<PropagationValue>(child).Depth);
-        Assert.Equal(73, world.ReadComponentData<PropagationValue>(ancestor).Depth);
+            new SystemAccesses().Write<PropagationValue>()).Complete();
+        Assert.Equal(73, world.ReadValue<PropagationValue>(root).Depth);
+        Assert.Equal(73, world.ReadValue<PropagationValue>(child).Depth);
+        Assert.Equal(73, world.ReadValue<PropagationValue>(ancestor).Depth);
     }
 
     [Fact]
@@ -312,18 +312,18 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         using var release = new ManualResetEventSlim();
         var state = new VersionedWrites(entered, release);
         JobHandle propagation = HierarchyPropagation<Domain>.Schedule(world, roots, new WriteAfterSignal(state),
-            new SystemAccesses().WriteRandom<PropagationValue>(), rootsPerRange: 1);
+            new SystemAccesses().Write<PropagationValue>(), rootsPerRange: 1);
         try
         {
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
             world.AcquireSystemVersion(); world.AcquireSystemVersion(); world.AcquireSystemVersion();
         }
         finally { release.Set(); propagation.Complete(); }
-        ulong version = world.ComponentDataWriteVersion<PropagationValue>(roots[0]);
+        ulong version = world.ComponentWriteVersion<PropagationValue>(roots[0]);
         Assert.All(roots, entity =>
         {
-            Assert.True(world.ReadComponentData<PropagationValue>(entity).Depth >= 100);
-            Assert.Equal(version, world.ComponentDataWriteVersion<PropagationValue>(entity));
+            Assert.True(world.ReadValue<PropagationValue>(entity).Depth >= 100);
+            Assert.Equal(version, world.ComponentWriteVersion<PropagationValue>(entity));
         });
     }
 
@@ -336,7 +336,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         int[] visits = [0];
         ulong before = world.Version;
         HierarchyPropagation<Domain>.Schedule(world, [root], new ReadPropagation(visits),
-            new SystemAccesses().ReadRandom<PropagationValue>()).Complete();
+            new SystemAccesses().Read<PropagationValue>()).Complete();
         Assert.Equal(2, visits[0]);
         Assert.Equal(before, world.Version);
     }
@@ -350,7 +350,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         int[] visits = [0];
         ulong before = world.Version;
         HierarchyPropagation<Domain>.Schedule(world, [root], new CountPropagation(visits),
-            new SystemAccesses().WriteRandom<PropagationValue>()).Complete();
+            new SystemAccesses().Write<PropagationValue>()).Complete();
         Assert.Equal(2, visits[0]);
         Assert.Equal(before, world.Version);
     }
@@ -362,7 +362,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         int[] visits = [0];
         ulong before = world.Version;
         HierarchyPropagation<Domain>.Schedule(world, [], new CountPropagation(visits),
-            new SystemAccesses().WriteRandom<PropagationValue>()).Complete();
+            new SystemAccesses().Write<PropagationValue>()).Complete();
         Assert.Equal(0, visits[0]);
         Assert.Equal(before, world.Version);
     }
@@ -373,7 +373,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         World world = CreateJobWorld();
         Entity first = ValueNode(world), second = ValueNode(world);
         JobHandle propagation = HierarchyPropagation<Domain>.Schedule(world, [first, second],
-            new ReadOtherRoot(first, second), new SystemAccesses().WriteRandom<PropagationValue>());
+            new ReadOtherRoot(first, second), new SystemAccesses().Write<PropagationValue>());
         Assert.Throws<InvalidOperationException>(propagation.Complete);
     }
 
@@ -387,12 +387,12 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         JobHandle maintenance = Maintain(world, writer);
         var state = new PropagationRecords();
         HierarchyPropagation<Domain>.Schedule(world, [newParent], new RecordPropagation(state),
-            new SystemAccesses().WriteRandom<PropagationValue>(), maintenance).Complete();
+            new SystemAccesses().Write<PropagationValue>(), maintenance).Complete();
         Assert.Equal(newParent, Hierarchy<Domain>.GetParent(world, child));
         Assert.Equal([child], Children(world, newParent));
         Assert.True(state.Visited.ContainsKey(newParent));
         Assert.True(state.Visited.ContainsKey(child));
-        Assert.Equal(1, world.ReadComponentData<PropagationValue>(child).Depth);
+        Assert.Equal(1, world.ReadValue<PropagationValue>(child).Depth);
     }
 
     [Fact]
@@ -420,21 +420,22 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         JobHandle maintenance = Maintain(world);
         var state = new PropagationRecords();
         HierarchyPropagation<Domain>.Schedule(world, [newParent], new RecordPropagation(state),
-            new SystemAccesses().WriteRandom<PropagationValue>(), maintenance).Complete();
+            new SystemAccesses().Write<PropagationValue>(), maintenance).Complete();
         Assert.Equal([child], Children(world, newParent));
         Assert.Empty(Children(world, oldParent));
-        Assert.Equal(1, world.ReadComponentData<PropagationValue>(child).Depth);
+        Assert.Equal(1, world.ReadValue<PropagationValue>(child).Depth);
     }
 
     [Fact]
     public void ManagedPropagationStorageIsRejectedBeforeAnyComponentWrite()
     {
         World world = CreateJobWorld();
-        Entity root = world.Create(new PropagationValue { Depth = 7 }, new ManagedPropagationValue { Text = "shared" });
+        Entity root = world.Create(new PropagationValue { Depth = 7 });
+        world.Add(root, new ManagedPropagationValue { Text = "shared" });
         ulong before = world.Version;
         Assert.Throws<InvalidOperationException>(() => HierarchyPropagation<Domain>.Schedule(world, [root],
-            new WriteThenManagedRead(), new SystemAccesses().WriteRandom<PropagationValue>().ReadRandom<ManagedPropagationValue>()));
-        Assert.Equal(7, world.ReadComponentData<PropagationValue>(root).Depth);
+            new WriteThenManagedRead(), new SystemAccesses().Write<PropagationValue>().Read<ManagedPropagationValue>()));
+        Assert.Equal(7, world.ReadValue<PropagationValue>(root).Depth);
         Assert.Equal(before, world.Version);
     }
 
@@ -445,10 +446,10 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         Entity root = ValueNode(world);
         ulong before = world.Version;
         HierarchyPropagation<Domain>.Schedule(world, [root], new SetPropagation(42),
-            new SystemAccesses().WriteRandom<PropagationValue>()).Complete();
+            new SystemAccesses().Write<PropagationValue>()).Complete();
         Query changed = world.Query(new QueryDescription().WithChanged<PropagationValue>(before));
         Assert.Equal([root], Entities(changed));
-        Assert.Equal(42, world.ReadComponentData<PropagationValue>(root).Depth);
+        Assert.Equal(42, world.ReadValue<PropagationValue>(root).Depth);
     }
 
     private readonly record struct ParentScene(World World, Entity OldParent, Entity NewParent,
@@ -484,15 +485,16 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         => Jobs.Schedule(new MaintainHierarchy(world), ((WorldJobs)world.Execution!).StructureWrite, dependency: dependency);
 
     private JobHandle ScheduleParents<TWork>(World world, Query query, TWork work, JobHandle dependency = default)
-        where TWork : struct, IRangeWork<ParentRow>
+        where TWork : struct, IParentWork
     {
         var data = new ParentData(world, query);
         JobHandle captured = Jobs.Schedule(new CaptureParents(data), ((WorldJobs)world.Execution!).CollectReadAccess(query), dependency: dependency);
         return Jobs.Schedule(new ChangeParents<TWork>(Jobs, data, work),
-            JobResourceAccess.Write(Jobs.GetResourceToken(data)), dependency: captured);
+            [JobResourceAccess.Write(Jobs.GetResourceToken(data))], dependency: captured);
     }
 
     private readonly record struct ParentRow(Entity Child, Entity Before, Entity[] Results, int Index);
+    private interface IParentWork { void Execute(in ParentRow row); }
     private sealed class ParentData(World world, Query query)
     {
         internal readonly World World = world;
@@ -527,11 +529,14 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
         }
     }
     private readonly struct ChangeParents<TWork>(Scheduler scheduler, ParentData data, TWork work) : IJob
-        where TWork : struct, IRangeWork<ParentRow>
+        where TWork : struct, IParentWork
     {
         public void Execute()
         {
-            scheduler.ExecuteRanges(data.Rows, data.Rows.Length, work);
+            TWork rows = work;
+            ParentRow[] parents = data.Rows;
+            try { Parallel.For(0, parents.Length, index => rows.Execute(in parents[index])); }
+            catch (AggregateException failure) { System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(failure.InnerExceptions[0]); }
             var changes = new List<CapturedParentEdit>();
             foreach (ParentRow row in data.Rows)
                 if (row.Before != row.Results[row.Index]) changes.Add(new(row.Child, row.Before, row.Results[row.Index]));
@@ -568,15 +573,15 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
             Interlocked.Decrement(ref Active);
         }
     }
-    private readonly struct BlockingReplace(ConcurrentWork state, Entity parent) : IRangeWork<ParentRow>
+    private readonly struct BlockingReplace(ConcurrentWork state, Entity parent) : IParentWork
     {
         public void Execute(in ParentRow row) { row.Results[row.Index] = parent; state.Enter(); }
     }
-    private readonly struct BlockingNoop(ConcurrentWork state) : IRangeWork<ParentRow>
+    private readonly struct BlockingNoop(ConcurrentWork state) : IParentWork
     {
         public void Execute(in ParentRow row) => state.Enter();
     }
-    private readonly struct FaultingReplace(Entity parent) : IRangeWork<ParentRow>
+    private readonly struct FaultingReplace(Entity parent) : IParentWork
     {
         public void Execute(in ParentRow row)
         {
@@ -584,15 +589,15 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
             if (row.Index == 0) throw new ParentWorkException();
         }
     }
-    private readonly struct CycleParents(Entity first, Entity second) : IRangeWork<ParentRow>
+    private readonly struct CycleParents(Entity first, Entity second) : IParentWork
     {
         public void Execute(in ParentRow row) => row.Results[row.Index] = row.Child == first ? second : first;
     }
-    private readonly struct CountParentRows(int[] visits) : IRangeWork<ParentRow>
+    private readonly struct CountParentRows(int[] visits) : IParentWork
     {
         public void Execute(in ParentRow row) => Interlocked.Increment(ref visits[0]);
     }
-    private readonly struct ObserveAndReplace(Entity expected, Entity replacement, int[] visits) : IRangeWork<ParentRow>
+    private readonly struct ObserveAndReplace(Entity expected, Entity replacement, int[] visits) : IParentWork
     {
         public void Execute(in ParentRow row)
         {

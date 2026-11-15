@@ -18,9 +18,9 @@ public sealed class ResourceSafetyTests
             CreateEphemeralContainerAccess();
         using var started = _data.Events.CreateSignal();
         using var gate = _data.Events.CreateSignal();
-        JobHandle owner = JobSystem.Schedule(
+        JobHandle owner = JobSystem.Current.Schedule(
             new ResourceData.BlockingSignalJob(started, gate),
-            access);
+            [access]);
         Assert.True(started.Wait(1_000));
 
         ForceFullCollection();
@@ -32,7 +32,7 @@ public sealed class ResourceSafetyTests
         Assert.False(container.IsAlive);
 
         Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.Schedule(new ResourceData.NoOpJob(), access));
+            JobSystem.Current.Schedule(new ResourceData.NoOpJob(), [access]));
     }
 
     [System.Runtime.CompilerServices.MethodImpl(
@@ -59,51 +59,51 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void ValidResourceSchedulesAndStaleHandleIsRejected()
     {
-        var resource = JobSystem.CreateResource("valid-resource");
+        var resource = JobSystem.Current.CreateResource("valid-resource");
 
-        JobSystem.Schedule(new ResourceData.NoOpJob(), JobResourceAccess.Read(resource)).Complete();
-        JobSystem.ReleaseResource(resource);
+        JobSystem.Current.Schedule(new ResourceData.NoOpJob(), [JobResourceAccess.Read(resource)]).Complete();
+        JobSystem.Current.ReleaseResource(resource);
 
         Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.Schedule(new ResourceData.NoOpJob(), JobResourceAccess.Read(resource)));
+            JobSystem.Current.Schedule(new ResourceData.NoOpJob(), [JobResourceAccess.Read(resource)]));
     }
 
     [Fact]
     public void DoubleReleaseIsExplicitlyRejected()
     {
-        var resource = JobSystem.CreateResource("double-release");
+        var resource = JobSystem.Current.CreateResource("double-release");
 
-        JobSystem.ReleaseResource(resource);
+        JobSystem.Current.ReleaseResource(resource);
 
-        Assert.Throws<JobResourceSafetyException>(() => JobSystem.ReleaseResource(resource));
+        Assert.Throws<JobResourceSafetyException>(() => JobSystem.Current.ReleaseResource(resource));
     }
 
     [Fact]
     public void ResourcePoolPressureDoesNotLeakHandles()
     {
-        var stale = JobSystem.CreateResource("stale");
-        JobSystem.ReleaseResource(stale);
+        var stale = JobSystem.Current.CreateResource("stale");
+        JobSystem.Current.ReleaseResource(stale);
 
         for (var i = 0; i < 512; i++)
         {
-            var resource = JobSystem.CreateResource($"pooled-{i}");
-            JobSystem.Schedule(new ResourceData.NoOpJob(), JobResourceAccess.Write(resource)).Complete();
-            JobSystem.ReleaseResource(resource);
+            var resource = JobSystem.Current.CreateResource($"pooled-{i}");
+            JobSystem.Current.Schedule(new ResourceData.NoOpJob(), [JobResourceAccess.Write(resource)]).Complete();
+            JobSystem.Current.ReleaseResource(resource);
         }
 
         Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.Schedule(new ResourceData.NoOpJob(), JobResourceAccess.Read(stale)));
+            JobSystem.Current.Schedule(new ResourceData.NoOpJob(), [JobResourceAccess.Read(stale)]));
     }
 
     [Fact]
     public void AccessDeclarationsSupportReadWriteExclusiveAndDirectSchedule()
     {
-        var resource = JobSystem.CreateResource("declared");
+        var resource = JobSystem.Current.CreateResource("declared");
 
-        JobSystem.Schedule(new ResourceData.CountJob(_data)).Complete();
-        JobSystem.Schedule(new ResourceData.CountJob(_data), JobResourceAccess.Read(resource)).Complete();
-        JobSystem.Schedule(new ResourceData.CountJob(_data), JobResourceAccess.Write(resource)).Complete();
-        JobSystem.Schedule(new ResourceData.CountJob(_data), JobResourceAccess.Exclusive(resource)).Complete();
+        JobSystem.Current.Schedule(new ResourceData.CountJob(_data)).Complete();
+        JobSystem.Current.Schedule(new ResourceData.CountJob(_data), [JobResourceAccess.Read(resource)]).Complete();
+        JobSystem.Current.Schedule(new ResourceData.CountJob(_data), [JobResourceAccess.Write(resource)]).Complete();
+        JobSystem.Current.Schedule(new ResourceData.CountJob(_data), [JobResourceAccess.Exclusive(resource)]).Complete();
 
         Assert.Equal(4, _data.Counter);
     }
@@ -111,7 +111,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void ExplicitDependencyAndAccessDependencyBothGateJob()
     {
-        var resource = JobSystem.CreateResource("composed");
+        var resource = JobSystem.Current.CreateResource("composed");
         using var writerStarted = _data.Events.CreateSignal();
         using var writerGate = _data.Events.CreateSignal();
         using var manualStarted = _data.Events.CreateSignal();
@@ -119,11 +119,11 @@ public sealed class ResourceSafetyTests
         using var dependentStarted = _data.Events.CreateSignal();
         using var dependentGate = _data.Events.CreateSignal();
 
-        var writer = JobSystem.Schedule(
+        var writer = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, writerStarted, writerGate),
-            JobResourceAccess.Write(resource));
-        var manual = JobSystem.Schedule(new ResourceData.BlockingRecordJob(_data, 2, manualStarted, manualGate));
-        var dependent = JobSystem.Schedule(
+            [JobResourceAccess.Write(resource)]);
+        var manual = JobSystem.Current.Schedule(new ResourceData.BlockingRecordJob(_data, 2, manualStarted, manualGate));
+        var dependent = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 3, dependentStarted, dependentGate),
             new[] { JobResourceAccess.Read(resource) },
             manual);
@@ -149,40 +149,40 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void ReadReadAccessesCanRunTogether()
     {
-        var resource = JobSystem.CreateResource("read-shared");
+        var resource = JobSystem.Current.CreateResource("read-shared");
         using var firstStarted = _data.Events.CreateSignal();
         using var secondStarted = _data.Events.CreateSignal();
         using var gate = _data.Events.CreateSignal();
 
-        var first = JobSystem.Schedule(
+        var first = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, firstStarted, gate),
-            JobResourceAccess.Read(resource));
-        var second = JobSystem.Schedule(
+            [JobResourceAccess.Read(resource)]);
+        var second = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, secondStarted, gate),
-            JobResourceAccess.Read(resource));
+            [JobResourceAccess.Read(resource)]);
 
         Assert.True(firstStarted.Wait(1_000));
         Assert.True(secondStarted.Wait(1_000));
 
         gate.Set();
-        JobSystem.CombineDependencies(new[] { first, second }).Complete();
+        JobSystem.Current.CombineDependencies(new[] { first, second }).Complete();
     }
 
     [Fact]
     public void WriteReadOrdersReaderAfterWriter()
     {
-        var resource = JobSystem.CreateResource("write-read");
+        var resource = JobSystem.Current.CreateResource("write-read");
         using var writerStarted = _data.Events.CreateSignal();
         using var writerGate = _data.Events.CreateSignal();
         using var readerStarted = _data.Events.CreateSignal();
         using var readerGate = _data.Events.CreateSignal();
 
-        var writer = JobSystem.Schedule(
+        var writer = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, writerStarted, writerGate),
-            JobResourceAccess.Write(resource));
-        var reader = JobSystem.Schedule(
+            [JobResourceAccess.Write(resource)]);
+        var reader = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, readerStarted, readerGate),
-            JobResourceAccess.Read(resource));
+            [JobResourceAccess.Read(resource)]);
 
         Assert.True(writerStarted.Wait(1_000));
 
@@ -197,18 +197,18 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void ReadWriteOrdersWriterAfterReader()
     {
-        var resource = JobSystem.CreateResource("read-write");
+        var resource = JobSystem.Current.CreateResource("read-write");
         using var readerStarted = _data.Events.CreateSignal();
         using var readerGate = _data.Events.CreateSignal();
         using var writerStarted = _data.Events.CreateSignal();
         using var writerGate = _data.Events.CreateSignal();
 
-        var reader = JobSystem.Schedule(
+        var reader = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, readerStarted, readerGate),
-            JobResourceAccess.Read(resource));
-        var writer = JobSystem.Schedule(
+            [JobResourceAccess.Read(resource)]);
+        var writer = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, writerStarted, writerGate),
-            JobResourceAccess.Write(resource));
+            [JobResourceAccess.Write(resource)]);
 
         Assert.True(readerStarted.Wait(1_000));
 
@@ -223,18 +223,18 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void WriteWriteOrdersSecondWriterAfterFirstWriter()
     {
-        var resource = JobSystem.CreateResource("write-write");
+        var resource = JobSystem.Current.CreateResource("write-write");
         using var firstStarted = _data.Events.CreateSignal();
         using var firstGate = _data.Events.CreateSignal();
         using var secondStarted = _data.Events.CreateSignal();
         using var secondGate = _data.Events.CreateSignal();
 
-        var first = JobSystem.Schedule(
+        var first = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, firstStarted, firstGate),
-            JobResourceAccess.Write(resource));
-        var second = JobSystem.Schedule(
+            [JobResourceAccess.Write(resource)]);
+        var second = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, secondStarted, secondGate),
-            JobResourceAccess.Write(resource));
+            [JobResourceAccess.Write(resource)]);
 
         Assert.True(firstStarted.Wait(1_000));
 
@@ -249,7 +249,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void WritePendingReadThenWriteOrdersSecondWriterAfterReader()
     {
-        var resource = JobSystem.CreateResource("write-read-write");
+        var resource = JobSystem.Current.CreateResource("write-read-write");
         using var firstStarted = _data.Events.CreateSignal();
         using var firstGate = _data.Events.CreateSignal();
         using var readerStarted = _data.Events.CreateSignal();
@@ -257,15 +257,15 @@ public sealed class ResourceSafetyTests
         using var secondWriterStarted = _data.Events.CreateSignal();
         using var secondWriterGate = _data.Events.CreateSignal();
 
-        var first = JobSystem.Schedule(
+        var first = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, firstStarted, firstGate),
-            JobResourceAccess.Write(resource));
-        var reader = JobSystem.Schedule(
+            [JobResourceAccess.Write(resource)]);
+        var reader = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, readerStarted, readerGate),
-            JobResourceAccess.Read(resource));
-        var secondWriter = JobSystem.Schedule(
+            [JobResourceAccess.Read(resource)]);
+        var secondWriter = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 3, secondWriterStarted, secondWriterGate),
-            JobResourceAccess.Write(resource));
+            [JobResourceAccess.Write(resource)]);
 
         Assert.True(firstStarted.Wait(1_000));
 
@@ -276,7 +276,7 @@ public sealed class ResourceSafetyTests
         Assert.True(secondWriterStarted.Wait(1_000));
         secondWriterGate.Set();
 
-        JobSystem.CombineDependencies(new[] { first, reader, secondWriter }).Complete();
+        JobSystem.Current.CombineDependencies(new[] { first, reader, secondWriter }).Complete();
         _data.Events.AssertBefore(firstGate, readerStarted);
         _data.Events.AssertBefore(readerGate, secondWriterStarted);
     }
@@ -284,7 +284,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void ReleasedWriterRebuildsFrontierSoLaterWriterWaitsForActiveReader()
     {
-        var resource = JobSystem.CreateResource("release-rebuild-read-frontier");
+        var resource = JobSystem.Current.CreateResource("release-rebuild-read-frontier");
         using var firstStarted = _data.Events.CreateSignal();
         using var firstGate = _data.Events.CreateSignal();
         using var readerStarted = _data.Events.CreateSignal();
@@ -292,12 +292,12 @@ public sealed class ResourceSafetyTests
         using var writerStarted = _data.Events.CreateSignal();
         using var writerGate = _data.Events.CreateSignal();
 
-        var first = JobSystem.Schedule(
+        var first = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, firstStarted, firstGate),
-            JobResourceAccess.Write(resource));
-        var reader = JobSystem.Schedule(
+            [JobResourceAccess.Write(resource)]);
+        var reader = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, readerStarted, readerGate),
-            JobResourceAccess.Read(resource));
+            [JobResourceAccess.Read(resource)]);
 
         Assert.True(firstStarted.Wait(1_000));
 
@@ -305,15 +305,15 @@ public sealed class ResourceSafetyTests
         Assert.True(readerStarted.Wait(1_000));
         first.Complete();
 
-        var writer = JobSystem.Schedule(
+        var writer = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 3, writerStarted, writerGate),
-            JobResourceAccess.Write(resource));
+            [JobResourceAccess.Write(resource)]);
 
         readerGate.Set();
         Assert.True(writerStarted.Wait(1_000));
         writerGate.Set();
 
-        JobSystem.CombineDependencies(new[] { reader, writer }).Complete();
+        JobSystem.Current.CombineDependencies(new[] { reader, writer }).Complete();
         _data.Events.AssertBefore(firstGate, readerStarted);
         _data.Events.AssertBefore(readerGate, writerStarted);
     }
@@ -321,17 +321,17 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void FailedPartialRegistrationRestoresClearedReaderFrontier()
     {
-        var resource = JobSystem.CreateResource("rollback-reader-frontier");
-        var stale = JobSystem.CreateResource("rollback-stale");
-        JobSystem.ReleaseResource(stale);
+        var resource = JobSystem.Current.CreateResource("rollback-reader-frontier");
+        var stale = JobSystem.Current.CreateResource("rollback-stale");
+        JobSystem.Current.ReleaseResource(stale);
         using var readerStarted = _data.Events.CreateSignal();
         using var readerGate = _data.Events.CreateSignal();
         using var writerStarted = _data.Events.CreateSignal();
         using var writerGate = _data.Events.CreateSignal();
 
-        var reader = JobSystem.Schedule(
+        var reader = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, readerStarted, readerGate),
-            JobResourceAccess.Read(resource));
+            [JobResourceAccess.Read(resource)]);
 
         Assert.True(readerStarted.Wait(1_000));
 
@@ -342,24 +342,24 @@ public sealed class ResourceSafetyTests
         ];
 
         Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.Schedule(new ResourceData.NoOpJob(), accesses));
+            JobSystem.Current.Schedule(new ResourceData.NoOpJob(), accesses));
 
-        var writer = JobSystem.Schedule(
+        var writer = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, writerStarted, writerGate),
-            JobResourceAccess.Write(resource));
+            [JobResourceAccess.Write(resource)]);
 
         readerGate.Set();
         Assert.True(writerStarted.Wait(1_000));
         writerGate.Set();
 
-        JobSystem.CombineDependencies(new[] { reader, writer }).Complete();
+        JobSystem.Current.CombineDependencies(new[] { reader, writer }).Complete();
         _data.Events.AssertBefore(readerGate, writerStarted);
     }
 
     [Fact]
     public void UnrangedFrontierResumesAfterRangedAccessCompletes()
     {
-        var resource = JobSystem.CreateResource("range-frontier-reentry");
+        var resource = JobSystem.Current.CreateResource("range-frontier-reentry");
         using var rangedStarted = _data.Events.CreateSignal();
         using var rangedGate = _data.Events.CreateSignal();
         using var readerStarted = _data.Events.CreateSignal();
@@ -367,12 +367,12 @@ public sealed class ResourceSafetyTests
         using var writerStarted = _data.Events.CreateSignal();
         using var writerGate = _data.Events.CreateSignal();
 
-        var ranged = JobSystem.Schedule(
+        var ranged = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, rangedStarted, rangedGate),
-            JobResourceAccess.Write(resource, 0, 16));
-        var reader = JobSystem.Schedule(
+            [JobResourceAccess.Write(resource, 0, 16)]);
+        var reader = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, readerStarted, readerGate),
-            JobResourceAccess.Read(resource));
+            [JobResourceAccess.Read(resource)]);
 
         Assert.True(rangedStarted.Wait(1_000));
 
@@ -380,15 +380,15 @@ public sealed class ResourceSafetyTests
         Assert.True(readerStarted.Wait(1_000));
         ranged.Complete();
 
-        var writer = JobSystem.Schedule(
+        var writer = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 3, writerStarted, writerGate),
-            JobResourceAccess.Write(resource));
+            [JobResourceAccess.Write(resource)]);
 
         readerGate.Set();
         Assert.True(writerStarted.Wait(1_000));
         writerGate.Set();
 
-        JobSystem.CombineDependencies(new[] { reader, writer }).Complete();
+        JobSystem.Current.CombineDependencies(new[] { reader, writer }).Complete();
         _data.Events.AssertBefore(rangedGate, readerStarted);
         _data.Events.AssertBefore(readerGate, writerStarted);
     }
@@ -396,7 +396,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void WriteThenMultiplePendingReadersThenWriteWaitsForAllReaders()
     {
-        var resource = JobSystem.CreateResource("write-read-read-write");
+        var resource = JobSystem.Current.CreateResource("write-read-read-write");
         using var firstStarted = _data.Events.CreateSignal();
         using var firstGate = _data.Events.CreateSignal();
         using var firstReaderStarted = _data.Events.CreateSignal();
@@ -406,18 +406,18 @@ public sealed class ResourceSafetyTests
         using var writerStarted = _data.Events.CreateSignal();
         using var writerGate = _data.Events.CreateSignal();
 
-        var first = JobSystem.Schedule(
+        var first = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, firstStarted, firstGate),
-            JobResourceAccess.Write(resource));
-        var firstReader = JobSystem.Schedule(
+            [JobResourceAccess.Write(resource)]);
+        var firstReader = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, firstReaderStarted, firstReaderGate),
-            JobResourceAccess.Read(resource));
-        var secondReader = JobSystem.Schedule(
+            [JobResourceAccess.Read(resource)]);
+        var secondReader = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 3, secondReaderStarted, secondReaderGate),
-            JobResourceAccess.Read(resource));
-        var writer = JobSystem.Schedule(
+            [JobResourceAccess.Read(resource)]);
+        var writer = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 4, writerStarted, writerGate),
-            JobResourceAccess.Write(resource));
+            [JobResourceAccess.Write(resource)]);
 
         Assert.True(firstStarted.Wait(1_000));
 
@@ -431,7 +431,7 @@ public sealed class ResourceSafetyTests
         Assert.True(writerStarted.Wait(1_000));
         writerGate.Set();
 
-        JobSystem.CombineDependencies(new[] { first, firstReader, secondReader, writer }).Complete();
+        JobSystem.Current.CombineDependencies(new[] { first, firstReader, secondReader, writer }).Complete();
         _data.Events.AssertBefore(firstGate, firstReaderStarted);
         _data.Events.AssertBefore(firstGate, secondReaderStarted);
         _data.Events.AssertBefore(firstReaderGate, writerStarted);
@@ -441,7 +441,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void WritePendingReadThenExclusiveOrdersExclusiveAfterReader()
     {
-        var resource = JobSystem.CreateResource("write-read-exclusive");
+        var resource = JobSystem.Current.CreateResource("write-read-exclusive");
         using var firstStarted = _data.Events.CreateSignal();
         using var firstGate = _data.Events.CreateSignal();
         using var readerStarted = _data.Events.CreateSignal();
@@ -449,15 +449,15 @@ public sealed class ResourceSafetyTests
         using var exclusiveStarted = _data.Events.CreateSignal();
         using var exclusiveGate = _data.Events.CreateSignal();
 
-        var first = JobSystem.Schedule(
+        var first = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, firstStarted, firstGate),
-            JobResourceAccess.Write(resource));
-        var reader = JobSystem.Schedule(
+            [JobResourceAccess.Write(resource)]);
+        var reader = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, readerStarted, readerGate),
-            JobResourceAccess.Read(resource));
-        var exclusive = JobSystem.Schedule(
+            [JobResourceAccess.Read(resource)]);
+        var exclusive = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 3, exclusiveStarted, exclusiveGate),
-            JobResourceAccess.Exclusive(resource));
+            [JobResourceAccess.Exclusive(resource)]);
 
         Assert.True(firstStarted.Wait(1_000));
 
@@ -468,7 +468,7 @@ public sealed class ResourceSafetyTests
         Assert.True(exclusiveStarted.Wait(1_000));
         exclusiveGate.Set();
 
-        JobSystem.CombineDependencies(new[] { first, reader, exclusive }).Complete();
+        JobSystem.Current.CombineDependencies(new[] { first, reader, exclusive }).Complete();
         _data.Events.AssertBefore(firstGate, readerStarted);
         _data.Events.AssertBefore(readerGate, exclusiveStarted);
     }
@@ -476,7 +476,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void TokenWritePendingReadThenWriteOrdersSecondWriterAfterReader()
     {
-        var token = JobSystem.CreateResourceToken("token-write-read-write");
+        var token = JobSystem.Current.CreateResourceToken("token-write-read-write");
         using var firstStarted = _data.Events.CreateSignal();
         using var firstGate = _data.Events.CreateSignal();
         using var readerStarted = _data.Events.CreateSignal();
@@ -484,15 +484,15 @@ public sealed class ResourceSafetyTests
         using var secondWriterStarted = _data.Events.CreateSignal();
         using var secondWriterGate = _data.Events.CreateSignal();
 
-        var first = JobSystem.Schedule(
+        var first = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, firstStarted, firstGate),
-            JobResourceAccess.Write(token));
-        var reader = JobSystem.Schedule(
+            [JobResourceAccess.Write(token)]);
+        var reader = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, readerStarted, readerGate),
-            JobResourceAccess.Read(token));
-        var secondWriter = JobSystem.Schedule(
+            [JobResourceAccess.Read(token)]);
+        var secondWriter = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 3, secondWriterStarted, secondWriterGate),
-            JobResourceAccess.Write(token));
+            [JobResourceAccess.Write(token)]);
 
         Assert.True(firstStarted.Wait(1_000));
 
@@ -503,7 +503,7 @@ public sealed class ResourceSafetyTests
         Assert.True(secondWriterStarted.Wait(1_000));
         secondWriterGate.Set();
 
-        JobSystem.CombineDependencies(new[] { first, reader, secondWriter }).Complete();
+        JobSystem.Current.CombineDependencies(new[] { first, reader, secondWriter }).Complete();
         _data.Events.AssertBefore(firstGate, readerStarted);
         _data.Events.AssertBefore(readerGate, secondWriterStarted);
     }
@@ -511,7 +511,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void ConcurrentWriteSchedulingSameResourceProducesDeterministicResult()
     {
-        var resource = JobSystem.CreateResource("concurrent-writes");
+        var resource = JobSystem.Current.CreateResource("concurrent-writes");
         var handles = new List<JobHandle>();
         var handlesLock = new Lock();
         var threads = new Thread[4];
@@ -522,9 +522,9 @@ public sealed class ResourceSafetyTests
             {
                 for (var j = 0; j < 25; j++)
                 {
-                    var handle = JobSystem.Schedule(
+                    var handle = JobSystem.Current.Schedule(
                         new ResourceData.NonAtomicIncrementJob(_data),
-                        JobResourceAccess.Write(resource));
+                        [JobResourceAccess.Write(resource)]);
                     lock (handlesLock)
                     {
                         handles.Add(handle);
@@ -539,7 +539,7 @@ public sealed class ResourceSafetyTests
             thread.Join();
         }
 
-        JobSystem.CombineDependencies(handles.ToArray()).Complete();
+        JobSystem.Current.CombineDependencies(handles.ToArray()).Complete();
 
         Assert.Equal(100, _data.UnsafeCounter);
     }
@@ -547,8 +547,8 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void ManagedTokenSerializesSameTokenAndDifferentTokensRunIndependently()
     {
-        var firstToken = JobSystem.CreateResourceToken("managed-service-a");
-        var secondToken = JobSystem.CreateResourceToken("managed-service-b");
+        var firstToken = JobSystem.Current.CreateResourceToken("managed-service-a");
+        var secondToken = JobSystem.Current.CreateResourceToken("managed-service-b");
         using var firstStarted = _data.Events.CreateSignal();
         using var firstGate = _data.Events.CreateSignal();
         using var sameTokenStarted = _data.Events.CreateSignal();
@@ -556,15 +556,15 @@ public sealed class ResourceSafetyTests
         using var otherTokenStarted = _data.Events.CreateSignal();
         using var otherTokenGate = _data.Events.CreateSignal();
 
-        var first = JobSystem.Schedule(
+        var first = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, firstStarted, firstGate),
-            JobResourceAccess.Write(firstToken));
-        var sameToken = JobSystem.Schedule(
+            [JobResourceAccess.Write(firstToken)]);
+        var sameToken = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, sameTokenStarted, sameTokenGate),
-            JobResourceAccess.Write(firstToken));
-        var otherToken = JobSystem.Schedule(
+            [JobResourceAccess.Write(firstToken)]);
+        var otherToken = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 3, otherTokenStarted, otherTokenGate),
-            JobResourceAccess.Write(secondToken));
+            [JobResourceAccess.Write(secondToken)]);
 
         Assert.True(firstStarted.Wait(1_000));
         Assert.True(otherTokenStarted.Wait(1_000));
@@ -573,81 +573,45 @@ public sealed class ResourceSafetyTests
         Assert.True(sameTokenStarted.Wait(1_000));
         sameTokenGate.Set();
         otherTokenGate.Set();
-        JobSystem.CombineDependencies(new[] { first, sameToken, otherToken }).Complete();
+        JobSystem.Current.CombineDependencies(new[] { first, sameToken, otherToken }).Complete();
         _data.Events.AssertBefore(firstGate, sameTokenStarted);
     }
 
     [Fact]
     public void StaleTokenIsRejectedAndTokenComposesWithResourceAccess()
     {
-        var staleToken = JobSystem.CreateResourceToken("stale-token");
-        JobSystem.ReleaseResourceToken(staleToken);
+        var staleToken = JobSystem.Current.CreateResourceToken("stale-token");
+        JobSystem.Current.ReleaseResourceToken(staleToken);
 
         Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.Schedule(new ResourceData.NoOpJob(), JobResourceAccess.Read(staleToken)));
+            JobSystem.Current.Schedule(new ResourceData.NoOpJob(), [JobResourceAccess.Read(staleToken)]));
 
-        var token = JobSystem.CreateResourceToken("live-token");
-        var resource = JobSystem.CreateResource("live-resource");
+        var token = JobSystem.Current.CreateResourceToken("live-token");
+        var resource = JobSystem.Current.CreateResource("live-resource");
         JobResourceAccess[] accesses =
         [
             JobResourceAccess.Write(token),
             JobResourceAccess.Read(resource)
         ];
 
-        JobSystem.Schedule(new ResourceData.RefContainingRecordJob(_data.ManagedLog, "ran"), accesses).Complete();
+        JobSystem.Current.Schedule(new ResourceData.RefContainingRecordJob(_data.ManagedLog, "ran"), accesses).Complete();
 
         Assert.Equal(["ran"], _data.ManagedLog);
     }
 
     [Fact]
-    public void ScopeOwnedResourceLivesThroughChildAndReleasesAfterParentCompletion()
-    {
-        JobSystem.Schedule(new ResourceData.ParentCreatesScopeResourceAndChildUsesIt(_data)).Complete();
-
-        Assert.True(_data.ChildUsedScopeResource);
-        Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.Schedule(
-                new ResourceData.NoOpJob(),
-                JobResourceAccess.Read(_data.LastScopeResource)));
-    }
-
-    [Fact]
-    public void ScopeOwnedResourceLivesThroughGrandchild()
-    {
-        JobSystem.Schedule(new ResourceData.ParentCreatesScopeResourceAndGrandchildUsesIt(_data)).Complete();
-
-        Assert.True(_data.GrandchildUsedScopeResource);
-        Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.Schedule(
-                new ResourceData.NoOpJob(),
-                JobResourceAccess.Read(_data.LastScopeResource)));
-    }
-
-    [Fact]
-    public void ScopeOwnedResourceReleasesOnExceptionPath()
-    {
-        var handle = JobSystem.Schedule(new ResourceData.ParentCreatesScopeResourceThenThrows(_data));
-
-        Assert.Throws<InvalidOperationException>(() => handle.Complete());
-        Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.Schedule(
-                new ResourceData.NoOpJob(),
-                JobResourceAccess.Read(_data.LastScopeResource)));
-    }
-
-    [Fact]
     public void CheckedModeRejectsReleaseWhileResourceIsInUse()
     {
-        var resource = JobSystem.CreateResource("in-use");
+        var resource = JobSystem.Current.CreateResource("in-use");
         using var started = _data.Events.CreateSignal();
         using var gate = _data.Events.CreateSignal();
 
-        var handle = JobSystem.Schedule(
+        var handle = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, started, gate),
-            JobResourceAccess.Write(resource));
+            [JobResourceAccess.Write(resource)]);
 
         Assert.True(started.Wait(1_000));
-        Assert.Throws<JobResourceSafetyException>(() => JobSystem.ReleaseResource(resource));
+        Assert.Throws<JobResourceSafetyException>(() => JobSystem.Current.ReleaseResource(resource));
 
         gate.Set();
         handle.Complete();
@@ -657,13 +621,13 @@ public sealed class ResourceSafetyTests
     public void StrictModeReportsJobAndResourceIdentity()
     {
         JobSystem.SafetyMode = JobSafetyMode.Strict;
-        var resource = JobSystem.CreateResource("strict-resource");
-        JobSystem.ReleaseResource(resource);
+        var resource = JobSystem.Current.CreateResource("strict-resource");
+        JobSystem.Current.ReleaseResource(resource);
 
         var ex = Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.Schedule(
+            JobSystem.Current.Schedule(
                 new ResourceData.StrictDiagnosticJob(),
-                JobResourceAccess.Read(resource)));
+                [JobResourceAccess.Read(resource)]));
 
         Assert.Equal(JobSafetyMode.Strict, ex.SafetyMode);
         Assert.EndsWith(nameof(ResourceData.StrictDiagnosticJob), ex.JobTypeName);
@@ -674,14 +638,14 @@ public sealed class ResourceSafetyTests
     public void StaleHandleAfterResourceIdReuseDoesNotReportNewResourceName()
     {
         JobSystem.SafetyMode = JobSafetyMode.Strict;
-        var stale = JobSystem.CreateResource("old-resource");
-        JobSystem.ReleaseResource(stale);
-        var reused = JobSystem.CreateResource("new-resource");
+        var stale = JobSystem.Current.CreateResource("old-resource");
+        JobSystem.Current.ReleaseResource(stale);
+        var reused = JobSystem.Current.CreateResource("new-resource");
 
         var ex = Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.Schedule(
+            JobSystem.Current.Schedule(
                 new ResourceData.StrictDiagnosticJob(),
-                JobResourceAccess.Read(stale)));
+                [JobResourceAccess.Read(stale)]));
 
         Assert.Null(ex.ResourceName);
     }
@@ -690,15 +654,15 @@ public sealed class ResourceSafetyTests
     public void StaleHandleAfterReleasedReuseDoesNotReportLaterResourceName()
     {
         JobSystem.SafetyMode = JobSafetyMode.Strict;
-        var stale = JobSystem.CreateResource("old-resource");
-        JobSystem.ReleaseResource(stale);
-        var reused = JobSystem.CreateResource("new-resource");
-        JobSystem.ReleaseResource(reused);
+        var stale = JobSystem.Current.CreateResource("old-resource");
+        JobSystem.Current.ReleaseResource(stale);
+        var reused = JobSystem.Current.CreateResource("new-resource");
+        JobSystem.Current.ReleaseResource(reused);
 
         var ex = Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.Schedule(
+            JobSystem.Current.Schedule(
                 new ResourceData.StrictDiagnosticJob(),
-                JobResourceAccess.Read(stale)));
+                [JobResourceAccess.Read(stale)]));
 
         Assert.Null(ex.ResourceName);
     }
@@ -707,10 +671,10 @@ public sealed class ResourceSafetyTests
     public void FastModePermitsStaleUncheckedAccess()
     {
         JobSystem.SafetyMode = JobSafetyMode.Fast;
-        var resource = JobSystem.CreateResource("fast-stale");
-        JobSystem.ReleaseResource(resource);
+        var resource = JobSystem.Current.CreateResource("fast-stale");
+        JobSystem.Current.ReleaseResource(resource);
 
-        JobSystem.Schedule(new ResourceData.CountJob(_data), JobResourceAccess.Read(resource)).Complete();
+        JobSystem.Current.Schedule(new ResourceData.CountJob(_data), [JobResourceAccess.Read(resource)]).Complete();
 
         Assert.Equal(1, _data.Counter);
     }
@@ -718,40 +682,40 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void NonOverlappingWriteRangesRunTogether()
     {
-        var resource = JobSystem.CreateResource("ranges");
+        var resource = JobSystem.Current.CreateResource("ranges");
         using var firstStarted = _data.Events.CreateSignal();
         using var secondStarted = _data.Events.CreateSignal();
         using var gate = _data.Events.CreateSignal();
 
-        var first = JobSystem.Schedule(
+        var first = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, firstStarted, gate),
-            JobResourceAccess.Write(resource, 0, 16));
-        var second = JobSystem.Schedule(
+            [JobResourceAccess.Write(resource, 0, 16)]);
+        var second = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, secondStarted, gate),
-            JobResourceAccess.Write(resource, 16, 16));
+            [JobResourceAccess.Write(resource, 16, 16)]);
 
         Assert.True(firstStarted.Wait(1_000));
         Assert.True(secondStarted.Wait(1_000));
 
         gate.Set();
-        JobSystem.CombineDependencies(new[] { first, second }).Complete();
+        JobSystem.Current.CombineDependencies(new[] { first, second }).Complete();
     }
 
     [Fact]
     public void OverlappingWriteRangesAreOrdered()
     {
-        var resource = JobSystem.CreateResource("overlap");
+        var resource = JobSystem.Current.CreateResource("overlap");
         using var firstStarted = _data.Events.CreateSignal();
         using var firstGate = _data.Events.CreateSignal();
         using var secondStarted = _data.Events.CreateSignal();
         using var secondGate = _data.Events.CreateSignal();
 
-        var first = JobSystem.Schedule(
+        var first = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, firstStarted, firstGate),
-            JobResourceAccess.Write(resource, 0, 16));
-        var second = JobSystem.Schedule(
+            [JobResourceAccess.Write(resource, 0, 16)]);
+        var second = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, secondStarted, secondGate),
-            JobResourceAccess.Write(resource, 8, 16));
+            [JobResourceAccess.Write(resource, 8, 16)]);
 
         Assert.True(firstStarted.Wait(1_000));
 
@@ -766,18 +730,18 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void ReadRangeAfterWriteRangeIsOrdered()
     {
-        var resource = JobSystem.CreateResource("range-read");
+        var resource = JobSystem.Current.CreateResource("range-read");
         using var writerStarted = _data.Events.CreateSignal();
         using var writerGate = _data.Events.CreateSignal();
         using var readerStarted = _data.Events.CreateSignal();
         using var readerGate = _data.Events.CreateSignal();
 
-        var writer = JobSystem.Schedule(
+        var writer = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, writerStarted, writerGate),
-            JobResourceAccess.Write(resource, 5, 10));
-        var reader = JobSystem.Schedule(
+            [JobResourceAccess.Write(resource, 5, 10)]);
+        var reader = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 2, readerStarted, readerGate),
-            JobResourceAccess.Read(resource, 7, 2));
+            [JobResourceAccess.Read(resource, 7, 2)]);
 
         Assert.True(writerStarted.Wait(1_000));
 
@@ -792,7 +756,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void RangeEndOverflowIsRejected()
     {
-        var resource = JobSystem.CreateResource("range-overflow");
+        var resource = JobSystem.Current.CreateResource("range-overflow");
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             JobResourceAccess.Write(resource, long.MaxValue - 4, 8));
@@ -801,20 +765,20 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void ParallelJobAccessesResourceAndWaitsForPriorWriter()
     {
-        var resource = JobSystem.CreateResource("parallel-resource");
+        var resource = JobSystem.Current.CreateResource("parallel-resource");
         var values = new int[32];
         using var writerStarted = _data.Events.CreateSignal();
         using var writerGate = _data.Events.CreateSignal();
         using var parallelStarted = _data.Events.CreateSignal();
 
-        var writer = JobSystem.Schedule(
+        var writer = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, writerStarted, writerGate),
-            JobResourceAccess.Write(resource));
-        var parallel = JobSystem.ScheduleParallel(
+            [JobResourceAccess.Write(resource)]);
+        var parallel = JobSystem.Current.ScheduleParallel(
             new ResourceData.MarkIndexJob(values, parallelStarted),
             values.Length,
             4,
-            JobResourceAccess.Read(resource));
+            [JobResourceAccess.Read(resource)]);
 
         Assert.True(writerStarted.Wait(1_000));
 
@@ -831,11 +795,11 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void ChildResourceAccessDelaysParentCompletion()
     {
-        var resource = JobSystem.CreateResource("child-resource");
+        var resource = JobSystem.Current.CreateResource("child-resource");
         using var started = _data.Events.CreateSignal();
         using var gate = _data.Events.CreateSignal();
 
-        var parent = JobSystem.Schedule(new ResourceData.ParentSchedulesBlockingChild(_data, resource, started, gate));
+        var parent = JobSystem.Current.Schedule(new ResourceData.ParentSchedulesBlockingChild(_data, resource, started, gate));
 
         Assert.True(started.Wait(1_000));
         Assert.False(parent.IsCompleted);
@@ -849,18 +813,18 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void RangeAccessFromChildScopeIsTracked()
     {
-        var resource = JobSystem.CreateResource("child-range-resource");
+        var resource = JobSystem.Current.CreateResource("child-range-resource");
         using var childStarted = _data.Events.CreateSignal();
         using var childGate = _data.Events.CreateSignal();
 
-        var parent = JobSystem.Schedule(
+        var parent = JobSystem.Current.Schedule(
             new ResourceData.ParentSchedulesBlockingRangeChild(_data, resource, childStarted, childGate));
 
         Assert.True(childStarted.Wait(1_000));
 
-        var overlappingWriter = JobSystem.Schedule(
+        var overlappingWriter = JobSystem.Current.Schedule(
             new ResourceData.RecordJob(_data, 42),
-            JobResourceAccess.Write(resource, 8, 4));
+            [JobResourceAccess.Write(resource, 8, 4)]);
 
         AssertNotRecorded(42);
         childGate.Set();
@@ -873,11 +837,11 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void ChildAccessToParentDeclaredResourceWaitsForParentBody()
     {
-        var resource = JobSystem.CreateResource("parent-body-resource");
+        var resource = JobSystem.Current.CreateResource("parent-body-resource");
 
-        JobSystem.Schedule(
+        JobSystem.Current.Schedule(
             new ResourceData.ParentWithAccessSchedulesChildOnSameResource(_data, resource),
-            JobResourceAccess.Write(resource)).Complete();
+            [JobResourceAccess.Write(resource)]).Complete();
 
         Assert.True(_data.ChildUsedScopeResource);
     }
@@ -885,14 +849,14 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void ChildReadThenWriteOnParentDeclaredResourceOrdersWriterAfterChildReader()
     {
-        var resource = JobSystem.CreateResource("parent-read-write-resource");
+        var resource = JobSystem.Current.CreateResource("parent-read-write-resource");
         using var childrenScheduled = _data.Events.CreateSignal();
         using var readerStarted = _data.Events.CreateSignal();
         using var readerGate = _data.Events.CreateSignal();
         using var writerStarted = _data.Events.CreateSignal();
         using var writerGate = _data.Events.CreateSignal();
 
-        var parent = JobSystem.Schedule(
+        var parent = JobSystem.Current.Schedule(
             new ResourceData.ParentWithAccessSchedulesReadThenWriteChildren(
                 _data, resource,
                 childrenScheduled,
@@ -900,7 +864,7 @@ public sealed class ResourceSafetyTests
                 readerGate,
                 writerStarted,
                 writerGate),
-            JobResourceAccess.Write(resource));
+            [JobResourceAccess.Write(resource)]);
 
         Assert.True(childrenScheduled.Wait(1_000));
         Assert.True(readerStarted.Wait(1_000));
@@ -915,8 +879,8 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void ExternalSuccessorWaitsForParentBodyInsteadOfAttachedChildCompletion()
     {
-        var parentResource = JobSystem.CreateResource("parent-work-release");
-        var childResource = JobSystem.CreateResource("attached-child-work-release");
+        var parentResource = JobSystem.Current.CreateResource("parent-work-release");
+        var childResource = JobSystem.Current.CreateResource("attached-child-work-release");
         using var parentStarted = _data.Events.CreateSignal();
         using var allowChildSchedule = _data.Events.CreateSignal();
         using var childScheduled = _data.Events.CreateSignal();
@@ -925,7 +889,7 @@ public sealed class ResourceSafetyTests
         using var successorStarted = _data.Events.CreateSignal();
         using var successorGate = _data.Events.CreateSignal();
 
-        var parent = JobSystem.Schedule(
+        var parent = JobSystem.Current.Schedule(
             new ResourceData.ParentSchedulesChildAfterGate(
                 childResource,
                 parentStarted,
@@ -933,7 +897,7 @@ public sealed class ResourceSafetyTests
                 childScheduled,
                 parentBodyReturning,
                 childStarted),
-            JobResourceAccess.Write(parentResource));
+            [JobResourceAccess.Write(parentResource)]);
 
         Assert.True(parentStarted.Wait(1_000));
 
@@ -942,7 +906,7 @@ public sealed class ResourceSafetyTests
             JobResourceAccess.Write(parentResource),
             JobResourceAccess.Write(childResource)
         ];
-        var successor = JobSystem.Schedule(
+        var successor = JobSystem.Current.Schedule(
             new ResourceData.BlockingSignalJob(successorStarted, successorGate),
             successorAccesses);
 
@@ -975,8 +939,8 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void ExplicitResourceSuccessorReservesThenActivatesAfterLaterAttachedChild()
     {
-        var parentResource = JobSystem.CreateResource("deferred-parent-resource");
-        var childResource = JobSystem.CreateResource("deferred-child-resource");
+        var parentResource = JobSystem.Current.CreateResource("deferred-parent-resource");
+        var childResource = JobSystem.Current.CreateResource("deferred-child-resource");
         using var parentStarted = _data.Events.CreateSignal();
         using var allowChildSchedule = _data.Events.CreateSignal();
         using var childScheduled = _data.Events.CreateSignal();
@@ -984,7 +948,7 @@ public sealed class ResourceSafetyTests
         using var childGate = _data.Events.CreateSignal();
         using var successorStarted = _data.Events.CreateSignal();
 
-        var parent = JobSystem.Schedule(
+        var parent = JobSystem.Current.Schedule(
             new ResourceData.ParentSchedulesConflictingChildAfterGate(
                 childResource,
                 parentStarted,
@@ -992,7 +956,7 @@ public sealed class ResourceSafetyTests
                 childScheduled,
                 childStarted,
                 childGate),
-            JobResourceAccess.Write(parentResource));
+            [JobResourceAccess.Write(parentResource)]);
         Assert.True(parentStarted.Wait(1_000));
 
         JobResourceAccess[] successorAccesses =
@@ -1000,7 +964,7 @@ public sealed class ResourceSafetyTests
             JobResourceAccess.Write(parentResource),
             JobResourceAccess.Write(childResource)
         ];
-        var successor = JobSystem.Schedule(
+        var successor = JobSystem.Current.Schedule(
             new ResourceData.SignalJob(successorStarted),
             successorAccesses,
             parent);
@@ -1008,7 +972,7 @@ public sealed class ResourceSafetyTests
         // A deferred access is absent from the conflict frontier, but it still retains the
         // resource identity for the complete lifetime of the pending schedule.
         Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.ReleaseResource(childResource));
+            JobSystem.Current.ReleaseResource(childResource));
 
         try
         {
@@ -1029,16 +993,16 @@ public sealed class ResourceSafetyTests
             childGate.Set();
         }
 
-        JobSystem.ReleaseResource(parentResource);
-        JobSystem.ReleaseResource(childResource);
+        JobSystem.Current.ReleaseResource(parentResource);
+        JobSystem.Current.ReleaseResource(childResource);
         _data.Events.AssertBefore(childGate, successorStarted);
     }
 
     [Fact]
     public void ParallelExplicitResourceSuccessorActivatesAfterLaterAttachedChild()
     {
-        var parentResource = JobSystem.CreateResource("parallel-deferred-parent");
-        var childResource = JobSystem.CreateResource("parallel-deferred-child");
+        var parentResource = JobSystem.Current.CreateResource("parallel-deferred-parent");
+        var childResource = JobSystem.Current.CreateResource("parallel-deferred-child");
         using var parentStarted = _data.Events.CreateSignal();
         using var allowChildSchedule = _data.Events.CreateSignal();
         using var childScheduled = _data.Events.CreateSignal();
@@ -1047,7 +1011,7 @@ public sealed class ResourceSafetyTests
         using var successorStarted = _data.Events.CreateSignal();
         var values = new int[8];
 
-        var parent = JobSystem.Schedule(
+        var parent = JobSystem.Current.Schedule(
             new ResourceData.ParentSchedulesConflictingChildAfterGate(
                 childResource,
                 parentStarted,
@@ -1055,7 +1019,7 @@ public sealed class ResourceSafetyTests
                 childScheduled,
                 childStarted,
                 childGate),
-            JobResourceAccess.Write(parentResource));
+            [JobResourceAccess.Write(parentResource)]);
         Assert.True(parentStarted.Wait(1_000));
 
         JobResourceAccess[] successorAccesses =
@@ -1063,7 +1027,7 @@ public sealed class ResourceSafetyTests
             JobResourceAccess.Write(parentResource),
             JobResourceAccess.Write(childResource)
         ];
-        var successor = JobSystem.ScheduleParallel(
+        var successor = JobSystem.Current.ScheduleParallel(
             new ResourceData.MarkIndexJob(values, successorStarted),
             values.Length,
             batchSize: 1,
@@ -1088,32 +1052,32 @@ public sealed class ResourceSafetyTests
             childGate.Set();
         }
 
-        JobSystem.ReleaseResource(parentResource);
-        JobSystem.ReleaseResource(childResource);
+        JobSystem.Current.ReleaseResource(parentResource);
+        JobSystem.Current.ReleaseResource(childResource);
         _data.Events.AssertBefore(childGate, successorStarted);
     }
 
     [Fact]
     public void FaultedExplicitDependencyCancelsDeferredResourceReservation()
     {
-        var resource = JobSystem.CreateResource("faulted-deferred-reservation");
+        var resource = JobSystem.Current.CreateResource("faulted-deferred-reservation");
         using var dependencyStarted = _data.Events.CreateSignal();
         using var dependencyGate = _data.Events.CreateSignal();
         using var successorStarted = _data.Events.CreateSignal();
 
-        var dependency = JobSystem.Schedule(
+        var dependency = JobSystem.Current.Schedule(
             new ResourceData.BlockingThrowJob(dependencyStarted, dependencyGate));
         Assert.True(dependencyStarted.Wait(1_000));
 
-        var successor = JobSystem.Schedule(
+        var successor = JobSystem.Current.Schedule(
             new ResourceData.SignalJob(successorStarted),
-            JobResourceAccess.Write(resource),
+            [JobResourceAccess.Write(resource)],
             dependency);
 
         // The access has not entered the conflict frontier, but the pending schedule must
         // retain its identity until the explicit dependency either succeeds or faults.
         Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.ReleaseResource(resource));
+            JobSystem.Current.ReleaseResource(resource));
 
         try
         {
@@ -1123,7 +1087,7 @@ public sealed class ResourceSafetyTests
             Assert.False(successorStarted.IsSet);
 
             // Fault propagation cancels the reservation rather than leaking a permanent use.
-            JobSystem.ReleaseResource(resource);
+            JobSystem.Current.ReleaseResource(resource);
             var dependencyFault = Assert.Throws<InvalidOperationException>(() => dependency.Complete());
 
         }
@@ -1136,17 +1100,17 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void FaultedResourceHazardOrdersButDoesNotCancelSuccessor()
     {
-        JobResource resource = JobSystem.CreateResource("faulted-resource-hazard");
+        JobResource resource = JobSystem.Current.CreateResource("faulted-resource-hazard");
         using var predecessorStarted = _data.Events.CreateSignal();
         using var predecessorGate = _data.Events.CreateSignal();
         using var successorStarted = _data.Events.CreateSignal();
-        JobHandle predecessor = JobSystem.Schedule(
+        JobHandle predecessor = JobSystem.Current.Schedule(
             new ResourceData.BlockingThrowJob(predecessorStarted, predecessorGate),
-            JobResourceAccess.Write(resource));
+            [JobResourceAccess.Write(resource)]);
         Assert.True(predecessorStarted.Wait(TimeSpan.FromSeconds(5)));
-        JobHandle successor = JobSystem.Schedule(
+        JobHandle successor = JobSystem.Current.Schedule(
             new ResourceData.SignalJob(successorStarted),
-            JobResourceAccess.Write(resource));
+            [JobResourceAccess.Write(resource)]);
 
         try
         {
@@ -1163,24 +1127,24 @@ public sealed class ResourceSafetyTests
             predecessorGate.Set();
         }
 
-        JobSystem.ReleaseResource(resource);
+        JobSystem.Current.ReleaseResource(resource);
         _data.Events.AssertBefore(predecessorGate, successorStarted);
     }
 
     [Fact]
     public void ManagedJobsShareResourceDependencies()
     {
-        var resource = JobSystem.CreateResource("mixed-lanes");
+        var resource = JobSystem.Current.CreateResource("mixed-lanes");
         using var writerStarted = _data.Events.CreateSignal();
         using var writerGate = _data.Events.CreateSignal();
         using var managedStarted = _data.Events.CreateSignal();
 
-        var writer = JobSystem.Schedule(
+        var writer = JobSystem.Current.Schedule(
             new ResourceData.BlockingRecordJob(_data, 1, writerStarted, writerGate),
-            JobResourceAccess.Write(resource));
-        var managed = JobSystem.Schedule(
+            [JobResourceAccess.Write(resource)]);
+        var managed = JobSystem.Current.Schedule(
             new ResourceData.RefContainingRecordJob(_data.ManagedLog, "managed", managedStarted),
-            JobResourceAccess.Read(resource));
+            [JobResourceAccess.Read(resource)]);
 
         Assert.True(writerStarted.Wait(1_000));
 
@@ -1201,12 +1165,12 @@ public sealed class ResourceSafetyTests
         _data.Reset();
         var values = new List<int> { 0 };
 
-        var writer = JobSystem.Schedule(
+        var writer = JobSystem.Current.Schedule(
             new ResourceData.WriteListValue(values, 42),
-            JobResourceAccess.Write(values));
-        var reader = JobSystem.Schedule(
+            [JobResourceAccess.Write(values)]);
+        var reader = JobSystem.Current.Schedule(
             new ResourceData.ReadListValue(_data, values),
-            JobResourceAccess.Read(values));
+            [JobResourceAccess.Read(values)]);
 
         reader.Complete();
         writer.Complete();
@@ -1226,39 +1190,39 @@ public sealed class ResourceSafetyTests
         using var firstStarted = _data.Events.CreateSignal();
         using var gate = _data.Events.CreateSignal();
 
-        var stackWriter = JobSystem.Schedule(
+        var stackWriter = JobSystem.Current.Schedule(
             new ResourceData.PushStackValue(stack, 7),
-            JobResourceAccess.Write(stack));
-        var stackReader = JobSystem.Schedule(
+            [JobResourceAccess.Write(stack)]);
+        var stackReader = JobSystem.Current.Schedule(
             new ResourceData.ReadStackValue(_data, stack),
-            JobResourceAccess.Read(stack));
+            [JobResourceAccess.Read(stack)]);
         stackReader.Complete();
         stackWriter.Complete();
 
-        var dictionaryWriter = JobSystem.Schedule(
+        var dictionaryWriter = JobSystem.Current.Schedule(
             new ResourceData.WriteDictionaryValue(dictionary, "value", 17),
-            JobResourceAccess.Write(dictionary));
-        var dictionaryReader = JobSystem.Schedule(
+            [JobResourceAccess.Write(dictionary)]);
+        var dictionaryReader = JobSystem.Current.Schedule(
             new ResourceData.ReadDictionaryValue(_data, dictionary, "value"),
-            JobResourceAccess.Read(dictionary));
+            [JobResourceAccess.Read(dictionary)]);
         dictionaryReader.Complete();
         dictionaryWriter.Complete();
 
-        var queueWriter = JobSystem.Schedule(
+        var queueWriter = JobSystem.Current.Schedule(
             new ResourceData.EnqueueQueueValue(queue, 23),
-            JobResourceAccess.Write(queue));
-        var queueReader = JobSystem.Schedule(
+            [JobResourceAccess.Write(queue)]);
+        var queueReader = JobSystem.Current.Schedule(
             new ResourceData.ReadQueueValue(_data, queue),
-            JobResourceAccess.Read(queue));
+            [JobResourceAccess.Read(queue)]);
         queueReader.Complete();
         queueWriter.Complete();
 
-        var firstArrayWriter = JobSystem.Schedule(
+        var firstArrayWriter = JobSystem.Current.Schedule(
             new ResourceData.BlockingWriteArrayValue(array, index: 0, value: 11, firstStarted, gate),
-            JobResourceAccess.Write(array, start: 0, length: 1));
-        var secondArrayWriter = JobSystem.Schedule(
+            [JobResourceAccess.Write(array, start: 0, length: 1)]);
+        var secondArrayWriter = JobSystem.Current.Schedule(
             new ResourceData.WriteArrayValue(array, index: 1, value: 13),
-            JobResourceAccess.Write(array, start: 1, length: 1));
+            [JobResourceAccess.Write(array, start: 1, length: 1)]);
 
         Assert.True(firstStarted.Wait(1_000));
         secondArrayWriter.Complete();
@@ -1281,20 +1245,20 @@ public sealed class ResourceSafetyTests
         using var firstStarted = _data.Events.CreateSignal();
         using var gate = _data.Events.CreateSignal();
 
-        var firstWriter = JobSystem.Schedule(
+        var firstWriter = JobSystem.Current.Schedule(
             new ResourceData.BlockingWriteArrayValue(array, index: 0, value: 31, firstStarted, gate),
-            JobResourceAccess.Write(array.AsMemory(0, 1)));
-        var secondWriter = JobSystem.Schedule(
+            [JobResourceAccess.Write(array.AsMemory(0, 1))]);
+        var secondWriter = JobSystem.Current.Schedule(
             new ResourceData.WriteArrayValue(array, index: 1, value: 37),
-            JobResourceAccess.Write(array.AsMemory(1, 1)));
+            [JobResourceAccess.Write(array.AsMemory(1, 1))]);
 
         Assert.True(firstStarted.Wait(1_000));
         secondWriter.Complete();
         Assert.Equal(37, array[1]);
 
-        var readOnlyReader = JobSystem.Schedule(
+        var readOnlyReader = JobSystem.Current.Schedule(
             new ResourceData.ReadArrayValue(_data, array, index: 0),
-            JobResourceAccess.Read(new ReadOnlyMemory<int>(array, 0, 1)));
+            [JobResourceAccess.Read(new ReadOnlyMemory<int>(array, 0, 1))]);
 
         Assert.False(readOnlyReader.IsCompleted);
 
@@ -1317,20 +1281,20 @@ public sealed class ResourceSafetyTests
 
         Assert.Throws<ArgumentException>(() => JobResourceAccess.Read(array, other.AsSpan()));
 
-        var firstWriter = JobSystem.Schedule(
+        var firstWriter = JobSystem.Current.Schedule(
             new ResourceData.BlockingWriteArrayValue(array, index: 0, value: 43, firstStarted, gate),
-            JobResourceAccess.Write(array, array.AsSpan(0, 1)));
-        var secondWriter = JobSystem.Schedule(
+            [JobResourceAccess.Write(array, array.AsSpan(0, 1))]);
+        var secondWriter = JobSystem.Current.Schedule(
             new ResourceData.WriteArrayValue(array, index: 1, value: 47),
-            JobResourceAccess.Write(array, array.AsSpan(1, 1)));
+            [JobResourceAccess.Write(array, array.AsSpan(1, 1))]);
 
         Assert.True(firstStarted.Wait(1_000));
         secondWriter.Complete();
         Assert.Equal(47, array[1]);
 
-        var reader = JobSystem.Schedule(
+        var reader = JobSystem.Current.Schedule(
             new ResourceData.ReadArrayValue(_data, array, index: 0),
-            JobResourceAccess.Read(array, (ReadOnlySpan<int>)array.AsSpan(0, 1)));
+            [JobResourceAccess.Read(array, (ReadOnlySpan<int>)array.AsSpan(0, 1))]);
 
         Assert.False(reader.IsCompleted);
 
@@ -1348,23 +1312,23 @@ public sealed class ResourceSafetyTests
         _data.Reset();
         var container = new ResourceData.CustomCounterContainer(
             [0],
-            JobSystem.CreateResourceToken("custom-struct-container"));
+            JobSystem.Current.CreateResourceToken("custom-struct-container"));
 
         try
         {
-            var writer = JobSystem.Schedule(
+            var writer = JobSystem.Current.Schedule(
                 new ResourceData.WriteCustomCounter(container, 41),
-                JobResourceAccess.Write<ResourceData.CustomCounterContainer, ResourceData.CustomCounterProvider>(ref container));
-            var reader = JobSystem.Schedule(
+                [JobResourceAccess.Write<ResourceData.CustomCounterContainer, ResourceData.CustomCounterProvider>(ref container)]);
+            var reader = JobSystem.Current.Schedule(
                 new ResourceData.ReadCustomCounter(_data, container),
-                JobResourceAccess.Read<ResourceData.CustomCounterContainer, ResourceData.CustomCounterProvider>(ref container));
+                [JobResourceAccess.Read<ResourceData.CustomCounterContainer, ResourceData.CustomCounterProvider>(ref container)]);
 
             reader.Complete();
             writer.Complete();
         }
         finally
         {
-            JobSystem.ReleaseResourceToken(container.Token);
+            JobSystem.Current.ReleaseResourceToken(container.Token);
         }
 
         Assert.Equal(41, _data.ContainerObservedValue);
@@ -1525,47 +1489,6 @@ public sealed class ResourceSafetyTests
             }
         }
 
-        internal struct ParentCreatesScopeResourceAndChildUsesIt : IJob
-        {
-            private readonly ResourceData _data;
-
-            internal ParentCreatesScopeResourceAndChildUsesIt(ResourceData data) => _data = data;
-
-            public void Execute()
-            {
-                var resource = JobSystem.CreateScopeResource("scope-child");
-                _data.LastScopeResource = resource;
-                JobSystem.Schedule(new ScopeChildJob(_data, resource), JobResourceAccess.Read(resource));
-            }
-        }
-
-        internal struct ParentCreatesScopeResourceAndGrandchildUsesIt : IJob
-        {
-            private readonly ResourceData _data;
-
-            internal ParentCreatesScopeResourceAndGrandchildUsesIt(ResourceData data) => _data = data;
-
-            public void Execute()
-            {
-                var resource = JobSystem.CreateScopeResource("scope-grandchild");
-                _data.LastScopeResource = resource;
-                JobSystem.Schedule(new ScopeChildSchedulesGrandchildJob(_data, resource));
-            }
-        }
-
-        internal struct ParentCreatesScopeResourceThenThrows : IJob
-        {
-            private readonly ResourceData _data;
-
-            internal ParentCreatesScopeResourceThenThrows(ResourceData data) => _data = data;
-
-            public void Execute()
-            {
-                _data.LastScopeResource = JobSystem.CreateScopeResource("scope-fault");
-                throw new InvalidOperationException("scope failed");
-            }
-        }
-
         internal readonly struct ParentSchedulesBlockingChild : IJob
         {
             private readonly ResourceData _data;
@@ -1587,9 +1510,9 @@ public sealed class ResourceSafetyTests
 
             public void Execute()
             {
-                JobSystem.Schedule(
+                JobSystem.Current.Schedule(
                     new BlockingScopeChildJob(_data, _started, _gate),
-                    JobResourceAccess.Read(_resource));
+                    [JobResourceAccess.Read(_resource)]);
             }
         }
 
@@ -1614,9 +1537,9 @@ public sealed class ResourceSafetyTests
 
             public void Execute()
             {
-                JobSystem.Schedule(
+                JobSystem.Current.Schedule(
                     new BlockingScopeChildJob(_data, _started, _gate),
-                    JobResourceAccess.Read(_resource, 0, 16));
+                    [JobResourceAccess.Read(_resource, 0, 16)]);
             }
         }
 
@@ -1634,7 +1557,7 @@ public sealed class ResourceSafetyTests
 
             public void Execute()
             {
-                JobSystem.Schedule(new ScopeChildJob(_data, _resource), JobResourceAccess.Read(_resource));
+                JobSystem.Current.Schedule(new ScopeChildJob(_data, _resource), [JobResourceAccess.Read(_resource)]);
             }
         }
 
@@ -1668,12 +1591,12 @@ public sealed class ResourceSafetyTests
 
             public void Execute()
             {
-                JobSystem.Schedule(
+                JobSystem.Current.Schedule(
                     new BlockingRecordJob(_data, 10, _readerStarted, _readerGate),
-                    JobResourceAccess.Read(_resource));
-                JobSystem.Schedule(
+                    [JobResourceAccess.Read(_resource)]);
+                JobSystem.Current.Schedule(
                     new BlockingRecordJob(_data, 11, _writerStarted, _writerGate),
-                    JobResourceAccess.Write(_resource));
+                    [JobResourceAccess.Write(_resource)]);
                 _childrenScheduled.Set();
             }
         }
@@ -1707,9 +1630,9 @@ public sealed class ResourceSafetyTests
             {
                 _parentStarted.Set();
                 _allowChildSchedule.Wait();
-                JobSystem.Schedule(
+                JobSystem.Current.Schedule(
                     new SignalJob(_childStarted),
-                    JobResourceAccess.Write(_childResource));
+                    [JobResourceAccess.Write(_childResource)]);
                 _childScheduled.Set();
                 _parentBodyReturning.Set();
             }
@@ -1744,9 +1667,9 @@ public sealed class ResourceSafetyTests
             {
                 _parentStarted.Set();
                 _allowChildSchedule.Wait();
-                JobSystem.Schedule(
+                JobSystem.Current.Schedule(
                     new BlockingSignalJob(_childStarted, _childGate),
-                    JobResourceAccess.Write(_childResource));
+                    [JobResourceAccess.Write(_childResource)]);
                 _childScheduled.Set();
             }
         }
@@ -2132,7 +2055,7 @@ public sealed class ResourceSafetyTests
 
             public void Execute()
             {
-                JobSystem.Schedule(new ScopeGrandchildJob(_data, _resource), JobResourceAccess.Read(_resource));
+                JobSystem.Current.Schedule(new ScopeGrandchildJob(_data, _resource), [JobResourceAccess.Read(_resource)]);
             }
         }
 

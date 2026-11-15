@@ -12,9 +12,9 @@ public sealed class RegistryCodecTests
         var firstReads = new List<float>();
         var secondReads = new List<float>();
         var first = new SerializationRegistry()
-            .RegisterCodec<SerPosition, RecordingPositionCodec>(key, new(firstReads));
+            .Register<SerPosition, RecordingPositionCodec>(key, new(firstReads));
         var second = new SerializationRegistry()
-            .RegisterCodec<SerPosition, RecordingPositionCodec>(key, new(secondReads));
+            .Register<SerPosition, RecordingPositionCodec>(key, new(secondReads));
         using var stream = new MemoryStream();
         WorldSerializer.WriteComponent(stream, new SerPosition { X = 4, Y = 5 }, first, new SerializeOptions(Purpose: SavePurpose.DurableSave));
 
@@ -35,7 +35,7 @@ public sealed class RegistryCodecTests
         var written = new List<int>();
         var read = new List<int>();
         var registry = new SerializationRegistry()
-            .RegisterBufferCodec<SerElement, RecordingElementCodec>(key, new(written, read));
+            .RegisterBuffer<SerElement, RecordingElementCodec>(key, new(written, read));
         using var source = new World();
         Entity entity = source.Create();
         source.AddBuffer<SerElement>(entity);
@@ -70,7 +70,7 @@ public sealed class RegistryCodecTests
             SerializationError.UnknownType, "Codec-selected read failure.", cause);
         var writer = new SerializationRegistry().Register<SerPosition, SerPositionFullCodec>(key);
         var reader = new SerializationRegistry()
-            .RegisterCodec<SerPosition, FailingPositionCodec>(key, new(expected));
+            .Register<SerPosition, FailingPositionCodec>(key, new(expected));
         using var stream = new MemoryStream();
         WorldSerializer.WriteComponent(stream, new SerPosition { X = 4, Y = 5 }, writer, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         stream.Position = 0;

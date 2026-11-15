@@ -45,7 +45,7 @@ public sealed class JobCommandBufferTests : JobTest
         Assert.Equal(Count, outgoing.Entries.Length);
         Assert.All(created, edge => Assert.True(edge.TryResolve(out _)));
         Assert.Equal(Enumerable.Range(0, Count), outgoing.Entries.ToArray()
-            .Select(edge => world.ReadComponentData<JobCommandLink>(edge.Edge).Value).Order());
+            .Select(edge => world.ReadValue<JobCommandLink>(edge.Edge).Value).Order());
     }
 
     [Fact]
@@ -62,8 +62,8 @@ public sealed class JobCommandBufferTests : JobTest
         commands[0].EditEndpoints<JobCommandUniqueTarget>(edits, deferred: true);
         Jobs.Schedule(new PlayCommands(commands), ((WorldJobs)world.Execution!).StructureWrite).Complete();
 
-        Assert.Equal(targetB, world.ReadComponentData<RelationEndpoints<JobCommandUniqueTarget>>(edgeA.Entity).Target);
-        Assert.Equal(targetA, world.ReadComponentData<RelationEndpoints<JobCommandUniqueTarget>>(edgeB.Entity).Target);
+        Assert.Equal(targetB, world.ReadValue<RelationEndpoints<JobCommandUniqueTarget>>(edgeA.Entity).Target);
+        Assert.Equal(targetA, world.ReadValue<RelationEndpoints<JobCommandUniqueTarget>>(edgeB.Entity).Target);
         using (RelationRead incoming = Relations<JobCommandUniqueTarget>.Incoming(world, targetA))
             Assert.Equal(edgeA.Entity, Assert.Single(incoming.Entries.ToArray()).Edge);
         Relations<JobCommandUniqueTarget>.Maintain(world);
@@ -181,7 +181,7 @@ public sealed class JobCommandBufferTests : JobTest
         JobHandle producer = Jobs.Schedule(new StartChildProducer(Jobs, commands[0], created));
         Jobs.Schedule(new PlayCommands(commands), ((WorldJobs)world.Execution!).StructureWrite, dependency: producer).Complete();
         Assert.True(created[0].TryResolve(out Entity entity));
-        Assert.Equal(7, world.ReadComponentData<JobCommandValue>(entity).Value);
+        Assert.Equal(7, world.ReadValue<JobCommandValue>(entity).Value);
     }
 
     [Fact]
@@ -231,7 +231,7 @@ public sealed class JobCommandBufferTests : JobTest
         finally { released.SetResult(); blocker.Complete(); }
         commands.Playback();
         Assert.True(created.TryResolve(out Entity entity));
-        Assert.Equal(7, world.ReadComponentData<JobCommandValue>(entity).Value);
+        Assert.Equal(7, world.ReadValue<JobCommandValue>(entity).Value);
     }
 
     [Fact]
@@ -290,7 +290,7 @@ public sealed class JobCommandBufferTests : JobTest
         World world = CreateJobWorld();
         using var commands = new CommandBatch(world, 0);
         JobHandle dependency = Jobs.Schedule(new ThrowingDependency());
-        JobHandle producer = Jobs.ScheduleParallel(new CreateByIndex(commands), 0, 1, dependency);
+        JobHandle producer = Jobs.ScheduleParallel(new CreateByIndex(commands), 0, 1, dependency: dependency);
         Assert.Throws<ProducerDependencyException>(producer.Complete);
         Assert.Equal(0, world.EntityCount);
     }

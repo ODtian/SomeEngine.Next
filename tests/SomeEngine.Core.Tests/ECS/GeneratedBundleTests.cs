@@ -22,7 +22,7 @@ public sealed class GeneratedBundleTests
         Assert.Equal(2, world.Read<BundlePosition>(entity).X);
         Assert.True(world.Has<BundleTag>(entity));
         Assert.Equal(7, world.ReadShared<BundleScene>(entity).Value);
-        Assert.Equal(3, world.ReadSparse<BundleDamage>(entity).Amount);
+        Assert.Equal(3, world.Read<BundleDamage>(entity).Amount);
         using ReadOnlyBuffer<BundleItem> buffer = world.ReadBuffer<BundleItem>(entity);
         Assert.Equal([4, 5], buffer.AsSpan().ToArray().Select(item => item.Value));
     }
@@ -71,7 +71,7 @@ public sealed class GeneratedBundleTests
         Assert.Equal(1, world.EntityCount);
         Assert.Equal(9, world.Read<BundlePosition>(entity).X);
         Assert.Equal(10, world.ReadShared<BundleScene>(entity).Value);
-        Assert.Equal(7, world.ReadSparse<BundleDamage>(entity).Amount);
+        Assert.Equal(7, world.Read<BundleDamage>(entity).Amount);
         using IndexMembers previous = index.Find("first");
         using IndexMembers current = index.Find("second");
         Assert.Equal(0, previous.Count);

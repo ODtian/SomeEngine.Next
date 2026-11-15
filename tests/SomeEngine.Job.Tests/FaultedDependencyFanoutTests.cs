@@ -18,7 +18,7 @@ public sealed class FaultedDependencyFanoutTests
             {
                 Assert.True(started.Wait(TimeSpan.FromSeconds(30)));
                 JobHandle[] dependents = Enumerable.Range(0, 128)
-                    .Select(_ => scheduler.Schedule(new CountingJob(dependentCalls), dependency)).ToArray();
+                    .Select(_ => scheduler.Schedule(new CountingJob(dependentCalls), dependency: dependency)).ToArray();
                 release.Set();
                 Assert.Same(failure, Record.Exception(dependency.Complete));
                 for (int index = 0; index < 128; index++)

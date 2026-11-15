@@ -8,8 +8,8 @@ public sealed class AsyncJobRejectionTests
     public void AsyncVoidJobIsRejectedBeforeExecution()
     {
         int[] counts = [0, 0];
-        var access = JobResourceAccess.Write(JobSystem.CreateResource("async job rejection"));
-        Assert.Throws<InvalidOperationException>(() => JobSystem.Schedule(new AsyncVoidJob(counts), access));
+        var access = JobResourceAccess.Write(JobSystem.Current.CreateResource("async job rejection"));
+        Assert.Throws<InvalidOperationException>(() => JobSystem.Current.Schedule(new AsyncVoidJob(counts), [access]));
         Assert.Equal(new[] { 0, 0 }, counts);
     }
 
@@ -17,7 +17,7 @@ public sealed class AsyncJobRejectionTests
     public void ExplicitAsyncVoidJobImplementationIsRejected()
     {
         int[] counts = [0, 0];
-        Assert.Throws<InvalidOperationException>(() => JobSystem.Schedule(new ExplicitAsyncVoidJob(counts)));
+        Assert.Throws<InvalidOperationException>(() => JobSystem.Current.Schedule(new ExplicitAsyncVoidJob(counts)));
         Assert.Equal(new[] { 0, 0 }, counts);
     }
 
@@ -26,9 +26,9 @@ public sealed class AsyncJobRejectionTests
     {
         int[] counts = [0, 0];
         Assert.Throws<InvalidOperationException>(() =>
-            JobSystem.ScheduleParallel(new AsyncVoidParallelJob(counts), length: 0, batchSize: 1));
+            JobSystem.Current.ScheduleParallel(new AsyncVoidParallelJob(counts), length: 0, batchSize: 1));
         Assert.Throws<InvalidOperationException>(() =>
-            JobSystem.ScheduleParallel(new AsyncVoidParallelJob(counts), length: 4, batchSize: 1));
+            JobSystem.Current.ScheduleParallel(new AsyncVoidParallelJob(counts), length: 4, batchSize: 1));
         Assert.Equal(new[] { 0, 0 }, counts);
     }
 
@@ -36,8 +36,8 @@ public sealed class AsyncJobRejectionTests
     public void SynchronousJobAndParallelJobRemainSchedulable()
     {
         int[] counts = [0, 0];
-        JobSystem.Schedule(new SynchronousJob(counts)).Complete();
-        JobSystem.ScheduleParallel(new SynchronousParallelJob(counts), length: 4, batchSize: 1).Complete();
+        JobSystem.Current.Schedule(new SynchronousJob(counts)).Complete();
+        JobSystem.Current.ScheduleParallel(new SynchronousParallelJob(counts), length: 4, batchSize: 1).Complete();
         Assert.Equal(new[] { 1, 4 }, counts);
     }
 

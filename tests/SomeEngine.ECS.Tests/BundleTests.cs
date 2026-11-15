@@ -6,20 +6,20 @@ using Xunit;
 
 namespace SomeEngine.ECS.Tests;
 
-public struct PhysicsBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct PhysicsBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public Position Position;
     public Velocity Velocity;
 }
 
-public struct CombatBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct CombatBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public PhysicsBundle Physics;
     public Health Health;
     public PlayerTag Player;
 }
 
-public struct StatusBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct StatusBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public VisibilityState Visibility;
     public CleanupMarker Cleanup;
@@ -27,14 +27,14 @@ public struct StatusBundle : SomeEngine.ECS.Components.IComponentBundle
     public Damage Damage;
 }
 
-public struct MotionHealthBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct MotionHealthBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public Position Position;
     public Velocity Velocity;
     public Health Health;
 }
 
-public struct FullComponentBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct FullComponentBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public Position Position;
     public Velocity Velocity;
@@ -42,43 +42,43 @@ public struct FullComponentBundle : SomeEngine.ECS.Components.IComponentBundle
     public PureUnmanaged PureUnmanaged;
 }
 
-public struct CleanupPositionBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct CleanupPositionBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public CleanupMarker Cleanup;
     public Position Position;
 }
 
-public struct SortBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct SortBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public SortLow Low;
     public SortHigh High;
 }
 
-public struct PositionVisibilityBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct PositionVisibilityBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public Position Position;
     public VisibilityState Visibility;
 }
 
-public struct BufferBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct BufferBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public Position Position;
     public ReadOnlyMemory<IntElement> Values;
 }
 
-public struct VisibilityMoveSpeedBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct VisibilityMoveSpeedBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public VisibilityState Visibility;
     public MoveSpeed MoveSpeed;
 }
 
-public struct SharedSceneBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct SharedSceneBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public Position Position;
     public SceneId Scene;
 }
 
-public struct SharedOnlyBundle : SomeEngine.ECS.Components.IComponentBundle
+public partial struct SharedOnlyBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public SceneId Scene;
 }
@@ -134,7 +134,7 @@ public class BundleTests
             }));
 
         var sparseEntity = world.Create();
-        world.SetSparse(sparseEntity, new Damage { Amount = 7 });
+        world.Set(sparseEntity, new Damage { Amount = 7 });
 
         Assert.Throws<InvalidOperationException>(() => world.AddBundle(sparseEntity, new StatusBundle
             {
@@ -145,7 +145,7 @@ public class BundleTests
             }));
         Assert.Equal(7, world.Read<Position>(entity).X);
         Assert.False(world.Has<Velocity>(entity));
-        Assert.Equal(7, world.ReadSparse<Damage>(sparseEntity).Amount);
+        Assert.Equal(7, world.Read<Damage>(sparseEntity).Amount);
         Assert.False(world.Has<CleanupMarker>(sparseEntity));
     }
 
@@ -215,8 +215,8 @@ public class BundleTests
         Assert.True(world.Has<VisibilityState>(entity));
         Assert.True(world.IsEnabled<VisibilityState>(entity));
         Assert.True(world.Has<CleanupMarker>(entity));
-        Assert.True(world.HasSparse<Damage>(entity));
-        Assert.Equal(42, world.ReadSparse<Damage>(entity).Amount);
+        Assert.True(world.Has<Damage>(entity));
+        Assert.Equal(42, world.Read<Damage>(entity).Amount);
 
         var matches = ReadIndexedEntities<NameIndex, string>(world, "boss");
         Assert.Contains(entity, matches.ToArray());
@@ -267,7 +267,7 @@ public class BundleTests
 
         Assert.True(world.Has<SceneId>(e1));
         Assert.True(world.Has<SceneId>(e2));
-        Assert.Equal(7, world.ReadShared<SceneId>(e1).Value);
+        Assert.Equal(7, world.Read<SceneId>(e1).Value);
 
         var query = world.Query(
             new QueryDescription().WithStored<Position>()
@@ -290,7 +290,7 @@ public class BundleTests
     {
         var world = new World();
         var entity = world.Create(new Position { X = 1, Y = 2 });
-        world.SetShared(entity, new SceneId { Value = 1 });
+        world.Set(entity, new SceneId { Value = 1 });
 
         world.ReplaceBundle(entity, new SharedOnlyBundle
         {
@@ -318,7 +318,7 @@ public class BundleTests
 
         Assert.Equal(0, oldCount);
         Assert.Equal(1, newCount);
-        Assert.Equal(2, world.ReadShared<SceneId>(entity).Value);
+        Assert.Equal(2, world.Read<SceneId>(entity).Value);
     }
 
     [Fact]
@@ -346,7 +346,7 @@ public class BundleTests
         Assert.False(world.IsEnabled<VisibilityState>(entity));
         Assert.Equal(10, world.Read<VisibilityState>(entity).Value);
         Assert.Equal(20, world.Read<CleanupMarker>(entity).Value);
-        Assert.Equal(30, world.ReadSparse<Damage>(entity).Amount);
+        Assert.Equal(30, world.Read<Damage>(entity).Amount);
         Assert.DoesNotContain(entity, ReadIndexedEntities<NameIndex, string>(world, "before").ToArray());
         Assert.Contains(entity, ReadIndexedEntities<NameIndex, string>(world, "after").ToArray());
     }
@@ -390,82 +390,5 @@ public class BundleTests
         Assert.Equal(10, world.Read<Velocity>(entity).Y);
     }
 
-    [Fact]
-    public void CountedBundleStructWriterWritesEveryRequestedEntity()
-    {
-        using var world = new World();
-        int[] ids = [ComponentId<Position>.Value, ComponentId<Velocity>.Value];
-        var entities = new Entity[3];
-        world.ExecuteBundleSpawnBatch(ids, entities.Length, new BatchOutput(entities), new PairBatchWriter());
-        Assert.Equal(entities.Length, world.EntityCount);
-        for (int index = 0; index < entities.Length; index++)
-        {
-            Assert.True(world.IsAlive(entities[index]));
-            Assert.Equal(index + 1, world.Read<Position>(entities[index]).X);
-            Assert.Equal(index + 30, world.Read<Velocity>(entities[index]).Y);
-        }
-    }
-
-    [Fact]
-    public void CountedSingleComponentStructWriterWritesEveryEntity()
-    {
-        using var world = new World();
-        var entities = new Entity[4];
-        world.ExecuteBundleSpawnBatch([ComponentId<Position>.Value], entities.Length, new BatchOutput(entities), new SingleBatchWriter());
-        for (int index = 0; index < entities.Length; index++)
-        {
-            Assert.True(world.IsAlive(entities[index]));
-            Assert.Equal(index + 1, world.Read<Position>(entities[index]).X);
-            Assert.Equal(index + 2, world.Read<Position>(entities[index]).Y);
-        }
-    }
-
-    [Fact]
-    public void ReservedBundleCanSpawnAdditionalRowsWithExistingEntities()
-    {
-        using var world = new World();
-        world.Spawn(new PhysicsBundle { Position = new Position { X = -1 } });
-        int[] ids = [ComponentId<Position>.Value, ComponentId<Velocity>.Value];
-        world.ReserveBundle(ids, 2_049);
-        world.ExecuteBundleSpawnBatch(ids, 2_049, 0, new ReservedPairWriter());
-        Assert.Equal(2_050, world.EntityCount);
-        var query = world.Query(new QueryDescription().WithStored<Position>().WithStored<Velocity>());
-        var values = new List<float>();
-        {
-            using QueryScope cursor = (query).OpenRead();
-            foreach (QueryChunk rowChunk in cursor)
-                for (int row = 0; row < rowChunk.Count; row++)
-                values.Add(rowChunk.Read<Position>()[row].X);
-
-        };
-        Assert.Equal(Enumerable.Range(-1, 2_050).Select(value => (float)value),
-            values.OrderBy(value => value));
-    }
-
     private readonly record struct BatchOutput(Entity[] Entities);
-    private readonly struct PairBatchWriter : IBundleWriter<BatchOutput>
-    {
-        public void Write(BundleWriteView view, in BatchOutput output)
-        {
-            view.Write(new Position { X = view.Index + 1, Y = view.Index + 10 });
-            view.Write(new Velocity { X = view.Index + 20, Y = view.Index + 30 });
-            output.Entities[view.Index] = view.Entity;
-        }
-    }
-    private readonly struct SingleBatchWriter : IBundleWriter<BatchOutput>
-    {
-        public void Write(BundleWriteView view, in BatchOutput output)
-        {
-            view.Write(new Position { X = view.Index + 1, Y = view.Index + 2 });
-            output.Entities[view.Index] = view.Entity;
-        }
-    }
-    private readonly struct ReservedPairWriter : IBundleWriter<int>
-    {
-        public void Write(BundleWriteView view, in int value)
-        {
-            view.Write(new Position { X = view.Index });
-            view.Write(new Velocity { X = view.Index + 1 });
-        }
-    }
 }

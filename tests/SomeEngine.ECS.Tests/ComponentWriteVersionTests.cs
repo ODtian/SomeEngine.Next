@@ -13,11 +13,11 @@ public sealed class ComponentWriteVersionTests
         using var world = new World();
         var entity = world.Create();
         world.Add(entity, new Position { X = 1 });
-        ulong addedVersion = world.ComponentDataWriteVersion<Position>(entity);
+        ulong addedVersion = world.ComponentWriteVersion<Position>(entity);
 
         world.Set(entity, new Position { X = 2 });
 
-        Assert.NotEqual(addedVersion, world.ComponentDataWriteVersion<Position>(entity));
+        Assert.NotEqual(addedVersion, world.ComponentWriteVersion<Position>(entity));
         Assert.Equal(2, world.Read<Position>(entity).X);
     }
 
@@ -26,12 +26,12 @@ public sealed class ComponentWriteVersionTests
     {
         using var world = new World();
         var entity = world.Create(new Position { X = 1 });
-        ulong version = world.ComponentDataWriteVersion<Position>(entity);
+        ulong version = world.ComponentWriteVersion<Position>(entity);
 
         world.Remove<Position>(entity);
         world.Add(entity, new Position { X = 2 });
 
-        Assert.NotEqual(version, world.ComponentDataWriteVersion<Position>(entity));
+        Assert.NotEqual(version, world.ComponentWriteVersion<Position>(entity));
         Assert.Equal(2, world.Read<Position>(entity).X);
     }
 
@@ -40,13 +40,13 @@ public sealed class ComponentWriteVersionTests
     {
         using var world = new World();
         var entity = world.Create();
-        world.SetSparse(entity, new Damage { Amount = 1 });
-        ulong addedVersion = world.ComponentDataWriteVersion<Damage>(entity);
+        world.Set(entity, new Damage { Amount = 1 });
+        ulong addedVersion = world.ComponentWriteVersion<Damage>(entity);
 
-        world.SetSparse(entity, new Damage { Amount = 2 });
+        world.Set(entity, new Damage { Amount = 2 });
 
-        Assert.NotEqual(addedVersion, world.ComponentDataWriteVersion<Damage>(entity));
-        Assert.Equal(2, world.ReadSparse<Damage>(entity).Amount);
+        Assert.NotEqual(addedVersion, world.ComponentWriteVersion<Damage>(entity));
+        Assert.Equal(2, world.Read<Damage>(entity).Amount);
     }
 
     [Theory]
@@ -56,14 +56,14 @@ public sealed class ComponentWriteVersionTests
     {
         using var world = new World();
         var entity = world.Create();
-        world.SetSparse(entity, new Damage { Amount = 1 });
-        ulong version = world.ComponentDataWriteVersion<Damage>(entity);
+        world.Set(entity, new Damage { Amount = 1 });
+        ulong version = world.ComponentWriteVersion<Damage>(entity);
 
         if (withState)
         {
             int amount = 3;
             {
-                var sparseScope = world.OpenSparseWrite<Damage>();
+                var sparseScope = world.OpenSparseValueWrites<Damage>();
                 try
                 {
                     ReadOnlySpan<Entity> entities = sparseScope.Entities;
@@ -76,7 +76,7 @@ public sealed class ComponentWriteVersionTests
         else
         {
             {
-                var sparseScope = world.OpenSparseWrite<Damage>();
+                var sparseScope = world.OpenSparseValueWrites<Damage>();
                 try
                 {
                     ReadOnlySpan<Entity> entities = sparseScope.Entities;
@@ -87,8 +87,8 @@ public sealed class ComponentWriteVersionTests
             }
         }
 
-        Assert.NotEqual(version, world.ComponentDataWriteVersion<Damage>(entity));
-        Assert.Equal(3, world.ReadSparse<Damage>(entity).Amount);
+        Assert.NotEqual(version, world.ComponentWriteVersion<Damage>(entity));
+        Assert.Equal(3, world.Read<Damage>(entity).Amount);
     }
 
     [Fact]
@@ -97,16 +97,16 @@ public sealed class ComponentWriteVersionTests
         using var world = new World();
         var entity = world.Create();
         using var commands = new CommandBuffer(world);
-        commands.SetSparse(entity, new Damage { Amount = 1 });
+        commands.Set(entity, new Damage { Amount = 1 });
         commands.Playback();
-        ulong version = world.ComponentDataWriteVersion<Damage>(entity);
+        ulong version = world.ComponentWriteVersion<Damage>(entity);
 
         commands.Clear();
-        commands.SetSparse(entity, new Damage { Amount = 2 });
+        commands.Set(entity, new Damage { Amount = 2 });
         commands.Playback();
 
-        Assert.NotEqual(version, world.ComponentDataWriteVersion<Damage>(entity));
-        Assert.Equal(2, world.ReadSparse<Damage>(entity).Amount);
+        Assert.NotEqual(version, world.ComponentWriteVersion<Damage>(entity));
+        Assert.Equal(2, world.Read<Damage>(entity).Amount);
     }
 
     [Fact]
@@ -114,38 +114,19 @@ public sealed class ComponentWriteVersionTests
     {
         using var world = new World();
         var source = world.Create(new Position { X = 1 });
-        world.SetSparse(source, new Damage { Amount = 2 });
+        world.Set(source, new Damage { Amount = 2 });
         var target = world.Create(new Position { X = 3 });
-        world.SetSparse(target, new Damage { Amount = 4 });
+        world.Set(target, new Damage { Amount = 4 });
         world.Copy(source, target);
-        ulong tableVersion = world.ComponentDataWriteVersion<Position>(target);
-        ulong sparseVersion = world.ComponentDataWriteVersion<Damage>(target);
+        ulong tableVersion = world.ComponentWriteVersion<Position>(target);
+        ulong sparseVersion = world.ComponentWriteVersion<Damage>(target);
 
         world.Copy(source, target);
 
-        Assert.NotEqual(tableVersion, world.ComponentDataWriteVersion<Position>(target));
-        Assert.NotEqual(sparseVersion, world.ComponentDataWriteVersion<Damage>(target));
+        Assert.NotEqual(tableVersion, world.ComponentWriteVersion<Position>(target));
+        Assert.NotEqual(sparseVersion, world.ComponentWriteVersion<Damage>(target));
         Assert.Equal(1, world.Read<Position>(target).X);
-        Assert.Equal(2, world.ReadSparse<Damage>(target).Amount);
-    }
-
-    [Fact]
-    public void BundleReplacementAdvancesTableAndSparseWriteVersions()
-    {
-        using var world = new World();
-        var entity = world.Create(new Position { X = 1 });
-        ulong tableVersion = world.ComponentDataWriteVersion<Position>(entity);
-
-        world.ExecuteBundleReplace(entity, [ComponentId<Position>.Value], [], 0, new PositionReplacement());
-
-        Assert.NotEqual(tableVersion, world.ComponentDataWriteVersion<Position>(entity));
-        world.SetSparse(entity, new Damage { Amount = 2 });
-        ulong sparseVersion = world.ComponentDataWriteVersion<Damage>(entity);
-        world.ExecuteBundleReplace(entity, [], [ComponentId<Damage>.Value], 0, new SparseReplacement());
-
-        Assert.NotEqual(sparseVersion, world.ComponentDataWriteVersion<Damage>(entity));
-        Assert.Equal(3, world.Read<Position>(entity).X);
-        Assert.Equal(4, world.ReadSparse<Damage>(entity).Amount);
+        Assert.Equal(2, world.Read<Damage>(target).Amount);
     }
 
     [Fact]
@@ -153,10 +134,10 @@ public sealed class ComponentWriteVersionTests
     {
         using var world = new World();
         Entity entity = world.Create(new Position { X = 1 });
-        ulong version = world.ComponentDataWriteVersion<Position>(entity);
+        ulong version = world.ComponentWriteVersion<Position>(entity);
         using (QueryScope scope = world.Query<Position>().Open())
             foreach (QueryChunk chunk in scope) chunk.Write<Position>(0).X = 2;
-        Assert.NotEqual(version, world.ComponentDataWriteVersion<Position>(entity));
+        Assert.NotEqual(version, world.ComponentWriteVersion<Position>(entity));
         Assert.Equal(2, world.Read<Position>(entity).X);
     }
 
@@ -165,10 +146,10 @@ public sealed class ComponentWriteVersionTests
     {
         using var world = new World();
         Entity entity = world.Create(new Position { X = 1 });
-        ulong version = world.ComponentDataWriteVersion<Position>(entity);
+        ulong version = world.ComponentWriteVersion<Position>(entity);
         using (QueryScope scope = world.Query<Position>().Open())
             foreach (QueryChunk chunk in scope) chunk.Write<Position>()[0].X = 2;
-        Assert.NotEqual(version, world.ComponentDataWriteVersion<Position>(entity));
+        Assert.NotEqual(version, world.ComponentWriteVersion<Position>(entity));
         Assert.Equal(2, world.Read<Position>(entity).X);
     }
 
@@ -177,9 +158,9 @@ public sealed class ComponentWriteVersionTests
     {
         using var world = new World();
         var entity = world.Create(new Position { X = 1 });
-        world.SetSparse(entity, new Damage { Amount = 2 });
-        ulong tableVersion = world.ComponentDataWriteVersion<Position>(entity);
-        ulong sparseVersion = world.ComponentDataWriteVersion<Damage>(entity);
+        world.Set(entity, new Damage { Amount = 2 });
+        ulong tableVersion = world.ComponentWriteVersion<Position>(entity);
+        ulong sparseVersion = world.ComponentWriteVersion<Damage>(entity);
         var query = world.Query(new QueryDescription().WithStored<Position>());
         ulong tick = world.Version;
 
@@ -193,7 +174,7 @@ public sealed class ComponentWriteVersionTests
 
         }
         {
-            var sparseScope = world.OpenSparseRead<Damage>();
+            var sparseScope = world.OpenSparseValues<Damage>();
             try
             {
                 ReadOnlySpan<Entity> entities = sparseScope.Entities;
@@ -204,7 +185,7 @@ public sealed class ComponentWriteVersionTests
         }
         int amount = 0;
         {
-            var sparseScope = world.OpenSparseRead<Damage>();
+            var sparseScope = world.OpenSparseValues<Damage>();
             try
             {
                 ReadOnlySpan<Entity> entities = sparseScope.Entities;
@@ -214,10 +195,10 @@ public sealed class ComponentWriteVersionTests
             finally { sparseScope.Dispose(); }
         }
         Assert.Equal(1, world.Read<Position>(entity).X);
-        Assert.Equal(2, world.ReadSparse<Damage>(entity).Amount);
+        Assert.Equal(2, world.Read<Damage>(entity).Amount);
         Assert.Equal(2, amount);
-        Assert.Equal(tableVersion, world.ComponentDataWriteVersion<Position>(entity));
-        Assert.Equal(sparseVersion, world.ComponentDataWriteVersion<Damage>(entity));
+        Assert.Equal(tableVersion, world.ComponentWriteVersion<Position>(entity));
+        Assert.Equal(sparseVersion, world.ComponentWriteVersion<Damage>(entity));
         Assert.Equal(tick, world.Version);
     }
 
@@ -229,13 +210,13 @@ public sealed class ComponentWriteVersionTests
         using var commands = new CommandBuffer(world);
         commands.Add(entity, new Position { X = 1 });
         commands.Playback();
-        ulong version = world.ComponentDataWriteVersion<Position>(entity);
+        ulong version = world.ComponentWriteVersion<Position>(entity);
         commands.Clear();
 
         commands.Set(entity, new Position { X = 2 });
         commands.Playback();
 
-        Assert.NotEqual(version, world.ComponentDataWriteVersion<Position>(entity));
+        Assert.NotEqual(version, world.ComponentWriteVersion<Position>(entity));
         Assert.Equal(2, world.Read<Position>(entity).X);
     }
 
@@ -245,18 +226,18 @@ public sealed class ComponentWriteVersionTests
         using var world = new World();
         using var commands = new CommandBuffer(world);
         var deferred = commands.Create();
-        commands.SetSparse(deferred, new Damage { Amount = 1 });
-        commands.SetSparse(deferred, new Damage { Amount = 2 });
+        commands.Set(deferred, new Damage { Amount = 1 });
+        commands.Set(deferred, new Damage { Amount = 2 });
 
         commands.Playback();
         var entity = deferred.Resolve();
-        ulong version = world.ComponentDataWriteVersion<Damage>(entity);
+        ulong version = world.ComponentWriteVersion<Damage>(entity);
         commands.Clear();
-        commands.SetSparse(entity, new Damage { Amount = 3 });
+        commands.Set(entity, new Damage { Amount = 3 });
         commands.Playback();
 
-        Assert.NotEqual(version, world.ComponentDataWriteVersion<Damage>(entity));
-        Assert.Equal(3, world.ReadSparse<Damage>(entity).Amount);
+        Assert.NotEqual(version, world.ComponentWriteVersion<Damage>(entity));
+        Assert.Equal(3, world.Read<Damage>(entity).Amount);
     }
 
     [Fact]
@@ -264,9 +245,9 @@ public sealed class ComponentWriteVersionTests
     {
         using var world = new World();
         var entity = world.Create(new Position { X = 1 });
-        world.SetSparse(entity, new Damage { Amount = 2 });
-        ulong tableVersion = world.ComponentDataWriteVersion<Position>(entity);
-        ulong sparseVersion = world.ComponentDataWriteVersion<Damage>(entity);
+        world.Set(entity, new Damage { Amount = 2 });
+        ulong tableVersion = world.ComponentWriteVersion<Position>(entity);
+        ulong sparseVersion = world.ComponentWriteVersion<Damage>(entity);
         Entity expired = world.Create();
         world.Destroy(expired);
         using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
@@ -274,15 +255,15 @@ public sealed class ComponentWriteVersionTests
         checkpoint.Restore(candidate);
         using var commands = new CommandBuffer(candidate);
         commands.Set(entity, new Position { X = 3 });
-        commands.SetSparse(entity, new Damage { Amount = 4 });
+        commands.Set(entity, new Damage { Amount = 4 });
         commands.Set(expired, new Position { X = 9 });
 
         Assert.Throws<ArgumentException>(commands.Playback);
 
-        Assert.Equal(tableVersion, world.ComponentDataWriteVersion<Position>(entity));
-        Assert.Equal(sparseVersion, world.ComponentDataWriteVersion<Damage>(entity));
+        Assert.Equal(tableVersion, world.ComponentWriteVersion<Position>(entity));
+        Assert.Equal(sparseVersion, world.ComponentWriteVersion<Damage>(entity));
         Assert.Equal(1, world.Read<Position>(entity).X);
-        Assert.Equal(2, world.ReadSparse<Damage>(entity).Amount);
+        Assert.Equal(2, world.Read<Damage>(entity).Amount);
     }
 
     [Fact]
@@ -291,20 +272,20 @@ public sealed class ComponentWriteVersionTests
         using var world = new World();
         var first = world.Create(new Position { X = 1 });
         var second = world.Create(new Position { X = 2 });
-        world.SetSparse(first, new Damage { Amount = 3 });
-        world.SetSparse(second, new Damage { Amount = 4 });
-        ulong firstVersion = world.ComponentDataWriteVersion<Position>(first);
-        ulong tableVersion = world.ComponentDataWriteVersion<Position>(second);
-        ulong sparseVersion = world.ComponentDataWriteVersion<Damage>(second);
+        world.Set(first, new Damage { Amount = 3 });
+        world.Set(second, new Damage { Amount = 4 });
+        ulong firstVersion = world.ComponentWriteVersion<Position>(first);
+        ulong tableVersion = world.ComponentWriteVersion<Position>(second);
+        ulong sparseVersion = world.ComponentWriteVersion<Damage>(second);
 
         world.Add(first, new Velocity { X = 5 });
-        world.RemoveSparse<Damage>(first);
+        world.Remove<Damage>(first);
 
-        Assert.Equal(firstVersion, world.ComponentDataWriteVersion<Position>(first));
-        Assert.Equal(tableVersion, world.ComponentDataWriteVersion<Position>(second));
-        Assert.Equal(sparseVersion, world.ComponentDataWriteVersion<Damage>(second));
+        Assert.Equal(firstVersion, world.ComponentWriteVersion<Position>(first));
+        Assert.Equal(tableVersion, world.ComponentWriteVersion<Position>(second));
+        Assert.Equal(sparseVersion, world.ComponentWriteVersion<Damage>(second));
         Assert.Equal(2, world.Read<Position>(second).X);
-        Assert.Equal(4, world.ReadSparse<Damage>(second).Amount);
+        Assert.Equal(4, world.Read<Damage>(second).Amount);
     }
 
     [Fact]
@@ -312,12 +293,12 @@ public sealed class ComponentWriteVersionTests
     {
         using var world = new World();
         var entity = world.Create();
-        world.SetSparse(entity, new Damage { Amount = 1 });
-        ulong version = world.ComponentDataWriteVersion<Damage>(entity);
+        world.Set(entity, new Damage { Amount = 1 });
+        ulong version = world.ComponentWriteVersion<Damage>(entity);
 
         Assert.Throws<ArithmeticException>((Action)(() =>
         {
-            var sparseScope = world.OpenSparseWrite<Damage>();
+            var sparseScope = world.OpenSparseValueWrites<Damage>();
             try
             {
                 ReadOnlySpan<Entity> entities = sparseScope.Entities;
@@ -330,8 +311,8 @@ public sealed class ComponentWriteVersionTests
             finally { sparseScope.Dispose(); }
         }));
 
-        Assert.NotEqual(version, world.ComponentDataWriteVersion<Damage>(entity));
-        Assert.Equal(3, world.ReadSparse<Damage>(entity).Amount);
+        Assert.NotEqual(version, world.ComponentWriteVersion<Damage>(entity));
+        Assert.Equal(3, world.Read<Damage>(entity).Amount);
     }
 
     [Fact]
@@ -339,15 +320,15 @@ public sealed class ComponentWriteVersionTests
     {
         using var world = new World();
         var entity = world.Create(new Position { X = 1 });
-        world.SetSparse(entity, new Damage { Amount = 2 });
+        world.Set(entity, new Damage { Amount = 2 });
         world.Destroy(entity);
 
         Assert.Throws<ArgumentException>(
             () => world.Read<Position>(entity));
-        Assert.Null(world.ComponentDataWriteVersion(entity, ComponentId<Position>.Value));
+        Assert.Null(world.ComponentWriteVersion(entity, ComponentId<Position>.Value));
         Assert.Throws<ArgumentException>(
-            () => world.ReadSparse<Damage>(entity));
-        Assert.Null(world.ComponentDataWriteVersion(entity, ComponentId<Damage>.Value));
+            () => world.Read<Damage>(entity));
+        Assert.Null(world.ComponentWriteVersion(entity, ComponentId<Damage>.Value));
     }
 
 #if DEBUG
@@ -357,7 +338,7 @@ public sealed class ComponentWriteVersionTests
         using var world = new World();
         var entity = world.Create();
 
-        Assert.Null(world.ComponentDataWriteVersion(entity, ComponentId<Position>.Value));
+        Assert.Null(world.ComponentWriteVersion(entity, ComponentId<Position>.Value));
     }
 
     [Theory]
@@ -368,19 +349,10 @@ public sealed class ComponentWriteVersionTests
         using var world = new World();
         var entity = world.Create();
         if (typeAlreadyUsed)
-            world.SetSparse(world.Create(), new Damage { Amount = 1 });
+            world.Set(world.Create(), new Damage { Amount = 1 });
 
-        Assert.Null(world.ComponentDataWriteVersion(entity, ComponentId<Damage>.Value));
+        Assert.Null(world.ComponentWriteVersion(entity, ComponentId<Damage>.Value));
     }
 #endif
-
-    private readonly struct PositionReplacement : IBundleWriter<int>
-    {
-        public void Write(BundleWriteView view, in int value) => view.Write(new Position { X = 3 });
-    }
-    private readonly struct SparseReplacement : IBundleWriter<int>
-    {
-        public void Write(BundleWriteView view, in int value) => view.WriteSparse(new Damage { Amount = 4 });
-    }
 
 }

@@ -13,7 +13,7 @@ public sealed partial class JobStorageAliasSafetyTests : JobTest
         var jobs = (WorldJobs)world.Execution!;
         Assert.Throws<InvalidOperationException>(() => jobs.Read<ReferenceTable>());
         Assert.Throws<InvalidOperationException>(() => jobs.Read<Buffer<ReferenceElement>>());
-        Assert.Throws<InvalidOperationException>(() => jobs.CollectAccess(new SystemAccesses().ReadSparse<ReferenceSparse>()));
+        Assert.Throws<InvalidOperationException>(() => jobs.CollectAccess(new SystemAccesses().Read<ReferenceSparse>()));
         Assert.Throws<InvalidOperationException>(() => jobs.Read<AliasShared>());
     }
 
@@ -25,8 +25,8 @@ public sealed partial class JobStorageAliasSafetyTests : JobTest
         var counter = new Counter();
         var action = new Count(counter);
         Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(action, [.. jobs.StructureRead, jobs.Read<ReferenceTable>()]));
-        Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(action, jobs.CollectAccess(new SystemAccesses().ReadRandom<Buffer<ReferenceElement>>())));
-        Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(action, jobs.CollectAccess(new SystemAccesses().ReadSparse<ReferenceSparse>())));
+        Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(action, jobs.CollectAccess(new SystemAccesses().Read<Buffer<ReferenceElement>>())));
+        Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(action, jobs.CollectAccess(new SystemAccesses().Read<ReferenceSparse>())));
         Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(action, [.. jobs.StructureRead, jobs.Read<AliasShared>()]));
         Assert.Equal(0, counter.Value);
     }
@@ -49,8 +49,8 @@ public sealed partial class JobStorageAliasSafetyTests : JobTest
         var counter = new Counter();
         var action = new Count(counter);
         Jobs.Schedule(action, [.. jobs.StructureRead, jobs.Read<SafeTable>()]).Complete();
-        Jobs.Schedule(action, jobs.CollectAccess(new SystemAccesses().ReadRandom<Buffer<SafeElement>>())).Complete();
-        Jobs.Schedule(action, jobs.CollectAccess(new SystemAccesses().ReadSparse<SafeSparse>())).Complete();
+        Jobs.Schedule(action, jobs.CollectAccess(new SystemAccesses().Read<Buffer<SafeElement>>())).Complete();
+        Jobs.Schedule(action, jobs.CollectAccess(new SystemAccesses().Read<SafeSparse>())).Complete();
         Assert.Equal(3, counter.Value);
     }
 
@@ -58,7 +58,8 @@ public sealed partial class JobStorageAliasSafetyTests : JobTest
     public void SharedAliasesAreRejectedWhenAJobBorrowsTheirValuesAndPresenceRemainsReadable()
     {
         World world = CreateJobWorld();
-        Entity entity = world.Create(new AliasShared { Value = "scene" }, new SafeShared { Value = 17 });
+        Entity entity = world.Create(new AliasShared { Value = "scene" });
+        world.Add(entity, new SafeShared { Value = 17 });
         Assert.Equal("scene", world.ReadValue<AliasShared>(entity).Value);
         var alias = new TextResult();
         Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(new ReadAlias(world, entity, alias), world.Execution!.StructureRead).Complete());

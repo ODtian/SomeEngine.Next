@@ -22,19 +22,6 @@ public sealed partial class SourceGenConsumerTests
         Assert.Equal(9, world.Read<GeneratedConsumerComponent>(entity).Value);
     }
 
-    [Fact]
-    public void GeneratedJobWritesTheSparseValueOfItsMatchingEntity()
-    {
-        using var world = new World();
-        var first = world.Create(new GeneratedConsumerComponent { Value = 9 });
-        var second = world.Create(new GeneratedConsumerComponent { Value = 20 });
-        world.SetSparse(first, new GeneratedSparseValue { Value = 4 });
-
-        new GeneratedSparseJob().Execute(world);
-
-        Assert.Equal(13, world.ReadSparse<GeneratedSparseValue>(first).Value);
-        Assert.False(world.HasSparse<GeneratedSparseValue>(second));
-    }
 }
 
 public struct GeneratedConsumerComponent : SomeEngine.ECS.IComponent

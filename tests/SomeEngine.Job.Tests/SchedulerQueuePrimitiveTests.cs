@@ -14,8 +14,8 @@ public sealed class SchedulerQueuePrimitiveTests
             {
                 var handles = new JobHandle[128];
                 for (int i = 0; i < handles.Length; i++)
-                    handles[i] = JobSystem.Schedule(new CountJob(counts, producer * 128 + i));
-                JobSystem.CombineDependencies(handles).Complete();
+                    handles[i] = JobSystem.Current.Schedule(new CountJob(counts, producer * 128 + i));
+                JobSystem.Current.CombineDependencies(handles).Complete();
             })).ToArray();
             await Task.WhenAll(producers).WaitAsync(TimeSpan.FromSeconds(30));
             Assert.All(counts, count => Assert.Equal(1, count));

@@ -53,7 +53,7 @@ public sealed class WorldReadScopeTests
         Assert.Null(writerFault);
         Assert.Null(readFault);
         Assert.Equal(2, observed);
-        Assert.Equal(2, world.ReadComponentData<ReadValue>(entity).Value);
+        Assert.Equal(2, world.ReadValue<ReadValue>(entity).Value);
         string[] sequence = events.ToArray();
         Assert.Contains("released", sequence);
         Assert.Contains("readEntered", sequence);
@@ -102,7 +102,7 @@ public sealed class WorldReadScopeTests
         Assert.Null(readFault);
         Assert.Null(writerFault);
         Assert.Equal(1, observed);
-        Assert.Equal(2, world.ReadComponentData<ReadValue>(entity).Value);
+        Assert.Equal(2, world.ReadValue<ReadValue>(entity).Value);
         string[] sequence = events.ToArray();
         Assert.Contains("released", sequence);
         Assert.Contains("writerCompleted", sequence);
@@ -115,7 +115,9 @@ public sealed class WorldReadScopeTests
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         using var source = new World(execution: new WorldJobs(scheduler));
         using var other = new World(execution: new WorldJobs(scheduler));
-        Entity entity = source.Create(new ReadValue(1), new SideValue(2), new UnqueriedValue(3));
+        Entity entity = source.Create(new ReadValue(1));
+        source.Add(entity, new SideValue(2));
+        source.Add(entity, new UnqueriedValue(3));
         Entity otherEntity = other.Create(new UnqueriedValue(4));
         Query outer = source.Query(new QueryDescription().WithStored<ReadValue>().Optional<SideValue>());
         Query inner = source.Query<SideValue>();
@@ -130,8 +132,8 @@ public sealed class WorldReadScopeTests
         }
         Assert.Equal(1, observed);
         Assert.Equal(2, side);
-        Assert.Equal(3, source.ReadComponentData<UnqueriedValue>(entity).Value);
-        Assert.Equal(40, other.ReadComponentData<UnqueriedValue>(otherEntity).Value);
+        Assert.Equal(3, source.ReadValue<UnqueriedValue>(entity).Value);
+        Assert.Equal(40, other.ReadValue<UnqueriedValue>(otherEntity).Value);
     }
 
     private readonly record struct ReadValue(int Value) : IAddedComponent;

@@ -135,7 +135,7 @@ public sealed class WorldStreamTests
         await stream.ContentsReady;
         WorldStreamSource[] sources = new WorldStreamSource[2];
         WorldStreamSource[] input = [new(origin - 1, 1, 1, 2, 4), new(origin + 2, 1, 1, 1, 9)];
-        JobHandle sourceReady = JobSystem.Schedule(new CopySources(input, sources),
+        JobHandle sourceReady = JobSystem.Current.Schedule(new CopySources(input, sources),
             [JobResourceAccess.Read(input), JobResourceAccess.Write(sources)]);
         stream.Request(0, 6);
         stream.Request(1, -3);

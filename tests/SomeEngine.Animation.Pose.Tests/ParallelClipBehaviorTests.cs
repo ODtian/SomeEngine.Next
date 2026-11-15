@@ -100,10 +100,10 @@ public sealed class ParallelClipBehaviorTests
             if (binding == 2) garment.Detach(2);
             SkeletonInstance parent = garment.ParentInstance!;
             var written = new ParentWriteFence();
-            JobHandle producer = JobSystem.CreateExternalFenceHandle(written,
+            JobHandle producer = JobSystem.Current.CreateExternalFenceHandle(written,
                 JobResourceAccess.Write(JobSystem.Default.GetResourceToken(parent)));
             JobHandle sampled = batch.ScheduleModel(times, output);
-            JobHandle write = JobSystem.Schedule(new WriteParent(parent, binding * 10, written));
+            JobHandle write = JobSystem.Current.Schedule(new WriteParent(parent, binding * 10, written));
             try
             {
                 await sampled.WaitAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
@@ -176,7 +176,7 @@ public sealed class ParallelClipBehaviorTests
         {
             for (int frame = 1; frame <= 2; frame++)
             {
-                JobHandle input = JobSystem.Schedule(new SampleTimes(times, frame), JobResourceAccess.Write(times));
+                JobHandle input = JobSystem.Current.Schedule(new SampleTimes(times, frame), JobResourceAccess.Write(times));
                 JobHandle sampled = batch.ScheduleLocal(times, local, input);
                 batch.ScheduleModel(times, model, sampled).Complete();
                 systems.Update(ref context);

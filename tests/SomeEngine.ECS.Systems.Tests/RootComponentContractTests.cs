@@ -15,7 +15,7 @@ public sealed class RootComponentContractTests : JobTest
         Assert.NotEqual(
             default(JobResourceAccess),
             ((WorldJobs)world.Execution!).Read<RootOnlyJobValue>());
-        Assert.NotEmpty(((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<RootOnlyJobValue>()));
+        Assert.NotEmpty(((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<RootOnlyJobValue>()));
 
         using var commands = new CommandBatch(world, 1);
         Jobs.Schedule(new RootOnlyCommandProducer(commands[0])).Complete();
@@ -28,7 +28,7 @@ public sealed class RootComponentContractTests : JobTest
             foreach (QueryChunk chunk in rows)
                 foreach (Entity value in chunk.Entities) { entity = value; rowCount++; }
         Assert.Equal(1, rowCount);
-        Assert.Equal(21, world.ReadComponentData<RootOnlyJobValue>(entity).Value);
+        Assert.Equal(21, world.ReadValue<RootOnlyJobValue>(entity).Value);
     }
 
     [Fact]
@@ -39,10 +39,10 @@ public sealed class RootComponentContractTests : JobTest
         Entity entity = world.Create(new RootOnlyGeneratedValue { Value = 3 });
 
         new RootOnlyGeneratedJob().Schedule(world).Complete();
-        Assert.Equal(4, world.ReadComponentData<RootOnlyGeneratedValue>(entity).Value);
+        Assert.Equal(4, world.ReadValue<RootOnlyGeneratedValue>(entity).Value);
 
         new RootOnlyGeneratedJob().ScheduleParallel(world).Complete();
-        Assert.Equal(5, world.ReadComponentData<RootOnlyGeneratedValue>(entity).Value);
+        Assert.Equal(5, world.ReadValue<RootOnlyGeneratedValue>(entity).Value);
     }
 
     [Fact]

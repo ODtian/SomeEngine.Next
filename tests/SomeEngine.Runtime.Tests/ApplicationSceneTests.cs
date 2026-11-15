@@ -96,13 +96,13 @@ public sealed class ApplicationSceneTests(SceneContentFixture content)
         public void OnUpdate(ref ImmediateSystemContext context)
         {
             Values.CallbackThreads.Add(Environment.CurrentManagedThreadId);
-            JobSystem.Schedule(new CountingCalculation(Values));
+            JobSystem.Current.Schedule(new CountingCalculation(Values));
         }
     }
 
     private readonly record struct CountingCalculation(GameCalculations Values) : IJob
     {
-        public void Execute() => JobSystem.Schedule(new CalculationOutput(Values));
+        public void Execute() => JobSystem.Current.Schedule(new CalculationOutput(Values));
     }
 
     private readonly record struct CalculationOutput(GameCalculations Values) : IJob
@@ -112,7 +112,7 @@ public sealed class ApplicationSceneTests(SceneContentFixture content)
 
     private readonly struct FaultingGameSystem : ISystem<ImmediateSystemContext>
     {
-        public void OnUpdate(ref ImmediateSystemContext context) => JobSystem.Schedule(new FaultingCalculation());
+        public void OnUpdate(ref ImmediateSystemContext context) => JobSystem.Current.Schedule(new FaultingCalculation());
     }
 
     private readonly struct FaultingCalculation : IJob

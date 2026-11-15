@@ -146,7 +146,7 @@ public sealed class SpatialParallelTests
         {
             Assert.True(gate.Started.Wait(TimeSpan.FromSeconds(10)));
             var move = new MoveBodyJob(writes, b, Box(5), gate);
-            writer = jobs.Schedule(in move, ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<Body>()));
+            writer = jobs.Schedule(in move, ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<Body>()));
             gate.Release.Set();
             filled.Complete();
             writer.Complete();

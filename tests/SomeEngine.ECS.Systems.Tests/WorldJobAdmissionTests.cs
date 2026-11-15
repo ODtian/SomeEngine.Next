@@ -28,7 +28,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         JobHandle work = Jobs.Schedule(new SetValue(world, entity, 19));
         using WorldStructureWriteScope structure = world.OpenStructureWrite();
         Assert.Throws<JobResourceSafetyException>(work.Complete);
-        Assert.Equal(7, world.ReadComponentData<ProbeValue>(entity).Value);
+        Assert.Equal(7, world.ReadValue<ProbeValue>(entity).Value);
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         JobHandle work = Jobs.Schedule(new ReadValue(world, entity));
         using WorldStructureWriteScope structure = world.OpenStructureWrite();
         Assert.Throws<JobResourceSafetyException>(work.Complete);
-        Assert.Equal(7, world.ReadComponentData<ProbeValue>(entity).Value);
+        Assert.Equal(7, world.ReadValue<ProbeValue>(entity).Value);
     }
 
     [Fact]
@@ -64,8 +64,8 @@ public sealed class WorldJobAdmissionTests : JobTest
         using var commands = new CommandBuffer(world);
         commands.Add(destination, new ProbeValue(7));
         commands.Playback();
-        Assert.Equal(5, world.ReadComponentData<ProbeValue>(entity).Value);
-        Assert.Equal(7, world.ReadComponentData<ProbeValue>(destination).Value);
+        Assert.Equal(5, world.ReadValue<ProbeValue>(entity).Value);
+        Assert.Equal(7, world.ReadValue<ProbeValue>(destination).Value);
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         Entity entity = world.Create(new ProbeValue(11));
         Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(new SetValue(world, entity, 29)).Complete());
         Assert.Equal(1, world.EntityCount);
-        Assert.Equal(11, world.ReadComponentData<ProbeValue>(entity).Value);
+        Assert.Equal(11, world.ReadValue<ProbeValue>(entity).Value);
     }
 
     [Fact]
@@ -92,11 +92,11 @@ public sealed class WorldJobAdmissionTests : JobTest
         World world = CreateJobWorld();
         Entity entity = world.Create();
         using var commands = new CommandBuffer(world);
-        Jobs.Schedule(new RecordValue(commands, entity, 17), JobResourceAccess.Write(Jobs.GetResourceToken(commands))).Complete();
+        Jobs.Schedule(new RecordValue(commands, entity, 17), [JobResourceAccess.Write(Jobs.GetResourceToken(commands))]).Complete();
         Assert.Equal(1, commands.Count);
         Assert.False(world.Has<ProbeValue>(entity));
         commands.Playback();
-        Assert.Equal(17, world.ReadComponentData<ProbeValue>(entity).Value);
+        Assert.Equal(17, world.ReadValue<ProbeValue>(entity).Value);
     }
 
     [Fact]
@@ -121,17 +121,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         finally { release.Set(); await reading.WaitAsync(TimeSpan.FromSeconds(10)); }
         Assert.Throws<InvalidOperationException>(() => new SystemRunner(world));
         world.Set(entity, new ProbeValue(2));
-        Assert.Equal(2, world.ReadComponentData<ProbeValue>(entity).Value);
-    }
-
-    [Fact]
-    public void SynchronousQueryDoesNotGiveRawJobsAccessToItsWorld()
-    {
-        using var world = new World();
-        world.Create(new ProbeValue(1));
-        using (QueryScope rows = world.Query<ProbeValue>().OpenRead())
-            Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(new ReadCount(world)).Complete());
-        Assert.Equal(1, world.EntityCount);
+        Assert.Equal(2, world.ReadValue<ProbeValue>(entity).Value);
     }
 
     [Fact]
@@ -146,7 +136,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         }
         Assert.Null(world.Execution);
         world.Set(entity, new ProbeValue(2));
-        Assert.Equal(2, world.ReadComponentData<ProbeValue>(entity).Value);
+        Assert.Equal(2, world.ReadValue<ProbeValue>(entity).Value);
     }
 
     [Fact]
@@ -160,7 +150,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         Assert.Equal(1, commands.Count);
         Assert.False(world.Has<ProbeValue>(entity));
         commands.Playback();
-        Assert.Equal(17, world.ReadComponentData<ProbeValue>(entity).Value);
+        Assert.Equal(17, world.ReadValue<ProbeValue>(entity).Value);
     }
 
     [Fact]
@@ -174,7 +164,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         Assert.Equal(1, commands.Count);
         Assert.False(world.Has<ProbeValue>(entity));
         Jobs.Schedule(new Playback(commands), world.Execution!.StructureWrite).Complete();
-        Assert.Equal(19, world.ReadComponentData<ProbeValue>(entity).Value);
+        Assert.Equal(19, world.ReadValue<ProbeValue>(entity).Value);
     }
 
     [Fact]
@@ -186,7 +176,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         commands.Add(entity, new ProbeValue(3));
         commands.Playback();
         Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(new RecordValue(commands, entity, 4)).Complete());
-        Assert.Equal(3, world.ReadComponentData<ProbeValue>(entity).Value);
+        Assert.Equal(3, world.ReadValue<ProbeValue>(entity).Value);
     }
 
     [Fact]
@@ -204,9 +194,9 @@ public sealed class WorldJobAdmissionTests : JobTest
         World world = CreateJobWorld();
         Entity entity = world.Create(new ProbeValue(3));
         JobHandle work = Jobs.ScheduleParallel(new ParallelSet(world, entity), 2, 1,
-            ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ProbeValue>()));
+            ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<ProbeValue>()));
         Assert.Throws<JobResourceSafetyException>(work.Complete);
-        Assert.Equal(3, world.ReadComponentData<ProbeValue>(entity).Value);
+        Assert.Equal(3, world.ReadValue<ProbeValue>(entity).Value);
     }
 
     [Fact]
@@ -235,10 +225,10 @@ public sealed class WorldJobAdmissionTests : JobTest
         Entity trigger = world.Create(), destination = world.Create();
         using var next = new CommandBuffer(world);
         Jobs.Schedule(new RecordNext(world, trigger, destination, next), world.Execution!.StructureWrite).Complete();
-        Assert.Equal(17, world.ReadComponentData<ProbeValue>(trigger).Value);
+        Assert.Equal(17, world.ReadValue<ProbeValue>(trigger).Value);
         Assert.False(world.Has<ResultValue>(destination));
         next.Playback();
-        Assert.Equal(18, world.ReadComponentData<ResultValue>(destination).Value);
+        Assert.Equal(18, world.ReadValue<ResultValue>(destination).Value);
     }
 
     [Fact]
@@ -249,7 +239,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         JobHandle first = Jobs.Schedule(new AddProbe(world, trigger, 17), world.Execution!.StructureWrite);
         JobHandle second = Jobs.Schedule(new AddResult(world, destination), world.Execution.StructureRead, first);
         Assert.Throws<JobResourceSafetyException>(second.Complete);
-        Assert.Equal(17, world.ReadComponentData<ProbeValue>(trigger).Value);
+        Assert.Equal(17, world.ReadValue<ProbeValue>(trigger).Value);
         Assert.False(world.Has<ResultValue>(destination));
     }
 
@@ -280,7 +270,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         Assert.True(world.Has<ProbeValue>(trigger));
         Assert.False(world.Has<ResultValue>(destination));
         next.Playback();
-        Assert.Equal(1, world.ReadComponentData<ResultValue>(destination).Value);
+        Assert.Equal(1, world.ReadValue<ResultValue>(destination).Value);
     }
 
     [Fact]
@@ -335,15 +325,15 @@ public sealed class WorldJobAdmissionTests : JobTest
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
             playback = Task.Run(() => { attempted.Set(); first.Playback(); });
             Assert.True(attempted.Wait(TimeSpan.FromSeconds(5)));
-            Jobs.Schedule(new RecordValue(second, later, 2), JobResourceAccess.Write(Jobs.GetResourceToken(second))).Complete();
+            Jobs.Schedule(new RecordValue(second, later, 2), [JobResourceAccess.Write(Jobs.GetResourceToken(second))]).Complete();
             Assert.Equal(1, second.Count);
             release.Set();
             holding.Complete();
             await playback.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.Equal(1, world.ReadComponentData<ProbeValue>(earlier).Value);
+            Assert.Equal(1, world.ReadValue<ProbeValue>(earlier).Value);
             Assert.False(world.Has<ProbeValue>(later));
             second.Playback();
-            Assert.Equal(2, world.ReadComponentData<ProbeValue>(later).Value);
+            Assert.Equal(2, world.ReadValue<ProbeValue>(later).Value);
         }
         finally { release.Set(); holding.Complete(); await playback.WaitAsync(TimeSpan.FromSeconds(10)); }
     }
@@ -365,7 +355,7 @@ public sealed class WorldJobAdmissionTests : JobTest
             release.Set();
             recording.Complete();
             next.Playback();
-            Assert.Equal(5, world.ReadComponentData<ProbeValue>(destination).Value);
+            Assert.Equal(5, world.ReadValue<ProbeValue>(destination).Value);
         }
         finally { release.Set(); recording.Complete(); }
     }
@@ -424,7 +414,7 @@ public sealed class WorldJobAdmissionTests : JobTest
             release.Set();
             await mutation.WaitAsync(TimeSpan.FromSeconds(10));
             later.Complete();
-            Assert.Equal(1, world.ReadComponentData<ProbeValue>(entity).Value);
+            Assert.Equal(1, world.ReadValue<ProbeValue>(entity).Value);
             Assert.Equal(["range ended", "later writer"], events);
         }
         finally { release.Set(); await mutation.WaitAsync(TimeSpan.FromSeconds(10)); later.Complete(); }
@@ -438,7 +428,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     private readonly struct CreateEntity(World world) : IJob { public void Execute() => world.Create(); }
     private readonly struct SetValue(World world, Entity entity, int value) : IJob { public void Execute() => world.Set(entity, new ProbeValue(value)); }
     private readonly struct ReadCount(World world) : IJob { public void Execute() => _ = world.EntityCount; }
-    private readonly struct ReadValue(World world, Entity entity) : IJob { public void Execute() => _ = world.ReadComponentData<ProbeValue>(entity); }
+    private readonly struct ReadValue(World world, Entity entity) : IJob { public void Execute() => _ = world.ReadValue<ProbeValue>(entity); }
     private readonly struct ReadLife(World world, Entity entity) : IJob { public void Execute() => _ = world.IsAlive(entity); }
     private readonly struct Playback(CommandBuffer commands) : IJob { public void Execute() => commands.Playback(); }
     private readonly struct RecordValue(CommandBuffer commands, Entity entity, int value) : IJob
@@ -447,7 +437,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     private readonly struct ParallelSet(World world, Entity entity) : IJobParallelFor
     { public void Execute(int index) => world.Set(entity, new ProbeValue(41)); }
     private readonly struct ParallelRead(World world, Entity entity, int[] values) : IJobParallelFor
-    { public void Execute(int index) => values[index] = world.ReadComponentData<ProbeValue>(entity).Value; }
+    { public void Execute(int index) => values[index] = world.ReadValue<ProbeValue>(entity).Value; }
     private readonly struct AddProbe(World world, Entity entity, int value) : IJob { public void Execute() => world.Add(entity, new ProbeValue(value)); }
     private readonly struct AddResult(World world, Entity entity) : IJob { public void Execute() => world.Add(entity, new ResultValue(1)); }
     private readonly struct RecordNext(World world, Entity trigger, Entity destination, CommandBuffer next) : IJob

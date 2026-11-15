@@ -22,7 +22,7 @@ public sealed class CompletionStateTests
     public void CompleteIsIdempotent()
     {
         _data.Counter = 0;
-        var handle = JobSystem.Schedule(new LifecycleData.IncrementJob(_data));
+        var handle = JobSystem.Current.Schedule(new LifecycleData.IncrementJob(_data));
 
         handle.Complete();
         handle.Complete();
@@ -102,7 +102,7 @@ public sealed class CompletionStateTests
 
         for (var i = 0; i < 1_000; i++)
         {
-            JobSystem.Schedule(new LifecycleData.IncrementJob(_data)).Complete();
+            JobSystem.Current.Schedule(new LifecycleData.IncrementJob(_data)).Complete();
         }
 
         Assert.Equal(1_000, _data.Counter);
@@ -111,10 +111,10 @@ public sealed class CompletionStateTests
     [Fact]
     public void OldHandleStaysSafeAfterStateReuse()
     {
-        var old = JobSystem.Schedule(new LifecycleData.NoopJob());
+        var old = JobSystem.Current.Schedule(new LifecycleData.NoopJob());
         old.Complete();
 
-        var reused = JobSystem.Schedule(new LifecycleData.NoopJob());
+        var reused = JobSystem.Current.Schedule(new LifecycleData.NoopJob());
 
         Assert.True(old.IsCompleted);
         old.Complete();

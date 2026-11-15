@@ -83,8 +83,8 @@ public sealed partial class RelationshipChunkJobTests : JobTest
         RelationEdge<UniqueTargetDirected> first = world.CreateRelation(sourceA, targetA, default(UniqueTargetDirected));
         RelationEdge<UniqueTargetDirected> second = world.CreateRelation(sourceB, targetB, default(UniqueTargetDirected));
         Jobs.Schedule(new SwapTargets(world, first, second, sourceA, sourceB, targetA, targetB), world.Execution!.StructureWrite).Complete();
-        Assert.Equal(targetB, world.ReadComponentData<RelationEndpoints<UniqueTargetDirected>>(first.Entity).Target);
-        Assert.Equal(targetA, world.ReadComponentData<RelationEndpoints<UniqueTargetDirected>>(second.Entity).Target);
+        Assert.Equal(targetB, world.ReadValue<RelationEndpoints<UniqueTargetDirected>>(first.Entity).Target);
+        Assert.Equal(targetA, world.ReadValue<RelationEndpoints<UniqueTargetDirected>>(second.Entity).Target);
         Assert.Equal([first.Entity], Incoming<UniqueTargetDirected>(world, targetA));
         Assert.Equal([second.Entity], Incoming<UniqueTargetDirected>(world, targetB));
         Jobs.Schedule(new MaintainRelations<UniqueTargetDirected>(world), world.Execution.StructureWrite).Complete();
@@ -99,7 +99,7 @@ public sealed partial class RelationshipChunkJobTests : JobTest
         Entity first = world.Create(), oldSecond = world.Create(), newSecond = world.Create();
         RelationEdge<UndirectedPayload> edge = world.CreateRelation(first, oldSecond, default(UndirectedPayload));
         Jobs.Schedule(new RetargetUndirected(world, edge, first, newSecond), world.Execution!.StructureWrite).Complete();
-        Assert.Equal(newSecond, world.ReadComponentData<RelationEndpoints<UndirectedPayload>>(edge.Entity).Target);
+        Assert.Equal(newSecond, world.ReadValue<RelationEndpoints<UndirectedPayload>>(edge.Entity).Target);
         Assert.Equal([edge.Entity], Incident<UndirectedPayload>(world, oldSecond));
         Assert.Empty(Incident<UndirectedPayload>(world, newSecond));
         Jobs.Schedule(new MaintainRelations<UndirectedPayload>(world), world.Execution.StructureWrite).Complete();

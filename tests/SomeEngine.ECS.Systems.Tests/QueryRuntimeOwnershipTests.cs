@@ -46,10 +46,10 @@ public sealed partial class QueryRuntimeOwnershipTests : JobTest
 
         try
         {
-            first = world.Execution!.Scheduler!.Schedule(new BlockingQueryJob(world, firstQuery, firstStarted, releaseFirst), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentA>()));
+            first = world.Execution!.Scheduler!.Schedule(new BlockingQueryJob(world, firstQuery, firstStarted, releaseFirst), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<ComponentA>()));
             Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            second = world.Execution!.Scheduler!.Schedule(new SignalQueryJob(world, secondQuery, secondStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentB>()));
+            second = world.Execution!.Scheduler!.Schedule(new SignalQueryJob(world, secondQuery, secondStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<ComponentB>()));
 
             Assert.True(secondStarted.Wait(TimeSpan.FromSeconds(5)));
             second.Complete();
@@ -83,7 +83,7 @@ public sealed partial class QueryRuntimeOwnershipTests : JobTest
 
         try
         {
-            writer = world.Execution!.Scheduler!.Schedule(new BlockingQueryJob(world, writeQuery, writerStarted, releaseWriter), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentA>()));
+            writer = world.Execution!.Scheduler!.Schedule(new BlockingQueryJob(world, writeQuery, writerStarted, releaseWriter), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<ComponentA>()));
             Assert.True(writerStarted.Wait(TimeSpan.FromSeconds(5)));
 
             reader = world.Execution!.Scheduler!.Schedule(new SignalQueryJob(world, readQuery, readerStarted), [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<ComponentA>()]);
@@ -126,10 +126,10 @@ public sealed partial class QueryRuntimeOwnershipTests : JobTest
 
         try
         {
-            first = firstWorld.Execution!.Scheduler!.Schedule(new BlockingQueryJob(firstWorld, firstQuery, firstStarted, releaseFirst), ((WorldJobs)firstWorld.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentA>()));
+            first = firstWorld.Execution!.Scheduler!.Schedule(new BlockingQueryJob(firstWorld, firstQuery, firstStarted, releaseFirst), ((WorldJobs)firstWorld.Execution!).CollectAccess(new SystemAccesses().Write<ComponentA>()));
             Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            second = secondWorld.Execution!.Scheduler!.Schedule(new SignalQueryJob(secondWorld, secondQuery, secondStarted), ((WorldJobs)secondWorld.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentA>()));
+            second = secondWorld.Execution!.Scheduler!.Schedule(new SignalQueryJob(secondWorld, secondQuery, secondStarted), ((WorldJobs)secondWorld.Execution!).CollectAccess(new SystemAccesses().Write<ComponentA>()));
 
             Assert.True(secondStarted.Wait(TimeSpan.FromSeconds(5)));
             second.Complete();
@@ -166,7 +166,7 @@ public sealed partial class QueryRuntimeOwnershipTests : JobTest
             parentReader = new BlockingParentReadJob(parentStarted, releaseParent).Schedule(world, query: parentQuery);
             Assert.True(parentStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            componentWriter = world.Execution!.Scheduler!.Schedule(new SignalQueryJob(world, componentQuery, componentStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentB>()));
+            componentWriter = world.Execution!.Scheduler!.Schedule(new SignalQueryJob(world, componentQuery, componentStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<ComponentB>()));
 
             Assert.True(componentStarted.Wait(TimeSpan.FromSeconds(5)));
             componentWriter.Complete();
@@ -206,7 +206,7 @@ public sealed partial class QueryRuntimeOwnershipTests : JobTest
             parentWriter = Jobs.Schedule(new BlockingParentWriteJob(parentStarted, releaseParent), world.Execution!.StructureWrite);
             Assert.True(parentStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            componentWriter = world.Execution!.Scheduler!.Schedule(new SignalQueryJob(world, componentQuery, componentStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentB>()));
+            componentWriter = world.Execution!.Scheduler!.Schedule(new SignalQueryJob(world, componentQuery, componentStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<ComponentB>()));
 
             releaseParent.Set();
             componentWriter.Complete();
@@ -263,7 +263,7 @@ public sealed partial class QueryRuntimeOwnershipTests : JobTest
         world.Add(entity, new ComponentB { Value = 2 });
         using var started = new ManualResetEventSlim();
         Jobs.Schedule(new SignalQueryJob(world, query, started),
-            ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteRandom<ComponentA>())).Complete();
+            ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().Write<ComponentA>())).Complete();
         Assert.True(started.IsSet);
     }
 
