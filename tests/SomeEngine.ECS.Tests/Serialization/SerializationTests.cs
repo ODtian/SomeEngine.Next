@@ -366,7 +366,7 @@ public class SerializationTests
         using (var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true))
         {
             Assert.Equal(0x53434553u, reader.ReadUInt32());
-            Assert.Equal(5, reader.ReadUInt16());
+            Assert.Equal(6, reader.ReadUInt16());
             Assert.Equal((byte)SavePurpose.DurableSave, reader.ReadByte());
             _ = reader.ReadByte();
             Assert.Equal(16, reader.ReadBytes(16).Length);
@@ -377,6 +377,8 @@ public class SerializationTests
                 SaveBytes.ReadString(reader));
             Assert.Equal(key.SchemaFingerprint, reader.ReadUInt64());
             Assert.Equal(0, reader.ReadByte());
+            Assert.Equal(0, reader.ReadInt32());
+            Assert.Equal(-1, reader.ReadInt32()); // hand-written codec: no field list
             Assert.Equal(0, reader.ReadInt32());
             Assert.Equal(source.Prefix, reader.ReadByte());
             Assert.Equal(source.Value, reader.ReadInt32());
@@ -1107,7 +1109,7 @@ public class SerializationTests
         using var stream = new MemoryStream(bytes, writable: false);
         using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
         Assert.Equal(0x53434553u, reader.ReadUInt32());
-        Assert.Equal((ushort)5, reader.ReadUInt16());
+        Assert.Equal((ushort)6, reader.ReadUInt16());
         _ = reader.ReadByte();
         Assert.Equal((byte)SavedPayloadKind.Component, reader.ReadByte());
         Assert.Equal(16, reader.ReadBytes(16).Length);
@@ -1118,6 +1120,8 @@ public class SerializationTests
         _ = reader.ReadUInt64();
         _ = reader.ReadByte();
         _ = reader.ReadInt32();
+        _ = reader.ReadInt32();
+        SaveBytes.SkipFieldLists(reader);
         return (fingerprintOffset, checked((int)stream.Position));
     }
 
@@ -1130,7 +1134,7 @@ public class SerializationTests
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, SaveBytes.Utf8, leaveOpen: true);
         writer.Write(0x53434553u);
-        writer.Write((ushort)5);
+        writer.Write((ushort)6);
         writer.Write((byte)SavePurpose.DurableSave);
         writer.Write((byte)SavedPayloadKind.Component);
         writer.Write(stackalloc byte[16]);
@@ -1156,6 +1160,8 @@ public class SerializationTests
         writer.Write(key.SchemaFingerprint);
         writer.Write((byte)0);
         writer.Write(0);
+        writer.Write(-1); // no field list
+        writer.Write(0); // field lists
         writer.Write(1f);
         writer.Write(2f);
         writer.Write(sizeof(float) * 2);

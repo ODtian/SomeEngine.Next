@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -30,6 +31,8 @@ internal abstract class SavedType(SerializationTypeKey key, SavedStorage storage
     internal readonly int Type = type, Width = width;
     internal readonly bool Raw = raw;
     internal readonly ComponentCodecKind CodecKind = DescribeCodec(codecType);
+    /// <summary>The fields its generated codec writes, or null for a hand-written codec.</summary>
+    internal readonly ValueSchema? Schema = FindSchema(codecType);
     internal virtual object? EntityPatcher => null;
     private readonly ISavedGroupBinding? _group = SavedGroups.Create(valueType);
     internal bool SupportsDurable = storage == SavedStorage.Tag || !UsesRawCodec(codecType);
@@ -48,12 +51,23 @@ internal abstract class SavedType(SerializationTypeKey key, SavedStorage storage
 
     private static ComponentCodecKind DescribeCodec(Type type)
     {
-        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(PackedValueCodec<>))
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(PackedValueCodec<,>))
             return ComponentCodecKind.RawDurable;
         if (UsesRawCodec(type)) return ComponentCodecKind.Raw;
         if (type.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDurableComponentCodec<>)))
             return ComponentCodecKind.Durable;
         return ComponentCodecKind.Custom;
+    }
+
+    private static ValueSchema? FindSchema(Type codec)
+    {
+        if (codec.GetInterfaces().Any(static candidate => candidate.IsGenericType
+                && candidate.GetGenericTypeDefinition() == typeof(ISchemaValueCodec<>)))
+            return (ValueSchema)codec.GetProperty("Schema", BindingFlags.Public | BindingFlags.Static)!.GetValue(null)!;
+        if (codec.IsGenericType)
+            foreach (Type argument in codec.GetGenericArguments())
+                if (FindSchema(argument) is { } schema) return schema;
+        return null;
     }
 
     private static ulong RawSchema(SerializationTypeKey key, Type valueType, int width)
@@ -201,10 +215,17 @@ internal readonly struct RawCodec<T> : IComponentCodec<T> where T : struct
     }
 }
 
-internal readonly struct PackedValueCodec<T> : IDurableComponentCodec<T> where T : struct
+/// <summary>Copies a value whose memory layout matches its generated codec's encoding.</summary>
+/// <remarks>A save whose fields differ from the current type is read by the generated codec instead.</remarks>
+internal readonly struct PackedValueCodec<T, TCodec> : IDurableComponentCodec<T>
+    where T : struct where TCodec : struct, IDurableComponentCodec<T>
 {
     public void Write(ref DataWriter writer, in T value) => new RawCodec<T>().Write(ref writer, value);
-    public void Read(ref DataReader reader, out T value) => new RawCodec<T>().Read(ref reader, out value);
+    public void Read(ref DataReader reader, out T value)
+    {
+        if (reader.HasSavedFieldMaps) default(TCodec).Read(ref reader, out value);
+        else new RawCodec<T>().Read(ref reader, out value);
+    }
     public bool SupportsParallelWrite => true;
 }
 
@@ -311,7 +332,7 @@ public sealed partial class SerializationRegistry
         SerializationTypeKey key, int encodedSize = -1, ulong layoutProof = 0)
         where T : struct where TCodec : struct, IDurableComponentCodec<T>
         => PackedValueLayout.IsVerified<T>(encodedSize, layoutProof)
-            ? Register<T, PackedValueCodec<T>>(key)
+            ? Register<T, PackedValueCodec<T, TCodec>>(key)
             : Register<T, TCodec>(key);
 
     /// <summary>Registers a codec under the type's build identity; its values stay out of durable saves.</summary>

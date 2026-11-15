@@ -42,8 +42,10 @@ internal sealed class TopologyFile
             reader.ReadUInt64();
             byte storage = reader.ReadByte();
             widths[i] = reader.ReadInt32();
+            reader.ReadInt32(); // field list index
             Types.Add(new(i, storage, nameOffset, nameLength));
         }
+        SaveBytes.SkipFieldLists(reader);
         reader.ReadByte(); reader.ReadUInt64();
         int used = reader.ReadInt32(); reader.ReadInt32();
         int free = reader.ReadInt32();

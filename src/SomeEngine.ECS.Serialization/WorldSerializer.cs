@@ -11,7 +11,7 @@ namespace SomeEngine.ECS.Serialization;
 public sealed partial class WorldSerializer(SerializationRegistry registry)
 {
     private const uint Magic = 0x53434553;
-    private const ushort FormatVersion = 5;
+    private const ushort FormatVersion = 6;
     private readonly List<TableBinding> _tables = [];
     private readonly List<SavedType> _used = [];
     private readonly List<SavedService> _services = [];
@@ -236,13 +236,37 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
         writer.WriteUInt32(Magic); writer.WriteUInt16(FormatVersion);
         writer.WriteByte((byte)purpose); writer.WriteByte(payloadKind);
         writer.WriteGuid(purpose == SavePurpose.RawCheckpoint ? typeof(World).Module.ModuleVersionId : Guid.Empty);
+        var schemas = new List<ValueSchema>();
+        var schemaIndices = new Dictionary<ValueSchema, int>(ReferenceEqualityComparer.Instance);
         writer.WriteInt32(_used.Count);
         foreach (SavedType type in _used)
         {
             SerializationTypeKey key = type.KeyFor(purpose);
             writer.WriteGuid(key.StableId); writer.WriteText(key.StableName); writer.WriteUInt64(key.SchemaFingerprint);
             writer.WriteByte((byte)type.Storage); writer.WriteInt32(type.Width);
+            writer.WriteInt32(type.Schema is { } schema ? AddSchema(schema, schemas, schemaIndices) : -1);
         }
+        writer.WriteInt32(schemas.Count);
+        foreach (ValueSchema schema in schemas)
+        {
+            writer.WriteGuid(schema.Id); writer.WriteUInt64(schema.Hash); writer.WriteInt32(schema.Fields.Length);
+            foreach (ValueField field in schema.Fields)
+            {
+                writer.WriteText(field.Id); writer.WriteByte((byte)field.Kind);
+                writer.WriteInt32(field.Nested is { } nested ? schemaIndices[nested] : -1);
+            }
+        }
+    }
+
+    /// <summary>Adds a field list after the nested field lists it refers to, so a reader can link them in one pass.</summary>
+    private static int AddSchema(ValueSchema schema, List<ValueSchema> schemas, Dictionary<ValueSchema, int> indices)
+    {
+        if (indices.TryGetValue(schema, out int index)) return index;
+        foreach (ValueField field in schema.Fields)
+            if (field.Nested is { } nested) AddSchema(nested, schemas, indices);
+        indices.Add(schema, schemas.Count);
+        schemas.Add(schema);
+        return schemas.Count - 1;
     }
 
     private void WriteTable(ref DataWriter writer, TableBinding binding)

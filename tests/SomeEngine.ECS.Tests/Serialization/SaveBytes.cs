@@ -52,6 +52,25 @@ internal static class SaveBytes
             reader.ReadUInt64();
             reader.ReadByte();
             reader.ReadInt32();
+            reader.ReadInt32(); // field list index
+        }
+        SkipFieldLists(reader);
+    }
+
+    /// <summary>Skips the saved field lists that follow the type manifest.</summary>
+    internal static void SkipFieldLists(BinaryReader reader)
+    {
+        int lists = reader.ReadInt32();
+        for (int list = 0; list < lists; list++)
+        {
+            reader.ReadBytes(16 + sizeof(ulong));
+            int fields = reader.ReadInt32();
+            for (int field = 0; field < fields; field++)
+            {
+                reader.ReadBytes(reader.ReadInt32());
+                reader.ReadByte();
+                reader.ReadInt32();
+            }
         }
     }
 }

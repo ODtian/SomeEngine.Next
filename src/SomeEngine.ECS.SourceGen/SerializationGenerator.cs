@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace SomeEngine.ECS.SourceGen;
@@ -370,23 +371,76 @@ public sealed class SerializationGenerator : IIncrementalGenerator
 
     private static void GenerateCodec(StringBuilder builder, SerializableModel model)
     {
-        builder.AppendLine($"internal struct {GetCodecName(model)} : global::SomeEngine.ECS.Serialization.IDurableComponentCodec<{model.TypeName}>");
+        const string Serialization = "global::SomeEngine.ECS.Serialization";
+        builder.AppendLine($"internal struct {GetCodecName(model)} : {Serialization}.ISchemaValueCodec<{model.TypeName}>");
         builder.AppendLine("{");
+        builder.AppendLine($"    public static {Serialization}.ValueSchema Schema {{ get; }} = new(new global::System.Guid(\"{model.StableIdText}\"), 0x{model.SchemaFingerprint:X16}ul, new {Serialization}.ValueField[]");
+        builder.AppendLine("    {");
+        foreach (var field in model.Fields)
+        {
+            string nested = field.Nested is null ? string.Empty : $", {GetCodecName(field.Nested)}.Schema";
+            builder.AppendLine($"        new({SymbolDisplay.FormatLiteral(field.StableId, quote: true)}, {Serialization}.ValueFieldKind.{field.Kind}{nested}),");
+        }
+        builder.AppendLine("    });");
+        builder.AppendLine();
         builder.AppendLine("    public bool SupportsParallelWrite => true;");
-        builder.AppendLine($"    public void Write(ref global::SomeEngine.ECS.Serialization.DataWriter writer, in {model.TypeName} value)");
+        builder.AppendLine($"    public void Write(ref {Serialization}.DataWriter writer, in {model.TypeName} value)");
         builder.AppendLine("    {");
         foreach (var field in model.Fields)
             builder.AppendLine($"        {GetWriteLine(field)}");
         builder.AppendLine("    }");
         builder.AppendLine();
-        builder.AppendLine($"    public void Read(ref global::SomeEngine.ECS.Serialization.DataReader reader, out {model.TypeName} value)");
+        builder.AppendLine($"    public void Read(ref {Serialization}.DataReader reader, out {model.TypeName} value)");
         builder.AppendLine("    {");
+        builder.AppendLine("        if (reader.FindSavedFieldMap(Schema.Id) is { } saved)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            ReadSaved(ref reader, out value, saved);");
+        builder.AppendLine("            return;");
+        builder.AppendLine("        }");
         builder.AppendLine("        value = default;");
         foreach (var field in model.Fields)
         {
             foreach (var line in GetReadLines(field))
                 builder.AppendLine($"        {line}");
         }
+        builder.AppendLine("    }");
+        builder.AppendLine();
+        // Reads a value saved with an older field list: each saved field goes to the current field with the same
+        // identity and kind, or is skipped. Fields the save lacks keep what the type's constructor gives them.
+        builder.AppendLine($"    public static void ReadSaved(ref {Serialization}.DataReader reader, out {model.TypeName} value, {Serialization}.SavedFieldMap saved)");
+        builder.AppendLine("    {");
+        builder.AppendLine($"        value = new {model.TypeName}();");
+        builder.AppendLine("        for (int field = 0; field < saved.Count; field++)");
+        builder.AppendLine("        {");
+        builder.AppendLine("            switch (saved.TargetOf(field))");
+        builder.AppendLine("            {");
+        for (int index = 0; index < model.Fields.Count; index++)
+        {
+            FieldModel field = model.Fields[index];
+            builder.AppendLine($"                case {index}:");
+            builder.AppendLine("                {");
+            if (field.Nested is { } nestedModel)
+            {
+                string codec = GetCodecName(nestedModel);
+                string local = "__saved_" + field.Symbol.Name;
+                builder.AppendLine($"                    {field.TypeName} {local};");
+                builder.AppendLine($"                    if (saved.NestedMap(field) is {{ }} __map) {codec}.ReadSaved(ref reader, out {local}, __map);");
+                builder.AppendLine($"                    else new {codec}().Read(ref reader, out {local});");
+                builder.AppendLine($"                    value.{field.Symbol.Name} = {local};");
+            }
+            else
+            {
+                foreach (var line in GetReadLines(field))
+                    builder.AppendLine($"                    {line}");
+            }
+            builder.AppendLine("                    break;");
+            builder.AppendLine("                }");
+        }
+        builder.AppendLine("                default:");
+        builder.AppendLine("                    saved.Skip(ref reader, field);");
+        builder.AppendLine("                    break;");
+        builder.AppendLine("            }");
+        builder.AppendLine("        }");
         builder.AppendLine("    }");
         builder.AppendLine("}");
         builder.AppendLine();

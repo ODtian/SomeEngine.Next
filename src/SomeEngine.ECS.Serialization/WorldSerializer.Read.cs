@@ -75,23 +75,71 @@ public sealed partial class WorldSerializer
             throw SerializationErrors.CreateDataException(SerializationError.SchemaMismatch, "The raw checkpoint belongs to a different Core build.");
         int count = reader.Budget.ManifestCount(reader.ReadInt32());
         var types = new SavedType[count];
+        var keys = new SerializationTypeKey[count];
+        var schemaIndices = new int[count];
         Guid previousId = default;
         for (int i = 0; i < count; i++)
         {
             var key = new SerializationTypeKey(reader.ReadGuid(), reader.ReadText(true), reader.ReadUInt64());
             SavedStorage storage = (SavedStorage)reader.ReadByte();
             int width = reader.ReadInt32();
+            schemaIndices[i] = reader.ReadInt32();
             if (!registry.ById.TryGetValue(key.StableId, out SavedType? binding))
                 throw SerializationErrors.CreateDataException(SerializationError.UnknownType, "The saved type requires a registry entry.");
-            if (binding.KeyFor(purpose) != key || binding.Storage != storage || binding.Width != width
+            if (binding.Storage != storage || binding.Width != width
                 || purpose == SavePurpose.DurableSave && !binding.SupportsDurable)
                 throw SerializationErrors.CreateDataException(SerializationError.SchemaMismatch, "A serialized type differs from its registered schema.");
             if (i > 0 && key.StableId.CompareTo(previousId) <= 0)
                 throw new InvalidDataException("The type manifest must follow format identity order with each type appearing once.");
             previousId = key.StableId;
             types[i] = binding;
+            keys[i] = key;
+        }
+        ValueSchema[] schemas = ReadSchemas(ref reader);
+        for (int i = 0; i < count; i++)
+        {
+            SavedType binding = types[i];
+            if ((uint)schemaIndices[i] >= (uint)schemas.Length && schemaIndices[i] != -1)
+                throw new InvalidDataException("A saved type refers to a field list the save does not contain.");
+            ValueSchema? saved = schemaIndices[i] >= 0 ? schemas[schemaIndices[i]] : null;
+            // A durable save stays readable after a generated type's fields change: the saved field list says
+            // where each saved field goes. Tags carry no values. Everything else must match exactly.
+            bool readsByField = purpose == SavePurpose.DurableSave && saved is not null && binding.Schema is not null;
+            if (binding.KeyFor(purpose) != keys[i]
+                && !(purpose == SavePurpose.DurableSave && (readsByField || binding.Storage == SavedStorage.Tag)))
+                throw SerializationErrors.CreateDataException(SerializationError.SchemaMismatch, "A serialized type differs from its registered schema.");
+            if (readsByField && saved!.Hash != binding.Schema!.Hash)
+            {
+                reader.SavedFieldMaps ??= [];
+                if (reader.SavedFieldMaps.TryGetValue(binding.Schema.Id, out SavedFieldMap? existing) && existing.SavedHash != saved.Hash)
+                    throw SerializationErrors.CreateDataException(SerializationError.SchemaMismatch, "Two saved field lists map to one type.");
+                reader.SavedFieldMaps[binding.Schema.Id] = existing ?? new SavedFieldMap(saved, binding.Schema);
+            }
         }
         return types;
+    }
+
+    /// <summary>Reads the saved field lists. Each nested field list comes before the lists that refer to it.</summary>
+    private static ValueSchema[] ReadSchemas(ref DataReader reader)
+    {
+        var schemas = new ValueSchema[reader.Budget.ManifestCount(reader.ReadInt32())];
+        for (int index = 0; index < schemas.Length; index++)
+        {
+            Guid id = reader.ReadGuid();
+            ulong hash = reader.ReadUInt64();
+            var fields = new ValueField[reader.Budget.ManifestCount(reader.ReadInt32())];
+            for (int field = 0; field < fields.Length; field++)
+            {
+                string name = reader.ReadText(true);
+                var kind = (ValueFieldKind)reader.ReadByte();
+                int nested = reader.ReadInt32();
+                if (kind > ValueFieldKind.Nested || (kind == ValueFieldKind.Nested) != (nested >= 0) || nested >= index)
+                    throw new InvalidDataException("A saved field list is malformed.");
+                fields[field] = new ValueField(name, kind, nested >= 0 ? schemas[nested] : null);
+            }
+            schemas[index] = new ValueSchema(id, hash, fields);
+        }
+        return schemas;
     }
 
     private readonly record struct ReadHeaderData(SavedType[] Types, bool Preserve, ulong Version,

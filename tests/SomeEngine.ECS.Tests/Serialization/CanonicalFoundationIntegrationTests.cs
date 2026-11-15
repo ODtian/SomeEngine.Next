@@ -261,6 +261,8 @@ public sealed class CanonicalFoundationIntegrationTests
         _ = reader.ReadUInt64();
         _ = reader.ReadByte();
         _ = reader.ReadInt32();
+        _ = reader.ReadInt32();
+        SaveBytes.SkipFieldLists(reader);
         int payloadOffset = checked((int)stream.Position);
         int payloadLength = checked(envelope.Length - payloadOffset - sizeof(int));
         byte[] payload = reader.ReadBytes(payloadLength);

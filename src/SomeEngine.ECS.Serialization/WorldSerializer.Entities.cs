@@ -245,7 +245,7 @@ public sealed partial class WorldSerializer
             else ((SavedSparse)column.Type).AllocateAppend(target, membersCreated, column.Members);
         }
         var references = new EntityGroupReferences(sources, membersCreated, options.MissingReferenceMode);
-        var work = new ReadEntityColumns(target, columns, membersCreated, references, reader.Budget);
+        var work = new ReadEntityColumns(target, columns, membersCreated, references, reader.Budget, reader.SavedFieldMaps);
         if (target.Execution is { } execution) execution.ExecuteParallel(work, columns.Length);
         else for (int index = 0; index < columns.Length; index++) work.Execute(index);
         foreach (EntityReadColumn column in columns)
@@ -261,12 +261,13 @@ public sealed partial class WorldSerializer
     }
 
     private readonly struct ReadEntityColumns(World world, EntityReadColumn[] columns, Entity[] entities,
-        EntityGroupReferences references, SerializationReadBudget budget) : IJobParallelFor
+        EntityGroupReferences references, SerializationReadBudget budget,
+        Dictionary<Guid, SavedFieldMap>? savedFieldMaps) : IJobParallelFor
     {
         public void Execute(int item)
         {
             EntityReadColumn column = columns[item];
-            var reader = new DataReader(column.Bytes.Span, budget) { ValuesWorld = world };
+            var reader = new DataReader(column.Bytes.Span, budget) { ValuesWorld = world, SavedFieldMaps = savedFieldMaps };
             reader.BindEntityReferences(references);
             foreach (int index in column.Members)
             {

@@ -19,6 +19,8 @@ public ref struct DataReader
     private ReadReferenceRemapper? _entityReferences;
     internal Dictionary<int, int[]>? SharedMappings;
     internal bool NormalizeShared;
+    /// <summary>For each saved value type whose fields differ from the current type, the map that reads it.</summary>
+    internal Dictionary<Guid, SavedFieldMap>? SavedFieldMaps;
     private LoadedEntityMapper _currentMapper, _progressMapper;
 
     public DataReader(ReadOnlySpan<byte> bytes, SerializationReadLimits? limits = null)
@@ -26,7 +28,7 @@ public ref struct DataReader
         _stream = null; _buffer = null; _bytes = bytes; _offset = 0; _committed = 0;
         Budget = new(limits);
         ValuesWorld = null;
-        Identities = null; SharedMappings = null; NormalizeShared = false;
+        Identities = null; SharedMappings = null; NormalizeShared = false; SavedFieldMaps = null;
         _entityReferences = null;
         _currentMapper = _progressMapper = default;
     }
@@ -35,13 +37,19 @@ public ref struct DataReader
         _stream = stream; _buffer = ArrayPool<byte>.Shared.Rent(4096); _bytes = default; _offset = 0; _committed = 0;
         Budget = new(limits);
         ValuesWorld = null;
-        Identities = null; SharedMappings = null; NormalizeShared = false;
+        Identities = null; SharedMappings = null; NormalizeShared = false; SavedFieldMaps = null;
         _entityReferences = null;
         _currentMapper = _progressMapper = default;
     }
     public long Position => _committed + _offset;
     internal DataReader(ReadOnlySpan<byte> bytes, SerializationReadBudget budget)
         : this(bytes) => Budget = budget;
+
+    /// <summary>The map for reading an older saved layout of value type <paramref name="type"/>, or null when the save has its current layout.</summary>
+    public readonly SavedFieldMap? FindSavedFieldMap(Guid type)
+        => SavedFieldMaps is { } maps && maps.TryGetValue(type, out SavedFieldMap? map) ? map : null;
+    internal readonly bool HasSavedFieldMaps => SavedFieldMaps is not null;
+    internal void Skip(int count) => Take(count);
 
     internal bool PatchesValues => Identities is not null || NormalizeShared || _entityReferences is not null;
 

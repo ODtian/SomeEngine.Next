@@ -125,7 +125,7 @@ public sealed class CanonicalWireValidationTests
         var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, SaveBytes.Utf8, leaveOpen: true);
         writer.Write(0x53434553u);
-        writer.Write((ushort)5);
+        writer.Write((ushort)6);
         writer.Write((byte)SavePurpose.DurableSave);
         writer.Write((byte)kind);
         writer.Write(stackalloc byte[16]);
@@ -135,7 +135,9 @@ public sealed class CanonicalWireValidationTests
             SaveBytes.WriteTypeKey(writer, manifest[i]);
             writer.Write(kind == SavedPayloadKind.World ? (byte)1 : (byte)0);
             writer.Write(0);
+            writer.Write(-1); // no field list
         }
+        writer.Write(0); // field lists
         writer.Flush();
         stream.Position = 0;
         return stream;
