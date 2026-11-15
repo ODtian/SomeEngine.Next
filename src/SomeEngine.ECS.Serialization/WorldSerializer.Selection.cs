@@ -36,12 +36,6 @@ public sealed partial class WorldSerializer
 
     private void SaveSelected(World world, ReadOnlySpan<Entity> entities, Query? query, Stream output, SerializeOptions options)
     {
-        if (!options.Codecs.IsDefaultOrEmpty)
-        {
-            new WorldSerializer(SerializationRegistry.Bind(registry, options.Codecs))
-                .SaveSelected(world, entities, query, output, options with { Codecs = default });
-            return;
-        }
         ValidateWriteOptions(options);
         foreach (SavedService service in registry.Services) service.Maintain(world);
         using WorldAccess structure = world.OpenStructure(false);

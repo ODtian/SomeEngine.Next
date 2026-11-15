@@ -111,7 +111,7 @@ internal static class RuntimeApplication
         string title = settings.Name;
         using var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
         var streaming = new WorldStreamSystem(gameWorld.World, assets, boot.Scene, new(),
-            new(Codecs: SceneSerialization.Codecs));
+            SceneSerialization.CreateRegistry());
         gameWorld.Systems.Add(streaming);
         gameWorld.Systems.Initialize();
         Task<ClusterShaders> pipelineTask = CreateClusterShadersAsync().AsTask();

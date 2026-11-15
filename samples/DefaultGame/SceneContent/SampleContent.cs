@@ -321,7 +321,7 @@ public static class SampleContent
         world.Create(new PointLight(new(-18, 4, 58), 22, new(1, 0.55f, 0.45f), 7));
         world.Create(new PointLight(new(18, 8, 60), 24, new(0.45f, 1, 0.65f), 8));
         using var entities = new EntityAsset(SampleAssetIds.SceneEntities) { Name = "Default entities" };
-        entities.GetBlock<EntityBlock>().WriteEntities(world, ReadSceneEntities(world), new(Codecs: SceneSerialization.Codecs));
+        entities.GetBlock<EntityBlock>().WriteEntities(world, ReadSceneEntities(world), SceneSerialization.CreateRegistry());
         project.RegisterAsset(await entities.SaveAsync(Path.Combine(project.RootPath, "assets/Scenes/default.entities.asset"),
             cancellationToken).ConfigureAwait(false));
         using var asset = new WorldAsset(SampleAssetIds.Scene) { Name = "Default" };

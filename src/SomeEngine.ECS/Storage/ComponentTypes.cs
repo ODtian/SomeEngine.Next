@@ -18,7 +18,6 @@ namespace SomeEngine.ECS.Storage
     public abstract class ComponentType
     {
         public readonly int Id;
-        internal object? SerializationDescription;
         public static ComponentType Of<T>() where T : struct => ComponentValues.Bind<T>();
         internal readonly int Size;
         internal readonly bool ContainsReferences;

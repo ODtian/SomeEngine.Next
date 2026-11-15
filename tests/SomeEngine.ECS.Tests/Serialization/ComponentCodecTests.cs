@@ -7,22 +7,6 @@ namespace SomeEngine.ECS.Serialization.Tests;
 
 public sealed class ComponentCodecTests
 {
-    [Fact]
-    public void ClosedHierarchyDescriptionsEncodeValuesBeforeAWorldUsesTheDomain()
-    {
-        var parent = new Parent<DeclaredHierarchy>(new Entity(12, 3));
-        ComponentCodec codec = ComponentCodec.Create<Parent<DeclaredHierarchy>, ParentValueCodec>(new());
-        using var bytes = new MemoryStream();
-
-        WorldSerializer.WriteComponent(bytes, parent, new(Purpose: SavePurpose.DurableSave, Codecs: [codec]));
-        bytes.Position = 0;
-        Parent<DeclaredHierarchy> restored = WorldSerializer.ReadComponent<Parent<DeclaredHierarchy>>(bytes,
-            new SerializationReadOptions(Codecs: [codec]));
-
-        Assert.Same(ComponentType.Of<Parent<DeclaredHierarchy>>(), codec.Component);
-        Assert.Equal(parent, restored);
-    }
-
     [Theory]
     [InlineData(SavePurpose.RawCheckpoint)]
     [InlineData(SavePurpose.DurableSave)]
@@ -40,9 +24,13 @@ public sealed class ComponentCodecTests
             buffer.Add(new DescribedElement { Value = 9, Target = referenced });
         using var bytes = new MemoryStream();
 
-        WorldSerializer.WriteWorld(bytes, world, new(Purpose: purpose));
+        var registry = new SerializationRegistry();
+        GameSerializationModule.RegisterAll(registry);
+
+        new WorldSerializer(registry).Save(world, bytes, new SerializeOptions(Purpose: purpose));
         bytes.Position = 0;
-        using World restored = WorldSerializer.ReadWorld(bytes, new WorldLoadOptions(IdentityMode: EntityIdentityMode.Remap, RequiredPurpose: purpose));
+        using World restored = WorldSerializer.ReadWorld(bytes, registry,
+            new WorldLoadOptions(IdentityMode: EntityIdentityMode.Remap, RequiredPurpose: purpose));
 
         Entity result = Entity.Null;
         using (QueryScope scope = restored.Query<DescribedPosition>().OpenRead())
@@ -63,45 +51,39 @@ public sealed class ComponentCodecTests
     }
 
     [Fact]
-    public void CallCodecsUseTheirStateAndFormatWhileOtherValuesUseGeneratedDescriptions()
+    public void RegisteredCodecsKeepTheStateTheyWereRegisteredWith()
     {
         using var world = new World();
         Entity entity = world.Create(new DescribedPosition { Value = 12 });
-        world.Set(entity, new DescribedLabel { Value = "default" });
         var format = new SerializationTypeKey(new Guid("abca3391-45df-4b49-af0e-08acd1219041"), "shifted-position", 1);
-        ComponentCodec write = ComponentCodec.Create<DescribedPosition, ShiftedPositionCodec>(format, new(11));
-        ComponentCodec read = ComponentCodec.Create<DescribedPosition, ShiftedPositionCodec>(format, new(4));
         using var bytes = new MemoryStream();
 
-        WorldSerializer.WriteWorld(bytes, world, new(Purpose: SavePurpose.DurableSave, Codecs: [write]));
+        new WorldSerializer(new SerializationRegistry().Register<DescribedPosition, ShiftedPositionCodec>(format, new(11)))
+            .Save(world, bytes, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         bytes.Position = 0;
-        using World restored = WorldSerializer.ReadWorld(bytes, new WorldLoadOptions(Codecs: [read]));
+        using World restored = WorldSerializer.ReadWorld(bytes,
+            new SerializationRegistry().Register<DescribedPosition, ShiftedPositionCodec>(format, new(4)));
 
-        Assert.Same(ComponentType.Of<DescribedPosition>(), write.Component);
-        Assert.Equal(format, write.Format);
         Assert.Equal(19, restored.Read<DescribedPosition>(entity).Value);
-        Assert.Equal("default", restored.Read<DescribedLabel>(entity).Value);
-        Assert.Equal(1, restored.Query<DescribedPosition>().Count);
     }
 
     [Fact]
-    public void BufferElementCodecsUseTheGeneratedFormatAndCallState()
+    public void RegisteredBufferElementCodecsKeepTheStateTheyWereRegisteredWith()
     {
         using var world = new World();
-        Entity entity = world.Create(new DescribedPosition { Value = 1 });
+        Entity entity = world.Create();
         world.AddBuffer<DescribedElement>(entity);
         using (DynamicBuffer<DescribedElement> elements = world.GetBuffer<DescribedElement>(entity))
             elements.Add(new DescribedElement { Value = 3 });
-        ComponentCodec write = ComponentCodec.Create<DescribedElement, ShiftedElementCodec>(new(5));
-        ComponentCodec read = ComponentCodec.Create<DescribedElement, ShiftedElementCodec>(new(2));
+        var format = new SerializationTypeKey(new Guid("6ea337fd-1f64-46fd-bd4b-72f9fa4ef171"), "shifted-element", 1);
         using var bytes = new MemoryStream();
 
-        WorldSerializer.WriteWorld(bytes, world, new(Purpose: SavePurpose.DurableSave, Codecs: [write]));
+        new WorldSerializer(new SerializationRegistry().RegisterBuffer<DescribedElement, ShiftedElementCodec>(format, new(5)))
+            .Save(world, bytes, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         bytes.Position = 0;
-        using World restored = WorldSerializer.ReadWorld(bytes, new WorldLoadOptions(Codecs: [read]));
+        using World restored = WorldSerializer.ReadWorld(bytes,
+            new SerializationRegistry().RegisterBuffer<DescribedElement, ShiftedElementCodec>(format, new(2)));
 
-        Assert.Same(ComponentType.Of<Buffer<DescribedElement>>(), write.Component);
-        Assert.Equal(new Guid("6ea337fd-1f64-46fd-bd4b-72f9fa4ef171"), write.Format.StableId);
         using ReadOnlyBuffer<DescribedElement> values = restored.ReadBuffer<DescribedElement>(entity);
         Assert.Equal(1, values.Count);
         Assert.Equal(6, values[0].Value);
@@ -123,14 +105,8 @@ public sealed class ComponentCodecTests
             => value = new() { Value = reader.ReadInt32() - shift, Target = reader.ReadEntity() };
     }
 
-    private readonly struct ParentValueCodec : IDurableComponentCodec<Parent<DeclaredHierarchy>>
-    {
-        public void Write(ref DataWriter writer, in Parent<DeclaredHierarchy> value) => writer.WriteEntity(value.Value);
-        public void Read(ref DataReader reader, out Parent<DeclaredHierarchy> value) => value = new(reader.ReadEntity());
-    }
-}
 
-public readonly struct DeclaredHierarchy : IHierarchyDomain;
+}
 
 [SerializableComponent("892eb140-5eb7-4b5e-99b4-4b515503ee01")]
 public struct DescribedPosition : IComponent

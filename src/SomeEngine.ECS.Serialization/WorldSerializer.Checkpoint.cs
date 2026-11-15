@@ -50,12 +50,6 @@ public sealed partial class WorldSerializer
 
     public void Save(WorldCheckpoint checkpoint, IBufferWriter<byte> output, SerializeOptions options)
     {
-        if (!options.Codecs.IsDefaultOrEmpty)
-        {
-            new WorldSerializer(SerializationRegistry.Bind(registry, options.Codecs))
-                .Save(checkpoint, output, options with { Codecs = default });
-            return;
-        }
         ValidateWriteOptions(options);
         var writer = new DataWriter(output, options.ExternalReferences);
         Write(checkpoint, ref writer, options);
@@ -66,12 +60,6 @@ public sealed partial class WorldSerializer
 
     public void Save(WorldCheckpoint checkpoint, Stream output, SerializeOptions options)
     {
-        if (!options.Codecs.IsDefaultOrEmpty)
-        {
-            new WorldSerializer(SerializationRegistry.Bind(registry, options.Codecs))
-                .Save(checkpoint, output, options with { Codecs = default });
-            return;
-        }
         ValidateWriteOptions(options);
         var writer = new DataWriter(output, options.ExternalReferences);
         Write(checkpoint, ref writer, options);
@@ -277,9 +265,6 @@ public sealed partial class WorldSerializer
     public Task SaveAsync(World world, Stream output, SerializeOptions options,
         CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
     {
-        if (!options.Codecs.IsDefaultOrEmpty)
-            return new WorldSerializer(SerializationRegistry.Bind(registry, options.Codecs))
-                .SaveAsync(world, output, options with { Codecs = default }, progress, systems);
         ValidateWriteOptions(options);
         var checkpoint = new WorldCheckpoint();
         try { checkpoint.Capture(world, registry, options, progress, systems); }

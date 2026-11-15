@@ -154,6 +154,24 @@ public sealed class SavedFieldChangeTests
     }
 
     [Fact]
+    public void An_entity_block_saved_before_a_component_changed_loads_its_saved_fields()
+    {
+        using var source = new World();
+        Entity cargo = source.Create(new CargoBefore { Count = 3, Label = new LabelBefore { Size = 4 } });
+        using var output = new MemoryStream();
+        WorldSerializer.WriteEntities(output, source, [cargo],
+            new SerializationRegistry().RegisterDurable<CargoBefore, CargoBeforeCodec>(Key(Cargo, CargoBeforeCodec.Schema)),
+            new SerializeOptions(Purpose: SavePurpose.DurableSave));
+        using var target = new World();
+
+        Entity[] loaded = WorldSerializer.ReadEntities(output.ToArray().AsMemory(), target,
+            new SerializationRegistry().RegisterDurable<CargoAfter, CargoAfterCodec>(Key(Cargo, CargoAfterCodec.Schema)));
+
+        CargoAfter value = target.Read<CargoAfter>(Assert.Single(loaded));
+        Assert.Equal((3, 100, 4, 7), (value.Amount, value.Durability, value.Label.Size, value.Label.Color));
+    }
+
+    [Fact]
     public void A_buffer_whose_element_gained_a_field_keeps_its_saved_elements()
     {
         using var source = new World();

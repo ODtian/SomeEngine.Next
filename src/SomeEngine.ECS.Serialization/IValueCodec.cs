@@ -10,5 +10,8 @@ public interface IComponentCodec<T> : IValueCodec<T> where T : struct
 {
     bool SupportsParallelWrite => false;
 }
-public interface IDurableComponentCodec<T> : IComponentCodec<T> where T : struct;
+/// <summary>Marks a codec whose encoding is meant to be read by later builds.</summary>
+public interface IDurableCodec;
+
+public interface IDurableComponentCodec<T> : IComponentCodec<T>, IDurableCodec where T : struct;
 public enum SavePurpose : byte { RawCheckpoint, DurableSave }

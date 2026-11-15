@@ -13,6 +13,7 @@ public sealed partial class WorldStream : IDisposable, IAsyncDisposable
     private readonly World _world;
     private readonly AssetLoader _loader;
     private readonly WorldStreamOptions _options;
+    private readonly SerializationRegistry _registry;
     private readonly SerializationReadOptions _readOptions;
     private readonly Scheduler _scheduler;
     private readonly CancellationTokenSource _stop = new();
@@ -28,9 +29,10 @@ public sealed partial class WorldStream : IDisposable, IAsyncDisposable
     private Task? _close;
 
     public WorldStream(World world, AssetLoader loader, AssetId<WorldAsset> source,
-        WorldStreamOptions options, SerializationReadOptions readOptions = default)
+        WorldStreamOptions options, SerializationRegistry registry, SerializationReadOptions readOptions = default)
     {
         _world = world;
+        _registry = registry;
         _loader = loader;
         _options = options;
         _readOptions = readOptions;
@@ -150,7 +152,7 @@ public sealed partial class WorldStream : IDisposable, IAsyncDisposable
         while (ReadResults.Values.Count != 0)
         {
             ContentBytes result = ReadResults.Values[0];
-            Entity[] members = WorldSerializer.ReadEntities(result.Bytes, _world, _readOptions);
+            Entity[] members = WorldSerializer.ReadEntities(result.Bytes, _world, _registry, _readOptions);
             LoadedGroups.Values.Add(result.ContentIndex, members);
             ReadResults.Values.RemoveAt(0);
             if (Stopwatch.GetElapsedTime(start) >= _options.CommitBudget) break;

@@ -44,12 +44,6 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
     public void Save(World world, IBufferWriter<byte> output, SerializeOptions options,
         CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
     {
-        if (!options.Codecs.IsDefaultOrEmpty)
-        {
-            new WorldSerializer(SerializationRegistry.Bind(registry, options.Codecs))
-                .Save(world, output, options with { Codecs = default }, progress, systems);
-            return;
-        }
         ValidateWriteOptions(options);
         var writer = new DataWriter(output, options.ExternalReferences);
         Write(world, ref writer, options, progress, systems);
@@ -63,12 +57,6 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
     public void Save(World world, Stream output, SerializeOptions options,
         CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
     {
-        if (!options.Codecs.IsDefaultOrEmpty)
-        {
-            new WorldSerializer(SerializationRegistry.Bind(registry, options.Codecs))
-                .Save(world, output, options with { Codecs = default }, progress, systems);
-            return;
-        }
         ValidateWriteOptions(options);
         Write(world, output, options, progress, systems);
     }

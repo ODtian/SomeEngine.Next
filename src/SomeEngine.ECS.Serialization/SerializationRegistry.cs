@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -24,52 +23,28 @@ internal interface ISelectionCodec<T> where T : struct
 }
 
 internal abstract class SavedType(SerializationTypeKey key, SavedStorage storage, int type, int width, bool raw,
-    Type valueType, Type codecType)
+    Type valueType, Type codecType, CodecTraits codecTraits)
 {
     internal readonly SerializationTypeKey Key = key;
     internal readonly SavedStorage Storage = storage;
     internal readonly int Type = type, Width = width;
     internal readonly bool Raw = raw;
-    internal readonly ComponentCodecKind CodecKind = DescribeCodec(codecType);
+    internal readonly ComponentCodecKind CodecKind = codecTraits.Kind;
     /// <summary>The fields its generated codec writes, or null for a hand-written codec.</summary>
-    internal readonly ValueSchema? Schema = FindSchema(codecType);
+    internal readonly ValueSchema? Schema = codecTraits.FieldList;
     internal virtual object? EntityPatcher => null;
     private readonly ISavedGroupBinding? _group = SavedGroups.Create(valueType);
-    internal bool SupportsDurable = storage == SavedStorage.Tag || !UsesRawCodec(codecType);
+    internal bool SupportsDurable = storage == SavedStorage.Tag || !codecTraits.CopiesMemory;
     internal readonly SerializationTypeKey CheckpointKey = key with
     {
         StableName = string.Join('|', key.StableName, TypeBuild(valueType), TypeBuild(codecType), RuntimeInformation.FrameworkDescription,
             RuntimeInformation.ProcessArchitecture, IntPtr.Size, BitConverter.IsLittleEndian),
-        SchemaFingerprint = UsesRawCodec(codecType) ? RawSchema(key, valueType, width) : key.SchemaFingerprint,
+        SchemaFingerprint = codecTraits.CopiesMemory ? RawSchema(key, valueType, width) : key.SchemaFingerprint,
     };
     internal SerializationTypeKey KeyFor(SavePurpose format) => format == SavePurpose.RawCheckpoint ? CheckpointKey : Key;
     internal virtual void Activate(World world) => _group?.Activate(world);
     private static string TypeBuild(Type type) => type.AssemblyQualifiedName + "#" + type.Module.ModuleVersionId
         + (type.IsGenericType ? "[" + string.Join(';', type.GetGenericArguments().Select(TypeBuild)) + "]" : "");
-    private static bool UsesRawCodec(Type type) => type.IsGenericType
-        && (type.GetGenericTypeDefinition() == typeof(RawCodec<>) || type.GetGenericArguments().Any(UsesRawCodec));
-
-    private static ComponentCodecKind DescribeCodec(Type type)
-    {
-        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(PackedValueCodec<,>))
-            return ComponentCodecKind.RawDurable;
-        if (UsesRawCodec(type)) return ComponentCodecKind.Raw;
-        if (type.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDurableComponentCodec<>)))
-            return ComponentCodecKind.Durable;
-        return ComponentCodecKind.Custom;
-    }
-
-    private static ValueSchema? FindSchema(Type codec)
-    {
-        if (codec.GetInterfaces().Any(static candidate => candidate.IsGenericType
-                && candidate.GetGenericTypeDefinition() == typeof(ISchemaValueCodec<>)))
-            return (ValueSchema)codec.GetProperty("Schema", BindingFlags.Public | BindingFlags.Static)!.GetValue(null)!;
-        if (codec.IsGenericType)
-            foreach (Type argument in codec.GetGenericArguments())
-                if (FindSchema(argument) is { } schema) return schema;
-        return null;
-    }
-
     private static ulong RawSchema(SerializationTypeKey key, Type valueType, int width)
     {
         ulong schema = key.SchemaFingerprint;
@@ -80,7 +55,7 @@ internal abstract class SavedType(SerializationTypeKey key, SavedStorage storage
 }
 
 internal abstract class SavedColumn(SerializationTypeKey key, SavedStorage storage, int type, int width, bool raw,
-    Type valueType, Type codecType) : SavedType(key, storage, type, width, raw, valueType, codecType)
+    Type valueType, Type codecType, CodecTraits codecTraits) : SavedType(key, storage, type, width, raw, valueType, codecType, codecTraits)
 {
     internal abstract void Write(ref DataWriter writer, ref ColumnEntry column, int count);
     internal abstract void Read(ref DataReader reader, ref ColumnEntry column, int count);
@@ -96,7 +71,7 @@ internal abstract class SavedColumn(SerializationTypeKey key, SavedStorage stora
 internal sealed unsafe class SavedColumn<T, TCodec>(SerializationTypeKey key, SavedStorage storage, TCodec codec, bool raw,
     IReferencePatcher<T>? patcher = null, bool progress = false)
     : SavedColumn(key, storage, ComponentValues.Bind<T>().Id, raw && !ComponentType<T>.IsTagType ? Unsafe.SizeOf<T>() : 0,
-        raw, typeof(T), typeof(TCodec)), IStoredValueCodec<T> where T : struct where TCodec : struct, IValueCodec<T>
+        raw, typeof(T), typeof(TCodec), CodecTraits.Of<T, TCodec>(codec)), IStoredValueCodec<T> where T : struct where TCodec : struct, IValueCodec<T>
 {
     private readonly IReferencePatcher<T>? _patcher = patcher ?? ReferencePatchers.DefaultValue<T>();
     private readonly ISelectionCodec<T>? _selection = codec is ISelectionCodec<T> selected ? selected : null;
@@ -204,8 +179,10 @@ internal sealed unsafe class SavedColumn<T, TCodec>(SerializationTypeKey key, Sa
     }
 }
 
-internal readonly struct RawCodec<T> : IComponentCodec<T> where T : struct
+internal readonly struct RawCodec<T> : IComponentCodec<T>, IEngineCodec where T : struct
 {
+    public bool CopiesMemory => true;
+    public ValueSchema? FieldList => null;
     public void Write(ref DataWriter writer, in T value)
         => writer.WriteRawBytes(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef(in value), 1)));
     public void Read(ref DataReader reader, out T value)
@@ -217,9 +194,12 @@ internal readonly struct RawCodec<T> : IComponentCodec<T> where T : struct
 
 /// <summary>Copies a value whose memory layout matches its generated codec's encoding.</summary>
 /// <remarks>A save whose fields differ from the current type is read by the generated codec instead.</remarks>
-internal readonly struct PackedValueCodec<T, TCodec> : IDurableComponentCodec<T>
+internal readonly struct PackedValueCodec<T, TCodec> : IDurableComponentCodec<T>, IEngineCodec
     where T : struct where TCodec : struct, IDurableComponentCodec<T>
 {
+    public bool CopiesMemory => false;
+    public bool IsPacked => true;
+    public ValueSchema? FieldList => CodecTraits.FieldListOf(default(TCodec));
     public void Write(ref DataWriter writer, in T value) => new RawCodec<T>().Write(ref writer, value);
     public void Read(ref DataReader reader, out T value)
     {
@@ -229,14 +209,45 @@ internal readonly struct PackedValueCodec<T, TCodec> : IDurableComponentCodec<T>
     public bool SupportsParallelWrite => true;
 }
 
+/// <summary>An engine codec that reports how it stores values, including through the codec it wraps.</summary>
+internal interface IEngineCodec
+{
+    /// <summary>Copies values as raw memory, which only the same build can read back.</summary>
+    bool CopiesMemory { get; }
+    /// <summary>Copies a memory layout that its generated codec has proven matches that codec's encoding.</summary>
+    bool IsPacked => false;
+    ValueSchema? FieldList { get; }
+}
+
+/// <summary>What a binding needs to know about its codec, read from the codec value instead of by reflection.</summary>
+internal readonly record struct CodecTraits(ComponentCodecKind Kind, bool CopiesMemory, ValueSchema? FieldList)
+{
+    internal static CodecTraits Of<T, TCodec>(TCodec codec) where TCodec : struct, IValueCodec<T>
+    {
+        bool copies = CopiesMemoryOf(codec);
+        ComponentCodecKind kind = codec is IEngineCodec { IsPacked: true } ? ComponentCodecKind.RawDurable
+            : copies ? ComponentCodecKind.Raw
+            : codec is IDurableCodec ? ComponentCodecKind.Durable
+            : ComponentCodecKind.Custom;
+        return new(kind, copies, FieldListOf(codec));
+    }
+
+    internal static bool CopiesMemoryOf<TCodec>(TCodec codec) => codec is IEngineCodec { CopiesMemory: true };
+
+    internal static ValueSchema? FieldListOf<TCodec>(TCodec codec)
+        => codec is ISchemaValueCodec generated ? generated.FieldList : (codec as IEngineCodec)?.FieldList;
+}
+
 internal interface IValueReadStorage
 {
     void PrepareRead(World world);
 }
 
-internal readonly struct RemovedCodec<T, TCodec>(TCodec codec) : IComponentCodec<Removed<T>>, IValueReadStorage
+internal readonly struct RemovedCodec<T, TCodec>(TCodec codec) : IComponentCodec<Removed<T>>, IValueReadStorage, IEngineCodec
     where T : struct where TCodec : struct, IValueCodec<T>
 {
+    public bool CopiesMemory => CodecTraits.CopiesMemoryOf(codec);
+    public ValueSchema? FieldList => CodecTraits.FieldListOf(codec);
     public void PrepareRead(World world)
     {
         if (codec is IValueReadStorage storage) storage.PrepareRead(world);
@@ -247,9 +258,11 @@ internal readonly struct RemovedCodec<T, TCodec>(TCodec codec) : IComponentCodec
     { TCodec item = codec; item.Read(ref reader, out T previous); value = new(previous, reader.ReadUInt64()); }
 }
 
-internal readonly struct BufferCodec<T, TCodec>(TCodec codec) : IComponentCodec<Buffer<T>>, IValueReadStorage
+internal readonly struct BufferCodec<T, TCodec>(TCodec codec) : IComponentCodec<Buffer<T>>, IValueReadStorage, IEngineCodec
     where T : struct where TCodec : struct, IValueCodec<T>
 {
+    public bool CopiesMemory => CodecTraits.CopiesMemoryOf(codec);
+    public ValueSchema? FieldList => CodecTraits.FieldListOf(codec);
     public void PrepareRead(World world) => world.BufferPool<T>();
     public void Write(ref DataWriter writer, in Buffer<T> value)
     {

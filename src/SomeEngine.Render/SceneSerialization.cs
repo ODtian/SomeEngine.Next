@@ -1,5 +1,4 @@
 using System.Numerics;
-using System.Collections.Immutable;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Serialization;
@@ -9,25 +8,9 @@ using SomeEngine.Serialization;
 
 namespace SomeEngine.Render;
 
-/// <summary>Codecs for the components used by the sample scenes, using the normal ECS World format.</summary>
+/// <summary>The registry for the components saved in scenes, using the normal ECS World format.</summary>
 public static class SceneSerialization
 {
-    static SceneSerialization() => ComponentCodec.RegisterDefaultHierarchy<DefaultHierarchyDomain>();
-
-    public static ImmutableArray<ComponentCodec> Codecs { get; } =
-    [
-        ComponentCodec.Create<WorldTransform, TransformCodec>(Key(nameof(WorldTransform), "rotation:4f;position:3f;stretch:3f;scale:f"), new()),
-        ComponentCodec.Create<MeshSource, MeshSourceCodec>(Key(nameof(MeshSource), "mesh:external;bounds:f;depth:u32;kind:u32;player:u32;visibility:u32"), new()),
-        ComponentCodec.Create<SkeletonSource, SkeletonSourceCodec>(Key(nameof(SkeletonSource), "skeleton:external"), new()),
-        ComponentCodec.Create<MeshMotion, MotionCodec>(Key(nameof(MeshMotion), "amplitude:3f;seed:u32"), new()),
-        ComponentCodec.Create<SceneCamera, CameraCodec>(Key(nameof(SceneCamera), "position:3f;target:3f;up:3f;fov:f;near:f;far:f"), new()),
-        ComponentCodec.Create<DirectionalLight, DirectionalCodec>(Key(nameof(DirectionalLight), "direction:3f;color:3f;intensity:f;layers:u32"), new()),
-        ComponentCodec.Create<PointLight, PointCodec>(Key(nameof(PointLight), "position:3f;range:f;color:3f;intensity:f;layers:u32"), new()),
-        ComponentCodec.Create<SpotLight, SpotCodec>(Key(nameof(SpotLight), "position:3f;range:f;direction:3f;inner:f;outer:f;color:3f;intensity:f;layers:u32"), new()),
-        ComponentCodec.Create<WorldOrigin, OriginCodec>(Key(nameof(WorldOrigin), "x:f64;y:f64;z:f64"), new()),
-        ComponentCodec.Create<Xray, XrayCodec>(Key(nameof(Xray), "visible:4f;occluded:4f;minimum:f;maximum:f"), new()),
-    ];
-
     public static SerializationRegistry CreateRegistry() => new SerializationRegistry()
         .Register<WorldTransform, TransformCodec>(Key(nameof(WorldTransform), "rotation:4f;position:3f;stretch:3f;scale:f"))
         .RegisterHierarchy<DefaultHierarchyDomain>(Key(nameof(DefaultHierarchyDomain), "parent:entity;children:entities;order:b"))
@@ -37,7 +20,9 @@ public static class SceneSerialization
         .Register<SceneCamera, CameraCodec>(Key(nameof(SceneCamera), "position:3f;target:3f;up:3f;fov:f;near:f;far:f"))
         .Register<DirectionalLight, DirectionalCodec>(Key(nameof(DirectionalLight), "direction:3f;color:3f;intensity:f;layers:u32"))
         .Register<PointLight, PointCodec>(Key(nameof(PointLight), "position:3f;range:f;color:3f;intensity:f;layers:u32"))
-        .Register<SpotLight, SpotCodec>(Key(nameof(SpotLight), "position:3f;range:f;direction:3f;inner:f;outer:f;color:3f;intensity:f;layers:u32"));
+        .Register<SpotLight, SpotCodec>(Key(nameof(SpotLight), "position:3f;range:f;direction:3f;inner:f;outer:f;color:3f;intensity:f;layers:u32"))
+        .Register<WorldOrigin, OriginCodec>(Key(nameof(WorldOrigin), "x:f64;y:f64;z:f64"))
+        .Register<Xray, XrayCodec>(Key(nameof(Xray), "visible:4f;occluded:4f;minimum:f;maximum:f"));
 
     private static SerializationTypeKey Key(string name, string fields)
         => new(BinaryTypeId.FromLogicalName("SomeEngine.Scene." + name), "SomeEngine.Scene." + name, BinaryFieldKey.FromName(fields));

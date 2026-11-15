@@ -33,7 +33,8 @@ internal sealed partial class HierarchyData<TDomain> : IWorldLifecycle where TDo
 
     internal HierarchyData(World world)
     {
-        HierarchySerializationType<TDomain>.Register();
+        ComponentValues.Bind<Parent<TDomain>>();
+        ComponentValues.Bind<Children<TDomain>>();
         _world = world;
         _applied = new AppliedParent[world.Records.Length];
         _differences = new(world.Records.Length);

@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 
 namespace SomeEngine.ECS.Serialization;
 
@@ -11,5 +10,4 @@ public readonly record struct WorldLoadOptions(
     SerializationReadLimits? ReadLimits = null,
     SavePurpose? RequiredPurpose = null,
     WorldExecution? Execution = null,
-    bool RequireEndOfInput = false,
-    ImmutableArray<ComponentCodec> Codecs = default);
+    bool RequireEndOfInput = false);

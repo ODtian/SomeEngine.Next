@@ -123,7 +123,7 @@ public static class SceneContent
     internal static async Task<WorldStream> OpenSceneAsync(World world, AssetLoader loader, AssetId<WorldAsset> source)
     {
         var stream = new WorldStream(world, loader, source, new WorldStreamOptions { CommitBudget = TimeSpan.MaxValue },
-            new SerializationReadOptions(Codecs: SceneSerialization.Codecs));
+            SceneSerialization.CreateRegistry());
         try
         {
             await stream.ContentsReady.ConfigureAwait(false);
@@ -149,7 +149,7 @@ public static class SceneContent
         WorldContent content = directory.Contents.Single();
         await using var loader = new AssetLoader(project.CreateStorage());
         using EntityAsset entities = await EntityAsset.OpenAsync(loader, new(content.Asset.Value));
-        entities.GetBlock<EntityBlock>().WriteEntities(world, ActiveEntities(world), new(Codecs: SceneSerialization.Codecs));
+        entities.GetBlock<EntityBlock>().WriteEntities(world, ActiveEntities(world), SceneSerialization.CreateRegistry());
         project.RegisterAsset(await entities.SaveAsync(Path.Combine(project.RootPath, project.Manifest.Assets[entities.Id].Path)));
         directory.Contents = [new(new AssetId<Asset>(entities.Id), content.Bounds)];
         project.RegisterAsset(await scene.SaveAsync(Path.Combine(project.RootPath, project.Manifest.Assets[scene.Id].Path)));

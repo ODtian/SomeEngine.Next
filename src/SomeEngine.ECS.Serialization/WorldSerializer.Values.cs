@@ -1,21 +1,18 @@
 using SomeEngine.ECS.Storage;
 using SomeEngine.Serialization;
-using System.Collections.Immutable;
 
 namespace SomeEngine.ECS.Serialization;
 
 public readonly record struct SerializationReadOptions(
     SavePurpose? RequiredPurpose = null,
     SerializationReadLimits? ReadLimits = null,
-    MissingReferenceMode MissingReferenceMode = MissingReferenceMode.Throw,
-    ImmutableArray<ComponentCodec> Codecs = default);
+    MissingReferenceMode MissingReferenceMode = MissingReferenceMode.Throw);
 
 public sealed partial class WorldSerializer
 {
     public static void WriteComponent<T>(Stream output, in T value, SerializationRegistry registry,
         SerializeOptions options = default) where T : struct
     {
-        registry = SerializationRegistry.Bind(registry, options.Codecs);
         var serializer = new WorldSerializer(registry);
         int type = ComponentType<T>.TypeId;
         SavedType binding = registry.Columns.TryGetValue(type, out SavedColumn? column) ? column : registry.Sparse[type];
@@ -31,7 +28,6 @@ public sealed partial class WorldSerializer
     public static T ReadComponent<T>(Stream input, SerializationRegistry registry,
         SerializationReadOptions options = default) where T : struct
     {
-        registry = SerializationRegistry.Bind(registry, options.Codecs);
         var reader = new DataReader(input, options.ReadLimits);
         try
         {

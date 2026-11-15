@@ -24,16 +24,16 @@ public sealed class EntityGroupSerializationTests
         using (DynamicBuffer<DescribedElement> elements = source.GetBuffer<DescribedElement>(child))
             elements.Add(new() { Value = 9, Target = parent });
         using var output = new MemoryStream();
-        WorldSerializer.WriteEntities(output, source, [parent, child, edge.Entity], new(Purpose: SavePurpose.DurableSave));
+        WorldSerializer.WriteEntities(output, source, [parent, child, edge.Entity], Registry(), new(Purpose: SavePurpose.DurableSave));
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var target = new World(execution: new WorldJobs(scheduler));
         Entity business = target.Create(new DescribedPosition { Value = 91 });
         target.Set(business, new DescribedGroup { Value = 8 });
         ValueIndex<EntityGroupKey, int> index = target.Index<EntityGroupKey, int>();
 
-        Entity[] first = WorldSerializer.ReadEntities(output.ToArray().AsMemory(), target);
+        Entity[] first = WorldSerializer.ReadEntities(output.ToArray().AsMemory(), target, Registry());
         output.Position = 0;
-        Entity[] second = WorldSerializer.ReadEntities(output, target);
+        Entity[] second = WorldSerializer.ReadEntities(output, target, Registry());
 
         Assert.Equal(7, target.EntityCount);
         Assert.Equal(91, target.ReadValue<DescribedPosition>(business).Value);
@@ -72,10 +72,10 @@ public sealed class EntityGroupSerializationTests
         Entity child = source.Create(new DescribedPosition { Value = 2 });
         Hierarchy<EntityGroupDomain>.SetParent(source, child, parent);
         using var output = new MemoryStream();
-        WorldSerializer.WriteEntities(output, source, [child, parent], new(Purpose: SavePurpose.DurableSave));
+        WorldSerializer.WriteEntities(output, source, [child, parent], Registry(), new(Purpose: SavePurpose.DurableSave));
         using var target = new World();
 
-        Entity[] members = WorldSerializer.ReadEntities(output.ToArray().AsMemory(), target);
+        Entity[] members = WorldSerializer.ReadEntities(output.ToArray().AsMemory(), target, Registry());
 
         Assert.Equal(members[1], Hierarchy<EntityGroupDomain>.GetParent(target, members[0]));
         using (ChildrenRead children = Hierarchy<EntityGroupDomain>.GetChildren(target, members[1]))
@@ -95,10 +95,10 @@ public sealed class EntityGroupSerializationTests
         Entity external = source.Create();
         Entity member = source.Create(new DescribedPosition { Value = 8, Target = external });
         using var output = new MemoryStream();
-        WorldSerializer.WriteEntities(output, source, [member]);
+        WorldSerializer.WriteEntities(output, source, [member], Registry());
         using var target = new World();
 
-        Entity[] restored = WorldSerializer.ReadEntities(output.ToArray().AsMemory(), target, new(MissingReferenceMode: mode));
+        Entity[] restored = WorldSerializer.ReadEntities(output.ToArray().AsMemory(), target, Registry(), new(MissingReferenceMode: mode));
 
         Assert.Single(restored);
         Assert.Equal(8, target.Read<DescribedPosition>(restored[0]).Value);
@@ -113,11 +113,18 @@ public sealed class EntityGroupSerializationTests
         Entity external = source.Create();
         Entity member = source.Create(new DescribedPosition { Target = external });
         using var output = new MemoryStream();
-        WorldSerializer.WriteEntities(output, source, [member]);
+        WorldSerializer.WriteEntities(output, source, [member], Registry());
         using var target = new World();
 
-        Assert.Throws<InvalidOperationException>(() => WorldSerializer.ReadEntities(output.ToArray().AsMemory(), target,
+        Assert.Throws<InvalidOperationException>(() => WorldSerializer.ReadEntities(output.ToArray().AsMemory(), target, Registry(),
             new(MissingReferenceMode: MissingReferenceMode.Throw)));
+    }
+
+    private static SerializationRegistry Registry()
+    {
+        var registry = new SerializationRegistry().RegisterHierarchy<EntityGroupDomain>(SaveTypes.Key<EntityGroupDomain>());
+        GameSerializationModule.RegisterAll(registry);
+        return registry.RegisterRelation<EntityGroupLink>();
     }
 }
 

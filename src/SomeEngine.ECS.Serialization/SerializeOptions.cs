@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 
 namespace SomeEngine.ECS.Serialization;
 
@@ -13,5 +12,4 @@ public readonly record struct SerializeOptions(
     int MaximumSparseMemberships = 0,
     long MaximumTopologyRecords = 0,
     long MaximumTopologyPayloadBytes = 0,
-    ISet<ExternalReferenceKey>? ExternalReferences = null,
-    ImmutableArray<ComponentCodec> Codecs = default);
+    ISet<ExternalReferenceKey>? ExternalReferences = null);

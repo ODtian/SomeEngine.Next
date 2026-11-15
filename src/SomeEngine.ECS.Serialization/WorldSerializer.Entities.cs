@@ -12,27 +12,25 @@ public sealed partial class WorldSerializer
 
     /// <summary>Writes the selected members and their component columns as an entity group.</summary>
     public static void WriteEntities(Stream output, World source, ReadOnlySpan<Entity> entities,
-        SerializeOptions options = default)
-        => new WorldSerializer(SerializationRegistry.Bind(null, options.Codecs))
-            .WriteEntityGroup(output, source, entities, options);
+        SerializationRegistry registry, SerializeOptions options = default)
+        => new WorldSerializer(registry).WriteEntityGroup(output, source, entities, options);
 
     /// <summary>Appends a complete entity group and returns its new member identities.</summary>
     public static Entity[] ReadEntities(ReadOnlyMemory<byte> input, World target,
-        SerializationReadOptions options = default)
+        SerializationRegistry registry, SerializationReadOptions options = default)
     {
         var reader = new DataReader(input.Span, options.ReadLimits);
-        return new WorldSerializer(SerializationRegistry.Bind(null, options.Codecs))
-            .ReadEntityGroup(ref reader, input, target, options);
+        return new WorldSerializer(registry).ReadEntityGroup(ref reader, input, target, options);
     }
 
     /// <summary>Appends a complete entity group from the current stream position.</summary>
-    public static Entity[] ReadEntities(Stream input, World target, SerializationReadOptions options = default)
+    public static Entity[] ReadEntities(Stream input, World target, SerializationRegistry registry,
+        SerializationReadOptions options = default)
     {
         var reader = new DataReader(input, options.ReadLimits);
         try
         {
-            return new WorldSerializer(SerializationRegistry.Bind(null, options.Codecs))
-                .ReadEntityGroup(ref reader, default, target, options);
+            return new WorldSerializer(registry).ReadEntityGroup(ref reader, default, target, options);
         }
         finally { reader.Dispose(); }
     }

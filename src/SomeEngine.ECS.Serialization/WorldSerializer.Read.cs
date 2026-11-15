@@ -29,7 +29,6 @@ public sealed partial class WorldSerializer
     private static World ReadWorldCore<TBinding>(Stream input, SerializationRegistry registry, WorldLoadOptions options,
         in TBinding bindSystems) where TBinding : struct, IWorldSystemBinding
     {
-        registry = SerializationRegistry.Bind(registry, options.Codecs);
         var reader = new DataReader(input, options.ReadLimits);
         try
         {

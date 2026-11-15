@@ -33,8 +33,14 @@ public sealed record ValueField(string Id, ValueFieldKind Kind, ValueSchema? Nes
 /// <param name="Hash">Changes whenever a field is added, removed, renamed or changes kind.</param>
 public sealed record ValueSchema(Guid Id, ulong Hash, ValueField[] Fields);
 
+/// <summary>A codec that publishes the fields it writes.</summary>
+public interface ISchemaValueCodec
+{
+    ValueSchema FieldList { get; }
+}
+
 /// <summary>A codec generated for a <see cref="SerializableComponentAttribute"/> type.</summary>
-public interface ISchemaValueCodec<T> : IDurableComponentCodec<T> where T : struct
+public interface ISchemaValueCodec<T> : IDurableComponentCodec<T>, ISchemaValueCodec where T : struct
 {
     static abstract ValueSchema Schema { get; }
 }

@@ -45,8 +45,8 @@ internal static class SavedValues<T, TCodec> where TCodec : struct, IValueCodec<
     }
 }
 
-internal abstract class SavedShared(SerializationTypeKey key, int type, Type valueType, Type codecType)
-    : SavedColumn(key, SavedStorage.Shared, type, sizeof(int), false, valueType, codecType)
+internal abstract class SavedShared(SerializationTypeKey key, int type, Type valueType, Type codecType, CodecTraits codecTraits)
+    : SavedColumn(key, SavedStorage.Shared, type, sizeof(int), false, valueType, codecType, codecTraits)
 {
     internal override void Write(ref DataWriter writer, ref ColumnEntry column, int count)
     {
@@ -68,7 +68,7 @@ internal abstract class SavedShared(SerializationTypeKey key, int type, Type val
 }
 
 internal sealed class SavedShared<T, TCodec>(SerializationTypeKey key, TCodec codec, bool raw, IReferencePatcher<T>? patcher = null)
-    : SavedShared(key, ComponentValues.Bind<T>().Id, typeof(T), typeof(TCodec))
+    : SavedShared(key, ComponentValues.Bind<T>().Id, typeof(T), typeof(TCodec), CodecTraits.Of<T, TCodec>(codec))
     where T : struct where TCodec : struct, IValueCodec<T>
 {
     private readonly IReferencePatcher<T>? _patcher = patcher ?? ReferencePatchers.DefaultValue<T>();
@@ -169,8 +169,8 @@ internal sealed class SavedShared<T, TCodec>(SerializationTypeKey key, TCodec co
     }
 }
 
-internal abstract class SavedSparse(SerializationTypeKey key, int type, Type valueType, Type codecType)
-    : SavedType(key, SavedStorage.Sparse, type, 0, false, valueType, codecType)
+internal abstract class SavedSparse(SerializationTypeKey key, int type, Type valueType, Type codecType, CodecTraits codecTraits)
+    : SavedType(key, SavedStorage.Sparse, type, 0, false, valueType, codecType, codecTraits)
 {
     internal abstract void Write(ref DataWriter writer, SparseStore values);
     internal abstract void Read(ref DataReader reader, World world, bool preserve);
@@ -181,7 +181,7 @@ internal abstract class SavedSparse(SerializationTypeKey key, int type, Type val
 }
 
 internal sealed class SavedSparse<T, TCodec>(SerializationTypeKey key, TCodec codec, bool raw, IReferencePatcher<T>? patcher = null)
-    : SavedSparse(key, ComponentValues.Bind<T>().Id, typeof(T), typeof(TCodec)), IStoredValueCodec<T>
+    : SavedSparse(key, ComponentValues.Bind<T>().Id, typeof(T), typeof(TCodec), CodecTraits.Of<T, TCodec>(codec)), IStoredValueCodec<T>
     where T : struct where TCodec : struct, IValueCodec<T>
 {
     private readonly IReferencePatcher<T>? _patcher = patcher ?? ReferencePatchers.DefaultValue<T>();
@@ -273,15 +273,16 @@ internal sealed class SavedSparse<T, TCodec>(SerializationTypeKey key, TCodec co
     }
 }
 
-internal abstract class SavedResource(SerializationTypeKey key, int type, Type valueType, Type codecType)
-    : SavedType(key, SavedStorage.Resource, type, 0, false, valueType, codecType)
+internal abstract class SavedResource(SerializationTypeKey key, int type, Type valueType, Type codecType, CodecTraits codecTraits)
+    : SavedType(key, SavedStorage.Resource, type, 0, false, valueType, codecType, codecTraits)
 {
     internal abstract void Write(ref DataWriter writer, ResourceValue value);
     internal abstract void Read(ref DataReader reader, World world);
 }
 
 internal sealed class SavedResource<T, TCodec>(SerializationTypeKey key, TCodec codec, IReferencePatcher<T>? patcher = null)
-    : SavedResource(key, ResourceType<T>.Id, typeof(T), typeof(TCodec)) where TCodec : struct, IValueCodec<T>
+    : SavedResource(key, ResourceType<T>.Id, typeof(T), typeof(TCodec), CodecTraits.Of<T, TCodec>(codec))
+    where TCodec : struct, IValueCodec<T>
 {
     private readonly IReferencePatcher<T>? _patcher = patcher ?? ReferencePatchers.Default<T>();
     internal override void Write(ref DataWriter writer, ResourceValue value)

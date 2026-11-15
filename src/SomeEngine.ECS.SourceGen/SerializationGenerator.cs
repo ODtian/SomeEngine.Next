@@ -307,12 +307,6 @@ public sealed class SerializationGenerator : IIncrementalGenerator
         builder.AppendLine();
         builder.AppendLine("internal static partial class GameSerializationModule");
         builder.AppendLine("{");
-        builder.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
-        builder.AppendLine("    internal static void RegisterDefaults()");
-        builder.AppendLine("    {");
-        foreach (var model in models.OrderBy(static model => model.StableId))
-            builder.AppendLine($"        {GetDefaultRegistrationLine(model)}");
-        builder.AppendLine("    }");
         builder.AppendLine("    public static void RegisterAll(global::SomeEngine.ECS.Serialization.SerializationRegistry registry)");
         builder.AppendLine("    {");
         foreach (var model in models.OrderBy(static model => model.StableId))
@@ -359,16 +353,6 @@ public sealed class SerializationGenerator : IIncrementalGenerator
         };
     }
 
-    private static string GetDefaultRegistrationLine(SerializableModel model)
-    {
-        string format = $"new global::SomeEngine.ECS.Serialization.SerializationTypeKey(new global::System.Guid(\"{model.StableIdText}\"), \"{model.Symbol.ToDisplayString()}\", 0x{model.SchemaFingerprint:X16}ul)";
-        string method = "global::SomeEngine.ECS.Serialization.ComponentCodec.RegisterDefault";
-        if (model.Kind == SerializableKind.Tag) return $"{method}Tag<{model.TypeName}>({format});";
-        string types = $"{model.TypeName}, {GetCodecName(model)}";
-        if (model.ContainsEntityReferences) types += $", {GetPatcherName(model)}";
-        return $"{method}<{types}>({format});";
-    }
-
     private static void GenerateCodec(StringBuilder builder, SerializableModel model)
     {
         const string Serialization = "global::SomeEngine.ECS.Serialization";
@@ -382,6 +366,7 @@ public sealed class SerializationGenerator : IIncrementalGenerator
             builder.AppendLine($"        new({SymbolDisplay.FormatLiteral(field.StableId, quote: true)}, {Serialization}.ValueFieldKind.{field.Kind}{nested}),");
         }
         builder.AppendLine("    });");
+        builder.AppendLine($"    public {Serialization}.ValueSchema FieldList => Schema;");
         builder.AppendLine();
         builder.AppendLine("    public bool SupportsParallelWrite => true;");
         builder.AppendLine($"    public void Write(ref {Serialization}.DataWriter writer, in {model.TypeName} value)");
