@@ -59,7 +59,7 @@ public sealed class WorldCheckpointCodecTests
         new WorldSerializer(registry).Save(world, canonical, new SerializeOptions(Purpose: SavePurpose.RawCheckpoint));
 
         ReadOnlySpan<byte> checkpointBytes = checkpoint.GetBuffer().AsSpan(0, checked((int)checkpoint.Length));
-        Assert.Equal("SEWCP003"u8.ToArray(), checkpointBytes[..8].ToArray());
+        Assert.Equal("SEWCHECK"u8.ToArray(), checkpointBytes[..8].ToArray());
         Assert.Equal(
             canonical.GetBuffer().AsSpan(0, checked((int)canonical.Length)).ToArray(),
             checkpointBytes[WorldCheckpointCodec.HeaderSize..].ToArray());

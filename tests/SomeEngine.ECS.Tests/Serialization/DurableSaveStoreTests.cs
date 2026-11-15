@@ -283,7 +283,7 @@ public sealed class DurableSaveStoreTests : IDisposable
         using var file = File.OpenRead(commit.PublishedPath);
         Span<byte> header = stackalloc byte[12];
         file.ReadExactly(header);
-        Assert.Equal(4u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(header[8..]));
+        Assert.Equal(0u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(header[8..]));
     }
 
     [Fact]

@@ -7,7 +7,9 @@ namespace SomeEngine.ECS.Serialization;
 
 public sealed partial class DurableSaveStore
 {
-    private const uint FormatVersion = 4;
+    // Not published yet: change the layout freely and leave this at 0. The first release that ships
+    // saves gives it its published number; from then on keep a reader for every published version.
+    private const uint FormatVersion = 0;
     private const int HeaderSize = 64;
     private const int HashOffset = 32;
     private const int AuthenticationKindOffset = 14;
@@ -257,7 +259,8 @@ public sealed partial class DurableSaveStore
             CopyBufferSize,
             FileOptions.SequentialScan);
 
-    private static ReadOnlySpan<byte> Magic => "SEDSAVE4"u8;
+    // Identifies the file kind only; the version is the field after it.
+    private static ReadOnlySpan<byte> Magic => "SEDSAVES"u8;
 
     private EnvelopeAuthenticationKind WriteAuthenticationKind =>
         _authenticationKey is null

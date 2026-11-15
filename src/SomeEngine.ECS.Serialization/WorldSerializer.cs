@@ -11,7 +11,9 @@ namespace SomeEngine.ECS.Serialization;
 public sealed partial class WorldSerializer(SerializationRegistry registry)
 {
     private const uint Magic = 0x53434553;
-    private const ushort FormatVersion = 7;
+    // Not published yet: change the layout freely and leave this at 0. The first release that ships
+    // saves gives it its published number; from then on keep a reader for every published version.
+    private const ushort FormatVersion = 0;
     private readonly List<TableBinding> _tables = [];
     private readonly List<SavedType> _used = [];
     private readonly List<SavedService> _services = [];

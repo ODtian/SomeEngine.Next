@@ -13,13 +13,16 @@ public static class WorldCheckpointCodec
 {
     public const int HeaderSize = 128;
 
-    private const ushort Version = 3;
+    // Not published yet: change the layout freely and leave this at 0. The first release that ships
+    // saves gives it its published number; from then on keep a reader for every published version.
+    private const ushort Version = 0;
     private const uint RegistryMatchFlag = 1;
     private const int RegistryHashOffset = 40;
     private const int PayloadHashOffset = 72;
     private const int HeaderHashOffset = 104;
 
-    private static ReadOnlySpan<byte> Magic => "SEWCP003"u8;
+    // Identifies the file kind only; the version is the field after it.
+    private static ReadOnlySpan<byte> Magic => "SEWCHECK"u8;
 
     /// <summary>Captures the World, then writes its version 5 payload and authenticated envelope.</summary>
     public static void Write(Stream destination, World world, SerializationRegistry registry)
