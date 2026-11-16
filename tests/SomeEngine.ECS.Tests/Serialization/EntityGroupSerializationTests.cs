@@ -120,24 +120,24 @@ public sealed class EntityGroupSerializationTests
             new(MissingReferenceMode: MissingReferenceMode.Throw)));
     }
 
-    private static SerializationRegistry Registry()
+    private static SaveRegistry Registry()
     {
-        var registry = new SerializationRegistry().RegisterHierarchy<EntityGroupDomain>(SaveTypes.Key<EntityGroupDomain>());
-        GameSerializationModule.RegisterAll(registry);
+        var registry = new SaveRegistry().RegisterHierarchy<EntityGroupDomain>(SaveTypes.Key<EntityGroupDomain>());
+        GeneratedSerializers.RegisterAll(registry);
         return registry.RegisterRelation<EntityGroupLink>();
     }
 }
 
 public readonly struct EntityGroupDomain : IHierarchyDomain;
 
-[SerializableComponent("5b1ee9ee-d48d-492b-afed-e62969403d93")]
+[SaveId("5b1ee9ee-d48d-492b-afed-e62969403d93")]
 [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
 public struct EntityGroupLink : IComponent
 {
     public int Value;
 }
 
-[SerializableComponent("c579c031-b89f-4b6c-aa61-c132d1d86c63")]
+[SaveId("c579c031-b89f-4b6c-aa61-c132d1d86c63")]
 public struct EntityGroupKey : IIndexedComponent<int>
 {
     public int Value;

@@ -1,6 +1,6 @@
 namespace SomeEngine.ECS.Serialization;
 
-public sealed partial class SerializationRegistry
+public sealed partial class SaveRegistry
 {
     private readonly HashSet<Guid> _destroyedReaders = [];
 
@@ -9,7 +9,7 @@ public sealed partial class SerializationRegistry
         foreach (Guid consumer in _destroyedReaders) world.WatchDestroyed(consumer);
     }
 
-    public SerializationRegistry RegisterDestroyedReader(Guid consumerId)
+    public SaveRegistry RegisterDestroyedReader(Guid consumerId)
     {
         if (consumerId == Guid.Empty) throw new ArgumentException("A named consumer requires a nonempty identity.", nameof(consumerId));
         _destroyedReaders.Add(consumerId);

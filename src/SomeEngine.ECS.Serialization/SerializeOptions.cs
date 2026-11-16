@@ -12,4 +12,4 @@ public readonly record struct SerializeOptions(
     int MaximumSparseMemberships = 0,
     long MaximumTopologyRecords = 0,
     long MaximumTopologyPayloadBytes = 0,
-    ISet<ExternalReferenceKey>? ExternalReferences = null);
+    ISet<AssetReference>? ExternalReferences = null);

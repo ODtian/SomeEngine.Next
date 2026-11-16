@@ -1,6 +1,6 @@
 using SomeEngine.ECS.Entities;
-using MeterAfterCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_MeterAfter;
-using MeterBeforeCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_MeterBefore;
+using MeterAfterSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_MeterAfter;
+using MeterBeforeSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_MeterBefore;
 
 namespace SomeEngine.ECS.Serialization.Tests;
 
@@ -16,12 +16,12 @@ public sealed class SavedProgressChangeTests
         using var source = new World();
         Entity entity = source.Create(new MeterBefore { Level = 4 });
         using var stream = new MemoryStream();
-        new WorldSerializer(new SerializationRegistry().RegisterDurable<MeterBefore, MeterBeforeCodec>(Key(MeterBeforeCodec.Schema)))
+        new WorldSerializer(new SaveRegistry().RegisterDurable<MeterBefore, MeterBeforeSerializer>(Key(MeterBeforeSerializer.Schema)))
             .Save(source, stream, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         stream.Position = 0;
 
         using World loaded = WorldSerializer.ReadWorld(stream,
-            new SerializationRegistry().RegisterDurable<MeterAfter, MeterAfterCodec>(Key(MeterAfterCodec.Schema)));
+            new SaveRegistry().RegisterDurable<MeterAfter, MeterAfterSerializer>(Key(MeterAfterSerializer.Schema)));
 
         Assert.Equal(4, loaded.Read<MeterAfter>(entity).Level);
     }
@@ -31,10 +31,10 @@ public sealed class SavedProgressChangeTests
     {
         using var source = new World();
         source.Create(new MeterBefore { Level = 4 });
-        var registry = new SerializationRegistry().RegisterDurable<MeterBefore, MeterBeforeCodec>(Key(MeterBeforeCodec.Schema));
+        var registry = new SaveRegistry().RegisterDurable<MeterBefore, MeterBeforeSerializer>(Key(MeterBeforeSerializer.Schema));
         using var stream = new MemoryStream();
         new WorldSerializer(registry).Save(source, stream, new SerializeOptions(Purpose: SavePurpose.DurableSave),
-            CheckpointProgress.Rebuild, new Progress(1));
+            ProgressMode.Reset, new Progress(1));
         stream.Position = 0;
         var systems = new TwoSystems(new Progress(2), new Progress(3));
 
@@ -43,7 +43,7 @@ public sealed class SavedProgressChangeTests
         Assert.True(systems.First.Restored && systems.Second.Restored);
     }
 
-    private static SerializationTypeKey Key(ValueSchema schema) => new(Guid.Parse(Meter), "Meter", schema.Hash);
+    private static SavedTypeKey Key(SavedFieldList schema) => new(Guid.Parse(Meter), "Meter", schema.Hash);
 
     private sealed class Progress(int count) : ISystemVersions
     {
@@ -61,13 +61,13 @@ public sealed class SavedProgressChangeTests
     }
 }
 
-[SerializableComponent("5e2d9a14-0b7c-4f3e-9d28-6c1a4b8f1100")]
+[SaveId("5e2d9a14-0b7c-4f3e-9d28-6c1a4b8f1100")]
 public struct MeterBefore : IComponent
 {
     public int Level;
 }
 
-[SerializableComponent("5e2d9a14-0b7c-4f3e-9d28-6c1a4b8f1200")]
+[SaveId("5e2d9a14-0b7c-4f3e-9d28-6c1a4b8f1200")]
 public struct MeterAfter : ITrackedComponent
 {
     public int Level;

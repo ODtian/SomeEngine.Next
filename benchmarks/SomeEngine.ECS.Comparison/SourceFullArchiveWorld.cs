@@ -104,12 +104,12 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
         _contract = raw ? SavePurpose.RawCheckpoint : SavePurpose.DurableSave;
         _serializer = new(CreateRegistry(raw));
     }
-    private SerializationRegistry CreateRegistry(bool raw)
+    private SaveRegistry CreateRegistry(bool raw)
     {
-        var registry = new SerializationRegistry().RegisterDestroyedReader(DestroyedConsumer);
+        var registry = new SaveRegistry().RegisterDestroyedReader(DestroyedConsumer);
         if (raw) registry.Register<Team>(SaveSchema.Key(4, "Team")).Register<Sleeping>(SaveSchema.Key(5, "Sleeping"));
-        else registry.Register<Team, EmptyArchiveCodec<Team>>(SaveSchema.Key(4, "Team"))
-            .Register<Sleeping, EmptyArchiveCodec<Sleeping>>(SaveSchema.Key(5, "Sleeping"));
+        else registry.Register<Team, EmptyArchiveSerializer<Team>>(SaveSchema.Key(4, "Team"))
+            .Register<Sleeping, EmptyArchiveSerializer<Sleeping>>(SaveSchema.Key(5, "Sleeping"));
         if (raw)
             registry.Register<Position>(SaveSchema.Key(1, "Position")).Register<Velocity>(SaveSchema.Key(2, "Velocity"))
                 .Register<Health>(SaveSchema.Key(3, "Health")).Register<SaveCounter>(SaveSchema.Key(6, "Counter"))
@@ -117,23 +117,23 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
                 .Register<SaveShared>(SaveSchema.Key(9, "Shared")).RegisterBuffer<SaveLink>(SaveSchema.Key(13, "Buffer"))
                 .Register<SaveLink>(SaveSchema.Key(22, "Sparse"));
         else
-            registry.Register<Position, SaveSchema.PositionCodec>(SaveSchema.Key(1, "Position"))
-                .Register<Velocity, SaveSchema.VelocityCodec>(SaveSchema.Key(2, "Velocity"))
-                .Register<Health, SaveSchema.HealthCodec>(SaveSchema.Key(3, "Health"))
-                .Register<SaveCounter, SaveSchema.CounterCodec>(SaveSchema.Key(6, "Counter"))
-                .Register<SaveStep, SaveSchema.StepCodec>(SaveSchema.Key(7, "Step"))
-                .Register<IndexedNumber, SaveSchema.IndexCodec>(SaveSchema.Key(8, "Index"))
-                .Register<SaveShared, SaveSchema.SharedCodec>(SaveSchema.Key(9, "Shared"))
-                .RegisterBuffer<SaveLink, SaveSchema.LinkCodec>(SaveSchema.Key(13, "Buffer"))
-                .Register<SaveLink, SaveSchema.LinkCodec>(SaveSchema.Key(22, "Sparse"));
+            registry.Register<Position, SaveSchema.PositionSerializer>(SaveSchema.Key(1, "Position"))
+                .Register<Velocity, SaveSchema.VelocitySerializer>(SaveSchema.Key(2, "Velocity"))
+                .Register<Health, SaveSchema.HealthSerializer>(SaveSchema.Key(3, "Health"))
+                .Register<SaveCounter, SaveSchema.CounterSerializer>(SaveSchema.Key(6, "Counter"))
+                .Register<SaveStep, SaveSchema.StepSerializer>(SaveSchema.Key(7, "Step"))
+                .Register<IndexedNumber, SaveSchema.IndexSerializer>(SaveSchema.Key(8, "Index"))
+                .Register<SaveShared, SaveSchema.SharedSerializer>(SaveSchema.Key(9, "Shared"))
+                .RegisterBuffer<SaveLink, SaveSchema.LinkSerializer>(SaveSchema.Key(13, "Buffer"))
+                .Register<SaveLink, SaveSchema.LinkSerializer>(SaveSchema.Key(22, "Sparse"));
         ArchiveResources.Register(registry, _resourceCounter);
-        return registry.RegisterResource<SaveResource, SaveSchema.ResourceCodec>(SaveSchema.Key(23, "Resource"))
+        return registry.RegisterResource<SaveResource, SaveSchema.ResourceSerializer>(SaveSchema.Key(23, "Resource"))
             .RegisterHierarchy<SaveTree>(SaveSchema.Key(24, "Tree"))
-            .RegisterRelation<SaveEdge, SaveSchema.EdgeCodec>(SaveSchema.Key(19, "Edge"));
+            .RegisterRelation<SaveEdge, SaveSchema.EdgeSerializer>(SaveSchema.Key(19, "Edge"));
     }
-    internal override IDisposable Capture(bool preserve) => new WorldCheckpoint().Capture(World, Progress(preserve), Systems);
-    internal override void Restore(IDisposable snapshot) => ((WorldCheckpoint)snapshot).Restore(World, Systems);
-    private static CheckpointProgress Progress(bool preserve) => preserve ? CheckpointProgress.Preserve : CheckpointProgress.Rebuild;
+    internal override IDisposable Capture(bool preserve) => new WorldCopy().Capture(World, Progress(preserve), Systems);
+    internal override void Restore(IDisposable snapshot) => ((WorldCopy)snapshot).Restore(World, Systems);
+    private static ProgressMode Progress(bool preserve) => preserve ? ProgressMode.Keep : ProgressMode.Reset;
     internal override void Save(IBufferWriter<byte> output, bool preserve) => _serializer.Save(World, output, _contract, Progress(preserve), Systems);
     internal override void Save(Stream output, bool preserve) => _serializer.Save(World, output, _contract, Progress(preserve), Systems);
     internal override void Load(ReadOnlySpan<byte> input) => _serializer.Load(World, input, null, Systems);

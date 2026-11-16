@@ -279,8 +279,8 @@ public sealed partial class QueryRuntimeOwnershipTests : JobTest
         Query query = world.Query(
             new QueryDescription().WithStored<Parent<Domain>>());
 
-        using var checkpoint = new WorldCheckpoint();
-        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy();
+        checkpoint.Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         Assert.Throws<ProbeException>((Action)(() =>

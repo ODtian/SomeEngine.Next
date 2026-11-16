@@ -20,7 +20,7 @@ public sealed class SelectedWorldSerializationTests
         source.Create(new SerVelocity { X = 23 });
         calls.Clones = calls.Releases = 0;
         calls.RejectClone = true;
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         var serializer = new WorldSerializer(registry);
         using var output = new MemoryStream();
 
@@ -44,7 +44,7 @@ public sealed class SelectedWorldSerializationTests
     [Fact]
     public void SelectedWorldPayloadRestoresItsMembersStorageAndTopology()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>()
+        var registry = new SaveRegistry().Register<SerPosition>()
             .Register<SerScene>(SaveTypes.Key<SerScene>()).Register<SerSparse>(SaveTypes.Key<SerSparse>())
             .RegisterBuffer<SerElement>(SaveTypes.Key<SerElement>()).Register<EntityGroupKey>()
             .RegisterHierarchy<EntityGroupDomain>(SaveTypes.Key<EntityGroupDomain>())

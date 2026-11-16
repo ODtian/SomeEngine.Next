@@ -11,8 +11,8 @@ internal interface INativeArchiveProgress
     ulong Version { get; set; }
     void Complete();
     void CompleteSystems();
-    void Write(ref DataWriter writer, bool preserve);
-    void Read(ref DataReader reader, bool preserve);
+    void Write(ref SaveWriter writer, bool preserve);
+    void Read(ref SaveReader reader, bool preserve);
     void ReleaseValues();
     CapturedArchiveProgress CaptureProgress(bool preserve);
 }
@@ -20,7 +20,7 @@ internal interface INativeArchiveProgress
 internal abstract class CapturedArchiveProgress : IDisposable
 {
     internal abstract void Restore(INativeArchiveProgress state, bool preserve);
-    internal abstract void Write(ref DataWriter writer);
+    internal abstract void Write(ref SaveWriter writer);
     public abstract void Dispose();
 }
 
@@ -31,25 +31,25 @@ internal abstract class NativeArchiveColumn : IDisposable
     public abstract void Dispose();
 }
 
-internal abstract class NativeArchiveType(SerializationTypeKey key, Type valueType, Type codecType)
+internal abstract class NativeArchiveType(SavedTypeKey key, Type valueType, Type serializerType)
 {
-    internal readonly SerializationTypeKey Key = key;
-    internal readonly SerializationTypeKey CheckpointKey = key with
-    { StableName = key.StableName + "|" + Build(valueType) + "|" + Build(codecType) };
+    internal readonly SavedTypeKey Key = key;
+    internal readonly SavedTypeKey CheckpointKey = key with
+    { Name = key.Name + "|" + Build(valueType) + "|" + Build(serializerType) };
     private static string Build(Type type) => type.AssemblyQualifiedName + "#" + type.Module.ModuleVersionId
         + (type.IsGenericType ? "[" + string.Join(';', type.GetGenericArguments().Select(Build)) + "]" : "");
-    internal SerializationTypeKey KeyFor(bool raw) => raw ? CheckpointKey : Key;
+    internal SavedTypeKey KeyFor(bool raw) => raw ? CheckpointKey : Key;
     internal abstract NativeArchiveColumnGroups Bind(NativeArchiveStore store, NativeArchiveLayout layout);
     internal virtual void Declare(EasyEcs.Prefab prefab) { }
     internal virtual void Declare(ref Friflo.Engine.ECS.ComponentTypes types) { }
     internal virtual void Declare(List<Arch.Core.ComponentType> types) { }
     internal abstract NativeArchiveColumn Capture(NativeArchiveStore store, NativeArchiveColumnGroups plan);
     internal abstract void Write(NativeArchiveStore store, IBufferWriter<byte> output, NativeArchiveColumnGroups plan);
-    internal abstract void Read(NativeArchiveStore store, ref DataReader reader, NativeArchiveGroup[] groups);
+    internal abstract void Read(NativeArchiveStore store, ref SaveReader reader, NativeArchiveGroup[] groups);
 }
 
-internal sealed class NativeArchiveMetadataType(SerializationTypeKey key, Type valueType, Type codecType)
-    : NativeArchiveType(key, valueType, codecType)
+internal sealed class NativeArchiveMetadataType(SavedTypeKey key, Type valueType, Type serializerType)
+    : NativeArchiveType(key, valueType, serializerType)
 {
     private sealed class EmptyColumn : NativeArchiveColumn
     {
@@ -61,15 +61,15 @@ internal sealed class NativeArchiveMetadataType(SerializationTypeKey key, Type v
     internal override NativeArchiveColumnGroups Bind(NativeArchiveStore store, NativeArchiveLayout layout) => new([]);
     internal override NativeArchiveColumn Capture(NativeArchiveStore store, NativeArchiveColumnGroups plan) => Empty;
     internal override void Write(NativeArchiveStore store, IBufferWriter<byte> output, NativeArchiveColumnGroups plan) { }
-    internal override void Read(NativeArchiveStore store, ref DataReader reader, NativeArchiveGroup[] groups) { }
+    internal override void Read(NativeArchiveStore store, ref SaveReader reader, NativeArchiveGroup[] groups) { }
 }
 
-internal sealed class NativeArchiveType<T, TCodec>(SerializationTypeKey key, TCodec codec, bool raw = false,
-    Func<T, T>? clone = null, Action<T>? release = null) : NativeArchiveType(key, typeof(T), typeof(TCodec))
-    where T : struct, EasyEcs.IComponent, Friflo.Engine.ECS.IComponent where TCodec : struct, IValueCodec<T>
+internal sealed class NativeArchiveType<T, TSerializer>(SavedTypeKey key, TSerializer serializer, bool raw = false,
+    Func<T, T>? clone = null, Action<T>? release = null) : NativeArchiveType(key, typeof(T), typeof(TSerializer))
+    where T : struct, EasyEcs.IComponent, Friflo.Engine.ECS.IComponent where TSerializer : struct, IValueSerializer<T>
 {
     private readonly record struct Block(NativeArchiveGroup Group, T[] Values);
-    private sealed class Column(NativeArchiveType<T, TCodec> type, Block[] blocks) : NativeArchiveColumn
+    private sealed class Column(NativeArchiveType<T, TSerializer> type, Block[] blocks) : NativeArchiveColumn
     {
         internal override void Restore(NativeArchiveStore store)
         {
@@ -102,7 +102,7 @@ internal sealed class NativeArchiveType<T, TCodec>(SerializationTypeKey key, TCo
     }
     internal override NativeArchiveColumnGroups Bind(NativeArchiveStore store, NativeArchiveLayout layout)
     { var visitor = new BindVisitor(layout); store.Visit<T, BindVisitor>(ref visitor); return new(visitor.Groups.ToArray()); }
-    private struct CaptureVisitor(NativeArchiveType<T, TCodec> type, NativeArchiveColumnGroups plan) : INativeArchiveVisitor<T>
+    private struct CaptureVisitor(NativeArchiveType<T, TSerializer> type, NativeArchiveColumnGroups plan) : INativeArchiveVisitor<T>
     {
         internal readonly List<Block> Blocks = new();
         private int _block;
@@ -119,33 +119,33 @@ internal sealed class NativeArchiveType<T, TCodec>(SerializationTypeKey key, TCo
         var visitor = new CaptureVisitor(this, plan); store.Visit<T, CaptureVisitor>(ref visitor);
         return new Column(this, visitor.Blocks.ToArray());
     }
-    private struct WriteVisitor(NativeArchiveType<T, TCodec> type, IBufferWriter<byte> output, NativeArchiveColumnGroups plan) : INativeArchiveVisitor<T>
+    private struct WriteVisitor(NativeArchiveType<T, TSerializer> type, IBufferWriter<byte> output, NativeArchiveColumnGroups plan) : INativeArchiveVisitor<T>
     {
         private int _block;
         public void Visit(ReadOnlySpan<ArchiveIdentity> identities, Span<T> values) => type.WriteBlock(output, plan.Groups[_block++].Id, values);
     }
     private void WriteBlock(IBufferWriter<byte> output, int group, ReadOnlySpan<T> values)
     {
-        var writer = new DataWriter(output); writer.WriteInt32(values.Length); writer.WriteInt32(group);
+        var writer = new SaveWriter(output); writer.WriteInt32(values.Length); writer.WriteInt32(group);
         if (raw) writer.WriteRawBytes(MemoryMarshal.AsBytes(values));
         else
         {
             long start = writer.Position;
-            foreach (ref readonly T value in values) { TCodec item = codec; item.Write(ref writer, value); }
+            foreach (ref readonly T value in values) { TSerializer item = serializer; item.Write(ref writer, value); }
             writer.WriteInt32(checked((int)(writer.Position - start)));
         }
         writer.Flush();
     }
     private static void End(IBufferWriter<byte> output)
-    { var writer = new DataWriter(output); writer.WriteInt32(0); writer.Flush(); }
+    { var writer = new SaveWriter(output); writer.WriteInt32(0); writer.Flush(); }
     internal override void Write(NativeArchiveStore store, IBufferWriter<byte> output, NativeArchiveColumnGroups plan)
     { var visitor = new WriteVisitor(this, output, plan); store.Visit<T, WriteVisitor>(ref visitor); End(output); }
-    internal override void Read(NativeArchiveStore store, ref DataReader reader, NativeArchiveGroup[] groups)
+    internal override void Read(NativeArchiveStore store, ref SaveReader reader, NativeArchiveGroup[] groups)
     {
         for (int count = reader.ReadInt32(); count != 0; count = reader.ReadInt32())
         {
             int readerGroup = reader.ReadInt32();
-            store.ReadColumn<T, TCodec>(groups[readerGroup], count, ref reader, codec, raw);
+            store.ReadColumn<T, TSerializer>(groups[readerGroup], count, ref reader, serializer, raw);
         }
     }
 }
@@ -165,7 +165,7 @@ internal sealed class CapturedNativeArchive(int[] generations, bool[] alive, int
     {
         serializer.Header(output, generations, alive, used, free, version, preserve, layout);
         foreach (NativeArchiveColumn column in columns) column.Write(output);
-        var writer = new DataWriter(output); progress.Write(ref writer); writer.Flush();
+        var writer = new SaveWriter(output); progress.Write(ref writer); writer.Flush();
     }
     public void Dispose()
     {
@@ -203,7 +203,7 @@ internal sealed class NativeArchiveSerializer(NativeArchiveType[] types, bool ra
     internal void Header(IBufferWriter<byte> output, int[] generations, bool[] alive, int used, ReadOnlySpan<int> free,
         ulong version, bool preserve, NativeArchiveLayout layout)
     {
-        var writer = new DataWriter(output);
+        var writer = new SaveWriter(output);
         writer.WriteUInt32(0x41524348); writer.WriteUInt16(3); writer.WriteBoolean(raw);
         if (raw)
         {
@@ -216,7 +216,7 @@ internal sealed class NativeArchiveSerializer(NativeArchiveType[] types, bool ra
         writer.WriteInt32(free.Length); writer.WriteRawBytes(MemoryMarshal.AsBytes(free));
         writer.WriteInt32(types.Length);
         foreach (NativeArchiveType type in types)
-        { SerializationTypeKey key = type.KeyFor(raw); writer.WriteGuid(key.StableId); writer.WriteString(key.StableName); writer.WriteUInt64(key.SchemaFingerprint); }
+        { SavedTypeKey key = type.KeyFor(raw); writer.WriteGuid(key.Id); writer.WriteString(key.Name); writer.WriteUInt64(key.FieldHash); }
         writer.WriteBoolean(layout.DisjointGroups); writer.WriteInt32(layout.Groups.Count);
         foreach (NativeArchiveGroup group in layout.Groups)
         { writer.WriteUInt64(group.Types); writer.WriteInt32(group.Identities.Length); writer.WriteRawBytes(MemoryMarshal.AsBytes(group.Identities.AsSpan())); }
@@ -229,15 +229,15 @@ internal sealed class NativeArchiveSerializer(NativeArchiveType[] types, bool ra
         NativeArchiveLayout layout = Bind(store);
         Header(output, store.Generations, store.AliveIds, store.Used, CollectionsMarshal.AsSpan(store.FreeIds), state.Version, preserve, layout);
         for (int i = 0; i < types.Length; i++) types[i].Write(store, output, layout.Columns[i]);
-        var writer = new DataWriter(output); state.Write(ref writer, preserve); writer.Flush();
+        var writer = new SaveWriter(output); state.Write(ref writer, preserve); writer.Flush();
     }
     internal void Save(NativeArchiveStore store, INativeArchiveProgress state, Stream output, bool preserve)
         => Save(store, state, new StreamDataOutput(output), preserve);
     internal void Load(NativeArchiveStore store, INativeArchiveProgress state, ReadOnlySpan<byte> input)
-    { var reader = new DataReader(input); Load(store, state, ref reader); }
+    { var reader = new SaveReader(input); Load(store, state, ref reader); }
     internal void Load(NativeArchiveStore store, INativeArchiveProgress state, Stream input)
-    { var reader = new DataReader(input); try { Load(store, state, ref reader); } finally { reader.Dispose(); } }
-    private void Load(NativeArchiveStore store, INativeArchiveProgress state, ref DataReader reader)
+    { var reader = new SaveReader(input); try { Load(store, state, ref reader); } finally { reader.Dispose(); } }
+    private void Load(NativeArchiveStore store, INativeArchiveProgress state, ref SaveReader reader)
     {
         state.CompleteSystems();
         if (reader.ReadUInt32() != 0x41524348 || reader.ReadUInt16() != 3) throw new InvalidDataException("Native archive format differs.");
@@ -255,8 +255,8 @@ internal sealed class NativeArchiveSerializer(NativeArchiveType[] types, bool ra
         if (reader.ReadInt32() != types.Length) throw new InvalidDataException("Native archive manifest count differs.");
         foreach (NativeArchiveType type in types)
         {
-            SerializationTypeKey key = type.KeyFor(raw);
-            if (reader.ReadGuid() != key.StableId || reader.ReadString() != key.StableName || reader.ReadUInt64() != key.SchemaFingerprint)
+            SavedTypeKey key = type.KeyFor(raw);
+            if (reader.ReadGuid() != key.Id || reader.ReadString() != key.Name || reader.ReadUInt64() != key.FieldHash)
                 throw new InvalidDataException("Native archive schema differs.");
         }
         bool disjointGroups = reader.ReadBoolean(); var groups = new NativeArchiveGroup[reader.ReadInt32()];

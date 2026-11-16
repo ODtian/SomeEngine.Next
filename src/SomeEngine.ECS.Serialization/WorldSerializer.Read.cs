@@ -19,17 +19,17 @@ internal readonly struct EmptyWorldSystemBinding : IWorldSystemBinding
 
 public sealed partial class WorldSerializer
 {
-    public static World ReadWorld(Stream input, SerializationRegistry registry, WorldLoadOptions options = default)
+    public static World ReadWorld(Stream input, SaveRegistry registry, WorldLoadOptions options = default)
         => ReadWorldCore(input, registry, options, new EmptyWorldSystemBinding());
 
-    public static World ReadWorld<TBinding>(Stream input, SerializationRegistry registry, WorldLoadOptions options,
+    public static World ReadWorld<TBinding>(Stream input, SaveRegistry registry, WorldLoadOptions options,
         in TBinding bindSystems) where TBinding : struct, IWorldSystemBinding
         => ReadWorldCore(input, registry, options, bindSystems);
 
-    private static World ReadWorldCore<TBinding>(Stream input, SerializationRegistry registry, WorldLoadOptions options,
+    private static World ReadWorldCore<TBinding>(Stream input, SaveRegistry registry, WorldLoadOptions options,
         in TBinding bindSystems) where TBinding : struct, IWorldSystemBinding
     {
-        var reader = new DataReader(input, options.ReadLimits);
+        var reader = new SaveReader(input, options.ReadLimits);
         try
         {
             var serializer = new WorldSerializer(registry);
@@ -46,24 +46,24 @@ public sealed partial class WorldSerializer
         finally { reader.Dispose(); }
     }
 
-    public void Load(World world, ReadOnlySpan<byte> input, SerializationReadLimits? limits = null, params ISystemVersions[] systems)
+    public void Load(World world, ReadOnlySpan<byte> input, ReadLimits? limits = null, params ISystemVersions[] systems)
     {
-        var reader = new DataReader(input, limits);
+        var reader = new SaveReader(input, limits);
         Read(world, ref reader, systems);
     }
-    public void Load(World world, Stream input, SerializationReadLimits? limits = null, params ISystemVersions[] systems)
+    public void Load(World world, Stream input, ReadLimits? limits = null, params ISystemVersions[] systems)
     {
-        var reader = new DataReader(input, limits);
+        var reader = new SaveReader(input, limits);
         try { Read(world, ref reader, systems); }
         finally { reader.Dispose(); }
     }
 
     /// <returns>The registered type of each saved type, or null for a type the registry retired.</returns>
-    private SavedType?[] ReadManifest(ref DataReader reader, SavePurpose? requiredPurpose, byte payloadKind = 0)
+    private SavedType?[] ReadManifest(ref SaveReader reader, SavePurpose? requiredPurpose, byte payloadKind = 0)
         => ReadManifest(ref reader, requiredPurpose, out _, payloadKind);
 
     /// <param name="storages">How each saved type was stored, which a retired type's data still follows.</param>
-    private SavedType?[] ReadManifest(ref DataReader reader, SavePurpose? requiredPurpose, out SavedStorage[] storages,
+    private SavedType?[] ReadManifest(ref SaveReader reader, SavePurpose? requiredPurpose, out SavedStorage[] storages,
         byte payloadKind = 0)
     {
         if (reader.ReadUInt32() != Magic)
@@ -80,24 +80,24 @@ public sealed partial class WorldSerializer
             throw SerializationErrors.CreateDataException(SerializationError.SchemaMismatch, "The raw checkpoint belongs to a different Core build.");
         int count = reader.Budget.ManifestCount(reader.ReadInt32());
         var types = new SavedType?[count];
-        var keys = new SerializationTypeKey[count];
+        var keys = new SavedTypeKey[count];
         storages = new SavedStorage[count];
         var schemaIndices = new int[count];
         Guid previousId = default;
         for (int i = 0; i < count; i++)
         {
-            var key = new SerializationTypeKey(reader.ReadGuid(), reader.ReadText(true), reader.ReadUInt64());
+            var key = new SavedTypeKey(reader.ReadGuid(), reader.ReadText(true), reader.ReadUInt64());
             SavedStorage storage = (SavedStorage)reader.ReadByte();
             int width = reader.ReadInt32();
             schemaIndices[i] = reader.ReadInt32();
             storages[i] = storage;
-            if (i > 0 && key.StableId.CompareTo(previousId) <= 0)
+            if (i > 0 && key.Id.CompareTo(previousId) <= 0)
                 throw new InvalidDataException("The type manifest must follow format identity order with each type appearing once.");
-            previousId = key.StableId;
+            previousId = key.Id;
             keys[i] = key;
-            if (!registry.ById.TryGetValue(key.StableId, out SavedType? binding))
+            if (!registry.ById.TryGetValue(key.Id, out SavedType? binding))
             {
-                if (!registry.RetiredTypes.Contains(key.StableId))
+                if (!registry.RetiredTypes.Contains(key.Id))
                     throw SerializationErrors.CreateDataException(SerializationError.UnknownType, "The saved type requires a registry entry.");
                 continue;
             }
@@ -106,13 +106,13 @@ public sealed partial class WorldSerializer
                 throw SerializationErrors.CreateDataException(SerializationError.SchemaMismatch, "A serialized type differs from its registered schema.");
             types[i] = binding;
         }
-        ValueSchema[] schemas = ReadSchemas(ref reader);
+        SavedFieldList[] schemas = ReadSchemas(ref reader);
         for (int i = 0; i < count; i++)
         {
             if (types[i] is not { } binding) continue;
             if ((uint)schemaIndices[i] >= (uint)schemas.Length && schemaIndices[i] != -1)
                 throw new InvalidDataException("A saved type refers to a field list the save does not contain.");
-            ValueSchema? saved = schemaIndices[i] >= 0 ? schemas[schemaIndices[i]] : null;
+            SavedFieldList? saved = schemaIndices[i] >= 0 ? schemas[schemaIndices[i]] : null;
             // A durable save stays readable after a generated type's fields change: the saved field list says
             // where each saved field goes. Tags carry no values. Everything else must match exactly.
             bool readsByField = purpose == SavePurpose.DurableSave && saved is not null && binding.Schema is not null;
@@ -121,34 +121,34 @@ public sealed partial class WorldSerializer
                 throw SerializationErrors.CreateDataException(SerializationError.SchemaMismatch, "A serialized type differs from its registered schema.");
             if (readsByField && saved!.Hash != binding.Schema!.Hash)
             {
-                reader.SavedFieldMaps ??= [];
-                if (reader.SavedFieldMaps.TryGetValue(binding.Schema.Id, out SavedFieldMap? existing) && existing.SavedHash != saved.Hash)
+                reader.FieldMappings ??= [];
+                if (reader.FieldMappings.TryGetValue(binding.Schema.Id, out FieldMapping? existing) && existing.SavedHash != saved.Hash)
                     throw SerializationErrors.CreateDataException(SerializationError.SchemaMismatch, "Two saved field lists map to one type.");
-                reader.SavedFieldMaps[binding.Schema.Id] = existing ?? new SavedFieldMap(saved, binding.Schema);
+                reader.FieldMappings[binding.Schema.Id] = existing ?? new FieldMapping(saved, binding.Schema);
             }
         }
         return types;
     }
 
     /// <summary>Reads the saved field lists. Each nested field list comes before the lists that refer to it.</summary>
-    private static ValueSchema[] ReadSchemas(ref DataReader reader)
+    private static SavedFieldList[] ReadSchemas(ref SaveReader reader)
     {
-        var schemas = new ValueSchema[reader.Budget.ManifestCount(reader.ReadInt32())];
+        var schemas = new SavedFieldList[reader.Budget.ManifestCount(reader.ReadInt32())];
         for (int index = 0; index < schemas.Length; index++)
         {
             Guid id = reader.ReadGuid();
             ulong hash = reader.ReadUInt64();
-            var fields = new ValueField[reader.Budget.ManifestCount(reader.ReadInt32())];
+            var fields = new SavedField[reader.Budget.ManifestCount(reader.ReadInt32())];
             for (int field = 0; field < fields.Length; field++)
             {
                 string name = reader.ReadText(true);
-                var kind = (ValueFieldKind)reader.ReadByte();
+                var kind = (SavedFieldKind)reader.ReadByte();
                 int nested = reader.ReadInt32();
-                if (kind > ValueFieldKind.Nested || (kind == ValueFieldKind.Nested) != (nested >= 0) || nested >= index)
+                if (kind > SavedFieldKind.Nested || (kind == SavedFieldKind.Nested) != (nested >= 0) || nested >= index)
                     throw new InvalidDataException("A saved field list is malformed.");
-                fields[field] = new ValueField(name, kind, nested >= 0 ? schemas[nested] : null);
+                fields[field] = new SavedField(name, kind, nested >= 0 ? schemas[nested] : null);
             }
-            schemas[index] = new ValueSchema(id, hash, fields);
+            schemas[index] = new SavedFieldList(id, hash, fields);
         }
         return schemas;
     }
@@ -156,12 +156,12 @@ public sealed partial class WorldSerializer
     private readonly record struct ReadHeaderData(SavedType?[] Types, bool Preserve, ulong Version,
         int Used, int Alive, int[] Generations, int[] Free);
 
-    private ReadHeaderData ReadHeader(ref DataReader reader, SavePurpose? requiredPurpose)
+    private ReadHeaderData ReadHeader(ref SaveReader reader, SavePurpose? requiredPurpose)
     {
         SavedType?[] types = ReadManifest(ref reader, requiredPurpose);
-        bool preserve = (CheckpointProgress)reader.ReadByte() == CheckpointProgress.Preserve;
+        bool preserve = (ProgressMode)reader.ReadByte() == ProgressMode.Keep;
         ulong savedVersion = reader.ReadUInt64();
-        int used = reader.Budget.EntitySlotCount(reader.ReadInt32());
+        int used = reader.Budget.EntityIdCount(reader.ReadInt32());
         int alive = reader.Budget.EntityCount(reader.ReadInt32());
         int freeCount = reader.Budget.Count(reader.ReadInt32(), used, "free entity");
         var generations = new int[used + 1];
@@ -171,10 +171,10 @@ public sealed partial class WorldSerializer
         return new(types, preserve, savedVersion, used, alive, generations, free);
     }
 
-    private void Read(World world, ref DataReader reader, ISystemVersions[] systems)
+    private void Read(World world, ref SaveReader reader, ISystemVersions[] systems)
         => ReadValues(world, ref reader, ReadHeader(ref reader, null), systems, default, new EmptyWorldSystemBinding(), false);
 
-    private void ReadValues<TBinding>(World world, ref DataReader reader, ReadHeaderData header, ISystemVersions[] systems,
+    private void ReadValues<TBinding>(World world, ref SaveReader reader, ReadHeaderData header, ISystemVersions[] systems,
         WorldLoadOptions options, in TBinding bindSystems, bool completeWorld) where TBinding : struct, IWorldSystemBinding
     {
         reader.ValuesWorld = world;
@@ -282,7 +282,7 @@ public sealed partial class WorldSerializer
         finally { ArrayPool<ulong>.Shared.Return(buffer); }
     }
 
-    private static int ReadTable(ref DataReader reader, World world, SavedType?[] types, bool preserve,
+    private static int ReadTable(ref SaveReader reader, World world, SavedType?[] types, bool preserve,
         Dictionary<Archetype, int>? nextChunks, ReadHeaderData header, bool[] readEntities)
     {
         int entityCount = 0;
@@ -370,7 +370,7 @@ public sealed partial class WorldSerializer
         return entityCount;
     }
 
-    private static void ReadTopology(ref DataReader reader, World world, SavedType?[] types)
+    private static void ReadTopology(ref SaveReader reader, World world, SavedType?[] types)
     {
         int count = reader.Budget.ManifestCount(reader.ReadInt32());
         var readTypes = new HashSet<int>();
@@ -402,7 +402,7 @@ public sealed partial class WorldSerializer
     }
 
     /// <summary>The registered type a section belongs to, or null when the registry retired it.</summary>
-    private static TBinding? ReadSectionType<TBinding>(ref DataReader reader, SavedType?[] types) where TBinding : SavedType
+    private static TBinding? ReadSectionType<TBinding>(ref SaveReader reader, SavedType?[] types) where TBinding : SavedType
     {
         int index = reader.ReadInt32();
         if ((uint)index >= (uint)types.Length || types[index] is not null and not TBinding)
@@ -413,7 +413,7 @@ public sealed partial class WorldSerializer
     /// <summary>
     /// Reads the length in front of one type's data. Returns false after stepping over the data of a retired type.
     /// </summary>
-    private static bool EnterFrame<TBinding>(ref DataReader reader, TBinding? type,
+    private static bool EnterFrame<TBinding>(ref SaveReader reader, TBinding? type,
         [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out TBinding? binding, out long start, out int length)
         where TBinding : SavedType
     {
@@ -425,14 +425,14 @@ public sealed partial class WorldSerializer
         return false;
     }
 
-    private static ulong[]? ReadMask(ref DataReader reader, int capacity, int count)
+    private static ulong[]? ReadMask(ref SaveReader reader, int capacity, int count)
     {
         if (reader.ReadByte() == 0) return null;
         var words = new ulong[(capacity + 63) >> 6];
         for (int word = 0; word < (count + 63) >> 6; word++) words[word] = reader.ReadUInt64();
         return words;
     }
-    private static WorldEvents ReadEvents(ref DataReader reader)
+    private static WorldEvents ReadEvents(ref SaveReader reader)
     {
         ulong through = reader.ReadUInt64();
         int count = reader.Budget.TopologyEntryCount(reader.ReadInt32(), "destroyed entity fact");

@@ -1,8 +1,8 @@
 namespace SomeEngine.ECS.Serialization;
 
-public readonly record struct ExternalReferenceKey(Guid Value);
+public readonly record struct AssetReference(Guid Value);
 
 public interface IExternalResolver
 {
-    bool TryResolve(ExternalReferenceKey id, out object value);
+    bool TryResolve(AssetReference id, out object value);
 }

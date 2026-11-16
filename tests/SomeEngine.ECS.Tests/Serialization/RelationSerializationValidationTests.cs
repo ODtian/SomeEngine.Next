@@ -12,7 +12,7 @@ public sealed class RelationSerializationValidationTests
     [InlineData(2_048)]
     public void DirectedHighFanoutRoundTripsEndpointsAndValues(int fanout)
     {
-        var registry = new SerializationRegistry()
+        var registry = new SaveRegistry()
             .Register<HighFanoutRelation>()
             .RegisterRelation<HighFanoutRelation>();
         using var sourceWorld = new World();

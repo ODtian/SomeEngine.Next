@@ -35,18 +35,18 @@ internal sealed partial class NativeFullArchiveWorld<TValues>
             target.RebuildIndexes();
             if (!preserve) target.RebaseChanges();
         }
-        internal override void Write(ref DataWriter writer)
+        internal override void Write(ref SaveWriter writer)
         {
-            hierarchy.WriteProgress(ref writer, new SaveSchema.EntityCodec());
-            relations.WriteProgress(ref writer, new SaveSchema.EntityCodec(), new SaveSchema.EntityCodec());
-            writer.WriteInt32(shared.Length); foreach (SaveShared value in shared) new SaveSchema.SharedCodec().Write(ref writer, value);
+            hierarchy.WriteProgress(ref writer, new SaveSchema.EntitySerializer());
+            relations.WriteProgress(ref writer, new SaveSchema.EntitySerializer(), new SaveSchema.EntitySerializer());
+            writer.WriteInt32(shared.Length); foreach (SaveShared value in shared) new SaveSchema.SharedSerializer().Write(ref writer, value);
             writer.WriteInt32(sparseEntities.Length);
             for (int i = 0; i < sparseEntities.Length; i++)
             {
-                writer.WriteEntity(sparseEntities[i]); new SaveSchema.LinkCodec().Write(ref writer, sparseValues[i].Value);
+                writer.WriteEntity(sparseEntities[i]); new SaveSchema.LinkSerializer().Write(ref writer, sparseValues[i].Value);
                 writer.WriteUInt64(sparseValues[i].Added); writer.WriteUInt64(sparseValues[i].Written);
             }
-            new SaveSchema.ResourceCodec().Write(ref writer, resource);
+            new SaveSchema.ResourceSerializer().Write(ref writer, resource);
             ArchiveResources.Write(typedResources.Values, ref writer);
             writer.WriteInt32(versions.Length); foreach (ulong value in versions) writer.WriteUInt64(value);
             WriteDestroyed(ref writer, destroyed, destroyedSequence, destroyedPosition);
@@ -58,7 +58,7 @@ internal sealed partial class NativeFullArchiveWorld<TValues>
             shared = []; sparseEntities = []; sparseValues = []; versions = []; destroyed = [];
         }
     }
-    private static void WriteDestroyed(ref DataWriter writer, IReadOnlyCollection<DestroyedEntity> values, ulong sequence, ulong position)
+    private static void WriteDestroyed(ref SaveWriter writer, IReadOnlyCollection<DestroyedEntity> values, ulong sequence, ulong position)
     {
         writer.WriteUInt64(sequence); writer.WriteUInt64(position); writer.WriteInt32(values.Count);
         foreach (DestroyedEntity value in values) { writer.WriteEntity(value.Entity); writer.WriteUInt64(value.Sequence); }

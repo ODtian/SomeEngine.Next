@@ -29,7 +29,7 @@ internal static class CheckpointCosts
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void ObserveHolders(string name, WorldCheckpoint? checkpoint, SourceFullArchiveWorld? full,
+    private static void ObserveHolders(string name, WorldCopy? checkpoint, SourceFullArchiveWorld? full,
         Memory before, List<HolderObservation> observations)
     {
         long allocated = GC.GetTotalAllocatedBytes(true), started = Stopwatch.GetTimestamp();
@@ -88,9 +88,9 @@ internal static class CheckpointCosts
     {
         using var full = new SourceFullArchiveWorld(count, true);
         stages.Add(new("WorldCreated", ReadMemory()));
-        var checkpoint = new WorldCheckpoint();
+        var checkpoint = new WorldCopy();
         ISystemVersions[] systems = [full.Systems];
-        CheckpointProgress progress = preserve ? CheckpointProgress.Preserve : CheckpointProgress.Rebuild;
+        ProgressMode progress = preserve ? ProgressMode.Keep : ProgressMode.Reset;
         Action capture = () => checkpoint.Capture(full.World, progress, systems);
         stages.Add(new("EmptyCheckpoint", ReadMemory()));
         ObserveHolders("EmptyCheckpoint", checkpoint, full, stages[^1].Memory, holders);
@@ -170,7 +170,7 @@ internal static class CheckpointCosts
         return new(retained, process.PrivateMemorySize64, process.WorkingSet64, process.PeakWorkingSet64);
     }
 
-    private static object Describe(WorldCheckpoint checkpoint)
+    private static object Describe(WorldCopy checkpoint)
     {
         object? Field(object value, string name) => value.GetType().GetField(name, Fields)?.GetValue(value);
         var records = Field(checkpoint, "Records") as Array;
@@ -222,5 +222,5 @@ internal static class CheckpointCosts
 
 internal sealed partial class SourceFullArchiveWorld
 {
-    internal void Save(WorldCheckpoint checkpoint, IBufferWriter<byte> output) => _serializer.Save(checkpoint, output, _contract);
+    internal void Save(WorldCopy checkpoint, IBufferWriter<byte> output) => _serializer.Save(checkpoint, output, _contract);
 }

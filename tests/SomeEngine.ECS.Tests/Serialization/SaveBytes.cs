@@ -9,13 +9,13 @@ internal static class SaveBytes
 {
     internal static UTF8Encoding Utf8 { get; } = new(false, true);
 
-    internal static void WriteTypeKey(BinaryWriter writer, SerializationTypeKey key)
+    internal static void WriteTypeKey(BinaryWriter writer, SavedTypeKey key)
     {
         Span<byte> id = stackalloc byte[16];
-        BinaryPrimitiveEncoding.WriteGuid(id, key.StableId);
+        BinaryPrimitiveEncoding.WriteGuid(id, key.Id);
         writer.Write(id);
-        WriteString(writer, key.StableName);
-        writer.Write(key.SchemaFingerprint);
+        WriteString(writer, key.Name);
+        writer.Write(key.FieldHash);
     }
 
     internal static void WriteString(BinaryWriter writer, string? value)

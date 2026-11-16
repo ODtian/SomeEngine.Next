@@ -78,10 +78,10 @@ internal abstract class NativeArchiveStore(bool supportsDirectGroups = false) : 
     {
         for (int i = 0; i < values.Length; i++) Set(group.Identities[i].Value, clone is null ? values[i] : clone(values[i]));
     }
-    internal virtual void ReadColumn<T, TCodec>(NativeArchiveGroup group, int count, ref DataReader reader, TCodec codec, bool raw)
-        where T : struct, EasyEcs.IComponent, Friflo.Engine.ECS.IComponent where TCodec : struct, IValueCodec<T>
+    internal virtual void ReadColumn<T, TSerializer>(NativeArchiveGroup group, int count, ref SaveReader reader, TSerializer serializer, bool raw)
+        where T : struct, EasyEcs.IComponent, Friflo.Engine.ECS.IComponent where TSerializer : struct, IValueSerializer<T>
     {
-        var values = new T[count]; NativeArchiveColumns.Read(values.AsSpan(), ref reader, codec, raw);
+        var values = new T[count]; NativeArchiveColumns.Read(values.AsSpan(), ref reader, serializer, raw);
         WriteColumn<T>(group, values.AsSpan(), null);
     }
     internal void ClearWorld()

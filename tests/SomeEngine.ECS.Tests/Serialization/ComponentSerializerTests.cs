@@ -5,7 +5,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.ECS.Serialization.Tests;
 
-public sealed class ComponentCodecTests
+public sealed class ComponentSerializerTests
 {
     [Theory]
     [InlineData(SavePurpose.RawCheckpoint)]
@@ -24,8 +24,8 @@ public sealed class ComponentCodecTests
             buffer.Add(new DescribedElement { Value = 9, Target = referenced });
         using var bytes = new MemoryStream();
 
-        var registry = new SerializationRegistry();
-        GameSerializationModule.RegisterAll(registry);
+        var registry = new SaveRegistry();
+        GeneratedSerializers.RegisterAll(registry);
 
         new WorldSerializer(registry).Save(world, bytes, new SerializeOptions(Purpose: purpose));
         bytes.Position = 0;
@@ -51,88 +51,88 @@ public sealed class ComponentCodecTests
     }
 
     [Fact]
-    public void RegisteredCodecsKeepTheStateTheyWereRegisteredWith()
+    public void RegisteredSerializersKeepTheStateTheyWereRegisteredWith()
     {
         using var world = new World();
         Entity entity = world.Create(new DescribedPosition { Value = 12 });
-        var format = new SerializationTypeKey(new Guid("abca3391-45df-4b49-af0e-08acd1219041"), "shifted-position", 1);
+        var format = new SavedTypeKey(new Guid("abca3391-45df-4b49-af0e-08acd1219041"), "shifted-position", 1);
         using var bytes = new MemoryStream();
 
-        new WorldSerializer(new SerializationRegistry().Register<DescribedPosition, ShiftedPositionCodec>(format, new(11)))
+        new WorldSerializer(new SaveRegistry().Register<DescribedPosition, ShiftedPositionSerializer>(format, new(11)))
             .Save(world, bytes, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         bytes.Position = 0;
         using World restored = WorldSerializer.ReadWorld(bytes,
-            new SerializationRegistry().Register<DescribedPosition, ShiftedPositionCodec>(format, new(4)));
+            new SaveRegistry().Register<DescribedPosition, ShiftedPositionSerializer>(format, new(4)));
 
         Assert.Equal(19, restored.Read<DescribedPosition>(entity).Value);
     }
 
     [Fact]
-    public void RegisteredBufferElementCodecsKeepTheStateTheyWereRegisteredWith()
+    public void RegisteredBufferElementSerializersKeepTheStateTheyWereRegisteredWith()
     {
         using var world = new World();
         Entity entity = world.Create();
         world.AddBuffer<DescribedElement>(entity);
         using (DynamicBuffer<DescribedElement> elements = world.GetBuffer<DescribedElement>(entity))
             elements.Add(new DescribedElement { Value = 3 });
-        var format = new SerializationTypeKey(new Guid("6ea337fd-1f64-46fd-bd4b-72f9fa4ef171"), "shifted-element", 1);
+        var format = new SavedTypeKey(new Guid("6ea337fd-1f64-46fd-bd4b-72f9fa4ef171"), "shifted-element", 1);
         using var bytes = new MemoryStream();
 
-        new WorldSerializer(new SerializationRegistry().RegisterBuffer<DescribedElement, ShiftedElementCodec>(format, new(5)))
+        new WorldSerializer(new SaveRegistry().RegisterBuffer<DescribedElement, ShiftedElementSerializer>(format, new(5)))
             .Save(world, bytes, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         bytes.Position = 0;
         using World restored = WorldSerializer.ReadWorld(bytes,
-            new SerializationRegistry().RegisterBuffer<DescribedElement, ShiftedElementCodec>(format, new(2)));
+            new SaveRegistry().RegisterBuffer<DescribedElement, ShiftedElementSerializer>(format, new(2)));
 
         using ReadOnlyBuffer<DescribedElement> values = restored.ReadBuffer<DescribedElement>(entity);
         Assert.Equal(1, values.Count);
         Assert.Equal(6, values[0].Value);
     }
 
-    private readonly struct ShiftedPositionCodec(int shift) : IDurableComponentCodec<DescribedPosition>
+    private readonly struct ShiftedPositionSerializer(int shift) : IValueSerializer<DescribedPosition>
     {
-        public void Write(ref DataWriter writer, in DescribedPosition value)
+        public void Write(ref SaveWriter writer, in DescribedPosition value)
         { writer.WriteInt32(value.Value + shift); writer.WriteEntity(value.Target); }
-        public void Read(ref DataReader reader, out DescribedPosition value)
+        public void Read(ref SaveReader reader, out DescribedPosition value)
             => value = new() { Value = reader.ReadInt32() - shift, Target = reader.ReadEntity() };
     }
 
-    private readonly struct ShiftedElementCodec(int shift) : IDurableComponentCodec<DescribedElement>
+    private readonly struct ShiftedElementSerializer(int shift) : IValueSerializer<DescribedElement>
     {
-        public void Write(ref DataWriter writer, in DescribedElement value)
+        public void Write(ref SaveWriter writer, in DescribedElement value)
         { writer.WriteInt32(value.Value + shift); writer.WriteEntity(value.Target); }
-        public void Read(ref DataReader reader, out DescribedElement value)
+        public void Read(ref SaveReader reader, out DescribedElement value)
             => value = new() { Value = reader.ReadInt32() - shift, Target = reader.ReadEntity() };
     }
 
 
 }
 
-[SerializableComponent("892eb140-5eb7-4b5e-99b4-4b515503ee01")]
+[SaveId("892eb140-5eb7-4b5e-99b4-4b515503ee01")]
 public struct DescribedPosition : IComponent
 {
     public int Value;
     public Entity Target;
 }
 
-[SerializableComponent("6ea337fd-1f64-46fd-bd4b-72f9fa4ef171")]
+[SaveId("6ea337fd-1f64-46fd-bd4b-72f9fa4ef171")]
 public struct DescribedElement : IBufferElement
 {
     public int Value;
     public Entity Target;
 }
 
-[SerializableComponent("d1976b14-1165-422c-b007-b2265229ea9a")]
+[SaveId("d1976b14-1165-422c-b007-b2265229ea9a")]
 public struct DescribedGroup : ISharedComponent
 {
     public int Value;
 }
 
-[SerializableComponent("e4c11701-69d8-40ab-a772-ed9fdf9074c0")]
+[SaveId("e4c11701-69d8-40ab-a772-ed9fdf9074c0")]
 public struct DescribedLabel : ISparseComponent
 {
     public string Value;
 }
 
-[SerializableComponent("8f2ab491-1c77-4cf4-895c-71b8b7fcb88a")]
+[SaveId("8f2ab491-1c77-4cf4-895c-71b8b7fcb88a")]
 public struct DescribedVisibility : ITag, IEnableableComponent;

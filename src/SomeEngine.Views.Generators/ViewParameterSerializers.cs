@@ -4,7 +4,7 @@ using Microsoft.CodeAnalysis.CSharp;
 
 namespace SomeEngine.Views.Generators;
 
-internal static class ViewParameterCodecs
+internal static class ViewParameterSerializers
 {
     internal static IFieldSymbol[] GetFields(INamedTypeSymbol type) => type.GetMembers().OfType<IFieldSymbol>()
         .Where(field => !field.IsStatic).OrderBy(field => field.MetadataName, StringComparer.Ordinal).ToArray();
@@ -16,13 +16,13 @@ internal static class ViewParameterCodecs
         string typeParameters, string constraints)
     {
         string typeName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        text.Append("    private struct ParameterCodec").Append(typeParameters)
-            .Append(" : global::SomeEngine.ECS.Serialization.IDurableComponentCodec<").Append(typeName).Append('>');
+        text.Append("    private struct ParameterSerializer").Append(typeParameters)
+            .Append(" : global::SomeEngine.ECS.Serialization.IValueSerializer<").Append(typeName).Append('>');
         bool references = fields.Any(field => GetEncoding(field.Type) == "Entity");
         if (references)
             text.Append(", global::SomeEngine.ECS.Serialization.IReferencePatcher<").Append(typeName).Append('>');
         text.AppendLine(constraints).AppendLine("    {")
-            .Append("        public void Write(ref global::SomeEngine.ECS.Serialization.DataWriter writer, in ")
+            .Append("        public void Write(ref global::SomeEngine.ECS.Serialization.SaveWriter writer, in ")
             .Append(typeName).AppendLine(" value)\n        {\n            var parameters = value;");
         for (int index = 0; index < fields.Length; index++)
         {
@@ -32,7 +32,7 @@ internal static class ViewParameterCodecs
             text.Append("            writer.Write").Append(GetEncoding(fieldType)).Append('(').Append(cast)
                 .Append(GetFieldAccessor(fields[index], index)).AppendLine("(ref parameters));");
         }
-        text.AppendLine("        }").Append("        public void Read(ref global::SomeEngine.ECS.Serialization.DataReader reader, out ")
+        text.AppendLine("        }").Append("        public void Read(ref global::SomeEngine.ECS.Serialization.SaveReader reader, out ")
             .Append(typeName).AppendLine(" value)\n        {\n            value = default;");
         for (int index = 0; index < fields.Length; index++)
         {

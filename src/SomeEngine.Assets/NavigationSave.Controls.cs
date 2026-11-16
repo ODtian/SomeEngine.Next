@@ -40,7 +40,7 @@ public static partial class NavigationSave
 
 internal readonly partial struct NavigationSaveCodec
 {
-    private static void WriteControls(ref DataWriter writer, NavigationSavedControls controls)
+    private static void WriteControls(ref SaveWriter writer, NavigationSavedControls controls)
     {
         writer.WriteBoolean(controls.Avoidance.HasValue);
         if (controls.Avoidance is { } avoidance)
@@ -67,7 +67,7 @@ internal readonly partial struct NavigationSaveCodec
         }
     }
 
-    private static NavigationSavedControls ReadControls(ref DataReader reader)
+    private static NavigationSavedControls ReadControls(ref SaveReader reader)
     {
         AvoidanceAgent? avoidance = reader.ReadBoolean() ? new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadInt32(),
             reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadUInt64(), reader.ReadSingle()) : null;

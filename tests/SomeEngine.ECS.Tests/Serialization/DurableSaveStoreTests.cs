@@ -25,7 +25,7 @@ public sealed class DurableSaveStoreTests : IDisposable
     }
 
     [Fact]
-    public void SuccessiveWrites_AlternateSlotsAndSelectHighestGeneration()
+    public void SuccessiveWrites_AlternateFilesAndSelectHighestGeneration()
     {
         DurableSaveStore store = CreateStore();
 
@@ -108,18 +108,18 @@ public sealed class DurableSaveStoreTests : IDisposable
     {
         DurableSaveStore store = CreateStore();
         WriteWorldWithEntityCount(store, 1);
-        var key = new SerializationTypeKey(
+        var key = new SavedTypeKey(
             Guid.Parse("C8E3CC0A-7C7C-4EA5-A476-6D3214635677"),
             "tests.durable.unknown-schema",
             0xB30D6E1594A2C8F1ul);
-        var writeRegistry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(key);
+        var writeRegistry = new SaveRegistry()
+            .Register<SerPosition, SerPositionFullSerializer>(key);
         using var newest = new World();
         newest.Create(new SerPosition { X = 1, Y = 2 });
         SaveWorld(store, newest, writeRegistry);
 
         Assert.Throws<InvalidDataException>(() =>
-            LoadWorld(store, new SerializationRegistry()));
+            LoadWorld(store, new SaveRegistry()));
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public sealed class DurableSaveStoreTests : IDisposable
         DurableSaveStore store = CreateStore();
         WriteWorldWithEntityCount(store, 1);
         using World newest = CreateWorldWithEntityCount(2);
-        var registry = new SerializationRegistry();
+        var registry = new SaveRegistry();
         using (DurableSaveStore.SaveWrite write = store.BeginWrite())
         {
             new WorldSerializer(registry).Save(newest, write.Stream, SavePurpose.DurableSave);
@@ -162,7 +162,7 @@ public sealed class DurableSaveStoreTests : IDisposable
         Assert.Throws<SimulatedCrashException>(() =>
         {
             using DurableSaveStore.SaveWrite write = failing.BeginWrite();
-            new WorldSerializer(new SerializationRegistry()).Save(newerWorld, write.Stream, SavePurpose.DurableSave);
+            new WorldSerializer(new SaveRegistry()).Save(newerWorld, write.Stream, SavePurpose.DurableSave);
             var stages = new FailSaveStage(faultStage);
             write.Commit(ref stages);
         });
@@ -222,7 +222,7 @@ public sealed class DurableSaveStoreTests : IDisposable
     }
 
     [Fact]
-    public void Write_WhenEveryExistingSlotIsInvalid_RefusesToDestroyEvidence()
+    public void Write_WhenEveryExistingFileIsInvalid_RefusesToDestroyEvidence()
     {
         DurableSaveStore store = CreateStore();
         Directory.CreateDirectory(_directory);
@@ -259,7 +259,7 @@ public sealed class DurableSaveStoreTests : IDisposable
         var source = new World();
         source.Create();
         source.Create();
-        var registry = new SerializationRegistry();
+        var registry = new SaveRegistry();
 
         DurableSaveCommit commit = SaveWorld(store, source, registry);
         World restored = LoadWorld(store, registry);
@@ -306,7 +306,7 @@ public sealed class DurableSaveStoreTests : IDisposable
         }
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            LoadWorld(store, new SerializationRegistry()));
+            LoadWorld(store, new SaveRegistry()));
         Assert.Equal(SerializationError.UnsupportedVersion, SerializationErrors.GetError(error));
     }
 
@@ -326,7 +326,7 @@ public sealed class DurableSaveStoreTests : IDisposable
         });
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            LoadWorld(wrongKeyReader, new SerializationRegistry()));
+            LoadWorld(wrongKeyReader, new SaveRegistry()));
         Assert.Equal(SerializationError.IntegrityMismatch, SerializationErrors.GetError(error));
     }
 
@@ -349,11 +349,11 @@ public sealed class DurableSaveStoreTests : IDisposable
         }
 
         Assert.Throws<InvalidDataException>(() =>
-            LoadWorld(store, new SerializationRegistry()));
+            LoadWorld(store, new SaveRegistry()));
     }
 
     [Fact]
-    public void MinimumAcceptedGeneration_RejectsRolledBackValidSlot()
+    public void MinimumAcceptedGeneration_RejectsRolledBackValidFile()
     {
         DurableSaveStore writer = CreateStore();
         DurableSaveCommit old = WriteWorldWithEntityCount(writer, 1);
@@ -370,7 +370,7 @@ public sealed class DurableSaveStoreTests : IDisposable
         // digest-valid slot. The caller-persisted floor makes the rollback fail closed.
         File.Delete(newest.PublishedPath);
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            LoadWorld(floorReader, new SerializationRegistry()));
+            LoadWorld(floorReader, new SaveRegistry()));
         Assert.Equal(SerializationError.GenerationRejected, SerializationErrors.GetError(error));
         Assert.Throws<InvalidDataException>(() =>
             WriteBytes(floorReader, "must-not-rebase"u8));
@@ -433,7 +433,7 @@ public sealed class DurableSaveStoreTests : IDisposable
         {
             await DisposalChecks.WaitForReadRejectionAsync(() =>
             {
-                try { using World loaded = LoadWorld(store, new SerializationRegistry()); }
+                try { using World loaded = LoadWorld(store, new SaveRegistry()); }
                 catch (FileNotFoundException) { }
             });
             Assert.False(dispose.IsCompleted);
@@ -456,7 +456,7 @@ public sealed class DurableSaveStoreTests : IDisposable
         });
         store.Dispose();
         using var world = new World();
-        var registry = new SerializationRegistry();
+        var registry = new SaveRegistry();
 
         Assert.Throws<ObjectDisposedException>(() => store.BeginWrite());
         Assert.Throws<ObjectDisposedException>(() => SaveWorld(store, world, registry));
@@ -472,7 +472,7 @@ public sealed class DurableSaveStoreTests : IDisposable
         byte[] bytes = File.ReadAllBytes(store.PrimaryPath);
         File.WriteAllBytes(store.PrimaryPath, bytes[..16]);
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            LoadWorld(store, new SerializationRegistry()));
+            LoadWorld(store, new SaveRegistry()));
         Assert.Equal(SerializationError.IntegrityMismatch, SerializationErrors.GetError(error));
     }
 
@@ -482,21 +482,21 @@ public sealed class DurableSaveStoreTests : IDisposable
         DurableSaveStore store = CreateStore();
 
         FileNotFoundException error = Assert.Throws<FileNotFoundException>(() =>
-            LoadWorld(store, new SerializationRegistry()));
+            LoadWorld(store, new SaveRegistry()));
         Assert.Equal(store.PrimaryPath, error.FileName);
     }
 
     [Fact]
-    public void ReadWorld_CodecCancellationPropagatesWithoutTryingTheOlderGeneration()
+    public void ReadWorld_SerializerCancellationPropagatesWithoutTryingTheOlderGeneration()
     {
         DurableSaveStore store = CreateStore();
-        SerializationTypeKey key = FatalCodecKey();
-        var writeRegistry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(key);
+        SavedTypeKey key = FatalSerializerKey();
+        var writeRegistry = new SaveRegistry()
+            .Register<SerPosition, SerPositionFullSerializer>(key);
         WritePositionGenerations(store, writeRegistry);
-        var calls = new CodecCalls();
-        var readRegistry = new SerializationRegistry()
-            .Register<SerPosition, CancelingPositionCodec>(key, new CancelingPositionCodec(calls));
+        var calls = new SerializerCalls();
+        var readRegistry = new SaveRegistry()
+            .Register<SerPosition, CancelingPositionSerializer>(key, new CancelingPositionSerializer(calls));
 
         Assert.Throws<OperationCanceledException>(
             () => LoadWorld(store, readRegistry));
@@ -507,16 +507,16 @@ public sealed class DurableSaveStoreTests : IDisposable
     }
 
     [Fact]
-    public void ReadWorld_CodecOutOfMemoryPropagatesWithoutTryingTheOlderGeneration()
+    public void ReadWorld_SerializerOutOfMemoryPropagatesWithoutTryingTheOlderGeneration()
     {
         DurableSaveStore store = CreateStore();
-        SerializationTypeKey key = FatalCodecKey();
-        var writeRegistry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(key);
+        SavedTypeKey key = FatalSerializerKey();
+        var writeRegistry = new SaveRegistry()
+            .Register<SerPosition, SerPositionFullSerializer>(key);
         WritePositionGenerations(store, writeRegistry);
-        var calls = new CodecCalls();
-        var readRegistry = new SerializationRegistry()
-            .Register<SerPosition, OutOfMemoryPositionCodec>(key, new OutOfMemoryPositionCodec(calls));
+        var calls = new SerializerCalls();
+        var readRegistry = new SaveRegistry()
+            .Register<SerPosition, OutOfMemoryPositionSerializer>(key, new OutOfMemoryPositionSerializer(calls));
 
         Assert.Throws<OutOfMemoryException>(
             () => LoadWorld(store, readRegistry));
@@ -535,14 +535,14 @@ public sealed class DurableSaveStoreTests : IDisposable
     private DurableSaveStore CreateStore(DurableSaveStoreOptions? options = null) =>
         new(Path.Combine(_directory, "world.save"), options);
 
-    private static DurableSaveCommit SaveWorld(DurableSaveStore store, World world, SerializationRegistry registry)
+    private static DurableSaveCommit SaveWorld(DurableSaveStore store, World world, SaveRegistry registry)
     {
         using DurableSaveStore.SaveWrite write = store.BeginWrite();
         new WorldSerializer(registry).Save(world, write.Stream, SavePurpose.DurableSave);
         return write.Commit();
     }
 
-    private static World LoadWorld(DurableSaveStore store, SerializationRegistry registry)
+    private static World LoadWorld(DurableSaveStore store, SaveRegistry registry)
     {
         using DurableSaveStore.SaveRead read = store.BeginRead();
         return WorldSerializer.ReadWorld(read.Stream, registry,
@@ -559,12 +559,12 @@ public sealed class DurableSaveStoreTests : IDisposable
     private static DurableSaveCommit WriteWorldWithEntityCount(DurableSaveStore store, int count)
     {
         using World world = CreateWorldWithEntityCount(count);
-        return SaveWorld(store, world, new SerializationRegistry());
+        return SaveWorld(store, world, new SaveRegistry());
     }
 
     private static int ReadWorldEntityCount(DurableSaveStore store)
     {
-        using World world = LoadWorld(store, new SerializationRegistry());
+        using World world = LoadWorld(store, new SaveRegistry());
         return world.EntityCount;
     }
 
@@ -576,14 +576,14 @@ public sealed class DurableSaveStoreTests : IDisposable
         return world;
     }
 
-    private static SerializationTypeKey FatalCodecKey() => new(
+    private static SavedTypeKey FatalSerializerKey() => new(
         Guid.Parse("24EC49CA-14FC-46BC-916C-914474F9E17F"),
-        "tests.durable.fatal-codec",
+        "tests.durable.fatal-serializer",
         0xF82D4B56A3C1709Eul);
 
     private static void WritePositionGenerations(
         DurableSaveStore store,
-        SerializationRegistry registry)
+        SaveRegistry registry)
     {
         for (int generation = 1; generation <= 2; generation++)
         {
@@ -597,29 +597,29 @@ public sealed class DurableSaveStoreTests : IDisposable
         }
     }
 
-    private struct CancelingPositionCodec(CodecCalls calls) : IComponentCodec<SerPosition>
+    private struct CancelingPositionSerializer(SerializerCalls calls) : IValueSerializer<SerPosition>
     {
-        public void Write(ref DataWriter writer, in SerPosition value) =>
+        public void Write(ref SaveWriter writer, in SerPosition value) =>
             throw new NotSupportedException();
 
-        public void Read(ref DataReader reader, out SerPosition value)
+        public void Read(ref SaveReader reader, out SerPosition value)
         {
             _ = reader;
             Interlocked.Increment(ref calls.Reads);
-            throw new OperationCanceledException("codec cancellation");
+            throw new OperationCanceledException("serializer cancellation");
         }
     }
 
-    private struct OutOfMemoryPositionCodec(CodecCalls calls) : IComponentCodec<SerPosition>
+    private struct OutOfMemoryPositionSerializer(SerializerCalls calls) : IValueSerializer<SerPosition>
     {
-        public void Write(ref DataWriter writer, in SerPosition value) =>
+        public void Write(ref SaveWriter writer, in SerPosition value) =>
             throw new NotSupportedException();
 
-        public void Read(ref DataReader reader, out SerPosition value)
+        public void Read(ref SaveReader reader, out SerPosition value)
         {
             _ = reader;
             Interlocked.Increment(ref calls.Reads);
-            throw new OutOfMemoryException("codec allocation");
+            throw new OutOfMemoryException("serializer allocation");
         }
     }
 

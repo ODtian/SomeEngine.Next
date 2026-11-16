@@ -13,16 +13,16 @@ public sealed class TopologySerializationTests
     [Fact]
     public void TopologySchemaMismatch_FailsClosedWithoutMigrationSurface()
     {
-        Guid stableId = Guid.Parse("A16935CE-BE68-47E2-92CE-D27AE6FCFCF1");
-        var oldKey = new SerializationTypeKey(
-            stableId,
+        Guid savedId = Guid.Parse("A16935CE-BE68-47E2-92CE-D27AE6FCFCF1");
+        var oldKey = new SavedTypeKey(
+            savedId,
             "test-hierarchy",
             0x11111111A5A5A5A5ul);
-        var newKey = new SerializationTypeKey(
-            stableId,
+        var newKey = new SavedTypeKey(
+            savedId,
             "test-hierarchy",
             0x22222222A5A5A5A5ul);
-        var writeRegistry = new SerializationRegistry()
+        var writeRegistry = new SaveRegistry()
             .Register<TopologyLabel>()
             .RegisterHierarchy<DefaultHierarchyDomain>(oldKey);
         var source = new World();
@@ -34,7 +34,7 @@ public sealed class TopologySerializationTests
         new WorldSerializer(writeRegistry).Save(source, stream);
         byte[] bytes = stream.ToArray();
 
-        var rejectRegistry = new SerializationRegistry()
+        var rejectRegistry = new SaveRegistry()
             .Register<TopologyLabel>()
             .RegisterHierarchy<DefaultHierarchyDomain>(newKey);
         using var rejected = new MemoryStream(bytes, writable: false);
@@ -44,9 +44,9 @@ public sealed class TopologySerializationTests
     }
 
     [Fact]
-    public void ReadWorld_RejectsUnknownTopologyStableId()
+    public void ReadWorld_RejectsUnknownTopologyId()
     {
-        var writeRegistry = new SerializationRegistry()
+        var writeRegistry = new SaveRegistry()
             .Register<TopologyLabel>()
             .RegisterHierarchy<DefaultHierarchyDomain>(SaveTypes.Key<DefaultHierarchyDomain>());
         var source = new World();
@@ -56,7 +56,7 @@ public sealed class TopologySerializationTests
         using var stream = new MemoryStream();
         new WorldSerializer(writeRegistry).Save(source, stream);
 
-        var readRegistry = new SerializationRegistry()
+        var readRegistry = new SaveRegistry()
             .Register<TopologyLabel>()
             .RegisterHierarchy<UiDomain>(SaveTypes.Key<UiDomain>());
         stream.Position = 0;
@@ -68,7 +68,7 @@ public sealed class TopologySerializationTests
     [Fact]
     public void ReadWorld_RejectsTopologyCountsBeforeAllocatingArrays()
     {
-        SerializationRegistry registry = CreateRegistry();
+        SaveRegistry registry = CreateRegistry();
         var source = new World();
         Entity parent = source.Create(new TopologyLabel { Value = 1 });
         Entity child = source.Create(new TopologyLabel { Value = 2 });
@@ -78,7 +78,7 @@ public sealed class TopologySerializationTests
         new WorldSerializer(registry).Save(source, stream);
         stream.Position = 0;
 
-        var limits = SerializationReadLimits.Default with
+        var limits = ReadLimits.Default with
         {
             MaxTopologyEntriesPerSection = 0,
         };
@@ -93,8 +93,8 @@ public sealed class TopologySerializationTests
     [Fact]
     public void RegisterRelationTopology_CustomKeyRequiresOrdinaryTablePayload()
     {
-        var registry = new SerializationRegistry().Register<NonTableRelationPayload>(SaveTypes.Key<NonTableRelationPayload>());
-        var topologyKey = new SerializationTypeKey(
+        var registry = new SaveRegistry().Register<NonTableRelationPayload>(SaveTypes.Key<NonTableRelationPayload>());
+        var topologyKey = new SavedTypeKey(
             Guid.Parse("1B129490-A7B3-40CC-99ED-C6229FE8F9F5"),
             "non-table-relation-topology",
             1);
@@ -110,7 +110,7 @@ public sealed class TopologySerializationTests
     [Fact]
     public void CurrentWorld_RoundTripsCanonicalHierarchyRelationAndSemanticLocalOrder()
     {
-        SerializationRegistry registry = CreateRegistry();
+        SaveRegistry registry = CreateRegistry();
         var source = new World();
 
         Entity root = source.Create(new TopologyLabel { Value = 1 });
@@ -158,8 +158,8 @@ public sealed class TopologySerializationTests
 
         using var first = new MemoryStream();
         using var second = new MemoryStream();
-        new WorldSerializer(registry).Save(source, first, progress: CheckpointProgress.Preserve);
-        new WorldSerializer(registry).Save(source, second, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(source, first, progress: ProgressMode.Keep);
+        new WorldSerializer(registry).Save(source, second, progress: ProgressMode.Keep);
 
         Assert.Equal(first.ToArray(), second.ToArray());
 
@@ -192,14 +192,14 @@ public sealed class TopologySerializationTests
                 .OrderBy(static edge => edge.Entity.Id));
 
         using var rewritten = new MemoryStream();
-        new WorldSerializer(registry).Save(loaded, rewritten, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(loaded, rewritten, progress: ProgressMode.Keep);
         Assert.Equal(second.ToArray(), rewritten.ToArray());
     }
 
     [Fact]
     public void CurrentWorld_RoundTripsUndirectedFixedSlotsAndIncidentOrder()
     {
-        SerializationRegistry registry = CreateRegistry();
+        SaveRegistry registry = CreateRegistry();
         var source = new World();
         Entity endpointA = source.Create(new TopologyLabel { Value = 20 });
         Entity endpointB = source.Create(new TopologyLabel { Value = 21 });
@@ -241,7 +241,7 @@ public sealed class TopologySerializationTests
     [Fact]
     public void DeferredRelationState_PreserveRestoresValuesAndAppliedOrder()
     {
-        SerializationRegistry registry = CreateRegistry();
+        SaveRegistry registry = CreateRegistry();
         using var source = new World();
         Entity oldSource = source.Create(new TopologyLabel { Value = 30 });
         Entity newSource = source.Create(new TopologyLabel { Value = 31 });
@@ -255,7 +255,7 @@ public sealed class TopologySerializationTests
         RelationEdge<SerializedLink>[] newBefore = TopologyValues.Outgoing<SerializedLink>(source, newSource);
 
         using var stream = new MemoryStream();
-        new WorldSerializer(registry).Save(source, stream, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(source, stream, progress: ProgressMode.Keep);
         Assert.Equal(oldBefore, TopologyValues.Outgoing<SerializedLink>(source, oldSource));
         Assert.Equal(newBefore, TopologyValues.Outgoing<SerializedLink>(source, newSource));
         stream.Position = 0;
@@ -274,7 +274,7 @@ public sealed class TopologySerializationTests
     [Fact]
     public void DeferredHierarchyState_PreserveRestoresValuesAndAppliedOrder()
     {
-        SerializationRegistry registry = CreateRegistry();
+        SaveRegistry registry = CreateRegistry();
         using var source = new World();
         Entity oldParent = source.Create(new TopologyLabel { Value = 50 });
         Entity newParent = source.Create(new TopologyLabel { Value = 51 });
@@ -289,7 +289,7 @@ public sealed class TopologySerializationTests
         Entity[] newBefore = TopologyValues.Children<DefaultHierarchyDomain>(source, newParent);
 
         using var stream = new MemoryStream();
-        new WorldSerializer(registry).Save(source, stream, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(source, stream, progress: ProgressMode.Keep);
         Assert.Equal(oldBefore, TopologyValues.Children<DefaultHierarchyDomain>(source, oldParent));
         Assert.Equal(newBefore, TopologyValues.Children<DefaultHierarchyDomain>(source, newParent));
         stream.Position = 0;
@@ -302,8 +302,8 @@ public sealed class TopologySerializationTests
         Assert.Equal(new[] { moved, resident }, TopologyValues.Children<DefaultHierarchyDomain>(loaded, newParent));
     }
 
-    private static SerializationRegistry CreateRegistry() =>
-        new SerializationRegistry()
+    private static SaveRegistry CreateRegistry() =>
+        new SaveRegistry()
             .Register<TopologyLabel>()
             .Register<SerializedLink>()
             .Register<SerializedBond>()

@@ -20,9 +20,9 @@ public sealed class WorldStreamingSerializationTests
     [InlineData(false)]
     public void ComponentThenWorldReadFromOneStreamPreservesBothValues(bool seekable)
     {
-        var registry = new SerializationRegistry()
-            .RegisterCodec<SerName, SerNameCodec>(default)
-            .RegisterCodec<SerPosition, SerPositionFullCodec>(default);
+        var registry = new SaveRegistry()
+            .RegisterSerializer<SerName, SerNameSerializer>(default)
+            .RegisterSerializer<SerPosition, SerPositionFullSerializer>(default);
         var name = new SerName { Value = "入口 🚲", Id = 7 };
         using var world = new World();
         Entity entity = world.Create(new SerPosition { X = 17, Y = 23 });
@@ -52,7 +52,7 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public void DurableWorldUsesManagedStorageWithoutChangingItsEncodingOrReadBehavior()
     {
-        var registry = new SerializationRegistry().Register<SerPosition, PagePositionCodec>(new(
+        var registry = new SaveRegistry().Register<SerPosition, PagePositionSerializer>(new(
             Guid.Parse("57C630DB-1452-42CB-915A-A0CE63728294"), "tests.page-position", 1));
         using var world = new World();
         var entity = world.Create(new SerPosition { X = 17, Y = 23 });
@@ -74,21 +74,21 @@ public sealed class WorldStreamingSerializationTests
         Assert.Equal(23, decoded.Read<SerPosition>(entity).Y);
     }
 
-    private struct PagePositionCodec : IComponentCodec<SerPosition>
+    private struct PagePositionSerializer : IValueSerializer<SerPosition>
     {
-        public void Write(ref DataWriter writer, in SerPosition value)
+        public void Write(ref SaveWriter writer, in SerPosition value)
         {
             writer.WriteSingle(value.X);
             writer.WriteSingle(value.Y);
         }
-        public void Read(ref DataReader reader, out SerPosition value)
+        public void Read(ref SaveReader reader, out SerPosition value)
             => value = new() { X = reader.ReadSingle(), Y = reader.ReadSingle() };
     }
 
     [Fact]
     public void FailedOutputCanBeRetriedWithoutChangingSerializedData()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         var world = new World();
         world.Create(new SerPosition { X = 1, Y = 2 });
 
@@ -113,7 +113,7 @@ public sealed class WorldStreamingSerializationTests
     [InlineData(WriteFailureKind.Disposed)]
     public async Task WorldWrite_StreamFailureReleasesAdmission(WriteFailureKind kind)
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         var world = new World();
         world.Create(new SerPosition { X = 1, Y = 2 });
         Exception expected = kind switch
@@ -133,10 +133,10 @@ public sealed class WorldStreamingSerializationTests
     }
 
     [Fact]
-    public async Task WorldWrite_ComponentCodecFailureReleasesAdmission()
+    public async Task WorldWrite_ComponentSerializerFailureReleasesAdmission()
     {
-        var registry = new SerializationRegistry()
-            .RegisterCodec<ThrowingWorldComponent, ThrowingWorldComponentCodec>(default);
+        var registry = new SaveRegistry()
+            .RegisterSerializer<ThrowingWorldComponent, ThrowingWorldComponentSerializer>(default);
         var world = new World();
         world.Create(new ThrowingWorldComponent { Value = 1 });
         using var output = new MemoryStream();
@@ -148,14 +148,14 @@ public sealed class WorldStreamingSerializationTests
     }
 
     [Fact]
-    public void WorldWrite_ComponentCodecReentryMutatesSuccessorWithoutChangingRetainedOutput()
+    public void WorldWrite_ComponentSerializerReentryMutatesSuccessorWithoutChangingRetainedOutput()
     {
         using var world = new World();
-        var registry = new SerializationRegistry()
-            .RegisterCodec<ReentrantWorldComponent, ReentrantWorldComponentCodec>(new ReentrantWorldComponentCodec(world));
+        var registry = new SaveRegistry()
+            .RegisterSerializer<ReentrantWorldComponent, ReentrantWorldComponentSerializer>(new ReentrantWorldComponentSerializer(world));
         world.Create(new ReentrantWorldComponent { Value = 1 });
         using var output = new MemoryStream();
-        using var checkpoint = new WorldCheckpoint();
+        using var checkpoint = new WorldCopy();
         checkpoint.Capture(world);
         new WorldSerializer(registry).Save(checkpoint, output);
 
@@ -168,13 +168,13 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public void WorldWrite_OutputCallbackMutatesPublishedSuccessor()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         using var world = new World();
         world.Create(new SerPosition { X = 1, Y = 2 });
         Entity created = default;
         using var output = new CallbackWriteStream(() => created = world.Create());
 
-        using var checkpoint = new WorldCheckpoint();
+        using var checkpoint = new WorldCopy();
         checkpoint.Capture(world);
         new WorldSerializer(registry).Save(checkpoint, output);
 
@@ -185,7 +185,7 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public void WorldWrite_OutputCallbackCanDisposeAnUnrelatedWorld()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         using var serializedWorld = new World();
         serializedWorld.Create(new SerPosition { X = 1, Y = 2 });
         using var otherWorld = new World();
@@ -200,7 +200,7 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public void WriteEntities_InvalidMemberFailsBeforeOutputWithoutPublishingSuccessor()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         var world = new World();
         Entity valid = world.Create(new SerPosition { X = 1, Y = 2 });
         Entity invalid = world.Create();
@@ -217,7 +217,7 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public void WorldSerializationPreservesQueryResults()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         var world = new World();
         Entity entity = world.Create(new SerPosition { X = 1, Y = 2 });
         var query = world.Query(new QueryDescription().With<SerPosition>());
@@ -239,7 +239,7 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public void CanonicalWorldStateHash_IsStableAndChangesWithState()
     {
-        var registry = new SerializationRegistry()
+        var registry = new SaveRegistry()
             .Register<SerPosition>()
             .Register<SerSparse>(SaveTypes.Key<SerSparse>());
         var first = new World();
@@ -264,12 +264,12 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public async Task BlockedOutput_AllowsSuccessorMutationAndKeepsSerializedBytesStable()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         var world = new World();
         Entity captured = world.Create(new SerPosition { X = 1, Y = 2 });
         using var output = new GateWriteStream();
 
-        using var checkpoint = new WorldCheckpoint();
+        using var checkpoint = new WorldCopy();
         checkpoint.Capture(world);
         Task write = Task.Run(() => new WorldSerializer(registry).Save(checkpoint, output));
         Assert.True(output.WaitUntilWrite(TimeSpan.FromSeconds(10)));
@@ -306,7 +306,7 @@ public sealed class WorldStreamingSerializationTests
     public async Task NarrowWrite_ExplicitCaptureAllowsSourceMutationDuringOutput(
         NarrowCaptureOperation operation)
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         var world = new World();
         Entity first = world.Create(new SerPosition { X = 1, Y = 2 });
         Entity second = world.Create(new SerPosition { X = 3, Y = 4 });
@@ -316,8 +316,8 @@ public sealed class WorldStreamingSerializationTests
         using var baseline = new MemoryStream();
         WriteNarrow(operation, baseline, world, first, selected, query, registry);
 
-        using var checkpoint = new WorldCheckpoint();
-        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy();
+        checkpoint.Capture(world, ProgressMode.Keep);
         using var captured = new World();
         checkpoint.Restore(captured);
         Query capturedQuery = captured.Query(new QueryDescription().With<SerPosition>());
@@ -352,10 +352,10 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public async Task WorldWrite_CapturedDataAllowsSourceDisposalDuringEncoding()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         var world = new World();
         Entity entity = world.Create(new SerPosition { X = 1, Y = 2 });
-        using var checkpoint = new WorldCheckpoint();
+        using var checkpoint = new WorldCopy();
         checkpoint.Capture(world);
         using var output = new GateWriteStream();
         Task write = Task.Run(() => new WorldSerializer(registry).Save(checkpoint, output));
@@ -375,13 +375,13 @@ public sealed class WorldStreamingSerializationTests
     }
 
     [Fact]
-    public void WorldWrite_InvokesComponentAndBufferCodecsExactlyOncePerValue()
+    public void WorldWrite_InvokesComponentAndBufferSerializersExactlyOncePerValue()
     {
-        var componentCalls = new CodecCalls();
-        var bufferCalls = new CodecCalls();
-        var registry = new SerializationRegistry()
-            .RegisterCodec<CountingWorldComponent, CountingWorldComponentCodec>(new CountingWorldComponentCodec(componentCalls))
-            .RegisterBufferCodec<CountingWorldBuffer, CountingWorldBufferCodec>(new CountingWorldBufferCodec(bufferCalls));
+        var componentCalls = new SerializerCalls();
+        var bufferCalls = new SerializerCalls();
+        var registry = new SaveRegistry()
+            .RegisterSerializer<CountingWorldComponent, CountingWorldComponentSerializer>(new CountingWorldComponentSerializer(componentCalls))
+            .RegisterBufferSerializer<CountingWorldBuffer, CountingWorldBufferSerializer>(new CountingWorldBufferSerializer(bufferCalls));
         var world = new World();
         world.Create(new CountingWorldComponent { Value = 1 });
         world.Create(new CountingWorldComponent { Value = 2 });
@@ -405,7 +405,7 @@ public sealed class WorldStreamingSerializationTests
     public void LargeArchetypeAndSparseWorldRoundTripsThroughNonSeekableOutput()
     {
         const int entityCount = 20_000;
-        var registry = new SerializationRegistry()
+        var registry = new SaveRegistry()
             .Register<SerPosition>()
             .Register<SerSparse>(SaveTypes.Key<SerSparse>());
         using var world = new World(entityCount);
@@ -439,7 +439,7 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public void SparseMembershipWorkingSet_RespectsConfiguredLimit()
     {
-        var registry = new SerializationRegistry().Register<SerSparse>(SaveTypes.Key<SerSparse>());
+        var registry = new SaveRegistry().Register<SerSparse>(SaveTypes.Key<SerSparse>());
         var world = new World();
         for (int i = 0; i < 3; i++)
         {
@@ -459,13 +459,13 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public void CheckpointCopiesManagedRowsAndSharesOrdinaryReferenceFields()
     {
-        var registry = new SerializationRegistry()
-            .RegisterCodec<SnapshotReferenceComponent, SnapshotReferenceCodec>(default);
+        var registry = new SaveRegistry()
+            .RegisterSerializer<SnapshotReferenceComponent, SnapshotReferenceSerializer>(default);
         int[] values = [1, 2, 3];
         using var world = new World();
         Entity entity = world.Create(new SnapshotReferenceComponent { Values = values });
-        using var checkpoint = new WorldCheckpoint();
-        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy();
+        checkpoint.Capture(world, ProgressMode.Keep);
         values[0] = 99;
         world.Set(entity, new SnapshotReferenceComponent { Values = [7, 8] });
         using var output = new MemoryStream();
@@ -479,8 +479,8 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public void WholeWorldSnapshot_AllowsRegisteredManagedReferenceTypeWhenAbsent()
     {
-        var registry = new SerializationRegistry()
-            .RegisterCodec<SnapshotReferenceComponent, SnapshotReferenceCodec>(default);
+        var registry = new SaveRegistry()
+            .RegisterSerializer<SnapshotReferenceComponent, SnapshotReferenceSerializer>(default);
         var world = new World();
         Entity entity = world.Create();
         using var output = new MemoryStream();
@@ -495,7 +495,7 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public void TopologyWorkingSet_RespectsRecordAndPayloadLimits_OnNonSeekableOutput()
     {
-        var registry = new SerializationRegistry()
+        var registry = new SaveRegistry()
             .RegisterHierarchy<DefaultHierarchyDomain>(SaveTypes.Key<DefaultHierarchyDomain>());
         var world = new World();
         Entity parent = world.Create();
@@ -527,7 +527,7 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public void HierarchyRecordBudget_RejectsTheDirectWriteWithoutSnapshotDto()
     {
-        var registry = new SerializationRegistry()
+        var registry = new SaveRegistry()
             .RegisterHierarchy<DefaultHierarchyDomain>(SaveTypes.Key<DefaultHierarchyDomain>());
         var world = new World();
         Entity parent = world.Create();
@@ -550,7 +550,7 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public void RelationTopologyWrite_VisitsOnlyEdgesAndActualOrderedShards()
     {
-        var registry = new SerializationRegistry()
+        var registry = new SaveRegistry()
             .Register<StreamingRelation>()
             .RegisterRelation<StreamingRelation>();
         var world = new World();
@@ -582,7 +582,7 @@ public sealed class WorldStreamingSerializationTests
     [Fact]
     public void RepeatedWorldSerializationKeepsLatestClockAndBytes()
     {
-        var registry = new SerializationRegistry()
+        var registry = new SaveRegistry()
             .Register<SavedTrackedPosition>()
             .Register<SerSparse>(SaveTypes.Key<SerSparse>());
         var world = new World();
@@ -593,7 +593,7 @@ public sealed class WorldStreamingSerializationTests
         ulong tickBefore = world.Version;
 
         using var beforeMutation = new MemoryStream();
-        new WorldSerializer(registry).Save(world, beforeMutation, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(world, beforeMutation, progress: ProgressMode.Keep);
 
         world.Set(first, new SavedTrackedPosition { X = 100, Y = 200 });
         world.Set(first, new SavedTrackedPosition { X = 1, Y = 2 });
@@ -601,9 +601,9 @@ public sealed class WorldStreamingSerializationTests
         Assert.NotEqual(versionBefore, versionAfter);
 
         using var afterMutation = new MemoryStream();
-        new WorldSerializer(registry).Save(world, afterMutation, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(world, afterMutation, progress: ProgressMode.Keep);
         using var repeated = new MemoryStream();
-        new WorldSerializer(registry).Save(world, repeated, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(world, repeated, progress: ProgressMode.Keep);
         Assert.Equal(afterMutation.ToArray(), repeated.ToArray());
 
         beforeMutation.Position = 0;
@@ -636,7 +636,7 @@ public sealed class WorldStreamingSerializationTests
         Entity entity,
         Entity[] entities,
         Query query,
-        SerializationRegistry registry)
+        SaveRegistry registry)
     {
         switch (operation)
         {
@@ -681,12 +681,12 @@ public sealed class WorldStreamingSerializationTests
         public int Value;
     }
 
-    private struct ThrowingWorldComponentCodec : IComponentCodec<ThrowingWorldComponent>
+    private struct ThrowingWorldComponentSerializer : IValueSerializer<ThrowingWorldComponent>
     {
-        public void Write(ref DataWriter writer, in ThrowingWorldComponent value) =>
-            throw new InvalidOperationException("Injected codec fault.");
+        public void Write(ref SaveWriter writer, in ThrowingWorldComponent value) =>
+            throw new InvalidOperationException("Injected serializer fault.");
 
-        public void Read(ref DataReader reader, out ThrowingWorldComponent value) =>
+        public void Read(ref SaveReader reader, out ThrowingWorldComponent value) =>
             value = new ThrowingWorldComponent { Value = reader.ReadInt32() };
     }
 
@@ -695,16 +695,16 @@ public sealed class WorldStreamingSerializationTests
         public int Value;
     }
 
-    private struct ReentrantWorldComponentCodec(World world) : IComponentCodec<ReentrantWorldComponent>
+    private struct ReentrantWorldComponentSerializer(World world) : IValueSerializer<ReentrantWorldComponent>
     {
 
-        public void Write(ref DataWriter writer, in ReentrantWorldComponent value)
+        public void Write(ref SaveWriter writer, in ReentrantWorldComponent value)
         {
             world.Create();
             writer.WriteInt32(value.Value);
         }
 
-        public void Read(ref DataReader reader, out ReentrantWorldComponent value) =>
+        public void Read(ref SaveReader reader, out ReentrantWorldComponent value) =>
             value = new ReentrantWorldComponent { Value = reader.ReadInt32() };
     }
 
@@ -713,15 +713,15 @@ public sealed class WorldStreamingSerializationTests
         public int Value;
     }
 
-    private struct CountingWorldComponentCodec(CodecCalls calls) : IComponentCodec<CountingWorldComponent>
+    private struct CountingWorldComponentSerializer(SerializerCalls calls) : IValueSerializer<CountingWorldComponent>
     {
-        public void Write(ref DataWriter writer, in CountingWorldComponent value)
+        public void Write(ref SaveWriter writer, in CountingWorldComponent value)
         {
             Interlocked.Increment(ref calls.Writes);
             writer.WriteInt32(value.Value);
         }
 
-        public void Read(ref DataReader reader, out CountingWorldComponent value) =>
+        public void Read(ref SaveReader reader, out CountingWorldComponent value) =>
             value = new CountingWorldComponent { Value = reader.ReadInt32() };
     }
 
@@ -730,15 +730,15 @@ public sealed class WorldStreamingSerializationTests
         public int Value;
     }
 
-    private struct CountingWorldBufferCodec(CodecCalls calls) : IComponentCodec<CountingWorldBuffer>
+    private struct CountingWorldBufferSerializer(SerializerCalls calls) : IValueSerializer<CountingWorldBuffer>
     {
-        public void Write(ref DataWriter writer, in CountingWorldBuffer value)
+        public void Write(ref SaveWriter writer, in CountingWorldBuffer value)
         {
             Interlocked.Increment(ref calls.Writes);
             writer.WriteInt32(value.Value);
         }
 
-        public void Read(ref DataReader reader, out CountingWorldBuffer value) =>
+        public void Read(ref SaveReader reader, out CountingWorldBuffer value) =>
             value = new CountingWorldBuffer { Value = reader.ReadInt32() };
     }
 
@@ -753,9 +753,9 @@ public sealed class WorldStreamingSerializationTests
         public int Value;
     }
 
-    private struct SnapshotReferenceCodec : IComponentCodec<SnapshotReferenceComponent>
+    private struct SnapshotReferenceSerializer : IValueSerializer<SnapshotReferenceComponent>
     {
-        public void Write(ref DataWriter writer, in SnapshotReferenceComponent value)
+        public void Write(ref SaveWriter writer, in SnapshotReferenceComponent value)
         {
             int[] values = value.Values ?? Array.Empty<int>();
             writer.WriteInt32(values.Length);
@@ -763,7 +763,7 @@ public sealed class WorldStreamingSerializationTests
                 writer.WriteInt32(values[i]);
         }
 
-        public void Read(ref DataReader reader, out SnapshotReferenceComponent value)
+        public void Read(ref SaveReader reader, out SnapshotReferenceComponent value)
         {
             int count = reader.ReadInt32();
             var values = new int[count];

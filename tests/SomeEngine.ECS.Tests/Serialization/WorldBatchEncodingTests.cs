@@ -3,7 +3,7 @@ using SomeEngine.ECS.Hierarchy;
 
 namespace SomeEngine.ECS.Serialization.Tests;
 
-[SerializableComponent("0826DE90-C146-4EA8-9139-A7CF22DF0E0E")]
+[SaveId("0826DE90-C146-4EA8-9139-A7CF22DF0E0E")]
 public partial struct SavedRow : IComponent
 {
     public int Value;
@@ -15,8 +15,8 @@ public sealed class WorldBatchEncodingTests
     [Fact]
     public void GeneratedRowsRetainBytesEntityReferencesAndHierarchyAfterWorldRestore()
     {
-        var registry = new SerializationRegistry().RegisterHierarchy<DefaultHierarchyDomain>(SaveTypes.Key<DefaultHierarchyDomain>());
-        GameSerializationModule.RegisterAll(registry);
+        var registry = new SaveRegistry().RegisterHierarchy<DefaultHierarchyDomain>(SaveTypes.Key<DefaultHierarchyDomain>());
+        GeneratedSerializers.RegisterAll(registry);
         using var world = new World();
         Entity root = world.Create();
         var entities = new Entity[1200];
@@ -43,21 +43,21 @@ public sealed class WorldBatchEncodingTests
     }
 
     [Fact]
-    public void SharedCodecStateRetainsItsWriteOrderAndExternalReferences()
+    public void SharedSerializerStateRetainsItsWriteOrderAndExternalReferences()
     {
         var state = new WriteCount();
-        var registry = new SerializationRegistry().Register<CountedRow, CountedRowCodec>(
+        var registry = new SaveRegistry().Register<CountedRow, CountedRowSerializer>(
             new(Guid.Parse("395299C1-7327-41CB-9CB0-9670193668EF"), "counted rows", 0x1810202600000001ul), new(state));
         using var world = new World();
         var entities = new Entity[1024];
-        var expectedReferences = new HashSet<ExternalReferenceKey>();
+        var expectedReferences = new HashSet<AssetReference>();
         for (int index = 0; index < entities.Length; index++)
         {
-            var reference = new ExternalReferenceKey(new Guid(index % 8 + 1, 0, 0, new byte[8]));
+            var reference = new AssetReference(new Guid(index % 8 + 1, 0, 0, new byte[8]));
             entities[index] = world.Create(new CountedRow { Value = index, Asset = reference });
             expectedReferences.Add(reference);
         }
-        var references = new HashSet<ExternalReferenceKey>();
+        var references = new HashSet<AssetReference>();
         using var stream = new MemoryStream();
         new WorldSerializer(registry).Save(world, stream, new SerializeOptions(ExternalReferences: references));
         Assert.True(references.SetEquals(expectedReferences));
@@ -76,21 +76,21 @@ public sealed class WorldBatchEncodingTests
     {
         public int Value;
         public int Sequence;
-        public ExternalReferenceKey Asset;
+        public AssetReference Asset;
     }
 
     private sealed class WriteCount { internal int Value; }
 
-    private readonly struct CountedRowCodec(WriteCount count) : IComponentCodec<CountedRow>
+    private readonly struct CountedRowSerializer(WriteCount count) : IValueSerializer<CountedRow>
     {
-        public void Write(ref DataWriter writer, in CountedRow value)
+        public void Write(ref SaveWriter writer, in CountedRow value)
         {
             writer.WriteInt32(value.Value);
             writer.WriteInt32(count.Value++);
             writer.WriteExternalReference(value.Asset);
         }
 
-        public void Read(ref DataReader reader, out CountedRow value) => value = new()
+        public void Read(ref SaveReader reader, out CountedRow value) => value = new()
         {
             Value = reader.ReadInt32(), Sequence = reader.ReadInt32(), Asset = reader.ReadExternalReference(),
         };

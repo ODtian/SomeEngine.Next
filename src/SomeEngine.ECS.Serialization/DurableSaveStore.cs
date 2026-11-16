@@ -298,8 +298,8 @@ public sealed partial class DurableSaveStore : IDisposable
 
     private sealed record SaveFilesInspection(SaveFileInspection Primary, SaveFileInspection Previous)
     {
-        internal bool HasExistingSlot => Primary.Exists || Previous.Exists;
-        internal bool HasValidSlot => Primary.IsValid || Previous.IsValid;
+        internal bool HasExistingFile => Primary.Exists || Previous.Exists;
+        internal bool HasValidFile => Primary.IsValid || Previous.IsValid;
 
         internal SaveFileInspection? Latest
         {

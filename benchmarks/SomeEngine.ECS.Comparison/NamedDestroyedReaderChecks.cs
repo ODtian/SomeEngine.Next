@@ -26,13 +26,13 @@ internal static class NamedDestroyedReaderChecks
         var second = source.WatchDestroyed(Second);
         source.Destroy(source.Create());
         first.Advance(1);
-        using var worldCheckpoint = new WorldCheckpoint();
-        worldCheckpoint.Capture(source, CheckpointProgress.Preserve);
+        using var worldCopy = new WorldCopy();
+        worldCopy.Capture(source, ProgressMode.Keep);
         using var target = new World();
         var targetSecond = target.WatchDestroyed(Second);
         var targetAdded = target.WatchDestroyed(Added);
         var targetFirst = target.WatchDestroyed(First);
-        worldCheckpoint.Restore(target);
+        worldCopy.Restore(target);
         Require(target.WatchDestroyed(Second).Position == 0
             && targetFirst.Position == 1 && targetSecond.Position == 0 && targetAdded.Position == 1,
             "checkpoint consumers match identities across registration order and added consumers");
@@ -48,10 +48,10 @@ internal static class NamedDestroyedReaderChecks
         source.WatchDestroyed(First);
         source.WatchDestroyed();
         source.Destroy(source.Create());
-        var registry = new SerializationRegistry().RegisterDestroyedReader(First);
+        var registry = new SaveRegistry().RegisterDestroyedReader(First);
         var serializer = new WorldSerializer(registry);
         var bytes = new ArrayBufferWriter<byte>();
-        serializer.Save(source, bytes, progress: CheckpointProgress.Preserve);
+        serializer.Save(source, bytes, progress: ProgressMode.Keep);
         using var target = new World();
         var targetFirst = target.WatchDestroyed();
         var targetSecond = target.WatchDestroyed();
@@ -67,10 +67,10 @@ internal static class NamedDestroyedReaderChecks
         source.WatchDestroyed(First);
         source.Destroy(source.Create());
         var bytes = new ArrayBufferWriter<byte>();
-        new WorldSerializer(new SerializationRegistry().RegisterDestroyedReader(First))
-            .Save(source, bytes, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(new SaveRegistry().RegisterDestroyedReader(First))
+            .Save(source, bytes, progress: ProgressMode.Keep);
         using var target = new World();
-        new WorldSerializer(new SerializationRegistry().RegisterDestroyedReader(Added).RegisterDestroyedReader(First))
+        new WorldSerializer(new SaveRegistry().RegisterDestroyedReader(Added).RegisterDestroyedReader(First))
             .Load(target, bytes.WrittenSpan);
         Require(target.WatchDestroyed(First).Position == 0 && target.WatchDestroyed(Added).Position == 1,
             "new named consumers start at the loaded through sequence");
@@ -91,13 +91,13 @@ internal static class NamedDestroyedReaderChecks
         source.Destroy(source.Create());
         a.Advance(1); named.Advance(1); c.Advance(1);
         named.Dispose();
-        using var worldCheckpoint = new WorldCheckpoint();
-        worldCheckpoint.Capture(source, CheckpointProgress.Preserve);
+        using var worldCopy = new WorldCopy();
+        worldCopy.Capture(source, ProgressMode.Keep);
         using var target = new World();
         var targetA = target.WatchDestroyed();
         var targetB = target.WatchDestroyed();
         var targetC = target.WatchDestroyed();
-        worldCheckpoint.Restore(target);
+        worldCopy.Restore(target);
         Require(targetA.Position == 1 && targetB.Position == 0 && targetC.Position == 1,
             "removing a named consumer preserves anonymous registration order");
     }
@@ -106,9 +106,9 @@ internal static class NamedDestroyedReaderChecks
     {
         using var source = new World();
         var bytes = new ArrayBufferWriter<byte>();
-        new WorldSerializer(new SerializationRegistry()).Save(source, bytes, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(new SaveRegistry()).Save(source, bytes, progress: ProgressMode.Keep);
         using var target = new World();
-        new WorldSerializer(new SerializationRegistry().RegisterDestroyedReader(Added)).Load(target, bytes.WrittenSpan);
+        new WorldSerializer(new SaveRegistry().RegisterDestroyedReader(Added)).Load(target, bytes.WrittenSpan);
         target.Destroy(target.Create());
         using var unread = target.WatchDestroyed(Added).Open();
         Require(unread.Count == 1, "a target registered consumer observes destruction immediately after loading a plain source");

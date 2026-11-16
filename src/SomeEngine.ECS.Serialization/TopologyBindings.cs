@@ -8,30 +8,30 @@ using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS.Serialization;
 
-internal readonly struct ParentCodec<T> : IComponentCodec<Parent<T>>, ISelectionCodec<Parent<T>> where T : struct, IHierarchyDomain
+internal readonly struct ParentSerializer<T> : IValueSerializer<Parent<T>>, ISelectionSerializer<Parent<T>> where T : struct, IHierarchyDomain
 {
     public bool Includes(in Parent<T> value, IReadOnlySet<Entity> entities) => entities.Contains(value.Value);
-    public void Write(ref DataWriter writer, in Parent<T> value, IReadOnlySet<Entity> entities) => Write(ref writer, value);
-    public void Write(ref DataWriter writer, in Parent<T> value) => writer.WriteEntity(value.Value);
-    public void Read(ref DataReader reader, out Parent<T> value) => value = new(reader.ReadEntity());
+    public void Write(ref SaveWriter writer, in Parent<T> value, IReadOnlySet<Entity> entities) => Write(ref writer, value);
+    public void Write(ref SaveWriter writer, in Parent<T> value) => writer.WriteEntity(value.Value);
+    public void Read(ref SaveReader reader, out Parent<T> value) => value = new(reader.ReadEntity());
 }
-internal readonly struct ChildrenCodec<T> : IComponentCodec<Children<T>>, ISelectionCodec<Children<T>> where T : struct, IHierarchyDomain
+internal readonly struct ChildrenSerializer<T> : IValueSerializer<Children<T>>, ISelectionSerializer<Children<T>> where T : struct, IHierarchyDomain
 {
     public bool Includes(in Children<T> value, IReadOnlySet<Entity> entities)
     {
         foreach (Entity child in value.Entities) if (entities.Contains(child)) return true;
         return false;
     }
-    public void Write(ref DataWriter writer, in Children<T> value, IReadOnlySet<Entity> entities)
+    public void Write(ref SaveWriter writer, in Children<T> value, IReadOnlySet<Entity> entities)
     {
         int count = 0;
         foreach (Entity child in value.Entities) if (entities.Contains(child)) count++;
         writer.WriteInt32(count); writer.WriteBoolean(value.IsOrdered);
         foreach (Entity child in value.Entities) if (entities.Contains(child)) writer.WriteEntity(child);
     }
-    public void Write(ref DataWriter writer, in Children<T> value)
+    public void Write(ref SaveWriter writer, in Children<T> value)
     { writer.WriteInt32(value.Count); writer.WriteBoolean(value.IsOrdered); writer.WriteEntities(value.Entities); }
-    public void Read(ref DataReader reader, out Children<T> value)
+    public void Read(ref SaveReader reader, out Children<T> value)
     {
         int count = reader.Budget.TopologyEntryCount(reader.ReadInt32(), "child member");
         bool ordered = reader.ReadBoolean();
@@ -45,14 +45,14 @@ internal readonly struct ChildrenCodec<T> : IComponentCodec<Children<T>>, ISelec
         }
     }
 }
-internal readonly struct EndpointsCodec<T> : IComponentCodec<RelationEndpoints<T>>, ISelectionCodec<RelationEndpoints<T>> where T : struct
+internal readonly struct EndpointsSerializer<T> : IValueSerializer<RelationEndpoints<T>>, ISelectionSerializer<RelationEndpoints<T>> where T : struct
 {
     public bool Includes(in RelationEndpoints<T> value, IReadOnlySet<Entity> entities)
         => entities.Contains(value.Source) && entities.Contains(value.Target);
-    public void Write(ref DataWriter writer, in RelationEndpoints<T> value, IReadOnlySet<Entity> entities) => Write(ref writer, value);
-    public void Write(ref DataWriter writer, in RelationEndpoints<T> value)
+    public void Write(ref SaveWriter writer, in RelationEndpoints<T> value, IReadOnlySet<Entity> entities) => Write(ref writer, value);
+    public void Write(ref SaveWriter writer, in RelationEndpoints<T> value)
     { writer.WriteEntity(value.Source); writer.WriteEntity(value.Target); }
-    public void Read(ref DataReader reader, out RelationEndpoints<T> value) => value = new(reader.ReadEntity(), reader.ReadEntity());
+    public void Read(ref SaveReader reader, out RelationEndpoints<T> value) => value = new(reader.ReadEntity(), reader.ReadEntity());
 }
 
 internal abstract class SavedService(SavedColumn type)
@@ -60,15 +60,15 @@ internal abstract class SavedService(SavedColumn type)
     internal readonly SavedColumn Type = type;
     internal abstract IWorldDataService? Find(World world);
     internal abstract void Maintain(World world);
-    internal abstract void Write(ref DataWriter writer, World world, bool preserve);
-    internal abstract void WriteSelected(ref DataWriter writer, World world, IReadOnlySet<Entity> entities);
+    internal abstract void Write(ref SaveWriter writer, World world, bool preserve);
+    internal abstract void WriteSelected(ref SaveWriter writer, World world, IReadOnlySet<Entity> entities);
     internal abstract long CountSelectedRecords(World world, IReadOnlySet<Entity> entities);
     internal abstract bool Matches(WorldServiceData data);
-    internal abstract void WriteData(ref DataWriter writer, WorldServiceData data);
-    internal abstract void Read(ref DataReader reader, World world, bool preserve);
+    internal abstract void WriteData(ref SaveWriter writer, WorldServiceData data);
+    internal abstract void Read(ref SaveReader reader, World world, bool preserve);
     internal virtual void ValidateMain(World world) { }
     internal virtual long CountRecords(World world, bool preserve) => 0;
-    internal virtual long CountRecords(WorldCheckpoint checkpoint, WorldServiceData data) => 0;
+    internal virtual long CountRecords(WorldCopy checkpoint, WorldServiceData data) => 0;
 
     protected static long CountRows(World world, int type)
     {
@@ -80,7 +80,7 @@ internal abstract class SavedService(SavedColumn type)
         return count;
     }
 
-    protected static long CountRows(WorldCheckpoint checkpoint, int type)
+    protected static long CountRows(WorldCopy checkpoint, int type)
     {
         long count = 0;
         foreach (ChunkData chunk in checkpoint.Chunks.AsSpan(0, checkpoint.ChunkCount))
@@ -99,17 +99,17 @@ internal abstract class SavedService(SavedColumn type)
         return count;
     }
 
-    protected static Entity[] ReadEntities(ref DataReader reader)
+    protected static Entity[] ReadEntities(ref SaveReader reader)
     {
         int count = reader.Budget.TopologyEntryCount(reader.ReadInt32(), "topology entity");
         var values = new Entity[count];
         for (int i = 0; i < count; i++) values[i] = reader.MapEntity(reader.ReadEntity(), true);
         return values;
     }
-    protected static void WriteEntities(ref DataWriter writer, scoped ReadOnlySpan<Entity> values)
+    protected static void WriteEntities(ref SaveWriter writer, scoped ReadOnlySpan<Entity> values)
     { writer.WriteInt32(values.Length); writer.WriteEntities(values); }
 
-    protected static List<Entity> ReadMembers(ref DataReader reader)
+    protected static List<Entity> ReadMembers(ref SaveReader reader)
     {
         int count = reader.Budget.TopologyEntryCount(reader.ReadInt32(), "topology entity");
         var values = new List<Entity>(count);
@@ -136,7 +136,7 @@ internal sealed class SavedHierarchy<T>(SavedColumn type) : SavedService(type) w
         foreach (Entity entity in data.EmptyOrdered) if (entities.Contains(entity)) count++;
         return count;
     }
-    internal override void WriteSelected(ref DataWriter writer, World world, IReadOnlySet<Entity> entities)
+    internal override void WriteSelected(ref SaveWriter writer, World world, IReadOnlySet<Entity> entities)
     {
         var data = ((HierarchyData<T>)Find(world)!).ReadData(false);
         writer.WriteBoolean(data.Ordered); writer.WriteBoolean(false);
@@ -205,7 +205,7 @@ internal sealed class SavedHierarchy<T>(SavedColumn type) : SavedService(type) w
         return count;
     }
 
-    internal override long CountRecords(WorldCheckpoint checkpoint, WorldServiceData source)
+    internal override long CountRecords(WorldCopy checkpoint, WorldServiceData source)
     {
         var data = (HierarchyData<T>.SavedData)source;
         long count = CountRows(checkpoint, ComponentType<Parent<T>>.TypeId) + data.AppliedCount
@@ -228,7 +228,7 @@ internal sealed class SavedHierarchy<T>(SavedColumn type) : SavedService(type) w
             if (column.Has(row)) count += 1L + ColumnEntry.At<Children<T>>(ref column, row).Count;
         return count;
     }
-    internal override void Write(ref DataWriter writer, World world, bool preserve)
+    internal override void Write(ref SaveWriter writer, World world, bool preserve)
     {
         var data = ((HierarchyData<T>)Find(world)!).ReadData(preserve);
         writer.WriteBoolean(data.Ordered); writer.WriteBoolean(data.Deferred);
@@ -240,14 +240,14 @@ internal sealed class SavedHierarchy<T>(SavedColumn type) : SavedService(type) w
             foreach (var pair in retired) { writer.WriteEntity(pair.Key); WriteApplied(ref writer, pair.Value); }
         writer.WriteInt32(data.RetiredChildren?.Count ?? 0);
         if (data.RetiredChildren is { } children)
-            foreach (var pair in children) { writer.WriteEntity(pair.Key); default(ChildrenCodec<T>).Write(ref writer, pair.Value); }
+            foreach (var pair in children) { writer.WriteEntity(pair.Key); default(ChildrenSerializer<T>).Write(ref writer, pair.Value); }
         writer.WriteInt32(data.Future?.Count ?? 0);
         if (data.Future is { } future)
             foreach (var pair in future) { writer.WriteEntity(pair.Key); WriteEntities(ref writer, CollectionsMarshal.AsSpan(pair.Value)); }
         writer.WriteInt32(data.EmptyOrdered.Count);
         foreach (Entity entity in data.EmptyOrdered) writer.WriteEntity(entity);
     }
-    internal override void WriteData(ref DataWriter writer, WorldServiceData source)
+    internal override void WriteData(ref SaveWriter writer, WorldServiceData source)
     {
         var data = (HierarchyData<T>.SavedData)source;
         writer.WriteBoolean(data.Ordered); writer.WriteBoolean(data.Deferred);
@@ -258,12 +258,12 @@ internal sealed class SavedHierarchy<T>(SavedColumn type) : SavedService(type) w
         foreach (var pair in data.Retired.AsSpan(0, data.RetiredCount)) { writer.WriteEntity(pair.Key); WriteApplied(ref writer, pair.Value); }
         writer.WriteInt32(data.RetiredChildCount);
         foreach (var pair in data.RetiredChildren.AsSpan(0, data.RetiredChildCount))
-        { writer.WriteEntity(pair.Key); default(ChildrenCodec<T>).Write(ref writer, pair.Value); }
+        { writer.WriteEntity(pair.Key); default(ChildrenSerializer<T>).Write(ref writer, pair.Value); }
         writer.WriteInt32(data.FutureCount);
         foreach (var pair in data.Future.AsSpan(0, data.FutureCount)) { writer.WriteEntity(pair.Key); WriteEntities(ref writer, CollectionsMarshal.AsSpan(pair.Value)); }
         WriteEntities(ref writer, data.EmptyOrdered.AsSpan(0, data.EmptyOrderedCount));
     }
-    internal override void Read(ref DataReader reader, World world, bool preserve)
+    internal override void Read(ref SaveReader reader, World world, bool preserve)
     {
         using var data = new HierarchyData<T>.SavedData
         {
@@ -291,7 +291,7 @@ internal sealed class SavedHierarchy<T>(SavedColumn type) : SavedService(type) w
             Children<T> value = default;
             try
             {
-                default(ChildrenCodec<T>).Read(ref reader, out value);
+                default(ChildrenSerializer<T>).Read(ref reader, out value);
                 reader.Patch(ref value, _childrenPatcher, true);
                 data.RetiredChildren[i] = new(entity, value);
                 value = default;
@@ -306,14 +306,14 @@ internal sealed class SavedHierarchy<T>(SavedColumn type) : SavedService(type) w
         data.EmptyOrderedCount = data.EmptyOrdered.Length;
         data.Restore(world, true);
     }
-    private static void WriteApplied(ref DataWriter writer, scoped ReadOnlySpan<AppliedParent> values)
+    private static void WriteApplied(ref SaveWriter writer, scoped ReadOnlySpan<AppliedParent> values)
     {
         if (BitConverter.IsLittleEndian) writer.WriteRawBytes(MemoryMarshal.AsBytes(values));
         else foreach (AppliedParent value in values) WriteApplied(ref writer, value);
     }
-    private static void WriteApplied(ref DataWriter writer, in AppliedParent value)
+    private static void WriteApplied(ref SaveWriter writer, in AppliedParent value)
     { writer.WriteEntity(value.Parent); writer.WriteInt32(value.Place); writer.WriteInt32(value.Generation); }
-    private static AppliedParent ReadApplied(ref DataReader reader)
+    private static AppliedParent ReadApplied(ref SaveReader reader)
         => new() { Parent = reader.MapEntity(reader.ReadEntity(), true), Place = reader.ReadInt32(), Generation = reader.ReadInt32() };
 }
 
@@ -345,7 +345,7 @@ internal sealed class SavedRelation<T>(SavedColumn type) : SavedService(type) wh
         }
         return count;
     }
-    internal override void WriteSelected(ref DataWriter writer, World world, IReadOnlySet<Entity> entities)
+    internal override void WriteSelected(ref SaveWriter writer, World world, IReadOnlySet<Entity> entities)
     {
         RelationSchema schema = RelationSchema.For<T>();
         writer.WriteByte((byte)schema.Direction); writer.WriteByte((byte)schema.Cardinality); writer.WriteBoolean(schema.AllowSelfEdge);
@@ -357,7 +357,7 @@ internal sealed class SavedRelation<T>(SavedColumn type) : SavedService(type) wh
         writer.WriteInt32(0); writer.WriteInt32(0); writer.WriteInt32(0); writer.WriteInt32(0);
     }
 
-    private static void WriteSelectedHeads(ref DataWriter writer, ReadOnlySpan<AdjacencyHead> heads, IReadOnlySet<Entity> entities)
+    private static void WriteSelectedHeads(ref SaveWriter writer, ReadOnlySpan<AdjacencyHead> heads, IReadOnlySet<Entity> entities)
     {
         writer.WriteInt32(heads.Length);
         for (int id = 0; id < heads.Length; id++)
@@ -390,7 +390,7 @@ internal sealed class SavedRelation<T>(SavedColumn type) : SavedService(type) wh
         return count;
     }
 
-    internal override long CountRecords(WorldCheckpoint checkpoint, WorldServiceData source)
+    internal override long CountRecords(WorldCopy checkpoint, WorldServiceData source)
     {
         var data = (RelationData<T>.SavedData)source;
         long count = CountRows(checkpoint, ComponentType<RelationEndpoints<T>>.TypeId) + data.AppliedCount
@@ -407,7 +407,7 @@ internal sealed class SavedRelation<T>(SavedColumn type) : SavedService(type) wh
             if (head.Generation != 0) count += 1L + head.Count;
         return count;
     }
-    internal override void Write(ref DataWriter writer, World world, bool preserve)
+    internal override void Write(ref SaveWriter writer, World world, bool preserve)
     {
         RelationSchema schema = RelationSchema.For<T>();
         writer.WriteByte((byte)schema.Direction); writer.WriteByte((byte)schema.Cardinality); writer.WriteBoolean(schema.AllowSelfEdge);
@@ -427,7 +427,7 @@ internal sealed class SavedRelation<T>(SavedColumn type) : SavedService(type) wh
         if (data.Future is { } future)
             foreach (var pair in future) { WriteKey(ref writer, pair.Key); WriteEntities(ref writer, CollectionsMarshal.AsSpan(pair.Value)); }
     }
-    internal override void WriteData(ref DataWriter writer, WorldServiceData source)
+    internal override void WriteData(ref SaveWriter writer, WorldServiceData source)
     {
         RelationSchema schema = RelationSchema.For<T>();
         writer.WriteByte((byte)schema.Direction); writer.WriteByte((byte)schema.Cardinality); writer.WriteBoolean(schema.AllowSelfEdge);
@@ -444,7 +444,7 @@ internal sealed class SavedRelation<T>(SavedColumn type) : SavedService(type) wh
         writer.WriteInt32(data.FutureCount);
         foreach (var pair in data.Future.AsSpan(0, data.FutureCount)) { WriteKey(ref writer, pair.Key); WriteEntities(ref writer, CollectionsMarshal.AsSpan(pair.Value)); }
     }
-    internal override void Read(ref DataReader reader, World world, bool preserve)
+    internal override void Read(ref SaveReader reader, World world, bool preserve)
     {
         var schema = new RelationSchema((RelationDirection)reader.ReadByte(), (RelationCardinality)reader.ReadByte(), reader.ReadBoolean());
         if (schema != RelationSchema.For<T>()) throw new InvalidDataException("Relation declaration differs from its registered schema.");
@@ -513,32 +513,32 @@ internal sealed class SavedRelation<T>(SavedColumn type) : SavedService(type) wh
             }
         }
     }
-    private static void WriteApplied(ref DataWriter writer, scoped ReadOnlySpan<AppliedEdge> values)
+    private static void WriteApplied(ref SaveWriter writer, scoped ReadOnlySpan<AppliedEdge> values)
     {
         if (BitConverter.IsLittleEndian) writer.WriteRawBytes(MemoryMarshal.AsBytes(values));
         else foreach (AppliedEdge value in values) WriteApplied(ref writer, value);
     }
-    private static void WriteApplied(ref DataWriter writer, in AppliedEdge value)
+    private static void WriteApplied(ref SaveWriter writer, in AppliedEdge value)
     {
         writer.WriteEntity(value.Source); writer.WriteEntity(value.Target);
         writer.WriteInt32(value.SourcePlace); writer.WriteInt32(value.TargetPlace); writer.WriteInt32(value.Generation);
     }
-    private static AppliedEdge ReadApplied(ref DataReader reader) => new()
+    private static AppliedEdge ReadApplied(ref SaveReader reader) => new()
     { Source = reader.MapEntity(reader.ReadEntity(), true), Target = reader.MapEntity(reader.ReadEntity(), true),
         SourcePlace = reader.ReadInt32(), TargetPlace = reader.ReadInt32(), Generation = reader.ReadInt32() };
-    private static void WriteKey(ref DataWriter writer, in AdjacencyKey value)
+    private static void WriteKey(ref SaveWriter writer, in AdjacencyKey value)
     { writer.WriteEntity(value.Entity); writer.WriteByte((byte)value.Role); }
-    private static AdjacencyKey ReadKey(ref DataReader reader) => new(reader.MapEntity(reader.ReadEntity(), true), (RelationAdjacencyRole)reader.ReadByte());
-    private static void WriteHeads(ref DataWriter writer, scoped ReadOnlySpan<AdjacencyHead> heads)
+    private static AdjacencyKey ReadKey(ref SaveReader reader) => new(reader.MapEntity(reader.ReadEntity(), true), (RelationAdjacencyRole)reader.ReadByte());
+    private static void WriteHeads(ref SaveWriter writer, scoped ReadOnlySpan<AdjacencyHead> heads)
     { writer.WriteInt32(heads.Length); foreach (AdjacencyHead head in heads) WriteHead(ref writer, head); }
-    private static void WriteHead(ref DataWriter writer, in AdjacencyHead head)
+    private static void WriteHead(ref SaveWriter writer, in AdjacencyHead head)
     {
         writer.WriteInt32(head.Generation); writer.WriteInt32(head.Count); writer.WriteBoolean(head.IsOrdered);
         if (head.Count == 0) return;
         if (BitConverter.IsLittleEndian) writer.WriteRawBytes(MemoryMarshal.AsBytes(head.Entries));
         else foreach (RelationEntry entry in head.Entries) { writer.WriteEntity(entry.Other); writer.WriteEntity(entry.Edge); }
     }
-    private static AdjacencyHead[] ReadHeads(ref DataReader reader, int capacity)
+    private static AdjacencyHead[] ReadHeads(ref SaveReader reader, int capacity)
     {
         int count = reader.Budget.TopologyEntryCount(reader.ReadInt32(), "adjacency head");
         if (count == 0) return [];
@@ -550,7 +550,7 @@ internal sealed class SavedRelation<T>(SavedColumn type) : SavedService(type) wh
         }
         return heads;
     }
-    private static AdjacencyHead ReadHead(ref DataReader reader)
+    private static AdjacencyHead ReadHead(ref SaveReader reader)
     {
         int generation = reader.ReadInt32();
         int count = reader.Budget.TopologyEntryCount(reader.ReadInt32(), "adjacency member");
@@ -563,37 +563,37 @@ internal sealed class SavedRelation<T>(SavedColumn type) : SavedService(type) wh
     }
 }
 
-public sealed partial class SerializationRegistry
+public sealed partial class SaveRegistry
 {
     internal readonly List<SavedService> Services = [];
     internal readonly Dictionary<int, SavedService> ServicesByType = [];
-    public SerializationRegistry RegisterHierarchy<T>(SerializationTypeKey key) where T : struct, IHierarchyDomain
+    public SaveRegistry RegisterHierarchy<T>(SavedTypeKey key) where T : struct, IHierarchyDomain
     {
-        RegisterColumn<Parent<T>, ParentCodec<T>>(key, default, false, SavedStorage.Parent, progress: true);
-        RegisterColumn<Children<T>, ChildrenCodec<T>>(Derived(key, 16, "Children"), default, false, SavedStorage.Children, progress: true);
+        RegisterColumn<Parent<T>, ParentSerializer<T>>(key, default, false, SavedStorage.Parent, progress: true);
+        RegisterColumn<Children<T>, ChildrenSerializer<T>>(Derived(key, 16, "Children"), default, false, SavedStorage.Children, progress: true);
         var service = new SavedHierarchy<T>(Columns[SomeEngine.ECS.Storage.ComponentType<Parent<T>>.TypeId]);
         Services.Add(service); ServicesByType.Add(service.Type.Type, service);
         return this;
     }
-    public SerializationRegistry RegisterRelation<T, TCodec>(SerializationTypeKey key, TCodec codec = default)
-        where T : struct where TCodec : struct, IComponentCodec<T>
+    public SaveRegistry RegisterRelation<T, TSerializer>(SavedTypeKey key, TSerializer serializer = default)
+        where T : struct where TSerializer : struct, IValueSerializer<T>
     {
-        RegisterColumn<T, TCodec>(key, codec, false, SavedStorage.Table);
+        RegisterColumn<T, TSerializer>(key, serializer, false, SavedStorage.Table);
         return RegisterRelation<T>(key);
     }
 
-    public SerializationRegistry RegisterRelation<T>(SerializationTypeKey? topologyKey = null) where T : struct
+    public SaveRegistry RegisterRelation<T>(SavedTypeKey? topologyKey = null) where T : struct
     {
         if (!Columns.TryGetValue(SomeEngine.ECS.Storage.ComponentType<T>.TypeId, out SavedColumn? payload)
             || payload.Storage != SavedStorage.Table)
-            throw new InvalidOperationException("Relation endpoints require an ordinary table payload codec.");
-        SerializationTypeKey key = topologyKey ?? payload.Key;
+            throw new InvalidOperationException("Relation endpoints require an ordinary table payload serializer.");
+        SavedTypeKey key = topologyKey ?? payload.Key;
         return RegisterRelationTopology<T>(key);
     }
 
-    internal SerializationRegistry RegisterRelationTopology<T>(SerializationTypeKey key) where T : struct
+    internal SaveRegistry RegisterRelationTopology<T>(SavedTypeKey key) where T : struct
     {
-        RegisterColumn<RelationEndpoints<T>, EndpointsCodec<T>>(Derived(key, 64, "Endpoints"), default, false, SavedStorage.Endpoints,
+        RegisterColumn<RelationEndpoints<T>, EndpointsSerializer<T>>(Derived(key, 64, "Endpoints"), default, false, SavedStorage.Endpoints,
             progress: true);
         var service = new SavedRelation<T>(Columns[SomeEngine.ECS.Storage.ComponentType<RelationEndpoints<T>>.TypeId]);
         Services.Add(service); ServicesByType.Add(service.Type.Type, service);

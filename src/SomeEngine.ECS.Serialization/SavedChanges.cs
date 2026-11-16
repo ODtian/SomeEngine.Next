@@ -6,7 +6,7 @@ namespace SomeEngine.ECS.Serialization;
 
 internal static class SavedChanges
 {
-    internal static void WriteBaseline(ref DataWriter writer, int count, bool written, bool added, ulong version)
+    internal static void WriteBaseline(ref SaveWriter writer, int count, bool written, bool added, ulong version)
     {
         writer.WriteByte((byte)((written ? 1 : 0) | (added ? 2 : 0)));
         if (!written) return;
@@ -16,7 +16,7 @@ internal static class SavedChanges
             writer.WriteUInt64(version);
         }
     }
-    internal static void Write(ref DataWriter writer, in ComponentChanges changes, int count, bool written, bool added)
+    internal static void Write(ref SaveWriter writer, in ComponentChanges changes, int count, bool written, bool added)
     {
         writer.WriteByte((byte)((written ? 1 : 0) | (added ? 2 : 0)));
         if (!written) return;
@@ -34,7 +34,7 @@ internal static class SavedChanges
         else foreach (ulong version in ((ulong[])changes.Rows).AsSpan(0, count)) writer.WriteUInt64(version);
     }
 
-    internal static void Read(ref DataReader reader, ref ComponentChanges target, int count, bool written, bool added,
+    internal static void Read(ref SaveReader reader, ref ComponentChanges target, int count, bool written, bool added,
         bool preserve, ulong baseline)
     {
         byte flags = reader.ReadByte();

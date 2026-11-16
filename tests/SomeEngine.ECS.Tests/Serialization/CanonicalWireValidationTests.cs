@@ -8,15 +8,15 @@ namespace SomeEngine.ECS.Serialization.Tests;
 public sealed class CanonicalWireValidationTests
 {
     [Fact]
-    public void ComponentRead_RejectsStableNameMismatchBeforeCodec()
+    public void ComponentRead_RejectsNameMismatchBeforeSerializer()
     {
-        Guid stableId = Guid.Parse("7C6BC350-39C9-4854-8676-3AB7FEF0B1E1");
+        Guid savedId = Guid.Parse("7C6BC350-39C9-4854-8676-3AB7FEF0B1E1");
         const ulong fingerprint = 0x1122334455667788;
-        var registeredKey = new SerializationTypeKey(stableId, "canonical-position", fingerprint);
-        var wireKey = new SerializationTypeKey(stableId, "altered-position", fingerprint);
-        var calls = new CodecCalls();
-        var registry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(registeredKey, new SerPositionFullCodec(calls));
+        var registeredKey = new SavedTypeKey(savedId, "canonical-position", fingerprint);
+        var wireKey = new SavedTypeKey(savedId, "altered-position", fingerprint);
+        var calls = new SerializerCalls();
+        var registry = new SaveRegistry()
+            .Register<SerPosition, SerPositionFullSerializer>(registeredKey, new SerPositionFullSerializer(calls));
         byte[] envelope = CreateComponentEnvelope(wireKey);
 
         using var input = new MemoryStream(envelope, writable: false);
@@ -36,19 +36,19 @@ public sealed class CanonicalWireValidationTests
         EntityIdentityMode identityMode,
         bool duplicate)
     {
-        var first = new SerializationTypeKey(
+        var first = new SavedTypeKey(
             Guid.Parse("00000000-0000-0000-0000-000000000001"),
             "first",
             1);
-        var second = new SerializationTypeKey(
+        var second = new SavedTypeKey(
             Guid.Parse("00000000-0000-0000-0000-000000000002"),
             "second",
             2);
-        SerializationTypeKey[] manifest = duplicate
+        SavedTypeKey[] manifest = duplicate
             ? [first, first]
             : [second, first];
         using MemoryStream input = CreateHeader(SavedPayloadKind.World, manifest);
-        var registry = new SerializationRegistry().Register<SerPlayerTag>(first).Register<SerEnemyTag>(second);
+        var registry = new SaveRegistry().Register<SerPlayerTag>(first).Register<SerEnemyTag>(second);
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
         {
@@ -68,15 +68,15 @@ public sealed class CanonicalWireValidationTests
         EntityIdentityMode identityMode,
         bool duplicate)
     {
-        var firstKey = new SerializationTypeKey(
+        var firstKey = new SavedTypeKey(
             Guid.Parse("10000000-0000-0000-0000-000000000001"),
             "first-tag",
             1);
-        var secondKey = new SerializationTypeKey(
+        var secondKey = new SavedTypeKey(
             Guid.Parse("20000000-0000-0000-0000-000000000002"),
             "second-tag",
             2);
-        var registry = new SerializationRegistry()
+        var registry = new SaveRegistry()
             .Register<SerPlayerTag>(firstKey)
             .Register<SerEnemyTag>(secondKey);
         using var source = new World();
@@ -106,7 +106,7 @@ public sealed class CanonicalWireValidationTests
         Assert.Equal(SerializationError.InvalidData, SerializationErrors.GetError(error));
     }
 
-    private static byte[] CreateComponentEnvelope(SerializationTypeKey key)
+    private static byte[] CreateComponentEnvelope(SavedTypeKey key)
     {
         using MemoryStream stream = CreateHeader(SavedPayloadKind.Component, [key]);
         stream.Position = stream.Length;
@@ -120,7 +120,7 @@ public sealed class CanonicalWireValidationTests
 
     private static MemoryStream CreateHeader(
         SavedPayloadKind kind,
-        IReadOnlyList<SerializationTypeKey> manifest)
+        IReadOnlyList<SavedTypeKey> manifest)
     {
         var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, SaveBytes.Utf8, leaveOpen: true);

@@ -226,43 +226,43 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
     {
         string typeName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         bool generic = type.TypeParameters.Length > 0 || GetContainingTypes(type).Any(value => value.TypeParameters.Length > 0);
-        string keyParameter = generic ? ", global::SomeEngine.ECS.Serialization.SerializationTypeKey typeKey" : "";
+        string keyParameter = generic ? ", global::SomeEngine.ECS.Serialization.SavedTypeKey typeKey" : "";
         if (!generic)
-            text.Append("    public static global::SomeEngine.ECS.Serialization.SerializationTypeKey SerializationType => ")
+            text.Append("    public static global::SomeEngine.ECS.Serialization.SavedTypeKey SerializationType => ")
                 .Append(GenerateSerializationKey(type)).AppendLine(";");
         string key = generic ? "" : "        var typeKey = SerializationType;\n";
-        IFieldSymbol[] fields = ViewParameterCodecs.GetFields(type);
-        bool generatedCodec = ViewParameterCodecs.CanEncode(fields);
-        if (generatedCodec)
+        IFieldSymbol[] fields = ViewParameterSerializers.GetFields(type);
+        bool generatedSerializer = ViewParameterSerializers.CanEncode(fields);
+        if (generatedSerializer)
         {
-            string codec = "ParameterCodec" + GenerateTypeParameters(type.TypeParameters);
+            string serializer = "ParameterSerializer" + GenerateTypeParameters(type.TypeParameters);
             bool references = fields.Any(field => field.Type.ToDisplayString() == "SomeEngine.ECS.Entities.Entity");
             text.Append("    public static void RegisterSerialization").Append(GenerateTypeParameters(type.TypeParameters))
-                .Append("(global::SomeEngine.ECS.Serialization.SerializationRegistry registry").Append(keyParameter).Append(')')
+                .Append("(global::SomeEngine.ECS.Serialization.SaveRegistry registry").Append(keyParameter).Append(')')
                 .AppendLine(GenerateConstraints(type.TypeParameters)).AppendLine("    {").Append(key)
-                .Append("        registry.Register<").Append(typeName).Append(", ").Append(codec);
+                .Append("        registry.Register<").Append(typeName).Append(", ").Append(serializer);
             if (references)
-                text.Append(", ").Append(codec);
+                text.Append(", ").Append(serializer);
             text.AppendLine(references ? ">(typeKey, default, default);" : ">(typeKey);")
                 .Append("        global::SomeEngine.Views.ViewSerialization.RegisterType<").Append(typeName).AppendLine(">(typeKey);\n    }");
         }
-        string codecParameter = "TViewCodec";
+        string serializerParameter = "TViewSerializer";
         while (type.TypeParameters.Concat(GetContainingTypes(type).SelectMany(value => value.TypeParameters))
-            .Any(value => value.Name == codecParameter))
-            codecParameter += "Value";
-        string codecArguments = string.Join(", ", type.TypeParameters.Select(value => "@" + value.Name).Concat([codecParameter]));
-        string codecAccess = ContainsPrivateType(type) ? "private" : "public";
-        string codecKeyParameter = generic ? keyParameter : ", global::SomeEngine.ECS.Serialization.SerializationTypeKey? serializationType = null";
-        string codecKey = generic ? "" : "        var typeKey = serializationType ?? SerializationType;\n";
-        text.Append("    ").Append(codecAccess).Append(" static void RegisterSerialization<").Append(codecArguments)
-            .Append(">(global::SomeEngine.ECS.Serialization.SerializationRegistry registry").Append(codecKeyParameter).Append(')')
+            .Any(value => value.Name == serializerParameter))
+            serializerParameter += "Value";
+        string serializerArguments = string.Join(", ", type.TypeParameters.Select(value => "@" + value.Name).Concat([serializerParameter]));
+        string serializerAccess = ContainsPrivateType(type) ? "private" : "public";
+        string serializerKeyParameter = generic ? keyParameter : ", global::SomeEngine.ECS.Serialization.SavedTypeKey? serializationType = null";
+        string serializerKey = generic ? "" : "        var typeKey = serializationType ?? SerializationType;\n";
+        text.Append("    ").Append(serializerAccess).Append(" static void RegisterSerialization<").Append(serializerArguments)
+            .Append(">(global::SomeEngine.ECS.Serialization.SaveRegistry registry").Append(serializerKeyParameter).Append(')')
             .AppendLine(GenerateConstraints(type.TypeParameters))
-            .Append("        where ").Append(codecParameter).Append(" : struct, global::SomeEngine.ECS.Serialization.IComponentCodec<")
-            .Append(typeName).AppendLine(">\n    {").Append(codecKey)
-            .Append("        registry.Register<").Append(typeName).Append(", ").Append(codecParameter).AppendLine(">(typeKey);")
+            .Append("        where ").Append(serializerParameter).Append(" : struct, global::SomeEngine.ECS.Serialization.IValueSerializer<")
+            .Append(typeName).AppendLine(">\n    {").Append(serializerKey)
+            .Append("        registry.Register<").Append(typeName).Append(", ").Append(serializerParameter).AppendLine(">(typeKey);")
             .Append("        global::SomeEngine.Views.ViewSerialization.RegisterType<").Append(typeName).AppendLine(">(typeKey);\n    }");
-        if (generatedCodec)
-            ViewParameterCodecs.Generate(text, type, fields, GenerateTypeParameters(type.TypeParameters), GenerateConstraints(type.TypeParameters));
+        if (generatedSerializer)
+            ViewParameterSerializers.Generate(text, type, fields, GenerateTypeParameters(type.TypeParameters), GenerateConstraints(type.TypeParameters));
     }
 
     private static string GenerateSerializationKey(INamedTypeSymbol type)
@@ -270,11 +270,11 @@ public sealed partial class ViewGenerator : IIncrementalGenerator
         string name = type.ContainingAssembly.Name + ":" + type.ToDisplayString();
         using var hash = SHA256.Create();
         string id = new Guid(hash.ComputeHash(Encoding.UTF8.GetBytes(name)).Take(16).ToArray()).ToString();
-        string fields = string.Join(";", ViewParameterCodecs.GetFields(type)
+        string fields = string.Join(";", ViewParameterSerializers.GetFields(type)
             .Select(field => field.MetadataName + ":" + GetSerializedTypeName(field.Type)));
         string storage = UsesSparseStorage(type) ? "sparse" : "table";
         ulong schema = HashText(name + ":fields-v1:" + storage + ":" + fields);
-        return "new global::SomeEngine.ECS.Serialization.SerializationTypeKey(new global::System.Guid(\"" + id + "\"), " +
+        return "new global::SomeEngine.ECS.Serialization.SavedTypeKey(new global::System.Guid(\"" + id + "\"), " +
             SymbolDisplay.FormatLiteral(name, true) + ", " + schema.ToString(CultureInfo.InvariantCulture) + "UL)";
     }
 

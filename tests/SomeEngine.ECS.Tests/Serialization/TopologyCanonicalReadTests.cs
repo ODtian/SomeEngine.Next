@@ -11,22 +11,22 @@ namespace SomeEngine.ECS.Serialization.Tests;
 
 public sealed class TopologyCanonicalReadTests
 {
-    private static readonly SerializationTypeKey s_hierarchyKeyA = new(
+    private static readonly SavedTypeKey s_hierarchyKeyA = new(
         Guid.Parse("10000000-0000-0000-0000-000000000001"),
         "topology-a",
         0x1111111111111111ul);
 
-    private static readonly SerializationTypeKey s_hierarchyKeyB = new(
+    private static readonly SavedTypeKey s_hierarchyKeyB = new(
         Guid.Parse("20000000-0000-0000-0000-000000000002"),
         "topology-b",
         0x2222222222222222ul);
 
-    private static readonly SerializationTypeKey s_relationPayloadKey = new(
+    private static readonly SavedTypeKey s_relationPayloadKey = new(
         Guid.Parse("30000000-0000-0000-0000-000000000003"),
         "canonical-relation-payload",
         0x3333333333333333ul);
 
-    private static readonly SerializationTypeKey s_relationTopologyKey = new(
+    private static readonly SavedTypeKey s_relationTopologyKey = new(
         Guid.Parse("40000000-0000-0000-0000-000000000004"),
         "canonical-relation-topology",
         0x4444444444444444ul);
@@ -36,7 +36,7 @@ public sealed class TopologyCanonicalReadTests
     {
         using var world = new World();
         Hierarchy<HierarchyDomainA>.SetParent(world, world.Create(), world.Create());
-        var registry = new SerializationRegistry().RegisterHierarchy<HierarchyDomainA>(s_hierarchyKeyA);
+        var registry = new SaveRegistry().RegisterHierarchy<HierarchyDomainA>(s_hierarchyKeyA);
         TopologyFile file = TopologyFile.Save(world, registry);
         file.SetInt(file.ServiceCountOffset, 2);
         InvalidDataException error = Assert.Throws<InvalidDataException>(() => file.Read(registry));
@@ -44,11 +44,11 @@ public sealed class TopologyCanonicalReadTests
     }
 
     [Fact]
-    public void TopologyRead_RejectsStableNameAliasBeforePayloadCodec()
+    public void TopologyRead_RejectsNameAliasBeforePayloadSerializer()
     {
         using var world = new World();
         Hierarchy<HierarchyDomainA>.SetParent(world, world.Create(), world.Create());
-        var registry = new SerializationRegistry().RegisterHierarchy<HierarchyDomainA>(s_hierarchyKeyA);
+        var registry = new SaveRegistry().RegisterHierarchy<HierarchyDomainA>(s_hierarchyKeyA);
         TopologyFile file = TopologyFile.Save(world, registry);
         TopologyFile.TypeField parent = Assert.Single(file.Types, field => field.Storage == 6);
         file.Bytes[parent.NameOffset] ^= 1;
@@ -64,7 +64,7 @@ public sealed class TopologyCanonicalReadTests
         Entity child = world.Create();
         Hierarchy<HierarchyDomainB>.SetParent(world, child, parent);
         Hierarchy<HierarchyDomainA>.SetParent(world, child, parent);
-        var registry = new SerializationRegistry()
+        var registry = new SaveRegistry()
             .RegisterHierarchy<HierarchyDomainB>(s_hierarchyKeyB)
             .RegisterHierarchy<HierarchyDomainA>(s_hierarchyKeyA);
         TopologyFile file = TopologyFile.Save(world, registry);
@@ -81,7 +81,7 @@ public sealed class TopologyCanonicalReadTests
         Entity parent = world.Create();
         Hierarchy<HierarchyDomainA>.SetParent(world, world.Create(), parent);
         Hierarchy<HierarchyDomainA>.SetParent(world, world.Create(), parent);
-        var registry = new SerializationRegistry().RegisterHierarchy<HierarchyDomainA>(s_hierarchyKeyA);
+        var registry = new SaveRegistry().RegisterHierarchy<HierarchyDomainA>(s_hierarchyKeyA);
         TopologyFile file = TopologyFile.Save(world, registry);
         TopologyFile.ValueField[] parents = file.Values.Where(value => file.Types[value.TypeIndex].Storage == 6).ToArray();
         Assert.Equal(2, parents.Length);
@@ -102,7 +102,7 @@ public sealed class TopologyCanonicalReadTests
         Hierarchy<HierarchyDomainA>.SetParent(world, childB, parentB);
         Hierarchy<HierarchyDomainA>.SetOrdered(world, parentA, true);
         Hierarchy<HierarchyDomainA>.SetParent(world, childA, parentA);
-        var registry = new SerializationRegistry().RegisterHierarchy<HierarchyDomainA>(s_hierarchyKeyA);
+        var registry = new SaveRegistry().RegisterHierarchy<HierarchyDomainA>(s_hierarchyKeyA);
         TopologyFile file = TopologyFile.Save(world, registry);
         using var input = new MemoryStream(file.Bytes, writable: false);
         using World loaded = WorldSerializer.ReadWorld(input, registry);
@@ -120,7 +120,7 @@ public sealed class TopologyCanonicalReadTests
         var entities = new Entity[parentCount + 1];
         for (int i = 0; i < entities.Length; i++) entities[i] = world.Create();
         for (int i = 1; i < entities.Length; i++) Hierarchy<HierarchyDomainA>.SetParent(world, entities[i], entities[i - 1]);
-        var registry = new SerializationRegistry().RegisterHierarchy<HierarchyDomainA>(s_hierarchyKeyA);
+        var registry = new SaveRegistry().RegisterHierarchy<HierarchyDomainA>(s_hierarchyKeyA);
         using var stream = new MemoryStream();
         new WorldSerializer(registry).Save(world, stream, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         stream.Position = 0;
@@ -137,7 +137,7 @@ public sealed class TopologyCanonicalReadTests
         Entity third = world.Create();
         Hierarchy<HierarchyDomainA>.SetParent(world, first, second);
         Hierarchy<HierarchyDomainA>.SetParent(world, second, third);
-        var registry = new SerializationRegistry().RegisterHierarchy<HierarchyDomainA>(s_hierarchyKeyA);
+        var registry = new SaveRegistry().RegisterHierarchy<HierarchyDomainA>(s_hierarchyKeyA);
         TopologyFile file = TopologyFile.Save(world, registry);
         TopologyFile.ValueField parent = Assert.Single(file.Values, value => file.Types[value.TypeIndex].Storage == 6
             && System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(file.Bytes.AsSpan(value.EntityOffset)) == second.Id);
@@ -154,7 +154,7 @@ public sealed class TopologyCanonicalReadTests
         Entity source = world.Create(); Entity target = world.Create();
         world.CreateRelation(source, target, new CanonicalRelationPayload { Value = 1 });
         world.CreateRelation(source, target, new CanonicalRelationPayload { Value = 2 });
-        SerializationRegistry registry = CreateRelationRegistry();
+        SaveRegistry registry = CreateRelationRegistry();
         TopologyFile file = TopologyFile.Save(world, registry);
         TopologyFile.ValueField[] edges = file.Values.Where(value => file.Types[value.TypeIndex].Storage == 7).ToArray();
         Assert.Equal(2, edges.Length);
@@ -172,7 +172,7 @@ public sealed class TopologyCanonicalReadTests
         RelationEdge<CanonicalRelationPayload> incoming = world.CreateRelation(endpointC, endpointA, new CanonicalRelationPayload { Value = 2 });
         Relations<CanonicalRelationPayload>.SetOrdered(world, endpointA, RelationAdjacencyRole.Outgoing, true);
         Relations<CanonicalRelationPayload>.SetOrdered(world, endpointA, RelationAdjacencyRole.Incoming, true);
-        SerializationRegistry registry = CreateRelationRegistry();
+        SaveRegistry registry = CreateRelationRegistry();
         TopologyFile file = TopologyFile.Save(world, registry);
         TopologyFile.HeadField outgoing = Assert.Single(file.Heads, head => !head.Incoming && head.EntityId == endpointA.Id);
         file.SetInt(outgoing.MembersOffset + 8, incoming.Entity.Id);
@@ -192,7 +192,7 @@ public sealed class TopologyCanonicalReadTests
         for (int i = 0; i < edgeCount; i++) edges[i] = world.CreateRelation(source, world.Create(), new CanonicalRelationPayload { Value = i });
         world.ReorderRelationAdjacency(source, RelationAdjacencyRole.Outgoing, edges[^1], 0);
         RelationEdge<CanonicalRelationPayload>[] expected = [edges[^1], .. edges[..^1]];
-        SerializationRegistry registry = CreateRelationRegistry();
+        SaveRegistry registry = CreateRelationRegistry();
         using var stream = new MemoryStream();
         new WorldSerializer(registry).Save(world, stream, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         stream.Position = 0;
@@ -208,7 +208,7 @@ public sealed class TopologyCanonicalReadTests
         world.CreateRelation(source, target, new CanonicalRelationPayload { Value = 1 });
         world.CreateRelation(source, target, new CanonicalRelationPayload { Value = 2 });
         Relations<CanonicalRelationPayload>.SetOrdered(world, source, RelationAdjacencyRole.Outgoing, true);
-        SerializationRegistry registry = CreateRelationRegistry();
+        SaveRegistry registry = CreateRelationRegistry();
         TopologyFile file = TopologyFile.Save(world, registry);
         TopologyFile.HeadField head = Assert.Single(file.Heads, head => !head.Incoming && head.EntityId == source.Id);
         Assert.Equal(2, head.Count);
@@ -216,8 +216,8 @@ public sealed class TopologyCanonicalReadTests
         Assert.Throws<InvalidDataException>(() => file.Read(registry));
     }
 
-    private static SerializationRegistry CreateRelationRegistry() => new SerializationRegistry()
-        .Register<CanonicalRelationPayload, CanonicalRelationPayloadCodec>(s_relationPayloadKey)
+    private static SaveRegistry CreateRelationRegistry() => new SaveRegistry()
+        .Register<CanonicalRelationPayload, CanonicalRelationPayloadSerializer>(s_relationPayloadKey)
         .RegisterRelation<CanonicalRelationPayload>(s_relationTopologyKey);
 
     private readonly struct HierarchyDomainA : IHierarchyDomain { }
@@ -230,12 +230,12 @@ public sealed class TopologyCanonicalReadTests
         public int Value;
     }
 
-    private readonly struct CanonicalRelationPayloadCodec : IComponentCodec<CanonicalRelationPayload>
+    private readonly struct CanonicalRelationPayloadSerializer : IValueSerializer<CanonicalRelationPayload>
     {
-        public void Write(ref DataWriter writer, in CanonicalRelationPayload value) =>
+        public void Write(ref SaveWriter writer, in CanonicalRelationPayload value) =>
             writer.WriteInt32(value.Value);
 
-        public void Read(ref DataReader reader, out CanonicalRelationPayload value) =>
+        public void Read(ref SaveReader reader, out CanonicalRelationPayload value) =>
             value = new CanonicalRelationPayload { Value = reader.ReadInt32() };
     }
 }

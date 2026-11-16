@@ -6,16 +6,16 @@ using System.Runtime.InteropServices;
 
 namespace SomeEngine.ECS.Serialization;
 
-public enum CheckpointProgress : byte { Rebuild, Preserve }
+public enum ProgressMode : byte { Reset, Keep }
 
-public sealed class WorldCheckpoint : IDisposable
+public sealed class WorldCopy : IDisposable
 {
     private readonly World _values = new();
     internal EntityRecord[] Records = [];
     internal int Used, FreeHead, FreeTail, FreeCount, EntityCount;
     internal ulong CaptureNumber;
     internal ulong Version;
-    internal CheckpointProgress Progress;
+    internal ProgressMode Progress;
     internal ChunkData[] Chunks = [];
     internal int ChunkCount;
     internal SharedValues?[] Shared = [];
@@ -31,16 +31,16 @@ public sealed class WorldCheckpoint : IDisposable
     private bool[] _tableTypes = [];
     private readonly List<WorldValueAccess> _accesses = [];
 
-    public WorldCheckpoint Capture(World world, CheckpointProgress progress = CheckpointProgress.Rebuild,
+    public WorldCopy Capture(World world, ProgressMode progress = ProgressMode.Reset,
         params ISystemVersions[] systems)
         => Capture(world, null, default, progress, systems);
 
-    internal WorldCheckpoint Capture(World world, SerializationRegistry? registry, SerializeOptions options,
-        CheckpointProgress progress, ISystemVersions[] systems)
+    internal WorldCopy Capture(World world, SaveRegistry? registry, SerializeOptions options,
+        ProgressMode progress, ISystemVersions[] systems)
     {
         foreach (ISystemVersions system in systems) system.Complete();
         ReleaseValues(keepChunks: true);
-        if (progress == CheckpointProgress.Rebuild)
+        if (progress == ProgressMode.Reset)
         {
             using WorldAccess maintenance = world.OpenStructure();
             foreach (IWorldLifecycle service in world.LifecycleServices) ((IWorldDataService)service).CompleteData();
@@ -102,7 +102,7 @@ public sealed class WorldCheckpoint : IDisposable
             foreach (IWorldLifecycle service in world.LifecycleServices)
             {
                 WorldServiceData? previous = Services[serviceCount];
-                WorldServiceData data = ((IWorldDataService)service).CopyData(progress == CheckpointProgress.Preserve, previous);
+                WorldServiceData data = ((IWorldDataService)service).CopyData(progress == ProgressMode.Keep, previous);
                 if (!ReferenceEquals(previous, data)) previous?.Dispose();
                 Services[serviceCount] = data;
                 serviceCount++;
@@ -110,8 +110,8 @@ public sealed class WorldCheckpoint : IDisposable
             for (int i = serviceCount; i < ServiceCount; i++) Services[i].Dispose();
             Array.Clear(Services, serviceCount, Services.Length - serviceCount);
             ServiceCount = serviceCount;
-            Membership = progress == CheckpointProgress.Preserve ? world.CopyMembershipData(Membership) : [];
-            Events = progress == CheckpointProgress.Preserve ? world.CopyEvents(Events)
+            Membership = progress == ProgressMode.Keep ? world.CopyMembershipData(Membership) : [];
+            Events = progress == ProgressMode.Keep ? world.CopyEvents(Events)
                 : new(Events.Values ?? [], world.DestroyedSequence, Events.ReaderPositions ?? [], 0, 0);
             if (SystemVersions.Length < systems.Length) Array.Resize(ref SystemVersions, systems.Length);
             if (SystemVersionCounts.Length < systems.Length) Array.Resize(ref SystemVersionCounts, systems.Length);
@@ -120,7 +120,7 @@ public sealed class WorldCheckpoint : IDisposable
                 int count = systems[i].VersionCount * 2;
                 if (SystemVersions[i] is not { } versions || versions.Length < count)
                     SystemVersions[i] = versions = new ulong[count];
-                if (progress == CheckpointProgress.Preserve) systems[i].CopyVersions(versions.AsSpan(0, count));
+                if (progress == ProgressMode.Keep) systems[i].CopyVersions(versions.AsSpan(0, count));
                 else versions.AsSpan(0, count).Fill(Version);
                 SystemVersionCounts[i] = count;
             }
@@ -169,7 +169,7 @@ public sealed class WorldCheckpoint : IDisposable
         try
         {
             using WorldAccess access = world.OpenStructure();
-            bool preserve = Progress == CheckpointProgress.Preserve;
+            bool preserve = Progress == ProgressMode.Keep;
             ulong version = preserve ? Version : Math.Max(world.Version, Version) + 1;
             world.ClearValues();
             world.RestoreEntityIds(Records.AsSpan(0, Used + 1), FreeHead, FreeTail, EntityCount, version);

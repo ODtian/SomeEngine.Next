@@ -14,12 +14,12 @@ internal static class ValueGenerator
         internal readonly ISymbol Symbol = symbol;
         internal readonly ITypeSymbol Type = type;
         internal string Name => EcsGenerator.Identifier(Symbol.Name);
-        internal INamedTypeSymbol? Codec => Symbol.GetAttributes().FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString()
-            == "SomeEngine.ECS.Serialization.FieldCodecAttribute")?.ConstructorArguments[0].Value as INamedTypeSymbol;
+        internal INamedTypeSymbol? Serializer => Symbol.GetAttributes().FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString()
+            == "SomeEngine.ECS.Serialization.SerializeWithAttribute")?.ConstructorArguments[0].Value as INamedTypeSymbol;
     }
     private sealed class Unsupported(ITypeSymbol type) : Exception { internal readonly ITypeSymbol Type = type; }
 
-    internal static void Emit(SourceProductionContext output, INamedTypeSymbol type, bool component, bool codec)
+    internal static void Emit(SourceProductionContext output, INamedTypeSymbol type, bool component, bool serializer)
     {
         var members = new List<Member>();
         foreach (ISymbol symbol in type.GetMembers().OrderBy(value => value.Locations.FirstOrDefault()?.SourceSpan.Start ?? int.MaxValue))
@@ -46,38 +46,38 @@ internal static class ValueGenerator
         code.Append("}\n");
         try
         {
-            if (codec) EmitCodec(code, type, self, members);
+            if (serializer) EmitSerializer(code, type, self, members);
             if (operations) EmitOperations(code, self, members);
             if (remap) EmitRemap(code, self, members);
             if (component) EmitFields(code, self, members);
         }
         catch (Unsupported unsupported)
-        { EcsGenerator.Error(output, type, "Provide FieldCodec or generated value operations for " + unsupported.Type.ToDisplayString() + "."); return; }
+        { EcsGenerator.Error(output, type, "Provide SerializeWith or generated value operations for " + unsupported.Type.ToDisplayString() + "."); return; }
         EcsGenerator.Add(output, type, "Value", EcsGenerator.Wrap(type, string.Join(", ", interfaces), code.ToString()));
     }
 
     private static void Construct(StringBuilder code, string self, IEnumerable<string> values)
         => code.Append("new ").Append(self).Append("(default(__ValueInput)").Append(string.Concat(values.Select(value => ", " + value + "!"))).Append(')');
 
-    private static void EmitCodec(StringBuilder code, INamedTypeSymbol type, string self, List<Member> members)
+    private static void EmitSerializer(StringBuilder code, INamedTypeSymbol type, string self, List<Member> members)
     {
-        code.Append("public readonly struct Codec : global::SomeEngine.ECS.Serialization.IDurableComponentCodec<").Append(self).Append("> {\n")
-            .Append("public void Write(ref global::SomeEngine.ECS.Serialization.DataWriter writer, in ").Append(self).Append(" value) {\n");
+        code.Append("public readonly struct Serializer : global::SomeEngine.ECS.Serialization.IValueSerializer<").Append(self).Append("> {\n")
+            .Append("public void Write(ref global::SomeEngine.ECS.Serialization.SaveWriter writer, in ").Append(self).Append(" value) {\n");
         int id = 0;
         foreach (Member member in members)
-            if (member.Codec is { } codec) code.Append("new ").Append(EcsGenerator.Name(codec)).Append("().Write(ref writer, value.").Append(member.Name).Append(");\n");
+            if (member.Serializer is { } serializer) code.Append("new ").Append(EcsGenerator.Name(serializer)).Append("().Write(ref writer, value.").Append(member.Name).Append(");\n");
             else Write(code, member.Type, "value." + member.Name, ref id);
-        code.Append("}\npublic void Read(ref global::SomeEngine.ECS.Serialization.DataReader reader, out ").Append(self).Append(" value) {\n");
+        code.Append("}\npublic void Read(ref global::SomeEngine.ECS.Serialization.SaveReader reader, out ").Append(self).Append(" value) {\n");
         for (int i = 0; i < members.Count; i++)
         {
             Member member = members[i]; string local = "__value" + i;
-            if (member.Codec is { } codec) code.Append("new ").Append(EcsGenerator.Name(codec)).Append("().Read(ref reader, out ")
+            if (member.Serializer is { } serializer) code.Append("new ").Append(EcsGenerator.Name(serializer)).Append("().Read(ref reader, out ")
                 .Append(EcsGenerator.Name(member.Type)).Append(' ').Append(local).Append(");\n");
             else Read(code, member.Type, local, ref id);
         }
         code.Append("value = "); Construct(code, self, Enumerable.Range(0, members.Count).Select(i => "__value" + i));
-        code.Append(";\n}\n}\npublic static global::SomeEngine.ECS.Serialization.SerializationRegistry RegisterCodec(global::SomeEngine.ECS.Serialization.SerializationRegistry registry, global::SomeEngine.ECS.Serialization.SerializationTypeKey key) => registry.Register<")
-            .Append(self).Append(", Codec>(key);\n");
+        code.Append(";\n}\n}\npublic static global::SomeEngine.ECS.Serialization.SaveRegistry RegisterSerializer(global::SomeEngine.ECS.Serialization.SaveRegistry registry, global::SomeEngine.ECS.Serialization.SavedTypeKey key) => registry.Register<")
+            .Append(self).Append(", Serializer>(key);\n");
     }
 
     private static string? Primitive(ITypeSymbol type) => type.SpecialType switch
@@ -108,8 +108,8 @@ internal static class ValueGenerator
                 .Append(value).Append(" is not null) foreach (var __item").Append(number).Append(" in ").Append(value).Append(") {\n");
             Write(code, array.ElementType, "__item" + number, ref id); code.Append("}\n"); return;
         }
-        if (EcsGenerator.HasAttribute(type, "SomeEngine.ECS.Serialization.GenerateCodecAttribute"))
-        { code.Append("new ").Append(EcsGenerator.Name(type)).Append(".Codec().Write(ref writer, ").Append(value).Append(");\n"); return; }
+        if (EcsGenerator.HasAttribute(type, "SomeEngine.ECS.Serialization.GenerateSerializerAttribute"))
+        { code.Append("new ").Append(EcsGenerator.Name(type)).Append(".Serializer().Write(ref writer, ").Append(value).Append(");\n"); return; }
         throw new Unsupported(type);
     }
 
@@ -137,8 +137,8 @@ internal static class ValueGenerator
             Read(code, array.ElementType, "__item" + number, ref id);
             code.Append(local).Append("[__index").Append(number).Append("] = __item").Append(number).Append(";\n}\n}\n"); return;
         }
-        if (EcsGenerator.HasAttribute(type, "SomeEngine.ECS.Serialization.GenerateCodecAttribute"))
-        { code.Append("new ").Append(EcsGenerator.Name(type)).Append(".Codec().Read(ref reader, out ").Append(EcsGenerator.Name(type)).Append(' ').Append(local).Append(");\n"); return; }
+        if (EcsGenerator.HasAttribute(type, "SomeEngine.ECS.Serialization.GenerateSerializerAttribute"))
+        { code.Append("new ").Append(EcsGenerator.Name(type)).Append(".Serializer().Read(ref reader, out ").Append(EcsGenerator.Name(type)).Append(' ').Append(local).Append(");\n"); return; }
         throw new Unsupported(type);
     }
 

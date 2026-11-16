@@ -7,19 +7,19 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Comparison;
 
-[GenerateComponent, GenerateCodec]
+[GenerateComponent, GenerateSerializer]
 public partial record struct GeneratedCounter(int Value, int Ordinal) : IAddedComponent;
-[GenerateComponent, GenerateCodec]
+[GenerateComponent, GenerateSerializer]
 public partial record struct GeneratedOther(int Value) : IAddedComponent;
-[GenerateCodec]
+[GenerateSerializer]
 public readonly partial record struct GeneratedVelocity(int Value) : IEnableableComponent;
-[GenerateCodec]
+[GenerateSerializer]
 public readonly partial record struct GeneratedElement(int Value) : IAddedComponent;
-[GenerateComponent, GenerateCodec]
+[GenerateComponent, GenerateSerializer]
 public readonly partial record struct GeneratedShared(int Value) : ISharedComponent;
-[GenerateComponent, GenerateCodec]
+[GenerateComponent, GenerateSerializer]
 public readonly partial record struct GeneratedLinks(Entity Target, Entity Outside, Entity[] Links, int[] Weights, string? Text);
-[GenerateComponent, GenerateCodec]
+[GenerateComponent, GenerateSerializer]
 public readonly partial record struct GeneratedEnvelope(GeneratedLinks Value, int Revision);
 
 public readonly partial struct GeneratedAdvance : IJobEntity
@@ -61,7 +61,7 @@ internal static class GeneratedChecks
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, EnableCounters = false });
         CheckJobs(scheduler); CheckValues();
-        Console.WriteLine("Generated consumers: entity/chunk work, multiple tracked writes, row identities, enablement, buffers, random write policy, generic jobs, system groups, codecs and owned references passed.");
+        Console.WriteLine("Generated consumers: entity/chunk work, multiple tracked writes, row identities, enablement, buffers, random write policy, generic jobs, system groups, serializers and owned references passed.");
     }
 
     private static void CheckJobs(Scheduler scheduler)
@@ -142,24 +142,24 @@ internal static class GeneratedChecks
             "generated value operations remap nested entity fields");
         envelope.Value.Weights[0] = 88;
         Require(world.ReadValue<GeneratedEnvelope>(first).Value.Weights[0] == 17, "generated nested value operations clone independent owned arrays");
-        using var checkpoint = new WorldCheckpoint(); checkpoint.Capture(world);
+        using var checkpoint = new WorldCopy(); checkpoint.Capture(world);
         copy.Weights[1] = 101; checkpoint.Restore(world);
         Require(world.ReadValue<GeneratedLinks>(copied[0]).Weights[1] == 5, "generated value operations participate in world data capture");
-        var registry = GeneratedLinks.RegisterCodec(new SerializationRegistry(), SaveSchema.Key(81, "GeneratedLinks"));
-        GeneratedShared.RegisterCodec(registry, SaveSchema.Key(82, "GeneratedShared"));
-        GeneratedEnvelope.RegisterCodec(registry, SaveSchema.Key(83, "GeneratedEnvelope"));
+        var registry = GeneratedLinks.RegisterSerializer(new SaveRegistry(), SaveSchema.Key(81, "GeneratedLinks"));
+        GeneratedShared.RegisterSerializer(registry, SaveSchema.Key(82, "GeneratedShared"));
+        GeneratedEnvelope.RegisterSerializer(registry, SaveSchema.Key(83, "GeneratedEnvelope"));
         var serializer = new WorldSerializer(registry); var bytes = new ArrayBufferWriter<byte>();
-        serializer.Save(world, bytes, SavePurpose.DurableSave, CheckpointProgress.Preserve);
+        serializer.Save(world, bytes, SavePurpose.DurableSave, ProgressMode.Keep);
         world.Set(first, new GeneratedLinks(default, default, [], [], "changed"));
         serializer.Load(world, bytes.WrittenSpan);
         GeneratedLinks loaded = world.ReadValue<GeneratedLinks>(first);
         Require(loaded.Target == second && loaded.Outside == outside && loaded.Links.AsSpan().SequenceEqual([first, second, outside])
             && loaded.Weights.AsSpan().SequenceEqual([3, 5]) && loaded.Text == "first"
             && world.ReadValue<GeneratedLinks>(second).Text is null && world.ReadValue<GeneratedShared>(first).Value == 7,
-            "generated field codecs restore all values, shared values and entity arrays");
+            "generated field serializers restore all values, shared values and entity arrays");
         envelope = world.ReadValue<GeneratedEnvelope>(first);
         Require(envelope.Value.Target == second && envelope.Value.Weights.AsSpan().SequenceEqual([17, 19]) && envelope.Revision == 3,
-            "generated field codecs compose nested generated values");
+            "generated field serializers compose nested generated values");
 
         using var commands = new CommandBuffer(world);
         DeferredEntity target = commands.Create(new GeneratedOther(5));

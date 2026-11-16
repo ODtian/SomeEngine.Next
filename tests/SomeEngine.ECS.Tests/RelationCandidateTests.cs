@@ -15,7 +15,7 @@ public sealed class RelationCandidateTests
         Entity target = world.Create();
         Entity replacement = world.Create();
         RelationEdge<Link> edge = world.CreateRelation(source, target, new Link(7));
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using (var commands = new CommandBuffer(candidate))

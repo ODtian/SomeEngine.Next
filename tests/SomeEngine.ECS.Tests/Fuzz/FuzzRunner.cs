@@ -316,8 +316,8 @@ internal sealed class EcsFuzzRunner
     {
         var deferred = new Dictionary<int, DeferredEntity>();
 
-        using var checkpoint = new WorldCheckpoint();
-        checkpoint.Capture(_world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy();
+        checkpoint.Capture(_world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using var commands = new CommandBuffer(candidate);
@@ -348,7 +348,7 @@ internal sealed class EcsFuzzRunner
                     playbackError);
             }
 
-            checkpoint.Capture(candidate, CheckpointProgress.Preserve);
+            checkpoint.Capture(candidate, ProgressMode.Keep);
             checkpoint.Restore(_world);
             foreach ((int logicalId, DeferredEntity pending) in deferred.OrderBy(static pair => pair.Key))
             {

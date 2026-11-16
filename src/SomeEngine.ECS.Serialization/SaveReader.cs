@@ -6,7 +6,7 @@ using SomeEngine.Serialization;
 
 namespace SomeEngine.ECS.Serialization;
 
-public ref struct DataReader
+public ref struct SaveReader
 {
     private readonly Stream? _stream;
     private readonly byte[]? _buffer;
@@ -20,35 +20,35 @@ public ref struct DataReader
     internal Dictionary<int, int[]>? SharedMappings;
     internal bool NormalizeShared;
     /// <summary>For each saved value type whose fields differ from the current type, the map that reads it.</summary>
-    internal Dictionary<Guid, SavedFieldMap>? SavedFieldMaps;
+    internal Dictionary<Guid, FieldMapping>? FieldMappings;
     private LoadedEntityMapper _currentMapper, _progressMapper;
 
-    public DataReader(ReadOnlySpan<byte> bytes, SerializationReadLimits? limits = null)
+    public SaveReader(ReadOnlySpan<byte> bytes, ReadLimits? limits = null)
     {
         _stream = null; _buffer = null; _bytes = bytes; _offset = 0; _committed = 0;
         Budget = new(limits);
         ValuesWorld = null;
-        Identities = null; SharedMappings = null; NormalizeShared = false; SavedFieldMaps = null;
+        Identities = null; SharedMappings = null; NormalizeShared = false; FieldMappings = null;
         _entityReferences = null;
         _currentMapper = _progressMapper = default;
     }
-    public DataReader(Stream stream, SerializationReadLimits? limits = null)
+    public SaveReader(Stream stream, ReadLimits? limits = null)
     {
         _stream = stream; _buffer = ArrayPool<byte>.Shared.Rent(4096); _bytes = default; _offset = 0; _committed = 0;
         Budget = new(limits);
         ValuesWorld = null;
-        Identities = null; SharedMappings = null; NormalizeShared = false; SavedFieldMaps = null;
+        Identities = null; SharedMappings = null; NormalizeShared = false; FieldMappings = null;
         _entityReferences = null;
         _currentMapper = _progressMapper = default;
     }
     public long Position => _committed + _offset;
-    internal DataReader(ReadOnlySpan<byte> bytes, SerializationReadBudget budget)
+    internal SaveReader(ReadOnlySpan<byte> bytes, SerializationReadBudget budget)
         : this(bytes) => Budget = budget;
 
     /// <summary>The map for reading an older saved layout of value type <paramref name="type"/>, or null when the save has its current layout.</summary>
-    public readonly SavedFieldMap? FindSavedFieldMap(Guid type)
-        => SavedFieldMaps is { } maps && maps.TryGetValue(type, out SavedFieldMap? map) ? map : null;
-    internal readonly bool HasSavedFieldMaps => SavedFieldMaps is not null;
+    public readonly FieldMapping? FindFieldMapping(Guid type)
+        => FieldMappings is { } maps && maps.TryGetValue(type, out FieldMapping? map) ? map : null;
+    internal readonly bool HasFieldMappings => FieldMappings is not null;
     internal void Skip(long count)
     {
         for (; count > 0; count -= Math.Min(count, 4096)) Take((int)Math.Min(count, 4096));
@@ -103,7 +103,7 @@ public ref struct DataReader
     public double ReadDouble() => BinaryPrimitiveEncoding.ReadDouble(Take(8));
     public char ReadChar() => BinaryPrimitiveEncoding.ReadChar(Take(2));
     public Guid ReadGuid() => BinaryPrimitiveEncoding.ReadGuid(Take(16));
-    public ExternalReferenceKey ReadExternalReference() => new(ReadGuid());
+    public AssetReference ReadExternalReference() => new(ReadGuid());
     public Entity ReadEntity() => new(ReadInt32(), ReadInt32());
     internal Entity MapEntity(Entity entity, bool progress = false)
     {
@@ -139,16 +139,16 @@ public ref struct DataReader
     }
     public string? ReadString() => ReadBoolean() ? ReadText() : null;
 
-    internal string ReadText(bool stableName = false)
+    internal string ReadText(bool savedName = false)
     {
-        int count = Budget.StringCharacterCount(ReadInt32(), stableName);
+        int count = Budget.StringCharacterCount(ReadInt32(), savedName);
         if (count == 0) return string.Empty;
         if (_offset == _bytes.Length) Next(1);
         long start = Position;
         StringBytes result = default;
         string value = string.Create(count, new StringInput(_bytes[_offset..], _stream, _buffer, ref result),
             static (destination, input) => input.Read(destination));
-        Budget.StringBytesConsumed(result.Consumed, stableName);
+        Budget.StringBytesConsumed(result.Consumed, savedName);
         if (result.Refilled)
         {
             _bytes = _buffer.AsSpan(0, result.Length);

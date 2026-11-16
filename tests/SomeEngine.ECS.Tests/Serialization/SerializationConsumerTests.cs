@@ -12,7 +12,7 @@ public sealed class SerializationConsumerTests
     public void SerializationContextCanRoundTripEmptyWorld()
     {
         var world = new World();
-        var registry = new SerializationRegistry();
+        var registry = new SaveRegistry();
         using var stream = new MemoryStream();
         new WorldSerializer(registry).Save(world, stream);
 
@@ -41,9 +41,9 @@ public sealed class SerializationConsumerTests
         }
         reader.Advance(1);
         source.Destroy(third);
-        var registry = new SerializationRegistry();
+        var registry = new SaveRegistry();
         using var output = new MemoryStream();
-        new WorldSerializer(registry).Save(source, output, purpose, CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(source, output, purpose, ProgressMode.Keep);
         output.Position = 0;
         using World loaded = WorldSerializer.ReadWorld(output, registry, new WorldLoadOptions(RequiredPurpose: purpose));
         using DestroyedReader resumed = loaded.WatchDestroyed(readerId);
@@ -68,8 +68,8 @@ public sealed class SerializationConsumerTests
         source.Create(new ObservedMember { Value = 1 });
         Entity second = source.Create(new ObservedMember { Value = 2 });
         reader.Advance(1);
-        using var original = new WorldCheckpoint();
-        original.Capture(source, CheckpointProgress.Preserve);
+        using var original = new WorldCopy();
+        original.Capture(source, ProgressMode.Keep);
         using (var failedCandidate = new World())
         {
             original.Restore(failedCandidate);
@@ -92,8 +92,8 @@ public sealed class SerializationConsumerTests
             commands.Playback();
             created = result.Resolve();
         }
-        using var completed = new WorldCheckpoint();
-        completed.Capture(successfulCandidate, CheckpointProgress.Preserve);
+        using var completed = new WorldCopy();
+        completed.Capture(successfulCandidate, ProgressMode.Keep);
         completed.Restore(source);
         Assert.Equal(3, query.Count);
         Assert.Equal(1UL, reader.Position);
@@ -111,12 +111,12 @@ public sealed class SerializationConsumerTests
         source.Set(selected, new SerScene { Value = 31 });
         source.Set(selected, new SerSparse { Value = 37 });
         Entity other = source.Create(new SerVelocity { X = 41, Y = 43 });
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         using var direct = new MemoryStream();
         using var captured = new MemoryStream();
         var serializer = new WorldSerializer(registry);
         serializer.Save(source, direct);
-        using var checkpoint = new WorldCheckpoint();
+        using var checkpoint = new WorldCopy();
         checkpoint.Capture(source);
         serializer.Save(checkpoint, captured);
         foreach (MemoryStream input in new[] { direct, captured })

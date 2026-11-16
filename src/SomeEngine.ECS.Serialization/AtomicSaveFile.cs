@@ -55,31 +55,31 @@ public static class AtomicSaveFile
 public sealed partial class WorldSerializer
 {
     public void SaveFile(World world, string path, SavePurpose purpose = SavePurpose.DurableSave,
-        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
+        ProgressMode progress = ProgressMode.Reset, params ISystemVersions[] systems)
         => SaveFile(world, path, new SerializeOptions(Purpose: purpose), progress, systems);
 
     public void SaveFile(World world, string path, SerializeOptions options,
-        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
+        ProgressMode progress = ProgressMode.Reset, params ISystemVersions[] systems)
     {
         ValidateWriteOptions(options);
         AtomicSaveFile.Write(path, new WorldFileData(this, world, options, progress, systems));
     }
 
-    public void LoadFile(World world, string path, SerializationReadLimits? limits = null, params ISystemVersions[] systems)
+    public void LoadFile(World world, string path, ReadLimits? limits = null, params ISystemVersions[] systems)
     {
         using Stream input = AtomicSaveFile.OpenRead(path);
         Load(world, input, limits, systems);
     }
 
     public Task SaveFileAsync(World world, string path, SavePurpose purpose = SavePurpose.DurableSave,
-        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
+        ProgressMode progress = ProgressMode.Reset, params ISystemVersions[] systems)
         => SaveFileAsync(world, path, new SerializeOptions(Purpose: purpose), progress, systems);
 
     public Task SaveFileAsync(World world, string path, SerializeOptions options,
-        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
+        ProgressMode progress = ProgressMode.Reset, params ISystemVersions[] systems)
     {
         ValidateWriteOptions(options);
-        var checkpoint = new WorldCheckpoint();
+        var checkpoint = new WorldCopy();
         try { checkpoint.Capture(world, registry, options, progress, systems); }
         catch { checkpoint.Dispose(); throw; }
         try { return RunOnWorldScheduler(world, new SaveFileJob(registry, checkpoint, path, options)); }
@@ -87,18 +87,18 @@ public sealed partial class WorldSerializer
     }
 
     private readonly struct WorldFileData(WorldSerializer serializer, World world, SerializeOptions options,
-        CheckpointProgress progress, ISystemVersions[] systems) : ISaveDataWriter
+        ProgressMode progress, ISystemVersions[] systems) : ISaveDataWriter
     {
         public void Write(Stream output) => serializer.Write(world, output, options, progress, systems);
     }
 
-    private readonly struct CapturedFileData(SerializationRegistry registry, WorldCheckpoint checkpoint,
+    private readonly struct CapturedFileData(SaveRegistry registry, WorldCopy checkpoint,
         SerializeOptions options) : ISaveDataWriter
     {
         public void Write(Stream output) => new WorldSerializer(registry).SaveCaptured(checkpoint, output, options);
     }
 
-    private readonly struct SaveFileJob(SerializationRegistry registry, WorldCheckpoint checkpoint,
+    private readonly struct SaveFileJob(SaveRegistry registry, WorldCopy checkpoint,
         string path, SerializeOptions options) : IJob
     {
         public void Execute()

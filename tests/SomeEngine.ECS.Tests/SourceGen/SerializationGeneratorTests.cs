@@ -8,7 +8,7 @@ namespace SomeEngine.ECS.SourceGen.Tests;
 public class SerializationGeneratorTests
 {
     [Fact]
-    public void ReportsDuplicateStableIds()
+    public void ReportsDuplicateIds()
     {
         var result = RunGenerator("""
 namespace SomeEngine.ECS.SourceGen.TestInput;
@@ -16,13 +16,13 @@ namespace SomeEngine.ECS.SourceGen.TestInput;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Serialization;
 
-[SerializableComponent("68ea901f-a7e6-4631-bb8e-87db43a62d2e")]
+[SaveId("68ea901f-a7e6-4631-bb8e-87db43a62d2e")]
 public partial struct FirstGenerated : SomeEngine.ECS.IComponent
 {
     public int X;
 }
 
-[SerializableComponent("68ea901f-a7e6-4631-bb8e-87db43a62d2e")]
+[SaveId("68ea901f-a7e6-4631-bb8e-87db43a62d2e")]
 public partial struct SecondGenerated : SomeEngine.ECS.IComponent
 {
     public int X;
@@ -41,7 +41,7 @@ namespace SomeEngine.ECS.SourceGen.TestInput;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Serialization;
 
-[SerializableComponent("e6bb16d7-4f90-4627-a74b-cd89b2270bba")]
+[SaveId("e6bb16d7-4f90-4627-a74b-cd89b2270bba")]
 public partial struct InvalidGenerated : SomeEngine.ECS.IComponent
 {
     public object Value;
@@ -58,11 +58,11 @@ public partial struct InvalidGenerated : SomeEngine.ECS.IComponent
 namespace SomeEngine.ECS.SourceGen.TestInput;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Serialization;
-[SerializableComponent("CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")]
+[SaveId("CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")]
 public struct InvalidGenerated : SomeEngine.ECS.IComponent
 {
     public int Position;
-    [SerializedField("Position")]
+    [SaveName("Position")]
     public int RenamedPosition;
 }
 """);
@@ -106,7 +106,7 @@ public struct InvalidGenerated : SomeEngine.ECS.IComponent
             .ToList();
 
         references.Add(MetadataReference.CreateFromFile(typeof(SomeEngine.ECS.World).Assembly.Location));
-        references.Add(MetadataReference.CreateFromFile(typeof(SomeEngine.ECS.Serialization.SerializationRegistry).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(SomeEngine.ECS.Serialization.SaveRegistry).Assembly.Location));
         return references.ToArray();
     }
 

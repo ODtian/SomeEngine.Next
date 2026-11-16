@@ -307,7 +307,7 @@ public class HierarchyModelTests
         Entity newParent = world.Create();
         Entity child = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, child, oldParent);
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         Assert.Throws<ApplicationException>((Action)(() =>
@@ -352,7 +352,7 @@ public class HierarchyModelTests
         Entity child = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, child, appliedParent);
         Hierarchy<SceneDomain>.SetParentDeferred(world, child, deferredParent);
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         Assert.Throws<ApplicationException>((Action)(() =>

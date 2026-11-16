@@ -27,7 +27,7 @@ public sealed class RelationCanonicalBulkIndexTests
             appliedTarget,
             new FinalImageUnique());
         int entityCount = world.EntityCount;
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using var commands = new CommandBuffer(candidate);
@@ -102,7 +102,7 @@ public sealed class RelationCanonicalBulkIndexTests
         for (int i = 0; i < Count; i++)
             edges[i] = pending[i].Resolve();
 
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using (var failing = new CommandBuffer(candidate))

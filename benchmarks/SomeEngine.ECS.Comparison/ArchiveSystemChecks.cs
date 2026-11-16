@@ -23,14 +23,14 @@ internal static partial class ArchiveSystemChecks
         var group = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world), 64);
         group.AddJob(new Advance(), world.Query<SaveCounter, Position>());
         group.AddJob(new Advance(), world.Query<SaveCounter, Position>());
-        var registry = new SerializationRegistry()
-            .Register<SaveCounter, SaveSchema.CounterCodec>(SaveSchema.Key(1, "SystemCounter"))
-            .Register<Position, SaveSchema.PositionCodec>(SaveSchema.Key(2, "SystemPosition"));
+        var registry = new SaveRegistry()
+            .Register<SaveCounter, SaveSchema.CounterSerializer>(SaveSchema.Key(1, "SystemCounter"))
+            .Register<Position, SaveSchema.PositionSerializer>(SaveSchema.Key(2, "SystemPosition"));
         var serializer = new WorldSerializer(registry);
-        using var snapshot = new WorldCheckpoint();
+        using var snapshot = new WorldCopy();
 
         JobHandle pending = group.Update();
-        snapshot.Capture(world, CheckpointProgress.Preserve, group);
+        snapshot.Capture(world, ProgressMode.Keep, group);
         Require(pending.IsCompleted, "memory capture completes the bound system group");
         ulong[] versions = Versions(group);
         Check(world, entities, group, versions, 4);
@@ -41,7 +41,7 @@ internal static partial class ArchiveSystemChecks
 
         pending = group.Update();
         var bytes = new ArrayBufferWriter<byte>();
-        serializer.Save(world, bytes, SavePurpose.RawCheckpoint, CheckpointProgress.Preserve, group);
+        serializer.Save(world, bytes, SavePurpose.RawCheckpoint, ProgressMode.Keep, group);
         Require(pending.IsCompleted, "binary save completes the bound system group");
         versions = Versions(group);
         pending = group.Update();
@@ -51,7 +51,7 @@ internal static partial class ArchiveSystemChecks
 
         pending = group.Update();
         using var stream = new MemoryStream();
-        Task saving = serializer.SaveAsync(world, stream, SavePurpose.DurableSave, CheckpointProgress.Preserve, group);
+        Task saving = serializer.SaveAsync(world, stream, SavePurpose.DurableSave, ProgressMode.Keep, group);
         Require(pending.IsCompleted, "background save completes system progress during caller capture");
         versions = Versions(group);
         world.Set(entities[0], new SaveCounter(999, 0));

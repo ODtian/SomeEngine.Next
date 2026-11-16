@@ -13,7 +13,7 @@ public sealed partial class WorldStream : IDisposable, IAsyncDisposable
     private readonly World _world;
     private readonly AssetLoader _loader;
     private readonly WorldStreamOptions _options;
-    private readonly SerializationRegistry _registry;
+    private readonly SaveRegistry _registry;
     private readonly SerializationReadOptions _readOptions;
     private readonly Scheduler _scheduler;
     private readonly CancellationTokenSource _stop = new();
@@ -29,7 +29,7 @@ public sealed partial class WorldStream : IDisposable, IAsyncDisposable
     private Task? _close;
 
     public WorldStream(World world, AssetLoader loader, AssetId<WorldAsset> source,
-        WorldStreamOptions options, SerializationRegistry registry, SerializationReadOptions readOptions = default)
+        WorldStreamOptions options, SaveRegistry registry, SerializationReadOptions readOptions = default)
     {
         _world = world;
         _registry = registry;

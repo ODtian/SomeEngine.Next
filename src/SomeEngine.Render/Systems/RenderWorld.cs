@@ -144,8 +144,8 @@ public sealed class RenderWorld : IDisposable
 
     private void ApplyCandidate(RenderExtractionSystems extraction, bool complete)
     {
-        using var checkpoint = new WorldCheckpoint();
-        checkpoint.Capture(World, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy();
+        checkpoint.Capture(World, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         extraction.SelectTarget(candidate);
@@ -154,7 +154,7 @@ public sealed class RenderWorld : IDisposable
             using (WorldStructureWriteScope structure = candidate.OpenStructureWrite())
                 if (complete) extraction.ApplyCandidate();
                 else extraction.ApplyChangesCandidate();
-            checkpoint.Capture(candidate, CheckpointProgress.Preserve);
+            checkpoint.Capture(candidate, ProgressMode.Keep);
             checkpoint.Restore(World);
         }
         finally { extraction.SelectTarget(World); }

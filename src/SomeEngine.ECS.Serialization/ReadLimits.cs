@@ -3,17 +3,17 @@ namespace SomeEngine.ECS.Serialization;
 
 /// <summary>
 /// Central allocation and complexity limits for serialized input. Limits are enforced before
-/// allocating final World storage or codec-owned values and are shared across the complete
+/// allocating final World storage or serializer-owned values and are shared across the complete
 /// top-level ECS read. These are World-domain limits, not an alternate projection of the
 /// span-backed binary-document limits in SomeEngine.Serialization.
 /// </summary>
-public sealed record SerializationReadLimits
+public sealed record ReadLimits
 {
-    public static SerializationReadLimits Default { get; } = new();
+    public static ReadLimits Default { get; } = new();
 
     public int MaxManifestEntries { get; init; } = 65_536;
-    public int MaxStableNameBytes { get; init; } = 16_384;
-    public int MaxEntitySlots { get; init; } = 10_000_000;
+    public int MaxNameBytes { get; init; } = 16_384;
+    public int MaxEntityIds { get; init; } = 10_000_000;
     public int MaxEntities { get; init; } = 10_000_000;
     public int MaxItemsPerEntity { get; init; } = 65_536;
     public long MaxTotalEntityItems { get; init; } = 100_000_000;
@@ -49,12 +49,12 @@ internal sealed class SerializationReadBudget
     private long _stringBytes;
     private long _allocatedBytes;
 
-    internal SerializationReadBudget(SerializationReadLimits? limits)
+    internal SerializationReadBudget(ReadLimits? limits)
     {
-        Limits = limits ?? SerializationReadLimits.Default;
+        Limits = limits ?? ReadLimits.Default;
     }
 
-    internal SerializationReadLimits Limits { get; }
+    internal ReadLimits Limits { get; }
 
     internal int Count(int value, int maximum, string description)
     {
@@ -74,9 +74,9 @@ internal sealed class SerializationReadBudget
         return value;
     }
 
-    internal int EntitySlotCount(int value)
+    internal int EntityIdCount(int value)
     {
-        Count(value, Limits.MaxEntitySlots, "entity slot");
+        Count(value, Limits.MaxEntityIds, "entity id");
         ReserveArray(value, 16, "entity slot array");
         return value;
     }
@@ -137,18 +137,18 @@ internal sealed class SerializationReadBudget
         return value;
     }
 
-    internal int StringCharacterCount(int value, bool stableName = false)
+    internal int StringCharacterCount(int value, bool savedName = false)
     {
-        Count(value, stableName ? Limits.MaxStableNameBytes : Limits.MaxStringBytes,
-            stableName ? "stable type name character" : "string character");
-        ReserveArray(value, sizeof(char), stableName ? "stable type name" : "serialized string");
+        Count(value, savedName ? Limits.MaxNameBytes : Limits.MaxStringBytes,
+            savedName ? "saved type name character" : "string character");
+        ReserveArray(value, sizeof(char), savedName ? "saved type name" : "serialized string");
         return value;
     }
 
-    internal void StringBytesConsumed(int value, bool stableName = false)
+    internal void StringBytesConsumed(int value, bool savedName = false)
     {
-        Count(value, stableName ? Limits.MaxStableNameBytes : Limits.MaxStringBytes,
-            stableName ? "stable type name byte" : "string byte");
+        Count(value, savedName ? Limits.MaxNameBytes : Limits.MaxStringBytes,
+            savedName ? "saved type name byte" : "string byte");
         Consume(ref _stringBytes, value, Limits.MaxTotalStringBytes, "total string byte");
     }
 

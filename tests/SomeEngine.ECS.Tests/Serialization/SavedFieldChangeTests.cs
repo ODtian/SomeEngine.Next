@@ -2,22 +2,22 @@ using System.Runtime.InteropServices;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Serialization;
-using CargoAfterCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_CargoAfter;
-using CargoBeforeCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_CargoBefore;
-using GateBeforeCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_GateBefore;
-using GateAfterCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_GateAfter;
-using ScrapBeforeCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_ScrapBefore;
-using ScrapAfterCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_ScrapAfter;
-using HolderMarkCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_HolderMark;
-using GaugeAfterCodec =global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_GaugeAfter;
-using NoteAfterCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_NoteAfter;
-using NoteBeforeCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_NoteBefore;
-using ShelfAfterCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_ShelfAfter;
-using ShelfBeforeCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_ShelfBefore;
-using StepAfterCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_StepAfter;
-using StepBeforeCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_StepBefore;
-using SupplyAfterCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_SupplyAfter;
-using SupplyBeforeCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_SupplyBefore;
+using CargoAfterSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_CargoAfter;
+using CargoBeforeSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_CargoBefore;
+using GateBeforeSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_GateBefore;
+using GateAfterSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_GateAfter;
+using ScrapBeforeSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_ScrapBefore;
+using ScrapAfterSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_ScrapAfter;
+using HolderMarkSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_HolderMark;
+using GaugeAfterSerializer =global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_GaugeAfter;
+using NoteAfterSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_NoteAfter;
+using NoteBeforeSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_NoteBefore;
+using ShelfAfterSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_ShelfAfter;
+using ShelfBeforeSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_ShelfBefore;
+using StepAfterSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_StepAfter;
+using StepBeforeSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_StepBefore;
+using SupplyAfterSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_SupplyAfter;
+using SupplyBeforeSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_SupplyBefore;
 
 namespace SomeEngine.ECS.Serialization.Tests;
 
@@ -83,12 +83,12 @@ public sealed class SavedFieldChangeTests
         using var source = new World();
         Entity holder = source.Create(new HolderMark { Number = 42 });
         source.Create(new CargoBefore { Count = 3, Holder = holder });
-        SerializationRegistry before = new SerializationRegistry()
-            .RegisterDurable<CargoBefore, CargoBeforeCodec>(Key(Cargo, CargoBeforeCodec.Schema))
-            .RegisterDurable<HolderMark, HolderMarkCodec>(Key(HolderMarkId, HolderMarkCodec.Schema));
-        SerializationRegistry after = new SerializationRegistry()
-            .RegisterDurable<CargoAfter, CargoAfterCodec>(Key(Cargo, CargoAfterCodec.Schema))
-            .RegisterDurable<HolderMark, HolderMarkCodec>(Key(HolderMarkId, HolderMarkCodec.Schema));
+        SaveRegistry before = new SaveRegistry()
+            .RegisterDurable<CargoBefore, CargoBeforeSerializer>(Key(Cargo, CargoBeforeSerializer.Schema))
+            .RegisterDurable<HolderMark, HolderMarkSerializer>(Key(HolderMarkId, HolderMarkSerializer.Schema));
+        SaveRegistry after = new SaveRegistry()
+            .RegisterDurable<CargoAfter, CargoAfterSerializer>(Key(Cargo, CargoAfterSerializer.Schema))
+            .RegisterDurable<HolderMark, HolderMarkSerializer>(Key(HolderMarkId, HolderMarkSerializer.Schema));
 
         using World loaded = SaveThenLoad(source, before, after, EntityIdentityMode.Remap);
 
@@ -103,8 +103,8 @@ public sealed class SavedFieldChangeTests
         source.Create(new CargoBefore { Count = 3 });
 
         using World loaded = SaveThenLoad(source,
-            new SerializationRegistry().RegisterDurable<CargoBefore, CargoBeforeCodec>(Key(Cargo, CargoBeforeCodec.Schema)),
-            new SerializationRegistry().RegisterDurable<CargoAfter, CargoAfterCodec>(Key(Cargo, CargoAfterCodec.Schema)),
+            new SaveRegistry().RegisterDurable<CargoBefore, CargoBeforeSerializer>(Key(Cargo, CargoBeforeSerializer.Schema)),
+            new SaveRegistry().RegisterDurable<CargoAfter, CargoAfterSerializer>(Key(Cargo, CargoAfterSerializer.Schema)),
             EntityIdentityMode.Remap);
 
         Assert.Equal(Entity.Null, loaded.Read<CargoAfter>(Single<CargoAfter>(loaded)).Owner);
@@ -118,8 +118,8 @@ public sealed class SavedFieldChangeTests
         source.Disable<GateBefore>(entity);
 
         using World loaded = SaveThenLoad(source,
-            new SerializationRegistry().RegisterDurable<GateBefore, GateBeforeCodec>(Key(Gate, GateBeforeCodec.Schema)),
-            new SerializationRegistry().RegisterDurable<GateAfter, GateAfterCodec>(Key(Gate, GateAfterCodec.Schema)));
+            new SaveRegistry().RegisterDurable<GateBefore, GateBeforeSerializer>(Key(Gate, GateBeforeSerializer.Schema)),
+            new SaveRegistry().RegisterDurable<GateAfter, GateAfterSerializer>(Key(Gate, GateAfterSerializer.Schema)));
 
         Assert.False(loaded.IsEnabled<GateAfter>(entity));
     }
@@ -132,8 +132,8 @@ public sealed class SavedFieldChangeTests
         source.Remove<ScrapBefore>(entity);
 
         using World loaded = SaveThenLoad(source,
-            new SerializationRegistry().RegisterDurable<ScrapBefore, ScrapBeforeCodec>(Key(Scrap, ScrapBeforeCodec.Schema)),
-            new SerializationRegistry().RegisterDurable<ScrapAfter, ScrapAfterCodec>(Key(Scrap, ScrapAfterCodec.Schema)));
+            new SaveRegistry().RegisterDurable<ScrapBefore, ScrapBeforeSerializer>(Key(Scrap, ScrapBeforeSerializer.Schema)),
+            new SaveRegistry().RegisterDurable<ScrapAfter, ScrapAfterSerializer>(Key(Scrap, ScrapAfterSerializer.Schema)));
 
         Assert.Equal(6, loaded.Read<Removed<ScrapAfter>>(entity).Value.Grade);
     }
@@ -141,13 +141,13 @@ public sealed class SavedFieldChangeTests
     [Fact]
     public void A_packed_component_reads_a_save_written_before_a_field_was_added()
     {
-        var after = new SerializationRegistry();
-        GameSerializationModule.RegisterAll(after);
+        var after = new SaveRegistry();
+        GeneratedSerializers.RegisterAll(after);
         using var source = new World();
         Entity entity = source.Create(new GaugeAfter { High = 8 });
 
         using World loaded = SaveThenLoad(source,
-            new SerializationRegistry().RegisterDurable<GaugeAfter, GaugeAfterCodec>(Key(GaugeBeforeId, GaugeAfterCodec.Schema)),
+            new SaveRegistry().RegisterDurable<GaugeAfter, GaugeAfterSerializer>(Key(GaugeBeforeId, GaugeAfterSerializer.Schema)),
             after);
 
         Assert.Equal((0, 8), (loaded.Read<GaugeBefore>(entity).Low, loaded.Read<GaugeBefore>(entity).High));
@@ -160,12 +160,12 @@ public sealed class SavedFieldChangeTests
         Entity cargo = source.Create(new CargoBefore { Count = 3, Label = new LabelBefore { Size = 4 } });
         using var output = new MemoryStream();
         WorldSerializer.WriteEntities(output, source, [cargo],
-            new SerializationRegistry().RegisterDurable<CargoBefore, CargoBeforeCodec>(Key(Cargo, CargoBeforeCodec.Schema)),
+            new SaveRegistry().RegisterDurable<CargoBefore, CargoBeforeSerializer>(Key(Cargo, CargoBeforeSerializer.Schema)),
             new SerializeOptions(Purpose: SavePurpose.DurableSave));
         using var target = new World();
 
         Entity[] loaded = WorldSerializer.ReadEntities(output.ToArray().AsMemory(), target,
-            new SerializationRegistry().RegisterDurable<CargoAfter, CargoAfterCodec>(Key(Cargo, CargoAfterCodec.Schema)));
+            new SaveRegistry().RegisterDurable<CargoAfter, CargoAfterSerializer>(Key(Cargo, CargoAfterSerializer.Schema)));
 
         CargoAfter value = target.Read<CargoAfter>(Assert.Single(loaded));
         Assert.Equal((3, 100, 4, 7), (value.Amount, value.Durability, value.Label.Size, value.Label.Color));
@@ -184,8 +184,8 @@ public sealed class SavedFieldChangeTests
         }
 
         using World loaded = SaveThenLoad(source,
-            new SerializationRegistry().RegisterBuffer<StepBefore, StepBeforeCodec>(Key(Step, StepBeforeCodec.Schema)),
-            new SerializationRegistry().RegisterBuffer<StepAfter, StepAfterCodec>(Key(Step, StepAfterCodec.Schema)));
+            new SaveRegistry().RegisterBuffer<StepBefore, StepBeforeSerializer>(Key(Step, StepBeforeSerializer.Schema)),
+            new SaveRegistry().RegisterBuffer<StepAfter, StepAfterSerializer>(Key(Step, StepAfterSerializer.Schema)));
 
         using ReadOnlyBuffer<StepAfter> loadedSteps = loaded.ReadBuffer<StepAfter>(entity);
         Assert.Equal([(1, 3), (2, 3)], loadedSteps.AsSpan().ToArray().Select(step => (step.Order, step.Time)));
@@ -199,8 +199,8 @@ public sealed class SavedFieldChangeTests
         source.Set(entity, new NoteBefore { Page = 9, Text = "kept" });
 
         using World loaded = SaveThenLoad(source,
-            new SerializationRegistry().Register<NoteBefore, NoteBeforeCodec>(Key(Note, NoteBeforeCodec.Schema)),
-            new SerializationRegistry().Register<NoteAfter, NoteAfterCodec>(Key(Note, NoteAfterCodec.Schema)));
+            new SaveRegistry().Register<NoteBefore, NoteBeforeSerializer>(Key(Note, NoteBeforeSerializer.Schema)),
+            new SaveRegistry().Register<NoteAfter, NoteAfterSerializer>(Key(Note, NoteAfterSerializer.Schema)));
 
         Assert.Equal("kept", loaded.Read<NoteAfter>(entity).Text);
     }
@@ -213,8 +213,8 @@ public sealed class SavedFieldChangeTests
         source.Set(entity, new ShelfBefore { Row = 2, Unused = 5 });
 
         using World loaded = SaveThenLoad(source,
-            new SerializationRegistry().Register<ShelfBefore, ShelfBeforeCodec>(Key(Shelf, ShelfBeforeCodec.Schema)),
-            new SerializationRegistry().Register<ShelfAfter, ShelfAfterCodec>(Key(Shelf, ShelfAfterCodec.Schema)));
+            new SaveRegistry().Register<ShelfBefore, ShelfBeforeSerializer>(Key(Shelf, ShelfBeforeSerializer.Schema)),
+            new SaveRegistry().Register<ShelfAfter, ShelfAfterSerializer>(Key(Shelf, ShelfAfterSerializer.Schema)));
 
         Assert.Equal(2, loaded.Read<ShelfAfter>(entity).Row);
     }
@@ -226,8 +226,8 @@ public sealed class SavedFieldChangeTests
         source.SetResource(new SupplyBefore { Stock = 9 });
 
         using World loaded = SaveThenLoad(source,
-            new SerializationRegistry().RegisterResource<SupplyBefore, SupplyBeforeCodec>(Key(Supply, SupplyBeforeCodec.Schema)),
-            new SerializationRegistry().RegisterResource<SupplyAfter, SupplyAfterCodec>(Key(Supply, SupplyAfterCodec.Schema)));
+            new SaveRegistry().RegisterResource<SupplyBefore, SupplyBeforeSerializer>(Key(Supply, SupplyBeforeSerializer.Schema)),
+            new SaveRegistry().RegisterResource<SupplyAfter, SupplyAfterSerializer>(Key(Supply, SupplyAfterSerializer.Schema)));
 
         Assert.Equal((9, 12), (loaded.ReadResource<SupplyAfter>().Stock, loaded.ReadResource<SupplyAfter>().Limit));
     }
@@ -235,26 +235,26 @@ public sealed class SavedFieldChangeTests
     [Fact]
     public void A_component_saved_with_its_packed_layout_loads_after_a_field_was_removed()
     {
-        var before = new SerializationRegistry();
-        GameSerializationModule.RegisterAll(before);
+        var before = new SaveRegistry();
+        GeneratedSerializers.RegisterAll(before);
         using var source = new World();
         Entity entity = source.Create(new GaugeBefore { Low = 1, High = 8 });
 
         using World loaded = SaveThenLoad(source, before,
-            new SerializationRegistry().RegisterDurable<GaugeAfter, GaugeAfterCodec>(Key(GaugeBeforeId, GaugeAfterCodec.Schema)));
+            new SaveRegistry().RegisterDurable<GaugeAfter, GaugeAfterSerializer>(Key(GaugeBeforeId, GaugeAfterSerializer.Schema)));
 
         Assert.Equal(8, loaded.Read<GaugeAfter>(entity).High);
     }
 
     [Fact]
-    public void A_hand_written_codec_saved_under_a_different_key_is_rejected()
+    public void A_hand_written_serializer_saved_under_a_different_key_is_rejected()
     {
         using var source = new World();
         source.Create(new PlainValue { Number = 1 });
-        var written = new SerializationRegistry().Register<PlainValue, PlainValueCodec>(
-            new SerializationTypeKey(Guid.Parse(Plain), "Plain", 1));
-        var read = new SerializationRegistry().Register<PlainValue, PlainValueCodec>(
-            new SerializationTypeKey(Guid.Parse(Plain), "Plain", 2));
+        var written = new SaveRegistry().Register<PlainValue, PlainValueSerializer>(
+            new SavedTypeKey(Guid.Parse(Plain), "Plain", 1));
+        var read = new SaveRegistry().Register<PlainValue, PlainValueSerializer>(
+            new SavedTypeKey(Guid.Parse(Plain), "Plain", 2));
 
         var error = Assert.Throws<InvalidDataException>(() => SaveThenLoad(source, written, read).Dispose());
 
@@ -264,7 +264,7 @@ public sealed class SavedFieldChangeTests
     private const string HolderMarkId = "3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b0700";
     private const string GaugeBeforeId = "3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b0900";
 
-    private static SerializationTypeKey Key(string id, ValueSchema schema) => new(Guid.Parse(id), id, schema.Hash);
+    private static SavedTypeKey Key(string id, SavedFieldList schema) => new(Guid.Parse(id), id, schema.Hash);
 
     private static World SaveCargoThenLoad(out Entity cargo, out Entity holder)
     {
@@ -279,11 +279,11 @@ public sealed class SavedFieldChangeTests
             Label = new LabelBefore { Size = 4 },
         });
         return SaveThenLoad(source,
-            new SerializationRegistry().RegisterDurable<CargoBefore, CargoBeforeCodec>(Key(Cargo, CargoBeforeCodec.Schema)),
-            new SerializationRegistry().RegisterDurable<CargoAfter, CargoAfterCodec>(Key(Cargo, CargoAfterCodec.Schema)));
+            new SaveRegistry().RegisterDurable<CargoBefore, CargoBeforeSerializer>(Key(Cargo, CargoBeforeSerializer.Schema)),
+            new SaveRegistry().RegisterDurable<CargoAfter, CargoAfterSerializer>(Key(Cargo, CargoAfterSerializer.Schema)));
     }
 
-    private static World SaveThenLoad(World source, SerializationRegistry written, SerializationRegistry read,
+    private static World SaveThenLoad(World source, SaveRegistry written, SaveRegistry read,
         EntityIdentityMode identity = EntityIdentityMode.Preserve)
     {
         using var stream = new MemoryStream();
@@ -302,14 +302,14 @@ public sealed class SavedFieldChangeTests
         return result;
     }
 
-    private readonly struct PlainValueCodec : IDurableComponentCodec<PlainValue>
+    private readonly struct PlainValueSerializer : IValueSerializer<PlainValue>
     {
-        public void Write(ref DataWriter writer, in PlainValue value) => writer.WriteInt32(value.Number);
-        public void Read(ref DataReader reader, out PlainValue value) => value = new PlainValue { Number = reader.ReadInt32() };
+        public void Write(ref SaveWriter writer, in PlainValue value) => writer.WriteInt32(value.Number);
+        public void Read(ref SaveReader reader, out PlainValue value) => value = new PlainValue { Number = reader.ReadInt32() };
     }
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1100")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1100")]
 public struct CargoBefore : IComponent
 {
     public int Count;
@@ -319,10 +319,10 @@ public struct CargoBefore : IComponent
     public LabelBefore Label;
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1200")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1200")]
 public struct CargoAfter : IComponent
 {
-    [SerializedField("Count")] public int Amount;
+    [SaveName("Count")] public int Amount;
     public int Level = -1;
     public Entity Holder;
     public LabelAfter Label;
@@ -332,13 +332,13 @@ public struct CargoAfter : IComponent
     public CargoAfter() { }
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1300")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1300")]
 public struct LabelBefore : IComponent
 {
     public int Size;
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1400")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1400")]
 public struct LabelAfter : IComponent
 {
     public int Size;
@@ -347,20 +347,20 @@ public struct LabelAfter : IComponent
     public LabelAfter() { }
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b0700")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b0700")]
 public struct HolderMark : IComponent
 {
     public int Number;
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1500")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1500")]
 public struct StepBefore : IBufferElement
 {
     public int Order;
     public int Cost;
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1600")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1600")]
 public struct StepAfter : IBufferElement
 {
     public int Order;
@@ -369,39 +369,39 @@ public struct StepAfter : IBufferElement
     public StepAfter() { }
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1700")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1700")]
 public struct NoteBefore : ISparseComponent
 {
     public int Page;
     public string Text;
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1800")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1800")]
 public struct NoteAfter : ISparseComponent
 {
     public string Text;
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1900")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1900")]
 public struct ShelfBefore : ISharedComponent
 {
     public int Row;
     public int Unused;
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1a00")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1a00")]
 public struct ShelfAfter : ISharedComponent
 {
     public int Row;
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1b00")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1b00")]
 public struct SupplyBefore : IComponent
 {
     public int Stock;
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1c00")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1c00")]
 public struct SupplyAfter : IComponent
 {
     public int Stock;
@@ -411,40 +411,40 @@ public struct SupplyAfter : IComponent
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b0900")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b0900")]
 public partial struct GaugeBefore : IComponent
 {
     public int Low;
     public int High;
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1d00")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b1d00")]
 public struct GaugeAfter : IComponent
 {
     public int High;
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b2000")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b2000")]
 public struct GateBefore : IComponent, IEnableableComponent
 {
     public int Width;
     public int Height;
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b2100")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b2100")]
 public struct GateAfter : IComponent, IEnableableComponent
 {
     public int Height;
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b2200")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b2200")]
 public struct ScrapBefore : IComponent, IRemovedComponent<ScrapBefore>
 {
     public int Mass;
     public int Grade;
 }
 
-[SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b2300")]
+[SaveId("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b2300")]
 public struct ScrapAfter : IComponent, IRemovedComponent<ScrapAfter>
 {
     public int Grade;

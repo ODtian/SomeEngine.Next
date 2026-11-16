@@ -15,31 +15,31 @@ public sealed partial class DurableSaveStore
     private const int AuthenticationKindOffset = 14;
     private const int CopyBufferSize = 64 * 1024;
 
-    private SaveFilesInspection InspectSlots()
+    private SaveFilesInspection InspectFiles()
     {
-        SaveFileInspection primary = InspectSlot(PrimaryPath);
-        SaveFileInspection previous = InspectSlot(PreviousPath);
+        SaveFileInspection primary = InspectFile(PrimaryPath);
+        SaveFileInspection previous = InspectFile(PreviousPath);
         return new SaveFilesInspection(primary, previous);
     }
 
-    private SaveFilesInspection InspectVerifiedSlots()
+    private SaveFilesInspection InspectVerifiedFiles()
     {
-        SaveFileInspection primary = InspectSlot(PrimaryPath, verifyDigest: true);
-        SaveFileInspection previous = InspectSlot(PreviousPath, verifyDigest: true);
+        SaveFileInspection primary = InspectFile(PrimaryPath, verifyDigest: true);
+        SaveFileInspection previous = InspectFile(PreviousPath, verifyDigest: true);
         return new SaveFilesInspection(primary, previous);
     }
 
-    private SaveFileInspection InspectSlot(string path)
+    private SaveFileInspection InspectFile(string path)
     {
-        return InspectSlot(path, verifyDigest: false);
+        return InspectFile(path, verifyDigest: false);
     }
 
     private SaveFileInspection VerifyTemporaryFile(string path)
     {
-        return InspectSlot(path, verifyDigest: true);
+        return InspectFile(path, verifyDigest: true);
     }
 
-    private SaveFileInspection InspectSlot(string path, bool verifyDigest)
+    private SaveFileInspection InspectFile(string path, bool verifyDigest)
     {
         try
         {
@@ -250,7 +250,7 @@ public sealed partial class DurableSaveStore
         return actualHash.FixedTimeEquals(header.EnvelopeHash);
     }
 
-    private static FileStream OpenSlot(string path) =>
+    private static FileStream OpenSaveFile(string path) =>
         new(
             path,
             FileMode.Open,

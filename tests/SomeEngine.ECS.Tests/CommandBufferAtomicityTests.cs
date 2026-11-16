@@ -17,7 +17,7 @@ public sealed class CommandBufferAtomicityTests
         world.Destroy(first);
         world.Destroy(third);
         int count = world.EntityCount;
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using (var commands = new CommandBuffer(candidate))

@@ -49,7 +49,7 @@ public class QueryModelTests
         using var world = new World();
         Entity entity = world.Create(new Position());
         Query source = world.Query<Position>();
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         candidate.Add(entity, new Velocity());

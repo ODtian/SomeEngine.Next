@@ -75,16 +75,16 @@ public struct SerRelation : SomeEngine.ECS.IComponent
 
 public struct SerExternal : SomeEngine.ECS.IComponent
 {
-    public ExternalReferenceKey Id;
+    public AssetReference Id;
 }
 
-[SerializableComponent("55555555-5555-5555-5555-555555555555")]
+[SaveId("55555555-5555-5555-5555-555555555555")]
 public partial struct GeneratedNestedRef : SomeEngine.ECS.IComponent
 {
     public Entity Target;
 }
 
-[SerializableComponent("66666666-6666-6666-6666-666666666666")]
+[SaveId("66666666-6666-6666-6666-666666666666")]
 public partial struct GeneratedManagedRefComponent : SomeEngine.ECS.IComponent
 {
     public int Value;
@@ -98,7 +98,7 @@ public enum GeneratedWideEnum : ulong
     Maximum = ulong.MaxValue,
 }
 
-[SerializableComponent("DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD")]
+[SaveId("DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD")]
 public partial struct GeneratedIntegerWidths : SomeEngine.ECS.IComponent
 {
     public sbyte SByte;
@@ -114,7 +114,7 @@ public partial struct GeneratedIntegerWidths : SomeEngine.ECS.IComponent
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
-[SerializableComponent("DADADADA-DADA-DADA-DADA-DADADADADADA")]
+[SaveId("DADADADA-DADA-DADA-DADA-DADADADADADA")]
 public partial struct GeneratedPackedPrimitive : SomeEngine.ECS.IComponent
 {
     public int X;
@@ -128,15 +128,15 @@ public struct SerPaddedCanonical : SomeEngine.ECS.IComponent
     public int Value;
 }
 
-public struct SerPaddedCanonicalCodec : IDurableComponentCodec<SerPaddedCanonical>
+public struct SerPaddedCanonicalSerializer : IValueSerializer<SerPaddedCanonical>
 {
-    public void Write(ref DataWriter writer, in SerPaddedCanonical value)
+    public void Write(ref SaveWriter writer, in SerPaddedCanonical value)
     {
         writer.WriteByte(value.Prefix);
         writer.WriteInt32(value.Value);
     }
 
-    public void Read(ref DataReader reader, out SerPaddedCanonical value)
+    public void Read(ref SaveReader reader, out SerPaddedCanonical value)
     {
         value = new SerPaddedCanonical
         {
@@ -146,9 +146,9 @@ public struct SerPaddedCanonicalCodec : IDurableComponentCodec<SerPaddedCanonica
     }
 }
 
-public struct SerNameCodec(CodecCalls? calls = null) : SomeEngine.ECS.Serialization.IComponentCodec<SerName>
+public struct SerNameSerializer(SerializerCalls? calls = null) : SomeEngine.ECS.Serialization.IValueSerializer<SerName>
 {
-    public void Write(ref DataWriter writer, in SerName value)
+    public void Write(ref SaveWriter writer, in SerName value)
     {
         if (calls is not null)
             Interlocked.Increment(ref calls.Writes);
@@ -156,7 +156,7 @@ public struct SerNameCodec(CodecCalls? calls = null) : SomeEngine.ECS.Serializat
         writer.WriteInt32(value.Id);
     }
 
-    public void Read(ref DataReader reader, out SerName value)
+    public void Read(ref SaveReader reader, out SerName value)
     {
         value = new SerName
         {
@@ -166,15 +166,15 @@ public struct SerNameCodec(CodecCalls? calls = null) : SomeEngine.ECS.Serializat
     }
 }
 
-public struct SerPositionFullCodec(CodecCalls? calls = null) : SomeEngine.ECS.Serialization.IComponentCodec<SerPosition>
+public struct SerPositionFullSerializer(SerializerCalls? calls = null) : SomeEngine.ECS.Serialization.IValueSerializer<SerPosition>
 {
-    public void Write(ref DataWriter writer, in SerPosition value)
+    public void Write(ref SaveWriter writer, in SerPosition value)
     {
         writer.WriteSingle(value.X);
         writer.WriteSingle(value.Y);
     }
 
-    public void Read(ref DataReader reader, out SerPosition value)
+    public void Read(ref SaveReader reader, out SerPosition value)
     {
         if (calls is not null)
             Interlocked.Increment(ref calls.Reads);
@@ -186,14 +186,14 @@ public struct SerPositionFullCodec(CodecCalls? calls = null) : SomeEngine.ECS.Se
     }
 }
 
-public struct SerPositionXOnlyCodec : SomeEngine.ECS.Serialization.IComponentCodec<SerPosition>
+public struct SerPositionXOnlySerializer : SomeEngine.ECS.Serialization.IValueSerializer<SerPosition>
 {
-    public void Write(ref DataWriter writer, in SerPosition value)
+    public void Write(ref SaveWriter writer, in SerPosition value)
     {
         writer.WriteSingle(value.X);
     }
 
-    public void Read(ref DataReader reader, out SerPosition value)
+    public void Read(ref SaveReader reader, out SerPosition value)
     {
         value = new SerPosition
         {
@@ -202,14 +202,14 @@ public struct SerPositionXOnlyCodec : SomeEngine.ECS.Serialization.IComponentCod
     }
 }
 
-public struct SerExternalCodec : SomeEngine.ECS.Serialization.IComponentCodec<SerExternal>
+public struct SerExternalSerializer : SomeEngine.ECS.Serialization.IValueSerializer<SerExternal>
 {
-    public void Write(ref DataWriter writer, in SerExternal value)
+    public void Write(ref SaveWriter writer, in SerExternal value)
     {
         writer.WriteExternalReference(value.Id);
     }
 
-    public void Read(ref DataReader reader, out SerExternal value)
+    public void Read(ref SaveReader reader, out SerExternal value)
     {
         value = new SerExternal { Id = reader.ReadExternalReference() };
     }
@@ -224,7 +224,7 @@ public class SerializationTests
         Entity entity = world.Create(new SerPosition { X = 17, Y = 29 });
 
         using var input = new MemoryStream(new byte[28], writable: false);
-        Assert.Throws<InvalidDataException>(() => WorldSerializer.ReadWorld(input, new SerializationRegistry()));
+        Assert.Throws<InvalidDataException>(() => WorldSerializer.ReadWorld(input, new SaveRegistry()));
 
         Assert.True(world.IsAlive(entity));
         Assert.True(world.Has<SerPosition>(entity));
@@ -235,7 +235,7 @@ public class SerializationTests
     [Fact]
     public void Component_UnmanagedValue_RoundTrips()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         using var stream = new MemoryStream();
 
         WorldSerializer.WriteComponent(stream, new SerPosition { X = 1.5f, Y = 2.5f }, registry);
@@ -250,13 +250,13 @@ public class SerializationTests
     [Fact]
     public void RawCheckpoint_ExplicitLogicalKeyStillBindsActualComponentAbi()
     {
-        var logicalKey = new SerializationTypeKey(
+        var logicalKey = new SavedTypeKey(
             Guid.Parse("A1000000-0000-0000-0000-00000000000A"),
             "Explicit.Raw.Abi",
             0x1020304050607080ul);
-        var writeRegistry = new SerializationRegistry().Register<SerPosition>(logicalKey);
-        var sameAbiRegistry = new SerializationRegistry().Register<SerPosition>(logicalKey);
-        var differentAbiRegistry = new SerializationRegistry().Register<SerDifferentRawAbi>(logicalKey);
+        var writeRegistry = new SaveRegistry().Register<SerPosition>(logicalKey);
+        var sameAbiRegistry = new SaveRegistry().Register<SerPosition>(logicalKey);
+        var differentAbiRegistry = new SaveRegistry().Register<SerDifferentRawAbi>(logicalKey);
         using var stream = new MemoryStream();
 
         WorldSerializer.WriteComponent(stream, new SerPosition { X = 4.5f, Y = 6.5f }, writeRegistry, new SerializeOptions(Purpose: SavePurpose.RawCheckpoint));
@@ -271,19 +271,19 @@ public class SerializationTests
         Assert.Equal(SerializationError.SchemaMismatch, SerializationErrors.GetError(error));
 
         SerializationTypeEntry bound = Assert.Single(writeRegistry.Entries.ToArray());
-        Assert.NotEqual(logicalKey.SchemaFingerprint, bound.TypeKey.SchemaFingerprint);
-        Assert.Equal(ComponentCodecKind.Raw, bound.CodecKind);
+        Assert.NotEqual(logicalKey.FieldHash, bound.TypeKey.FieldHash);
+        Assert.Equal(ValueEncoding.MemoryCopy, bound.ValueEncoding);
     }
 
     [Fact]
     public void DurableComponent_RejectsInvalidUtf16InsteadOfReplacingIt()
     {
-        var calls = new CodecCalls();
-        var key = new SerializationTypeKey(
+        var calls = new SerializerCalls();
+        var key = new SavedTypeKey(
             Guid.Parse("A1000000-0000-0000-0000-00000000000B"),
             "Strict.Utf8.Component",
             0x1122334455667788ul);
-        var registry = new SerializationRegistry().Register<SerName, SerNameCodec>(key, new SerNameCodec(calls));
+        var registry = new SaveRegistry().Register<SerName, SerNameSerializer>(key, new SerNameSerializer(calls));
         using var stream = new MemoryStream();
 
         Assert.Throws<EncoderFallbackException>(() =>
@@ -294,11 +294,11 @@ public class SerializationTests
     [Fact]
     public void DurableWorldAndTopologyRejectInvalidUtf16()
     {
-        var valueKey = new SerializationTypeKey(
+        var valueKey = new SavedTypeKey(
             Guid.Parse("A1000000-0000-0000-0000-00000000000C"),
             "Strict.Utf8.World",
             0x2233445566778899ul);
-        var valueRegistry = new SerializationRegistry().Register<SerName, SerNameCodec>(valueKey);
+        var valueRegistry = new SaveRegistry().Register<SerName, SerNameSerializer>(valueKey);
         var valueWorld = new World();
         Entity valueEntity = valueWorld.Create(new SerName { Value = "\uD800", Id = 8 });
         using var valueStream = new MemoryStream();
@@ -307,11 +307,11 @@ public class SerializationTests
 
         Assert.Equal("\uD800", valueWorld.Read<SerName>(valueEntity).Value);
 
-        var topologyKey = new SerializationTypeKey(
+        var topologyKey = new SavedTypeKey(
             Guid.Parse("A1000000-0000-0000-0000-00000000000D"),
             "Strict.Utf8.Topology.\uD800",
             0x33445566778899AAul);
-        var topologyRegistry = new SerializationRegistry()
+        var topologyRegistry = new SaveRegistry()
             .RegisterHierarchy<DefaultHierarchyDomain>(topologyKey);
         using var topologyWorld = new World();
         Hierarchy<DefaultHierarchyDomain>.SetParent(topologyWorld, topologyWorld.Create(), topologyWorld.Create());
@@ -321,9 +321,9 @@ public class SerializationTests
     }
 
     [Fact]
-    public void DurableSave_RejectsImplicitRawCodecBeforeWritingPayload()
+    public void DurableSave_RejectsImplicitRawSerializerBeforeWritingPayload()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         using var stream = new MemoryStream();
 
         Assert.Throws<InvalidOperationException>(() =>
@@ -333,30 +333,30 @@ public class SerializationTests
     }
 
     [Fact]
-    public void DurableSave_ManualRawCanonicalSizeWithoutProof_UsesFiveByteCanonicalCodec()
+    public void DurableSave_ManualRawCanonicalSizeWithoutProof_UsesFiveByteCanonicalSerializer()
     {
-        var key = new SerializationTypeKey(
+        var key = new SavedTypeKey(
             Guid.Parse("A1000000-0000-0000-0000-000000000010"),
             "SerPaddedCanonical.v1",
             0x6162636465666768ul);
         int nativeSize = Unsafe.SizeOf<SerPaddedCanonical>();
         Assert.True(nativeSize > 5);
 
-        var registry = new SerializationRegistry()
-            .RegisterDurable<SerPaddedCanonical, SerPaddedCanonicalCodec>(
+        var registry = new SaveRegistry()
+            .RegisterDurable<SerPaddedCanonical, SerPaddedCanonicalSerializer>(
                 key,
                 nativeSize);
-        var spoofedProofRegistry = new SerializationRegistry()
-            .RegisterDurable<SerPaddedCanonical, SerPaddedCanonicalCodec>(
+        var spoofedProofRegistry = new SaveRegistry()
+            .RegisterDurable<SerPaddedCanonical, SerPaddedCanonicalSerializer>(
                 key,
                 nativeSize,
                 layoutProof: 1);
         Assert.Equal(
-            ComponentCodecKind.Durable,
-            Assert.Single(registry.Entries.ToArray()).CodecKind);
+            ValueEncoding.Serializer,
+            Assert.Single(registry.Entries.ToArray()).ValueEncoding);
         Assert.Equal(
-            ComponentCodecKind.Durable,
-            Assert.Single(spoofedProofRegistry.Entries.ToArray()).CodecKind);
+            ValueEncoding.Serializer,
+            Assert.Single(spoofedProofRegistry.Entries.ToArray()).ValueEncoding);
 
         var source = new SerPaddedCanonical { Prefix = 0xA5, Value = 0x12345678 };
         using var stream = new MemoryStream();
@@ -373,12 +373,12 @@ public class SerializationTests
             Assert.Equal(1, reader.ReadInt32());
             Assert.Equal(16, reader.ReadBytes(16).Length);
             Assert.Equal(
-                key.StableName,
+                key.Name,
                 SaveBytes.ReadString(reader));
-            Assert.Equal(key.SchemaFingerprint, reader.ReadUInt64());
+            Assert.Equal(key.FieldHash, reader.ReadUInt64());
             Assert.Equal(0, reader.ReadByte());
             Assert.Equal(0, reader.ReadInt32());
-            Assert.Equal(-1, reader.ReadInt32()); // hand-written codec: no field list
+            Assert.Equal(-1, reader.ReadInt32()); // hand-written serializer: no field list
             Assert.Equal(0, reader.ReadInt32());
             Assert.Equal(source.Prefix, reader.ReadByte());
             Assert.Equal(source.Value, reader.ReadInt32());
@@ -396,17 +396,17 @@ public class SerializationTests
     [Fact]
     public void DurableSave_SourceGeneratedPackedProof_UsesVerifiedRawCanonicalRoundTrip()
     {
-        var registry = new SerializationRegistry();
-        GameSerializationModule.RegisterAll(registry);
-        Guid stableId = Guid.Parse("DADADADA-DADA-DADA-DADA-DADADADADADA");
+        var registry = new SaveRegistry();
+        GeneratedSerializers.RegisterAll(registry);
+        Guid savedId = Guid.Parse("DADADADA-DADA-DADA-DADA-DADADADADADA");
         SerializationTypeEntry entry = Assert.Single(
             registry.Entries.ToArray(),
-            candidate => candidate.TypeKey.StableId == stableId);
+            candidate => candidate.TypeKey.Id == savedId);
         Assert.Equal(
             BitConverter.IsLittleEndian
-                ? ComponentCodecKind.RawDurable
-                : ComponentCodecKind.Durable,
-            entry.CodecKind);
+                ? ValueEncoding.PackedMemoryCopy
+                : ValueEncoding.Serializer,
+            entry.ValueEncoding);
 
         var source = new GeneratedPackedPrimitive { X = int.MinValue, Y = 123.5f };
         using var stream = new MemoryStream();
@@ -420,35 +420,35 @@ public class SerializationTests
     }
 
     [Fact]
-    public void Registration_RejectsCustomCodecWithoutExplicit64BitSchemaFingerprint()
+    public void Registration_RejectsCustomSerializerWithoutExplicit64BitFieldHash()
     {
-        var incompleteKey = new SerializationTypeKey(
+        var incompleteKey = new SavedTypeKey(
             Guid.Parse("A1000000-0000-0000-0000-000000000001"),
             "SerPosition.IncompleteCustom",
             0);
 
         Assert.Throws<ArgumentException>(() =>
-            new SerializationRegistry()
-                .Register<SerPosition, SerPositionFullCodec>(incompleteKey));
+            new SaveRegistry()
+                .Register<SerPosition, SerPositionFullSerializer>(incompleteKey));
     }
 
     [Fact]
-    public void RawCheckpointRegistration_RejectsMissing64BitSchemaFingerprint()
+    public void RawCheckpointRegistration_RejectsMissing64BitFieldHash()
     {
-        var incompleteKey = new SerializationTypeKey(
+        var incompleteKey = new SavedTypeKey(
             Guid.Parse("A1000000-0000-0000-0000-000000000002"),
             "SerPosition.IncompleteCheckpoint",
             0);
 
         Assert.Throws<ArgumentException>(() =>
-            new SerializationRegistry()
-                .Register<SerPosition, SerPositionFullCodec>(incompleteKey));
+            new SaveRegistry()
+                .Register<SerPosition, SerPositionFullSerializer>(incompleteKey));
     }
 
     [Fact]
-    public void DurableSave_RejectsAutomaticCustomCodecBuildDerivedSchema()
+    public void DurableSave_RejectsAutomaticCustomSerializerBuildDerivedSchema()
     {
-        var registry = new SerializationRegistry().RegisterCodec<SerPosition, SerPositionFullCodec>(default);
+        var registry = new SaveRegistry().RegisterSerializer<SerPosition, SerPositionFullSerializer>(default);
         using var stream = new MemoryStream();
 
         Assert.Throws<InvalidOperationException>(() =>
@@ -460,12 +460,12 @@ public class SerializationTests
     [Fact]
     public void DurableSave_ExplicitStableCustomSchema_RoundTripsCurrentSchemaFastPath()
     {
-        var key = new SerializationTypeKey(
+        var key = new SavedTypeKey(
             Guid.Parse("A1000000-0000-0000-0000-000000000007"),
             "SerPosition.StableCustom",
             0xBF906D8E541A237Cul);
-        var registry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(key);
+        var registry = new SaveRegistry()
+            .Register<SerPosition, SerPositionFullSerializer>(key);
         using var stream = new MemoryStream();
 
         WorldSerializer.WriteComponent(stream, new SerPosition { X = 3, Y = 4 }, registry, new SerializeOptions(Purpose: SavePurpose.DurableSave));
@@ -479,7 +479,7 @@ public class SerializationTests
     [Fact]
     public void RawCheckpoint_RejectsBuildOrAbiIdentityMismatch()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         using var stream = new MemoryStream();
         WorldSerializer.WriteComponent(stream, new SerPosition { X = 1, Y = 2 }, registry);
 
@@ -495,12 +495,12 @@ public class SerializationTests
     [Fact]
     public void NonSeekableDurableEntityAndWorld_RoundTrip()
     {
-        var key = new SerializationTypeKey(
+        var key = new SavedTypeKey(
             Guid.Parse("A1000000-0000-0000-0000-000000000004"),
             "SerPosition.NonSeekable",
             0x8C6D3A5B21E7F049ul);
-        var registry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(key);
+        var registry = new SaveRegistry()
+            .Register<SerPosition, SerPositionFullSerializer>(key);
         var source = new World();
         Entity sourceEntity = source.Create(new SerPosition { X = 9, Y = 10 });
 
@@ -516,14 +516,14 @@ public class SerializationTests
     [Fact]
     public void NonSeekableDurableWorld_RejectsTrailingItemPayload()
     {
-        var key = new SerializationTypeKey(
+        var key = new SavedTypeKey(
             Guid.Parse("A1000000-0000-0000-0000-000000000005"),
             "SerPosition.Trailing",
             0x9D7E4B6C32F8015Aul);
-        var writerRegistry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(key);
-        var underReadingRegistry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionXOnlyCodec>(key);
+        var writerRegistry = new SaveRegistry()
+            .Register<SerPosition, SerPositionFullSerializer>(key);
+        var underReadingRegistry = new SaveRegistry()
+            .Register<SerPosition, SerPositionXOnlySerializer>(key);
         var source = new World();
         _ = source.Create(new SerPosition { X = 11, Y = 12 });
         using var bytes = new MemoryStream();
@@ -538,7 +538,7 @@ public class SerializationTests
     [Fact]
     public void DurableReader_RejectsRawCheckpointEvenWhenBuildIdentityMatches()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         using var stream = new MemoryStream();
         WorldSerializer.WriteComponent(stream, new SerPosition { X = 1, Y = 2 }, registry);
         stream.Position = 0;
@@ -554,7 +554,7 @@ public class SerializationTests
     [Fact]
     public void Read_RejectsHugeManifestCountBeforeAllocation()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         using var stream = new MemoryStream();
         WorldSerializer.WriteComponent(stream, new SerPosition { X = 1, Y = 2 }, registry);
 
@@ -570,7 +570,7 @@ public class SerializationTests
     [Fact]
     public void Read_RejectsMalformedUtf8InStableTypeName()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         using var stream = new MemoryStream();
         WorldSerializer.WriteComponent(stream, new SerPosition { X = 1, Y = 2 }, registry);
 
@@ -590,7 +590,7 @@ public class SerializationTests
     [Fact]
     public void Read_EnforcesCumulativeStringByteBudgetBeforeNextStringAllocation()
     {
-        var registry = new SerializationRegistry().RegisterCodec<SerName, SerNameCodec>(default);
+        var registry = new SaveRegistry().RegisterSerializer<SerName, SerNameSerializer>(default);
         using var stream = new MemoryStream();
         WorldSerializer.WriteComponent(
             stream,
@@ -598,10 +598,10 @@ public class SerializationTests
             registry);
         stream.Position = 0;
 
-        int stableNameBytes = Encoding.UTF8.GetByteCount(typeof(SerName).FullName!);
-        var limits = SerializationReadLimits.Default with
+        int savedNameBytes = Encoding.UTF8.GetByteCount(typeof(SerName).FullName!);
+        var limits = ReadLimits.Default with
         {
-            MaxTotalStringBytes = stableNameBytes,
+            MaxTotalStringBytes = savedNameBytes,
         };
         var error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadComponent<SerName>(stream, registry, new SerializationReadOptions(ReadLimits: limits)));
@@ -615,10 +615,10 @@ public class SerializationTests
         _ = source.Create();
         _ = source.Create();
         using var stream = new MemoryStream();
-        new WorldSerializer(new SerializationRegistry()).Save(source, stream);
+        new WorldSerializer(new SaveRegistry()).Save(source, stream);
         stream.Position = 0;
 
-        var limits = SerializationReadLimits.Default with
+        var limits = ReadLimits.Default with
         {
             // Empty manifest array estimate consumes 24 bytes; the next slot-array reservation
             // must fail before allocating the two-slot array.
@@ -627,7 +627,7 @@ public class SerializationTests
         var error = Assert.Throws<InvalidDataException>(() =>
             WorldSerializer.ReadWorld(
                 stream,
-                new SerializationRegistry(),
+                new SaveRegistry(),
                 new WorldLoadOptions(ReadLimits: limits)));
         Assert.Equal(SerializationError.LimitExceeded, SerializationErrors.GetError(error));
     }
@@ -635,7 +635,7 @@ public class SerializationTests
     [Fact]
     public void Read_RejectsInvalidPayloadFooter()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         using var stream = new MemoryStream();
         WorldSerializer.WriteComponent(stream, new SerPosition { X = 1, Y = 2 }, registry);
 
@@ -651,7 +651,7 @@ public class SerializationTests
     [Fact]
     public void Read_RejectsWireTypeKeyWithout64BitFingerprint()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         using var current = new MemoryStream();
         WorldSerializer.WriteComponent(current, new SerPosition { X = 1, Y = 2 }, registry);
         byte[] bytes = current.ToArray();
@@ -667,7 +667,7 @@ public class SerializationTests
     [Fact]
     public void Read_RejectsLegacyLengthPrefixItemFrame()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         using var current = new MemoryStream();
         WorldSerializer.WriteComponent(current, new SerPosition { X = 1, Y = 2 }, registry);
         byte[] bytes = current.ToArray();
@@ -691,7 +691,7 @@ public class SerializationTests
     [Fact]
     public void ReadWorld_EnforcesCentralBufferElementBudget()
     {
-        var registry = new SerializationRegistry().RegisterBuffer<SerElement>(SaveTypes.Key<SerElement>());
+        var registry = new SaveRegistry().RegisterBuffer<SerElement>(SaveTypes.Key<SerElement>());
         var source = new World();
         Entity entity = source.Create();
         source.AddBuffer<SerElement>(entity);
@@ -704,7 +704,7 @@ public class SerializationTests
         new WorldSerializer(registry).Save(source, stream);
         stream.Position = 0;
 
-        var limits = SerializationReadLimits.Default with
+        var limits = ReadLimits.Default with
         {
             MaxBufferElementsPerBuffer = 1,
         };
@@ -717,15 +717,15 @@ public class SerializationTests
     }
 
     [Fact]
-    public void Component_ManagedValue_RequiresCodec()
+    public void Component_ManagedValue_RequiresSerializer()
     {
-        Assert.Throws<ArgumentException>(() => new SerializationRegistry().Register<SerName>());
+        Assert.Throws<ArgumentException>(() => new SaveRegistry().Register<SerName>());
     }
 
     [Fact]
-    public void Component_ManagedValue_WithCodec_RoundTrips()
+    public void Component_ManagedValue_WithSerializer_RoundTrips()
     {
-        var registry = new SerializationRegistry().RegisterCodec<SerName, SerNameCodec>(default);
+        var registry = new SaveRegistry().RegisterSerializer<SerName, SerNameSerializer>(default);
         using var stream = new MemoryStream();
 
         WorldSerializer.WriteComponent(stream, new SerName { Value = "beta", Id = 8 }, registry);
@@ -790,7 +790,7 @@ public class SerializationTests
     [Fact]
     public void Read_FailsForCorruptHeader()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         using var stream = new MemoryStream([1, 2, 3]);
 
         Assert.Throws<EndOfStreamException>(() =>
@@ -815,14 +815,14 @@ public class SerializationTests
 
         stream.Position = 0;
         var error = Assert.Throws<InvalidDataException>(
-            () => WorldSerializer.ReadWorld(stream, new SerializationRegistry()));
+            () => WorldSerializer.ReadWorld(stream, new SaveRegistry()));
         Assert.Equal(SerializationError.UnsupportedVersion, SerializationErrors.GetError(error));
     }
 
     [Fact]
     public void Read_FailsForTruncatedRawPayload()
     {
-        var registry = new SerializationRegistry().Register<SerPosition>();
+        var registry = new SaveRegistry().Register<SerPosition>();
         using var valid = new MemoryStream();
         WorldSerializer.WriteComponent(valid, new SerPosition { X = 1, Y = 2 }, registry);
 
@@ -836,14 +836,14 @@ public class SerializationTests
     [Fact]
     public void Read_FailsForSchemaMismatch()
     {
-        var calls = new CodecCalls();
-        var stableId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-        var writeRegistry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(
-                new SerializationTypeKey(stableId, "SerPosition", 1));
-        var readRegistry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(
-                new SerializationTypeKey(stableId, "SerPosition", 2), new SerPositionFullCodec(calls));
+        var calls = new SerializerCalls();
+        var savedId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var writeRegistry = new SaveRegistry()
+            .Register<SerPosition, SerPositionFullSerializer>(
+                new SavedTypeKey(savedId, "SerPosition", 1));
+        var readRegistry = new SaveRegistry()
+            .Register<SerPosition, SerPositionFullSerializer>(
+                new SavedTypeKey(savedId, "SerPosition", 2), new SerPositionFullSerializer(calls));
         using var stream = new MemoryStream();
 
         WorldSerializer.WriteComponent(stream, new SerPosition { X = 1, Y = 2 }, writeRegistry);
@@ -857,7 +857,7 @@ public class SerializationTests
     [Fact]
     public void ReadWorld_RejectsUnknownComponentManifest()
     {
-        var writeRegistry = new SerializationRegistry().Register<SerPosition>();
+        var writeRegistry = new SaveRegistry().Register<SerPosition>();
         var source = new World();
         source.Create(new SerPosition { X = 1, Y = 2 });
         using var stream = new MemoryStream();
@@ -865,20 +865,20 @@ public class SerializationTests
 
         stream.Position = 0;
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            WorldSerializer.ReadWorld(stream, new SerializationRegistry()));
+            WorldSerializer.ReadWorld(stream, new SaveRegistry()));
         Assert.Equal(SerializationError.UnknownType, SerializationErrors.GetError(error));
     }
 
     [Fact]
-    public void Read_RejectsLegacyGuidEncodingBeforeCodec()
+    public void Read_RejectsLegacyGuidEncodingBeforeSerializer()
     {
-        var calls = new CodecCalls();
-        var key = new SerializationTypeKey(
+        var calls = new SerializerCalls();
+        var key = new SavedTypeKey(
             Guid.Parse("12345678-9ABC-4DEF-8123-456789ABCDEF"),
             "legacy-guid",
             0x1020304050607080ul);
-        var registry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(key, new SerPositionFullCodec(calls));
+        var registry = new SaveRegistry()
+            .Register<SerPosition, SerPositionFullSerializer>(key, new SerPositionFullSerializer(calls));
         byte[] envelope = CreateManualComponentEnvelope(key, legacyGuidEncoding: true);
 
         using var stream = new MemoryStream(envelope, writable: false);
@@ -889,15 +889,15 @@ public class SerializationTests
     }
 
     [Fact]
-    public void Read_RejectsLegacyPrimitiveStringEncodingBeforeCodec()
+    public void Read_RejectsLegacyPrimitiveStringEncodingBeforeSerializer()
     {
-        var calls = new CodecCalls();
-        var key = new SerializationTypeKey(
+        var calls = new SerializerCalls();
+        var key = new SavedTypeKey(
             Guid.Parse("6F3A6C85-7B1F-4A93-8C2A-E9DA4E6782C1"),
             "xy",
             0x2131415161718191ul);
-        var registry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(key, new SerPositionFullCodec(calls));
+        var registry = new SaveRegistry()
+            .Register<SerPosition, SerPositionFullSerializer>(key, new SerPositionFullSerializer(calls));
         byte[] envelope = CreateManualComponentEnvelope(key, legacyStringEncoding: true);
 
         using var stream = new MemoryStream(envelope, writable: false);
@@ -907,15 +907,15 @@ public class SerializationTests
     }
 
     [Fact]
-    public void Read_RejectsLegacy32BitSchemaFieldBeforeCodec()
+    public void Read_RejectsLegacy32BitSchemaFieldBeforeSerializer()
     {
-        var calls = new CodecCalls();
-        var key = new SerializationTypeKey(
+        var calls = new SerializerCalls();
+        var key = new SavedTypeKey(
             Guid.Parse("8A1B37AE-F0F0-43B7-965B-72D46C28B248"),
             "legacy-schema32",
             0x31415161718191A1ul);
-        var registry = new SerializationRegistry()
-            .Register<SerPosition, SerPositionFullCodec>(key, new SerPositionFullCodec(calls));
+        var registry = new SaveRegistry()
+            .Register<SerPosition, SerPositionFullSerializer>(key, new SerPositionFullSerializer(calls));
         byte[] envelope = CreateManualComponentEnvelope(key, legacySchemaHash: 0x89ABCDEFu);
 
         using var stream = new MemoryStream(envelope, writable: false);
@@ -932,7 +932,7 @@ public class SerializationTests
         Entity live = world.Create();
         Entity dead = world.Create();
         world.Destroy(dead);
-        var registry = new SerializationRegistry();
+        var registry = new SaveRegistry();
         TopologyFile deadFile = TopologyFile.Save(world, registry);
         int entity = Assert.Single(deadFile.EntityFields);
         deadFile.SetInt(entity, dead.Id);
@@ -965,10 +965,10 @@ public class SerializationTests
     }
 
     [Fact]
-    public void GeneratedCodec_ManagedNestedAndEntityReferences_RoundTrip()
+    public void GeneratedSerializer_ManagedNestedAndEntityReferences_RoundTrip()
     {
-        var registry = new SerializationRegistry();
-        GameSerializationModule.RegisterAll(registry);
+        var registry = new SaveRegistry();
+        GeneratedSerializers.RegisterAll(registry);
         using var stream = new MemoryStream();
         var idWorld = new World();
         var target = idWorld.Create();
@@ -995,10 +995,10 @@ public class SerializationTests
     }
 
     [Fact]
-    public void GeneratedCanonicalCodec_AllFixedWidthIntegersAndUnsignedEnum_RoundTrip()
+    public void GeneratedCanonicalSerializer_AllFixedWidthIntegersAndUnsignedEnum_RoundTrip()
     {
-        var registry = new SerializationRegistry();
-        GameSerializationModule.RegisterAll(registry);
+        var registry = new SaveRegistry();
+        GeneratedSerializers.RegisterAll(registry);
         var source = new GeneratedIntegerWidths
         {
             SByte = sbyte.MinValue,
@@ -1031,10 +1031,10 @@ public class SerializationTests
     }
 
     [Fact]
-    public void ExternalReferenceKey_CodecHelper_RoundTrips()
+    public void ExternalReferenceKey_SerializerHelper_RoundTrips()
     {
-        var registry = new SerializationRegistry().RegisterCodec<SerExternal, SerExternalCodec>(default);
-        var id = new ExternalReferenceKey(Guid.Parse("88888888-8888-8888-8888-888888888888"));
+        var registry = new SaveRegistry().RegisterSerializer<SerExternal, SerExternalSerializer>(default);
+        var id = new AssetReference(Guid.Parse("88888888-8888-8888-8888-888888888888"));
         using var stream = new MemoryStream();
 
         WorldSerializer.WriteComponent(stream, new SerExternal { Id = id }, registry);
@@ -1048,14 +1048,14 @@ public class SerializationTests
     [Fact]
     public void RelationPayload_UsesOrdinaryComponentRegistrationAndRoundTrips()
     {
-        var registry = new SerializationRegistry().Register<SerRelation>();
+        var registry = new SaveRegistry().Register<SerRelation>();
         var source = new World();
         var payloadEntity = source.Create(new SerRelation { Value = 9 });
 
         string obsoleteRegistrationName = string.Concat("Register", "Relation");
         var entry = Assert.Single(registry.Entries.ToArray());
         Assert.Equal(SerializationValueKind.Component, entry.Kind);
-        Assert.Equal(typeof(SerRelation).FullName, entry.TypeKey.StableName.Split('|')[0]);
+        Assert.Equal(typeof(SerRelation).FullName, entry.TypeKey.Name.Split('|')[0]);
 
         using var snapshot = new MemoryStream();
         new WorldSerializer(registry).Save(source, snapshot);
@@ -1070,14 +1070,14 @@ public class SerializationTests
     public void RelationshipTopologyComponents_CannotUseOrdinaryEntityRowRegistration()
     {
         Assert.Throws<InvalidOperationException>(
-            () => new SerializationRegistry().Register<SerTopologySource>());
+            () => new SaveRegistry().Register<SerTopologySource>());
         Assert.Throws<InvalidOperationException>(
-            () => new SerializationRegistry().Register<SerTopologyTarget>());
+            () => new SaveRegistry().Register<SerTopologyTarget>());
     }
 
-    private static SerializationRegistry FullRegistry()
+    private static SaveRegistry FullRegistry()
     {
-        return new SerializationRegistry()
+        return new SaveRegistry()
             .Register<SerPosition>()
             .Register<SerVisible>()
             .Register<SerPlayerTag>()
@@ -1126,7 +1126,7 @@ public class SerializationTests
     }
 
     private static byte[] CreateManualComponentEnvelope(
-        SerializationTypeKey key,
+        SavedTypeKey key,
         bool legacyGuidEncoding = false,
         bool legacyStringEncoding = false,
         uint? legacySchemaHash = null)
@@ -1142,22 +1142,22 @@ public class SerializationTests
 
         if (legacyGuidEncoding)
         {
-            writer.Write(key.StableId.ToByteArray());
+            writer.Write(key.Id.ToByteArray());
         }
         else
         {
-            Span<byte> stableId = stackalloc byte[16];
-            SomeEngine.Serialization.BinaryPrimitiveEncoding.WriteGuid(stableId, key.StableId);
-            writer.Write(stableId);
+            Span<byte> savedId = stackalloc byte[16];
+            SomeEngine.Serialization.BinaryPrimitiveEncoding.WriteGuid(savedId, key.Id);
+            writer.Write(savedId);
         }
 
         if (legacyStringEncoding)
-            writer.Write(key.StableName);
+            writer.Write(key.Name);
         else
-            SaveBytes.WriteString(writer, key.StableName);
+            SaveBytes.WriteString(writer, key.Name);
         if (legacySchemaHash is not null)
             writer.Write(legacySchemaHash.Value);
-        writer.Write(key.SchemaFingerprint);
+        writer.Write(key.FieldHash);
         writer.Write((byte)0);
         writer.Write(0);
         writer.Write(-1); // no field list

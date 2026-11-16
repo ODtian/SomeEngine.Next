@@ -9,7 +9,7 @@ public sealed class AsyncSaveSchedulerTests
     [Fact]
     public async Task A_world_with_a_scheduler_saves_asynchronously_and_reads_back()
     {
-        SerializationRegistry registry = CreateRegistry();
+        SaveRegistry registry = CreateRegistry();
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var world = new World(execution: new WorldJobs(scheduler));
         Entity root = world.Create();
@@ -27,7 +27,7 @@ public sealed class AsyncSaveSchedulerTests
     [Fact]
     public void A_world_without_a_scheduler_finishes_its_save_before_SaveAsync_returns()
     {
-        SerializationRegistry registry = CreateRegistry();
+        SaveRegistry registry = CreateRegistry();
         using var world = new World();
         Entity root = world.Create();
         Entity row = world.Create(new SavedRow { Value = 7, Target = root });
@@ -44,7 +44,7 @@ public sealed class AsyncSaveSchedulerTests
     [Fact]
     public async Task A_failed_save_of_a_world_without_a_scheduler_faults_the_returned_task()
     {
-        SerializationRegistry registry = CreateRegistry();
+        SaveRegistry registry = CreateRegistry();
         using var world = new World();
         world.Create(new SavedRow { Value = 7 });
         using var readOnly = new MemoryStream([], writable: false);
@@ -58,9 +58,9 @@ public sealed class AsyncSaveSchedulerTests
     [Fact]
     public async Task SaveAsync_writes_the_same_bytes_as_Save()
     {
-        SerializationRegistry registry = CreateRegistry().RegisterResource<SupplyBefore,
-            global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_SupplyBefore>(
-            new SerializationTypeKey(Guid.Parse("0c4f8e2a-61d3-4b97-a5e0-3f9d2c7b1100"), "Supply", 1));
+        SaveRegistry registry = CreateRegistry().RegisterResource<SupplyBefore,
+            global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_SupplyBefore>(
+            new SavedTypeKey(Guid.Parse("0c4f8e2a-61d3-4b97-a5e0-3f9d2c7b1100"), "Supply", 1));
         using var world = new World();
         Entity root = world.Create();
         Entity row = world.Create(new SavedRow { Value = 7, Target = root });
@@ -77,10 +77,10 @@ public sealed class AsyncSaveSchedulerTests
         Assert.Equal(direct.ToArray(), captured.ToArray());
     }
 
-    private static SerializationRegistry CreateRegistry()
+    private static SaveRegistry CreateRegistry()
     {
-        var registry = new SerializationRegistry();
-        GameSerializationModule.RegisterAll(registry);
+        var registry = new SaveRegistry();
+        GeneratedSerializers.RegisterAll(registry);
         return registry;
     }
 }

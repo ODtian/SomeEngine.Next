@@ -79,8 +79,8 @@ public sealed class JobCommandBufferTests : JobTest
         World world = CreateJobWorld();
         Entity sourceA = world.Create(), sourceB = world.Create(), target = world.Create();
         int before = world.EntityCount;
-        using var checkpoint = new WorldCheckpoint();
-        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy();
+        checkpoint.Capture(world, ProgressMode.Keep);
         using var candidate = new World(execution: new WorldJobs(Jobs));
         checkpoint.Restore(candidate);
         using var commands = new CommandBatch(candidate, 2);
@@ -122,8 +122,8 @@ public sealed class JobCommandBufferTests : JobTest
         Entity original = world.Create();
         Query members = world.Query(new QueryDescription().With<JobCommandValue>());
         using EventReader<MembershipChange> changes = world.WatchMembership(members);
-        using var checkpoint = new WorldCheckpoint();
-        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy();
+        checkpoint.Capture(world, ProgressMode.Keep);
         using var candidate = new World(execution: new WorldJobs(Jobs));
         checkpoint.Restore(candidate);
         using var commands = new CommandBatch(candidate, 2);

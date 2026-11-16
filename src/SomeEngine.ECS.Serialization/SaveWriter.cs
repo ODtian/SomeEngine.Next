@@ -7,11 +7,11 @@ using SomeEngine.Serialization;
 
 namespace SomeEngine.ECS.Serialization;
 
-public ref struct DataWriter
+public ref struct SaveWriter
 {
     private static readonly Encoding Utf8 = new UTF8Encoding(false, true);
     private IBufferWriter<byte> _output;
-    private readonly ISet<ExternalReferenceKey>? _references;
+    private readonly ISet<AssetReference>? _references;
     private Span<byte> _bytes;
     private int _offset;
     private long _committed;
@@ -21,7 +21,7 @@ public ref struct DataWriter
     private ArrayBufferWriter<byte>? _frame;
     private long _frameStart;
 
-    public DataWriter(IBufferWriter<byte> output, ISet<ExternalReferenceKey>? references = null)
+    public SaveWriter(IBufferWriter<byte> output, ISet<AssetReference>? references = null)
     {
         _output = output;
         _references = references;
@@ -34,7 +34,7 @@ public ref struct DataWriter
         _frame = null;
         _frameStart = 0;
     }
-    public DataWriter(Stream output, ISet<ExternalReferenceKey>? references = null)
+    public SaveWriter(Stream output, ISet<AssetReference>? references = null)
         : this(new StreamDataOutput(output), references) { }
     public long Position => _committed + _offset;
 
@@ -134,7 +134,7 @@ public ref struct DataWriter
     public void WriteDouble(double value) => BinaryPrimitiveEncoding.WriteDouble(Take(8), value);
     public void WriteChar(char value) => BinaryPrimitiveEncoding.WriteChar(Take(2), value);
     public void WriteGuid(Guid value) => BinaryPrimitiveEncoding.WriteGuid(Take(16), value);
-    public void WriteExternalReference(ExternalReferenceKey value)
+    public void WriteExternalReference(AssetReference value)
     {
         WriteGuid(value.Value);
         if (value.Value != Guid.Empty) _references?.Add(value);

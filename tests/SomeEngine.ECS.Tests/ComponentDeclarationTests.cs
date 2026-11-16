@@ -25,8 +25,8 @@ public sealed class ComponentDeclarationTests
         using var source = new World();
         source.GroupBy<SavedZone>();
         source.Create(new SavedZone { Value = 2 });
-        var registry = new SerializationRegistry().Register<SavedZone, SavedZoneCodec>(
-            new SerializationTypeKey(Guid.Parse("8d1f6a2c-3b4e-4f5a-9c6d-7e8f9a0b1c00"), "SavedZone", 1));
+        var registry = new SaveRegistry().Register<SavedZone, SavedZoneSerializer>(
+            new SavedTypeKey(Guid.Parse("8d1f6a2c-3b4e-4f5a-9c6d-7e8f9a0b1c00"), "SavedZone", 1));
         using var stream = new MemoryStream();
         new WorldSerializer(registry).Save(source, stream, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         stream.Position = 0;
@@ -46,8 +46,8 @@ public sealed class ComponentDeclarationTests
         using var source = new World();
         Entity target = source.Create();
         Entity link = source.Create(new TargetLink { Target = target });
-        var registry = new SerializationRegistry().Register<TargetLink, TargetLinkCodec>(
-            new SerializationTypeKey(Guid.Parse("8d1f6a2c-3b4e-4f5a-9c6d-7e8f9a0b1d00"), "TargetLink", 1));
+        var registry = new SaveRegistry().Register<TargetLink, TargetLinkSerializer>(
+            new SavedTypeKey(Guid.Parse("8d1f6a2c-3b4e-4f5a-9c6d-7e8f9a0b1d00"), "TargetLink", 1));
         using var stream = new MemoryStream();
         WorldSerializer.WriteEntities(stream, source, [target, link], registry, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         using var loaded = new World();
@@ -76,10 +76,10 @@ public sealed class ComponentDeclarationTests
         public readonly int GetGroup() => Value;
     }
 
-    private readonly struct SavedZoneCodec : IDurableComponentCodec<SavedZone>
+    private readonly struct SavedZoneSerializer : IValueSerializer<SavedZone>
     {
-        public void Write(ref DataWriter writer, in SavedZone value) => writer.WriteInt32(value.Value);
-        public void Read(ref DataReader reader, out SavedZone value) => value = new SavedZone { Value = reader.ReadInt32() };
+        public void Write(ref SaveWriter writer, in SavedZone value) => writer.WriteInt32(value.Value);
+        public void Read(ref SaveReader reader, out SavedZone value) => value = new SavedZone { Value = reader.ReadInt32() };
     }
 
     private struct TargetLink : IComponent, IEntityReferenceValue<TargetLink>
@@ -89,9 +89,9 @@ public sealed class ComponentDeclarationTests
             => value.Target = entities.Map(value.Target);
     }
 
-    private readonly struct TargetLinkCodec : IDurableComponentCodec<TargetLink>
+    private readonly struct TargetLinkSerializer : IValueSerializer<TargetLink>
     {
-        public void Write(ref DataWriter writer, in TargetLink value) => writer.WriteEntity(value.Target);
-        public void Read(ref DataReader reader, out TargetLink value) => value = new TargetLink { Target = reader.ReadEntity() };
+        public void Write(ref SaveWriter writer, in TargetLink value) => writer.WriteEntity(value.Target);
+        public void Read(ref SaveReader reader, out TargetLink value) => value = new TargetLink { Target = reader.ReadEntity() };
     }
 }

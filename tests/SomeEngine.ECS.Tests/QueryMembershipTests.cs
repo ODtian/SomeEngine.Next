@@ -74,7 +74,7 @@ public sealed class QueryMembershipTests
         Entity second = world.Create(new Position());
         Entity third = world.Create(new Position());
         ulong before = query.MembershipVersion;
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         Query candidateQuery = candidate.Query(new QueryDescription().WithStored<Position>());

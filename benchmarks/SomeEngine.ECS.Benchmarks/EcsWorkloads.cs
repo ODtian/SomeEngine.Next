@@ -26,15 +26,15 @@ public struct BenchmarkJobVelocity : SomeEngine.ECS.IComponent
 public readonly record struct BenchmarkDurablePosition(int X, int Y) :
     SomeEngine.ECS.IComponent;
 
-public struct BenchmarkDurablePositionCodec : IDurableComponentCodec<BenchmarkDurablePosition>
+public struct BenchmarkDurablePositionSerializer : IValueSerializer<BenchmarkDurablePosition>
 {
-    public void Write(ref DataWriter writer, in BenchmarkDurablePosition value)
+    public void Write(ref SaveWriter writer, in BenchmarkDurablePosition value)
     {
         writer.WriteInt32(value.X);
         writer.WriteInt32(value.Y);
     }
 
-    public void Read(ref DataReader reader, out BenchmarkDurablePosition value) =>
+    public void Read(ref SaveReader reader, out BenchmarkDurablePosition value) =>
         value = new BenchmarkDurablePosition(reader.ReadInt32(), reader.ReadInt32());
 }
 
@@ -77,7 +77,7 @@ internal static partial class EcsBenchmarkSuite
         ComponentId<BenchmarkDurablePosition>.Value,
     ];
 
-    private static readonly SerializationTypeKey DurablePositionTypeKey = new(
+    private static readonly SavedTypeKey DurablePositionTypeKey = new(
         new Guid("4a652121-b074-4f0a-a537-ebba37a086df"),
         "SomeEngine.ECS.Benchmarks.BenchmarkDurablePosition",
         0x4DEBC5E549BA31E7UL);
@@ -533,7 +533,7 @@ internal static partial class EcsBenchmarkSuite
     private sealed class CheckpointWriteExecution : IBenchmarkExecution
     {
         private readonly int _entityCount;
-        private readonly SerializationRegistry _registry = new SerializationRegistry().Register<Position>();
+        private readonly SaveRegistry _registry = new SaveRegistry().Register<Position>();
         private MemoryStream? _stream;
 
         internal CheckpointWriteExecution(int entityCount)
@@ -577,7 +577,7 @@ internal static partial class EcsBenchmarkSuite
     private sealed class CheckpointReadExecution : IBenchmarkExecution, IDisposable
     {
         private readonly int _entityCount;
-        private readonly SerializationRegistry _registry = new SerializationRegistry().Register<Position>();
+        private readonly SaveRegistry _registry = new SaveRegistry().Register<Position>();
         private readonly MemoryStream _payload;
         private readonly string _payloadHash;
         private World? _loaded;
@@ -627,7 +627,7 @@ internal static partial class EcsBenchmarkSuite
     private sealed class MixedRenderGraphFrameState : IBenchmarkExecution, IDisposable
     {
         private readonly int _entityCount;
-        private readonly SerializationRegistry _registry = new SerializationRegistry()
+        private readonly SaveRegistry _registry = new SaveRegistry()
             .Register<BenchmarkJobPosition>()
             .Register<BenchmarkJobVelocity>();
         private MemoryStream? _stream;
@@ -701,7 +701,7 @@ internal static partial class EcsBenchmarkSuite
             Path.GetTempPath(),
             "SomeEngine.ECS.Benchmarks",
             Guid.NewGuid().ToString("N"));
-        private readonly SerializationRegistry _registry;
+        private readonly SaveRegistry _registry;
         private readonly DurableSaveStore _store;
         private DurableSaveCommit? _commit;
         private World? _loaded;
@@ -709,9 +709,9 @@ internal static partial class EcsBenchmarkSuite
         internal DurableSaveRoundTripExecution(int entityCount)
         {
             _entityCount = entityCount;
-            _registry = new SerializationRegistry().RegisterDurable<
+            _registry = new SaveRegistry().RegisterDurable<
                 BenchmarkDurablePosition,
-                BenchmarkDurablePositionCodec>(DurablePositionTypeKey);
+                BenchmarkDurablePositionSerializer>(DurablePositionTypeKey);
             World = CreateJobWorld(entityCount);
             World.ExecuteBundleSpawnBatch(DurablePositionComponents, entityCount, 0, new DurablePositionWriter());
             _store = new DurableSaveStore(Path.Combine(_directoryPath, "world.save"));

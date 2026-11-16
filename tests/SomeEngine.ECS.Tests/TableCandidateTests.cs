@@ -11,7 +11,7 @@ public sealed class TableCandidateTests
     {
         using var world = new World();
         Entity[] entities = Enumerable.Range(0, 256).Select(index => world.Create(new Value(index))).ToArray();
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using (var commands = new CommandBuffer(candidate))
@@ -28,7 +28,7 @@ public sealed class TableCandidateTests
             foreach (Entity entity in entities) commands.Set(entity, new Value(42));
             commands.Playback();
         }
-        checkpoint.Capture(candidate, CheckpointProgress.Preserve).Restore(world);
+        checkpoint.Capture(candidate, ProgressMode.Keep).Restore(world);
         Assert.All(entities, entity => Assert.Equal(42, world.Read<Value>(entity).Number));
     }
     private readonly record struct Value(int Number) : IAddedComponent;

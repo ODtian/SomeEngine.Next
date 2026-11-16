@@ -1,17 +1,17 @@
 using SomeEngine.ECS.Entities;
 using SomeEngine.Serialization;
-using CargoBeforeCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_CargoBefore;
-using GateBeforeCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_GateBefore;
-using HolderMarkCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_HolderMark;
-using NoteBeforeCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_NoteBefore;
-using ScrapBeforeCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_ScrapBefore;
-using ShelfBeforeCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_ShelfBefore;
-using SupplyBeforeCodec = global::__SomeEngine_ECSSerializationCodec_global__SomeEngine_ECS_Serialization_Tests_SupplyBefore;
+using CargoBeforeSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_CargoBefore;
+using GateBeforeSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_GateBefore;
+using HolderMarkSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_HolderMark;
+using NoteBeforeSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_NoteBefore;
+using ScrapBeforeSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_ScrapBefore;
+using ShelfBeforeSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_ShelfBefore;
+using SupplyBeforeSerializer = global::__SomeEngine_ECSSerializer_global__SomeEngine_ECS_Serialization_Tests_SupplyBefore;
 
 namespace SomeEngine.ECS.Serialization.Tests;
 
 // A save written while the game had a component type loads after the type is gone, once the registry retires it.
-public sealed class RetiredTypeTests
+public sealed class SkippedSavedTypeTests
 {
     private const string Mark = "7b0e4f21-5c3a-4d2e-8f61-2a9c0d4e0100";
     private const string Retired = "7b0e4f21-5c3a-4d2e-8f61-2a9c0d4e0200";
@@ -21,7 +21,7 @@ public sealed class RetiredTypeTests
     {
         using World loaded = SaveThenLoad(
             world => WithMark(world, entity => world.Add(entity, new CargoBefore { Count = 3 })),
-            registry => registry.RegisterDurable<CargoBefore, CargoBeforeCodec>(Key(Retired)),
+            registry => registry.RegisterDurable<CargoBefore, CargoBeforeSerializer>(Key(Retired)),
             out Entity entity, retire: true);
 
         Assert.Equal(5, loaded.Read<HolderMark>(entity).Number);
@@ -32,7 +32,7 @@ public sealed class RetiredTypeTests
     {
         var error = Assert.Throws<InvalidDataException>(() => SaveThenLoad(
             world => WithMark(world, entity => world.Add(entity, new CargoBefore { Count = 3 })),
-            registry => registry.RegisterDurable<CargoBefore, CargoBeforeCodec>(Key(Retired)),
+            registry => registry.RegisterDurable<CargoBefore, CargoBeforeSerializer>(Key(Retired)),
             out _, retire: false).Dispose());
 
         Assert.Equal(SerializationError.UnknownType, SerializationErrors.GetError(error));
@@ -48,7 +48,7 @@ public sealed class RetiredTypeTests
                 world.Set(entity, new NoteBefore { Page = 1, Text = "gone" });
                 return entity;
             },
-            registry => registry.Register<NoteBefore, NoteBeforeCodec>(Key(Retired)),
+            registry => registry.Register<NoteBefore, NoteBeforeSerializer>(Key(Retired)),
             out Entity entity, retire: true);
 
         Assert.Equal(5, loaded.Read<HolderMark>(entity).Number);
@@ -64,7 +64,7 @@ public sealed class RetiredTypeTests
                 world.Set(entity, new ShelfBefore { Row = 2 });
                 return entity;
             },
-            registry => registry.Register<ShelfBefore, ShelfBeforeCodec>(Key(Retired)),
+            registry => registry.Register<ShelfBefore, ShelfBeforeSerializer>(Key(Retired)),
             out Entity entity, retire: true);
 
         Assert.Equal(5, loaded.Read<HolderMark>(entity).Number);
@@ -79,7 +79,7 @@ public sealed class RetiredTypeTests
                 world.SetResource(new SupplyBefore { Stock = 9 });
                 return world.Create(new HolderMark { Number = 5 });
             },
-            registry => registry.RegisterResource<SupplyBefore, SupplyBeforeCodec>(Key(Retired)),
+            registry => registry.RegisterResource<SupplyBefore, SupplyBeforeSerializer>(Key(Retired)),
             out Entity entity, retire: true);
 
         Assert.Equal(5, loaded.Read<HolderMark>(entity).Number);
@@ -95,7 +95,7 @@ public sealed class RetiredTypeTests
                 world.Disable<GateBefore>(entity);
                 return entity;
             },
-            registry => registry.RegisterDurable<GateBefore, GateBeforeCodec>(Key(Retired)),
+            registry => registry.RegisterDurable<GateBefore, GateBeforeSerializer>(Key(Retired)),
             out Entity entity, retire: true);
 
         Assert.Equal(5, loaded.Read<HolderMark>(entity).Number);
@@ -111,7 +111,7 @@ public sealed class RetiredTypeTests
                 world.Remove<ScrapBefore>(entity);
                 return entity;
             },
-            registry => registry.RegisterDurable<ScrapBefore, ScrapBeforeCodec>(Key(Retired)),
+            registry => registry.RegisterDurable<ScrapBefore, ScrapBeforeSerializer>(Key(Retired)),
             out Entity entity, retire: true);
 
         Assert.Equal(5, loaded.Read<HolderMark>(entity).Number);
@@ -169,15 +169,15 @@ public sealed class RetiredTypeTests
         return (both, markOnly, retiredOnly);
     }
 
-    private static SerializationRegistry WrittenRegistry() => new SerializationRegistry()
-        .RegisterDurable<HolderMark, HolderMarkCodec>(Key(Mark))
-        .RegisterDurable<CargoBefore, CargoBeforeCodec>(Key(Retired));
+    private static SaveRegistry WrittenRegistry() => new SaveRegistry()
+        .RegisterDurable<HolderMark, HolderMarkSerializer>(Key(Mark))
+        .RegisterDurable<CargoBefore, CargoBeforeSerializer>(Key(Retired));
 
-    private static SerializationRegistry ReadRegistry() => new SerializationRegistry()
-        .RegisterDurable<HolderMark, HolderMarkCodec>(Key(Mark))
-        .RetireType(Guid.Parse(Retired));
+    private static SaveRegistry ReadRegistry() => new SaveRegistry()
+        .RegisterDurable<HolderMark, HolderMarkSerializer>(Key(Mark))
+        .SkipSavedType(Guid.Parse(Retired));
 
-    private static SerializationTypeKey Key(string id) => new(Guid.Parse(id), id, 1);
+    private static SavedTypeKey Key(string id) => new(Guid.Parse(id), id, 1);
 
     private static Entity WithMark(World world, Action<Entity> add)
     {
@@ -187,15 +187,15 @@ public sealed class RetiredTypeTests
     }
 
     // Saves a world whose retired type is registered, then loads it with a registry that only has HolderMark.
-    private static World SaveThenLoad(Func<World, Entity> create, Func<SerializationRegistry, SerializationRegistry> registerRetired,
+    private static World SaveThenLoad(Func<World, Entity> create, Func<SaveRegistry, SaveRegistry> registerRetired,
         out Entity entity, bool retire)
     {
         using var source = new World();
         entity = create(source);
-        SerializationRegistry written = registerRetired(new SerializationRegistry()
-            .RegisterDurable<HolderMark, HolderMarkCodec>(Key(Mark)));
-        var read = new SerializationRegistry().RegisterDurable<HolderMark, HolderMarkCodec>(Key(Mark));
-        if (retire) read.RetireType(Guid.Parse(Retired));
+        SaveRegistry written = registerRetired(new SaveRegistry()
+            .RegisterDurable<HolderMark, HolderMarkSerializer>(Key(Mark)));
+        var read = new SaveRegistry().RegisterDurable<HolderMark, HolderMarkSerializer>(Key(Mark));
+        if (retire) read.SkipSavedType(Guid.Parse(Retired));
         using var stream = new MemoryStream();
         new WorldSerializer(written).Save(source, stream, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         stream.Position = 0;

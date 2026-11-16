@@ -17,14 +17,14 @@ public sealed partial class WorldSerializer
     private sealed class CapturedTable
     {
         private static readonly IComparer<SavedColumn> ColumnOrder = Comparer<SavedColumn>.Create(
-            static (left, right) => left.Key.StableId.CompareTo(right.Key.StableId));
+            static (left, right) => left.Key.Id.CompareTo(right.Key.Id));
         internal ChunkData First = null!;
         internal SavedColumn[] Columns = [];
         internal readonly List<ChunkData> Chunks = [];
         internal int[] ColumnIndices = [];
         internal int ColumnCount;
 
-        internal void Bind(ChunkData first, SerializationRegistry registry)
+        internal void Bind(ChunkData first, SaveRegistry registry)
         {
             First = first;
             Chunks.Clear(); Chunks.Add(first);
@@ -44,29 +44,29 @@ public sealed partial class WorldSerializer
         internal void Clear() { First = null!; Chunks.Clear(); Array.Clear(Columns); }
     }
 
-    public void Save(WorldCheckpoint captured, IBufferWriter<byte> output,
+    public void Save(WorldCopy captured, IBufferWriter<byte> output,
         SavePurpose purpose = SavePurpose.RawCheckpoint)
         => Save(captured, output, new SerializeOptions(Purpose: purpose));
 
-    public void Save(WorldCheckpoint checkpoint, IBufferWriter<byte> output, SerializeOptions options)
+    public void Save(WorldCopy checkpoint, IBufferWriter<byte> output, SerializeOptions options)
     {
         ValidateWriteOptions(options);
-        var writer = new DataWriter(output, options.ExternalReferences);
+        var writer = new SaveWriter(output, options.ExternalReferences);
         Write(checkpoint, ref writer, options);
         writer.Flush();
     }
-    public void Save(WorldCheckpoint captured, Stream output, SavePurpose purpose = SavePurpose.RawCheckpoint)
+    public void Save(WorldCopy captured, Stream output, SavePurpose purpose = SavePurpose.RawCheckpoint)
         => Save(captured, output, new SerializeOptions(Purpose: purpose));
 
-    public void Save(WorldCheckpoint checkpoint, Stream output, SerializeOptions options)
+    public void Save(WorldCopy checkpoint, Stream output, SerializeOptions options)
     {
         ValidateWriteOptions(options);
-        var writer = new DataWriter(output, options.ExternalReferences);
+        var writer = new SaveWriter(output, options.ExternalReferences);
         Write(checkpoint, ref writer, options);
         writer.Flush();
     }
 
-    private void Select(WorldCheckpoint captured)
+    private void Select(WorldCopy captured)
     {
         SynchronizeRegistry();
         foreach (SavedType type in _used) _seen[registry.GetOrder(type)] = false;
@@ -108,14 +108,14 @@ public sealed partial class WorldSerializer
             if (_seen[registry.GetOrder(type)]) { _fileTypes[registry.GetOrder(type)] = _used.Count; _used.Add(type); }
     }
 
-    private void SaveCaptured(WorldCheckpoint checkpoint, Stream output, SerializeOptions options)
+    private void SaveCaptured(WorldCopy checkpoint, Stream output, SerializeOptions options)
     {
-        var writer = new DataWriter(output, options.ExternalReferences);
+        var writer = new SaveWriter(output, options.ExternalReferences);
         Write(checkpoint, ref writer, options, countsChecked: true);
         writer.Flush();
     }
 
-    private void Write(WorldCheckpoint captured, ref DataWriter writer, SerializeOptions options, bool countsChecked = false)
+    private void Write(WorldCopy captured, ref SaveWriter writer, SerializeOptions options, bool countsChecked = false)
     {
         Select(captured);
         if (!countsChecked)
@@ -180,7 +180,7 @@ public sealed partial class WorldSerializer
         }
     }
 
-    private void WriteTable(ref DataWriter writer, CapturedTable table)
+    private void WriteTable(ref SaveWriter writer, CapturedTable table)
     {
         ChunkData first = table.First;
         writer.WriteInt32(table.ColumnCount);
@@ -218,7 +218,7 @@ public sealed partial class WorldSerializer
         }
     }
 
-    private void WriteCapturedTopology(ref DataWriter writer, bool bounded, ref long bytesRemaining)
+    private void WriteCapturedTopology(ref SaveWriter writer, bool bounded, ref long bytesRemaining)
     {
         int count = 0;
         foreach (SavedType type in _used) if (type.Storage is SavedStorage.Parent or SavedStorage.Endpoints or SavedStorage.Children) count++;
@@ -259,14 +259,14 @@ public sealed partial class WorldSerializer
     }
 
     public Task SaveAsync(World world, Stream output, SavePurpose purpose = SavePurpose.DurableSave,
-        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
+        ProgressMode progress = ProgressMode.Reset, params ISystemVersions[] systems)
         => SaveAsync(world, output, new SerializeOptions(Purpose: purpose), progress, systems);
 
     public Task SaveAsync(World world, Stream output, SerializeOptions options,
-        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
+        ProgressMode progress = ProgressMode.Reset, params ISystemVersions[] systems)
     {
         ValidateWriteOptions(options);
-        var checkpoint = new WorldCheckpoint();
+        var checkpoint = new WorldCopy();
         try { checkpoint.Capture(world, registry, options, progress, systems); }
         catch { checkpoint.Dispose(); throw; }
         try { return RunOnWorldScheduler(world, new SaveStreamJob(registry, checkpoint, output, options)); }
@@ -289,7 +289,7 @@ public sealed partial class WorldSerializer
         }
     }
 
-    private readonly struct SaveStreamJob(SerializationRegistry registry, WorldCheckpoint checkpoint,
+    private readonly struct SaveStreamJob(SaveRegistry registry, WorldCopy checkpoint,
         Stream output, SerializeOptions options) : IJob
     {
         public void Execute()

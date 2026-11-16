@@ -43,14 +43,14 @@ internal static partial class SerializationChecks
         using var world = new World(16);
         Entity first = world.Spawn(new Motion { Position = new() { X = 7 }, Velocity = new() { X = 2 } });
         Entity second = world.Spawn(new Motion { Position = new() { X = 9 }, Velocity = new() { X = 3 } });
-        using var checkpoint = new WorldCheckpoint();
-        var serializer = new WorldSerializer(new SerializationRegistry().Register<Position>().Register<Velocity>().Register<Health>());
+        using var checkpoint = new WorldCopy();
+        var serializer = new WorldSerializer(new SaveRegistry().Register<Position>().Register<Velocity>().Register<Health>());
         var output = new ArrayBufferWriter<byte>();
-        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        checkpoint.Capture(world, ProgressMode.Keep);
         serializer.Save(checkpoint, output);
         world.Set(first, new Health { Value = 17 });
         Entity third = world.Spawn(new Body { Position = new() { X = 23 }, Velocity = new() { X = 4 }, Health = new() { Value = 29 } });
-        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        checkpoint.Capture(world, ProgressMode.Keep);
         output.Clear(); serializer.Save(checkpoint, output);
         world.Clear(); serializer.Load(world, output.WrittenSpan);
         Require(world.EntityCount == 3 && world.ReadValue<Health>(first).Value == 17
@@ -106,14 +106,14 @@ internal static partial class SerializationChecks
         world.RetargetRelationDeferred(secondEdge, secondParent, entities[1]);
         ulong capturedVersion = world.Version, capturedSystem = state.LastSystemVersion;
         int capturedCount = world.EntityCount;
-        using var checkpoint = new WorldCheckpoint();
+        using var checkpoint = new WorldCopy();
         var serializer = new WorldSerializer(CreateRegistry(format >= 2));
         byte[] snapshot = [];
         Task? pending = null;
         MemoryStream? pendingOutput = null;
         bool checkedFresh = false;
         string savedFile = Path.Combine("artifacts", "serialization-check.save");
-        void Capture(CheckpointProgress progress)
+        void Capture(ProgressMode progress)
         {
             if (format == 0) checkpoint.Capture(world, progress, group);
             else if (format == 1)
@@ -165,7 +165,7 @@ internal static partial class SerializationChecks
                 checkedFresh = true;
             }
         }
-        Capture(CheckpointProgress.Preserve);
+        Capture(ProgressMode.Keep);
 
         world.Set(entities[0], new ArchiveValue(999));
         world.Enable<ArchiveStep>(entities[7]);
@@ -204,7 +204,7 @@ internal static partial class SerializationChecks
         using (var children = Hierarchy<ArchiveTree>.GetChildren(world, secondParent)) Require(children.Count == 1 && children.Entities[0] == entities[1], "restored hierarchy progress consumes the captured deferred edit");
         using (var edges = world.GetOutgoingRelations<ArchiveEdge>(secondParent)) Require(edges.Count == 1 && edges.Entries[0].Edge == secondEdge.Entity,
             "restored relation progress consumes the captured deferred edit");
-        Capture(CheckpointProgress.Rebuild);
+        Capture(ProgressMode.Reset);
         world.Clear();
         Restore();
         Require(world.EntityCount == capturedCount && state.LastSystemVersion == world.Version, "rebuild mode initializes consumers at the restored observation point");
@@ -215,20 +215,20 @@ internal static partial class SerializationChecks
         Console.WriteLine($"Snapshot format {format}: complete rows, identities, buffers and old values, sparse/shared/indexed storage, resources, ordered deferred topology and system progress passed.");
     }
 
-    private static SerializationRegistry CreateRegistry(bool durable)
+    private static SaveRegistry CreateRegistry(bool durable)
     {
-        var registry = new SerializationRegistry();
-        if (durable) registry.Register<Position, ArchivePositionCodec>(Key(1));
+        var registry = new SaveRegistry();
+        if (durable) registry.Register<Position, ArchivePositionSerializer>(Key(1));
         else registry.Register<Position>(Key(1));
-        return registry.Register<ArchiveValue, ArchiveValueCodec>(Key(2))
-            .Register<ArchiveStep, ArchiveStepCodec>(Key(3))
-            .Register<IndexedNumber, ArchiveIndexCodec>(Key(4))
-            .Register<ArchiveShared, ArchiveSharedCodec>(Key(5))
-            .Register<ArchiveLink, ArchiveLinkCodec>(Key(6))
-            .RegisterBuffer<ArchiveLink, ArchiveLinkCodec>(Key(7))
-            .RegisterResource<ArchiveResource, ArchiveResourceCodec>(Key(8))
+        return registry.Register<ArchiveValue, ArchiveValueSerializer>(Key(2))
+            .Register<ArchiveStep, ArchiveStepSerializer>(Key(3))
+            .Register<IndexedNumber, ArchiveIndexSerializer>(Key(4))
+            .Register<ArchiveShared, ArchiveSharedSerializer>(Key(5))
+            .Register<ArchiveLink, ArchiveLinkSerializer>(Key(6))
+            .RegisterBuffer<ArchiveLink, ArchiveLinkSerializer>(Key(7))
+            .RegisterResource<ArchiveResource, ArchiveResourceSerializer>(Key(8))
             .RegisterHierarchy<ArchiveTree>(Key(9))
-            .RegisterRelation<ArchiveEdge, ArchiveEdgeCodec>(Key(10));
+            .RegisterRelation<ArchiveEdge, ArchiveEdgeSerializer>(Key(10));
     }
     private sealed class SavedSystemVersions(int count) : ISystemVersions
     {
@@ -237,47 +237,47 @@ internal static partial class SerializationChecks
         public void CopyVersions(Span<ulong> target) => Values.CopyTo(target);
         public void RestoreVersions(ReadOnlySpan<ulong> values) => values.CopyTo(Values);
     }
-    private static SerializationTypeKey Key(int value) => new(new Guid(value, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), "Archive." + value, 1);
-    private readonly struct ArchiveValueCodec : IComponentCodec<ArchiveValue>
+    private static SavedTypeKey Key(int value) => new(new Guid(value, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), "Archive." + value, 1);
+    private readonly struct ArchiveValueSerializer : IValueSerializer<ArchiveValue>
     {
-        public void Write(ref DataWriter writer, in ArchiveValue value) => writer.WriteInt32(value.Value);
-        public void Read(ref DataReader reader, out ArchiveValue value) => value = new(reader.ReadInt32());
+        public void Write(ref SaveWriter writer, in ArchiveValue value) => writer.WriteInt32(value.Value);
+        public void Read(ref SaveReader reader, out ArchiveValue value) => value = new(reader.ReadInt32());
     }
-    private readonly struct ArchiveStepCodec : IComponentCodec<ArchiveStep>
+    private readonly struct ArchiveStepSerializer : IValueSerializer<ArchiveStep>
     {
-        public void Write(ref DataWriter writer, in ArchiveStep value) => writer.WriteInt32(value.Value);
-        public void Read(ref DataReader reader, out ArchiveStep value) => value = new(reader.ReadInt32());
+        public void Write(ref SaveWriter writer, in ArchiveStep value) => writer.WriteInt32(value.Value);
+        public void Read(ref SaveReader reader, out ArchiveStep value) => value = new(reader.ReadInt32());
     }
-    private readonly struct ArchiveSharedCodec : IComponentCodec<ArchiveShared>
+    private readonly struct ArchiveSharedSerializer : IValueSerializer<ArchiveShared>
     {
-        public void Write(ref DataWriter writer, in ArchiveShared value) => writer.WriteInt32(value.Value);
-        public void Read(ref DataReader reader, out ArchiveShared value) => value = new(reader.ReadInt32());
+        public void Write(ref SaveWriter writer, in ArchiveShared value) => writer.WriteInt32(value.Value);
+        public void Read(ref SaveReader reader, out ArchiveShared value) => value = new(reader.ReadInt32());
     }
-    private readonly struct ArchivePositionCodec : IComponentCodec<Position>
+    private readonly struct ArchivePositionSerializer : IValueSerializer<Position>
     {
-        public void Write(ref DataWriter writer, in Position value)
+        public void Write(ref SaveWriter writer, in Position value)
         { writer.WriteSingle(value.X); writer.WriteSingle(value.Y); }
-        public void Read(ref DataReader reader, out Position value) => value = new() { X = reader.ReadSingle(), Y = reader.ReadSingle() };
+        public void Read(ref SaveReader reader, out Position value) => value = new() { X = reader.ReadSingle(), Y = reader.ReadSingle() };
     }
-    private readonly struct ArchiveIndexCodec : IComponentCodec<IndexedNumber>
+    private readonly struct ArchiveIndexSerializer : IValueSerializer<IndexedNumber>
     {
-        public void Write(ref DataWriter writer, in IndexedNumber value) { writer.WriteInt32(value.Value); writer.WriteInt32(value.Ordinal); }
-        public void Read(ref DataReader reader, out IndexedNumber value) => value = new(reader.ReadInt32(), reader.ReadInt32());
+        public void Write(ref SaveWriter writer, in IndexedNumber value) { writer.WriteInt32(value.Value); writer.WriteInt32(value.Ordinal); }
+        public void Read(ref SaveReader reader, out IndexedNumber value) => value = new(reader.ReadInt32(), reader.ReadInt32());
     }
-    private readonly struct ArchiveLinkCodec : IComponentCodec<ArchiveLink>
+    private readonly struct ArchiveLinkSerializer : IValueSerializer<ArchiveLink>
     {
-        public void Write(ref DataWriter writer, in ArchiveLink value) { writer.WriteEntity(value.Entity); writer.WriteInt64(value.Value); }
-        public void Read(ref DataReader reader, out ArchiveLink value) => value = new(reader.ReadEntity(), reader.ReadInt64());
+        public void Write(ref SaveWriter writer, in ArchiveLink value) { writer.WriteEntity(value.Entity); writer.WriteInt64(value.Value); }
+        public void Read(ref SaveReader reader, out ArchiveLink value) => value = new(reader.ReadEntity(), reader.ReadInt64());
     }
-    private readonly struct ArchiveEdgeCodec : IComponentCodec<ArchiveEdge>
+    private readonly struct ArchiveEdgeSerializer : IValueSerializer<ArchiveEdge>
     {
-        public void Write(ref DataWriter writer, in ArchiveEdge value) => writer.WriteInt64(value.Value);
-        public void Read(ref DataReader reader, out ArchiveEdge value) => value = new(reader.ReadInt64());
+        public void Write(ref SaveWriter writer, in ArchiveEdge value) => writer.WriteInt64(value.Value);
+        public void Read(ref SaveReader reader, out ArchiveEdge value) => value = new(reader.ReadInt64());
     }
-    private readonly struct ArchiveResourceCodec : IValueCodec<ArchiveResource>
+    private readonly struct ArchiveResourceSerializer : IValueSerializer<ArchiveResource>
     {
-        public void Write(ref DataWriter writer, in ArchiveResource value) => writer.WriteInt32(value.Items[0]);
-        public void Read(ref DataReader reader, out ArchiveResource value) => value = new(reader.ReadInt32());
+        public void Write(ref SaveWriter writer, in ArchiveResource value) => writer.WriteInt32(value.Items[0]);
+        public void Read(ref SaveReader reader, out ArchiveResource value) => value = new(reader.ReadInt32());
     }
 
     private static void Require(bool condition, string behavior)
@@ -288,36 +288,36 @@ internal static partial class SerializationChecks
         var output = new ArrayBufferWriter<byte>();
         string text = string.Concat(Enumerable.Repeat("上海科技大学 ECS 存档 🚀，同一份数据。", 500));
         Guid id = Guid.NewGuid();
-        var writer = new DataWriter(output);
+        var writer = new SaveWriter(output);
         WriteValues(ref writer, id, text);
         writer.Flush();
-        var reader = new DataReader(output.WrittenSpan);
+        var reader = new SaveReader(output.WrittenSpan);
         ReadValues(ref reader, id, text);
         Require(reader.Position == output.WrittenCount, "span decoding consumes the complete declared values");
         using var storage = new MemoryStream();
         using var stream = new SequentialStream(storage);
-        writer = new DataWriter(stream);
+        writer = new SaveWriter(stream);
         WriteValues(ref writer, id, text);
         writer.Flush();
         storage.Position = 0;
-        reader = new DataReader(stream);
+        reader = new SaveReader(stream);
         try { ReadValues(ref reader, id, text); Require(reader.Position == storage.Length, "stream decoding consumes the complete declared values"); }
         finally { reader.Dispose(); }
         Console.WriteLine("Serialization IO: fixed-endian fields, entity identities, nullable Unicode strings, final string storage and sequential streams passed.");
     }
 
-    internal static void WriteValues(ref DataWriter writer, Guid id, string text)
+    internal static void WriteValues(ref SaveWriter writer, Guid id, string text)
     {
         writer.WriteInt32(0x01020304); writer.WriteUInt64(0x0102030405060708);
         writer.WriteSingle(1.25f); writer.WriteDouble(7.5); writer.WriteGuid(id);
         writer.WriteEntity(new(17, 3)); writer.WriteString(text); writer.WriteString(null);
     }
-    private static void ReadValues(ref DataReader reader, Guid id, string text)
+    private static void ReadValues(ref SaveReader reader, Guid id, string text)
     {
         Require(reader.ReadInt32() == 0x01020304 && reader.ReadUInt64() == 0x0102030405060708
             && reader.ReadSingle() == 1.25f && reader.ReadDouble() == 7.5 && reader.ReadGuid() == id
             && reader.ReadEntity() == new Entity(17, 3) && reader.ReadString() == text && reader.ReadString() is null,
-            "paired codec operations retain all field values");
+            "paired serializer operations retain all field values");
     }
 
     private sealed class SequentialStream(Stream stream) : Stream

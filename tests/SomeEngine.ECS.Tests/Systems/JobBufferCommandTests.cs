@@ -44,8 +44,8 @@ public sealed class JobBufferCommandTests : JobTest
         Entity first = world.Create();
         Entity duplicate = world.Create();
         world.AddBuffer<BufferItem>(duplicate);
-        using var checkpoint = new WorldCheckpoint();
-        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy();
+        checkpoint.Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using var commands = new CommandBuffer(candidate);

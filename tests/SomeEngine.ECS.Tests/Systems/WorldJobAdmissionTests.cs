@@ -294,8 +294,8 @@ public sealed class WorldJobAdmissionTests : JobTest
     {
         World world = CreateJobWorld();
         Entity trigger = world.Create(), destination = world.Create();
-        using var checkpoint = new WorldCheckpoint();
-        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy();
+        checkpoint.Capture(world, ProgressMode.Keep);
         using var candidate = new World(execution: new WorldJobs(Jobs));
         checkpoint.Restore(candidate);
         using var next = new CommandBuffer(candidate);

@@ -36,12 +36,12 @@ public sealed class EcsGenerator : IIncrementalGenerator
                 bool entity = HasInterface(type, "SomeEngine.ECS.Systems.IJobEntity");
                 bool chunk = HasInterface(type, "SomeEngine.ECS.Systems.IJobChunk");
                 bool component = HasAttribute(type, "SomeEngine.ECS.GenerateComponentAttribute");
-                bool codec = HasAttribute(type, "SomeEngine.ECS.Serialization.GenerateCodecAttribute");
-                if (!entity && !chunk && !component && !codec) continue;
+                bool serializer = HasAttribute(type, "SomeEngine.ECS.Serialization.GenerateSerializerAttribute");
+                if (!entity && !chunk && !component && !serializer) continue;
                 if (type.TypeKind != TypeKind.Struct || type.IsRefLikeType || !Partial(type))
                 { Error(output, type, "Declare generated ECS values and jobs as partial structs."); continue; }
                 if (entity || chunk) JobGenerator.Emit(output, type, entity, input.Right);
-                if (component || codec) ValueGenerator.Emit(output, type, component, codec);
+                if (component || serializer) ValueGenerator.Emit(output, type, component, serializer);
             }
         });
     }

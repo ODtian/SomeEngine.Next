@@ -104,7 +104,7 @@ public sealed partial class WorldSerializer
             var types = new TypeSet(false, columns.Select(column => column.Type).ToArray());
             if (!bySource.TryGetValue(chunk.Archetype, out var groups)) bySource.Add(chunk.Archetype, groups = []);
             if (!groups.TryGetValue(types, out SelectedTable? table))
-            { groups.Add(types, table = new(chunk.Archetype, columns.OrderBy(column => column.Key.StableId).ToArray())); tables.Add(table); }
+            { groups.Add(types, table = new(chunk.Archetype, columns.OrderBy(column => column.Key.Id).ToArray())); tables.Add(table); }
             table.Entities.Add(entity);
         }
         var sparse = new List<(SavedSparse Column, Entity[] Entities)>();
@@ -136,9 +136,9 @@ public sealed partial class WorldSerializer
         foreach (SavedType type in registry.Types)
             if (used.Contains(type))
             { int order = registry.GetOrder(type); _seen[order] = true; _fileTypes[order] = _used.Count; _used.Add(type); }
-        var writer = new DataWriter(output, options.ExternalReferences);
+        var writer = new SaveWriter(output, options.ExternalReferences);
         WriteHeader(ref writer, options.Purpose);
-        writer.WriteByte((byte)CheckpointProgress.Rebuild); writer.WriteUInt64(world.Version);
+        writer.WriteByte((byte)ProgressMode.Reset); writer.WriteUInt64(world.Version);
         writer.WriteInt32(world.Used); writer.WriteInt32(entities.Length); writer.WriteInt32(world.Used - entities.Length);
         for (int id = 1; id <= world.Used; id++) writer.WriteInt32(world.Records[id].Generation);
         for (int id = 1; id <= world.Used; id++)
@@ -210,7 +210,7 @@ public sealed partial class WorldSerializer
         writer.Flush();
     }
 
-    private void WriteSelectedTable(ref DataWriter writer, World world, SelectedTable table,
+    private void WriteSelectedTable(ref SaveWriter writer, World world, SelectedTable table,
         IReadOnlySet<Entity> selected, Dictionary<int, SelectedShared> shared)
     {
         writer.WriteInt32(table.Columns.Length);

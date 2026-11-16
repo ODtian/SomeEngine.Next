@@ -250,7 +250,7 @@ public sealed class ComponentWriteVersionTests
         ulong sparseVersion = world.ComponentWriteVersion<Damage>(entity);
         Entity expired = world.Create();
         world.Destroy(expired);
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using var commands = new CommandBuffer(candidate);

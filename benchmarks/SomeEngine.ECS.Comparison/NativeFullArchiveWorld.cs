@@ -90,39 +90,39 @@ internal sealed partial class NativeFullArchiveWorld<TValues> : FullArchiveWorld
     private static NativeArchiveType[] CreateTypes(NativeArchiveType[] primary)
     {
         var types = primary.ToList();
-        types.Add(new NativeArchiveMetadataType(SaveSchema.Key(22, "Sparse"), typeof(SaveLink), typeof(SaveSchema.LinkCodec)));
-        types.Add(new NativeArchiveMetadataType(SaveSchema.Key(23, "Resource"), typeof(SaveResource), typeof(SaveSchema.ResourceCodec)));
-        types.Add(new NativeArchiveMetadataType(SaveSchema.Key(24, "Tree"), typeof(SaveTree), typeof(SaveSchema.EntityCodec)));
+        types.Add(new NativeArchiveMetadataType(SaveSchema.Key(22, "Sparse"), typeof(SaveLink), typeof(SaveSchema.LinkSerializer)));
+        types.Add(new NativeArchiveMetadataType(SaveSchema.Key(23, "Resource"), typeof(SaveResource), typeof(SaveSchema.ResourceSerializer)));
+        types.Add(new NativeArchiveMetadataType(SaveSchema.Key(24, "Tree"), typeof(SaveTree), typeof(SaveSchema.EntitySerializer)));
         types.AddRange(ArchiveResources.Metadata());
         return types.ToArray();
     }
     private static NativeArchiveType[] PrimaryTypes(bool raw)
         => [
-            new NativeArchiveType<Position, SaveSchema.PositionCodec>(SaveSchema.Key(1, "Position"), default, raw),
-            new NativeArchiveType<Velocity, SaveSchema.VelocityCodec>(SaveSchema.Key(2, "Velocity"), default, raw),
-            new NativeArchiveType<Health, SaveSchema.HealthCodec>(SaveSchema.Key(3, "Health"), default, raw),
-            new NativeArchiveType<Team, EmptyArchiveCodec<Team>>(SaveSchema.Key(4, "Team"), default, raw),
-            new NativeArchiveType<Sleeping, EmptyArchiveCodec<Sleeping>>(SaveSchema.Key(5, "Sleeping"), default, raw),
-            new NativeArchiveType<SaveCounter, SaveSchema.CounterCodec>(SaveSchema.Key(6, "Counter"), default, raw),
-            new NativeArchiveType<SaveStep, SaveSchema.StepCodec>(SaveSchema.Key(7, "Step"), default, raw),
-            new NativeArchiveType<IndexedNumber, SaveSchema.IndexCodec>(SaveSchema.Key(8, "Index"), default, raw),
-            new NativeArchiveType<SharedNumberId, SaveSchema.SharedIdCodec>(SaveSchema.Key(9, "Shared"), default),
-            new NativeArchiveType<SaveNativeFlags, SaveSchema.FlagsCodec>(SaveSchema.Key(10, "Enabled"), default),
-            new NativeArchiveType<SaveNativeVersions, SaveSchema.VersionsCodec>(SaveSchema.Key(11, "Versions"), default),
-            new NativeArchiveType<SaveNativeRemoved, SaveSchema.RemovedCodec>(SaveSchema.Key(12, "Removed"), default),
-            new NativeArchiveType<SaveNativeBuffer, SaveSchema.BufferCodec>(SaveSchema.Key(13, "Buffer"), default, false,
+            new NativeArchiveType<Position, SaveSchema.PositionSerializer>(SaveSchema.Key(1, "Position"), default, raw),
+            new NativeArchiveType<Velocity, SaveSchema.VelocitySerializer>(SaveSchema.Key(2, "Velocity"), default, raw),
+            new NativeArchiveType<Health, SaveSchema.HealthSerializer>(SaveSchema.Key(3, "Health"), default, raw),
+            new NativeArchiveType<Team, EmptyArchiveSerializer<Team>>(SaveSchema.Key(4, "Team"), default, raw),
+            new NativeArchiveType<Sleeping, EmptyArchiveSerializer<Sleeping>>(SaveSchema.Key(5, "Sleeping"), default, raw),
+            new NativeArchiveType<SaveCounter, SaveSchema.CounterSerializer>(SaveSchema.Key(6, "Counter"), default, raw),
+            new NativeArchiveType<SaveStep, SaveSchema.StepSerializer>(SaveSchema.Key(7, "Step"), default, raw),
+            new NativeArchiveType<IndexedNumber, SaveSchema.IndexSerializer>(SaveSchema.Key(8, "Index"), default, raw),
+            new NativeArchiveType<SharedNumberId, SaveSchema.SharedIdSerializer>(SaveSchema.Key(9, "Shared"), default),
+            new NativeArchiveType<SaveNativeFlags, SaveSchema.FlagsSerializer>(SaveSchema.Key(10, "Enabled"), default),
+            new NativeArchiveType<SaveNativeVersions, SaveSchema.VersionsSerializer>(SaveSchema.Key(11, "Versions"), default),
+            new NativeArchiveType<SaveNativeRemoved, SaveSchema.RemovedSerializer>(SaveSchema.Key(12, "Removed"), default),
+            new NativeArchiveType<SaveNativeBuffer, SaveSchema.BufferSerializer>(SaveSchema.Key(13, "Buffer"), default, false,
                 SaveSchema.Clone),
-            new NativeArchiveType<SaveNativeOldBuffer, SaveSchema.OldBufferCodec>(SaveSchema.Key(14, "OldBuffer"), default, false,
+            new NativeArchiveType<SaveNativeOldBuffer, SaveSchema.OldBufferSerializer>(SaveSchema.Key(14, "OldBuffer"), default, false,
                 v => new() { Items = (SaveLink[])v.Items.Clone(), Version = v.Version }),
-            new NativeArchiveType<ReferenceParent<Entity>, SaveSchema.ParentCodec>(SaveSchema.Key(15, "Parent"), default),
-            new NativeArchiveType<ReferenceOldParent<Entity>, SaveSchema.OldParentCodec>(SaveSchema.Key(16, "OldParent"), default),
-            new NativeArchiveType<ReferenceChildren<Entity>, SaveSchema.ChildrenCodec>(SaveSchema.Key(17, "Children"), default, false,
+            new NativeArchiveType<ReferenceParent<Entity>, SaveSchema.ParentSerializer>(SaveSchema.Key(15, "Parent"), default),
+            new NativeArchiveType<ReferenceOldParent<Entity>, SaveSchema.OldParentSerializer>(SaveSchema.Key(16, "OldParent"), default),
+            new NativeArchiveType<ReferenceChildren<Entity>, SaveSchema.ChildrenSerializer>(SaveSchema.Key(17, "Children"), default, false,
                 SaveSchema.Clone, v => ArrayPool<Entity>.Shared.Return(v.Items!)),
-            new NativeArchiveType<ReferenceOldChildren<Entity>, SaveSchema.OldChildrenCodec>(SaveSchema.Key(18, "OldChildren"), default, false,
+            new NativeArchiveType<ReferenceOldChildren<Entity>, SaveSchema.OldChildrenSerializer>(SaveSchema.Key(18, "OldChildren"), default, false,
                 SaveSchema.Clone, v => ArrayPool<Entity>.Shared.Return(v.Items!)),
-            new NativeArchiveType<SaveEdge, SaveSchema.EdgeCodec>(SaveSchema.Key(19, "Edge"), default, raw),
-            new NativeArchiveType<ReferenceRelationEndpoints<Entity>, SaveSchema.EndpointsCodec>(SaveSchema.Key(20, "Endpoints"), default),
-            new NativeArchiveType<ReferenceOldRelationEndpoints<Entity>, SaveSchema.OldEndpointsCodec>(SaveSchema.Key(21, "OldEndpoints"), default)
+            new NativeArchiveType<SaveEdge, SaveSchema.EdgeSerializer>(SaveSchema.Key(19, "Edge"), default, raw),
+            new NativeArchiveType<ReferenceRelationEndpoints<Entity>, SaveSchema.EndpointsSerializer>(SaveSchema.Key(20, "Endpoints"), default),
+            new NativeArchiveType<ReferenceOldRelationEndpoints<Entity>, SaveSchema.OldEndpointsSerializer>(SaveSchema.Key(21, "OldEndpoints"), default)
         ];
     internal override void Mutate()
     {
@@ -146,40 +146,40 @@ internal sealed partial class NativeFullArchiveWorld<TValues> : FullArchiveWorld
     internal override Task SaveAsync(Stream output, bool preserve) => Serializer.SaveAsync(Store, this, output, preserve);
     internal override Task SaveFileAsync(string path, bool preserve) => Serializer.SaveFileAsync(Store, this, path, preserve);
     internal override void LoadFile(string path) { using var input = AtomicSaveFile.OpenRead(path); Load(input); }
-    public void Write(ref DataWriter writer, bool preserve)
+    public void Write(ref SaveWriter writer, bool preserve)
     {
-        _hierarchy.WriteProgress(ref writer, new SaveSchema.EntityCodec());
-        _relations.WriteProgress(ref writer, new SaveSchema.EntityCodec(), new SaveSchema.EntityCodec());
+        _hierarchy.WriteProgress(ref writer, new SaveSchema.EntitySerializer());
+        _relations.WriteProgress(ref writer, new SaveSchema.EntitySerializer(), new SaveSchema.EntitySerializer());
         writer.WriteInt32(_shared.Count);
-        foreach (SaveShared value in _shared.Values.AsSpan(0, _shared.Count)) new SaveSchema.SharedCodec().Write(ref writer, value);
+        foreach (SaveShared value in _shared.Values.AsSpan(0, _shared.Count)) new SaveSchema.SharedSerializer().Write(ref writer, value);
         using (var sparse = _sparse.OpenRead<SaveSparseRow>())
         {
             writer.WriteInt32(sparse.Entities.Length);
             for (int i = 0; i < sparse.Entities.Length; i++)
             {
-                writer.WriteEntity(sparse.Entities[i]); new SaveSchema.LinkCodec().Write(ref writer, sparse.Values[i].Value);
+                writer.WriteEntity(sparse.Entities[i]); new SaveSchema.LinkSerializer().Write(ref writer, sparse.Values[i].Value);
                 writer.WriteUInt64(sparse.Values[i].Added); writer.WriteUInt64(sparse.Values[i].Written);
             }
         }
-        new SaveSchema.ResourceCodec().Write(ref writer, _resources.Read<SaveResource>());
+        new SaveSchema.ResourceSerializer().Write(ref writer, _resources.Read<SaveResource>());
         ArchiveResources.Write(new NativeArchiveResources(_resources, _resourceCounter), ref writer);
         writer.WriteInt32(Systems.Values.Length);
         foreach (ulong value in Systems.Values) writer.WriteUInt64(preserve ? value : Version);
         WriteDestroyed(ref writer, preserve ? Store.Destroyed : [], Store.DestroyedSequence, preserve ? _destroyedPosition : Store.DestroyedSequence);
     }
-    public void Read(ref DataReader reader, bool preserve)
+    public void Read(ref SaveReader reader, bool preserve)
     {
-        _hierarchy.ReadProgress(ref reader, new SaveSchema.EntityCodec());
-        _relations.ReadProgress(ref reader, new SaveSchema.EntityCodec(), new SaveSchema.EntityCodec());
+        _hierarchy.ReadProgress(ref reader, new SaveSchema.EntitySerializer());
+        _relations.ReadProgress(ref reader, new SaveSchema.EntitySerializer(), new SaveSchema.EntitySerializer());
         _shared = new(); int count = reader.ReadInt32();
-        for (int i = 0; i < count; i++) { new SaveSchema.SharedCodec().Read(ref reader, out SaveShared value); _shared.Intern(value); }
+        for (int i = 0; i < count; i++) { new SaveSchema.SharedSerializer().Read(ref reader, out SaveShared value); _shared.Intern(value); }
         count = reader.ReadInt32();
         for (int i = 0; i < count; i++)
         {
-            Entity entity = reader.ReadEntity(); new SaveSchema.LinkCodec().Read(ref reader, out SaveLink value);
+            Entity entity = reader.ReadEntity(); new SaveSchema.LinkSerializer().Read(ref reader, out SaveLink value);
             _sparse.Set(entity, new SaveSparseRow(value, reader.ReadUInt64(), reader.ReadUInt64()));
         }
-        new SaveSchema.ResourceCodec().Read(ref reader, out SaveResource resource); _resources.Set(resource);
+        new SaveSchema.ResourceSerializer().Read(ref reader, out SaveResource resource); _resources.Set(resource);
         ArchiveResources.Read(new NativeArchiveResources(_resources, _resourceCounter), ref reader);
         count = reader.ReadInt32();
         for (int i = 0; i < count; i++) { ulong value = reader.ReadUInt64(); Systems.Values[i] = preserve ? value : Version; }
@@ -329,8 +329,8 @@ internal sealed partial class NativeFullArchiveWorld<TValues> : FullArchiveWorld
     { _lifecycleJobs?.Complete(); ReleaseValues(); Store.Dispose(); Store.CloseIdentities(); _lifecycleJobs?.Dispose(); _destroyedCompleted = true; }
 }
 
-internal readonly struct EmptyArchiveCodec<T> : IComponentCodec<T> where T : struct
+internal readonly struct EmptyArchiveSerializer<T> : IValueSerializer<T> where T : struct
 {
-    public void Write(ref DataWriter writer, in T value) { }
-    public void Read(ref DataReader reader, out T value) => value = default;
+    public void Write(ref SaveWriter writer, in T value) { }
+    public void Read(ref SaveReader reader, out T value) => value = default;
 }

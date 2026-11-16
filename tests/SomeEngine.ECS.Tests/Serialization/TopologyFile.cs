@@ -18,10 +18,10 @@ internal sealed class TopologyFile
     internal List<int> ServiceIndices { get; } = [];
     internal int ServiceCountOffset { get; private set; }
 
-    internal static TopologyFile Save(World world, SerializationRegistry registry)
+    internal static TopologyFile Save(World world, SaveRegistry registry)
     {
         using var output = new MemoryStream();
-        new WorldSerializer(registry).Save(world, output, new SerializeOptions(Purpose: SavePurpose.DurableSave), CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(world, output, new SerializeOptions(Purpose: SavePurpose.DurableSave), ProgressMode.Keep);
         return new(output.ToArray());
     }
 
@@ -119,7 +119,7 @@ internal sealed class TopologyFile
         }
     }
 
-    internal void Read(SerializationRegistry registry)
+    internal void Read(SaveRegistry registry)
     {
         using var input = new MemoryStream(Bytes, writable: false);
         using World loaded = WorldSerializer.ReadWorld(input, registry, new WorldLoadOptions(RequiredPurpose: SavePurpose.DurableSave));

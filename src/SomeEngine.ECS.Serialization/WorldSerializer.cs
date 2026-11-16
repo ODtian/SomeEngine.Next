@@ -8,7 +8,7 @@ using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS.Serialization;
 
-public sealed partial class WorldSerializer(SerializationRegistry registry)
+public sealed partial class WorldSerializer(SaveRegistry registry)
 {
     private const uint Magic = 0x53434553;
     // Not published yet: change the layout freely and leave this at 0. The first release that ships
@@ -38,33 +38,33 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
     }
 
     public void Save(World world, IBufferWriter<byte> output, SavePurpose purpose = SavePurpose.RawCheckpoint,
-        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
+        ProgressMode progress = ProgressMode.Reset, params ISystemVersions[] systems)
         => Save(world, output, new SerializeOptions(Purpose: purpose), progress, systems);
 
     public void Save(World world, IBufferWriter<byte> output, SerializeOptions options,
-        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
+        ProgressMode progress = ProgressMode.Reset, params ISystemVersions[] systems)
     {
         ValidateWriteOptions(options);
-        var writer = new DataWriter(output, options.ExternalReferences);
+        var writer = new SaveWriter(output, options.ExternalReferences);
         Write(world, ref writer, options, progress, systems);
         writer.Flush();
     }
 
     public void Save(World world, Stream output, SavePurpose purpose = SavePurpose.RawCheckpoint,
-        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
+        ProgressMode progress = ProgressMode.Reset, params ISystemVersions[] systems)
         => Save(world, output, new SerializeOptions(Purpose: purpose), progress, systems);
 
     public void Save(World world, Stream output, SerializeOptions options,
-        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
+        ProgressMode progress = ProgressMode.Reset, params ISystemVersions[] systems)
     {
         ValidateWriteOptions(options);
         Write(world, output, options, progress, systems);
     }
 
-    private void Write(World world, Stream output, SerializeOptions options, CheckpointProgress progress,
+    private void Write(World world, Stream output, SerializeOptions options, ProgressMode progress,
         ISystemVersions[] systems)
     {
-        var writer = new DataWriter(output, options.ExternalReferences);
+        var writer = new SaveWriter(output, options.ExternalReferences);
         Write(world, ref writer, options, progress, systems);
         writer.Flush();
     }
@@ -75,7 +75,7 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
             throw new ArgumentOutOfRangeException(nameof(options));
     }
 
-    private static void CheckSparseMemberships(SparseStore?[] types, SerializationRegistry registry, int maximum)
+    private static void CheckSparseMemberships(SparseStore?[] types, SaveRegistry registry, int maximum)
     {
         if (maximum == 0) return;
         int remaining = maximum;
@@ -87,15 +87,15 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
             }
     }
 
-    internal static void CheckCaptureLimits(World world, SerializationRegistry registry, in SerializeOptions options,
-        CheckpointProgress progress)
+    internal static void CheckCaptureLimits(World world, SaveRegistry registry, in SerializeOptions options,
+        ProgressMode progress)
     {
         if (world.SparseTypes is { } sparse) CheckSparseMemberships(sparse.Types, registry, options.MaximumSparseMemberships);
         if (options.MaximumTopologyRecords == 0) return;
         long remaining = options.MaximumTopologyRecords;
         foreach (SavedService service in registry.Services)
         {
-            long count = service.CountRecords(world, progress == CheckpointProgress.Preserve);
+            long count = service.CountRecords(world, progress == ProgressMode.Keep);
             if (count > remaining) throw new InvalidOperationException("Topology records exceed the configured write limit.");
             remaining -= count;
         }
@@ -122,7 +122,7 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
                 var columns = new List<SavedColumn>();
                 foreach (ComponentType component in table.Components)
                     if (registry.Columns.TryGetValue(component.Id, out SavedColumn? value)) columns.Add(value);
-                columns.Sort(static (left, right) => left.Key.StableId.CompareTo(right.Key.StableId));
+                columns.Sort(static (left, right) => left.Key.Id.CompareTo(right.Key.Id));
                 _bindings[table.Id] = binding = new(table, columns.ToArray());
             }
             _tables.Add(binding);
@@ -141,14 +141,14 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
             if (_seen[registry.GetOrder(type)]) { _fileTypes[registry.GetOrder(type)] = _used.Count; _used.Add(type); }
     }
 
-    private void Write(World world, ref DataWriter writer, SerializeOptions options, CheckpointProgress progress,
+    private void Write(World world, ref SaveWriter writer, SerializeOptions options, ProgressMode progress,
         ISystemVersions[] systems)
     {
         foreach (ISystemVersions system in systems) system.Complete();
-        if (progress == CheckpointProgress.Rebuild)
+        if (progress == ProgressMode.Reset)
             foreach (SavedService service in registry.Services) service.Maintain(world);
         using WorldAccess structure = world.OpenStructure(false);
-        using WorldAccess access = world.OpenValues(WorldCheckpoint.CaptureAccesses(world));
+        using WorldAccess access = world.OpenValues(WorldCopy.CaptureAccesses(world));
         world.BeginRead();
         try
         {
@@ -185,7 +185,7 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
                 { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); writer.BeginFrame(); resource.Write(ref writer, world.ResourceValues.Get(type.Type)!); writer.EndFrame(); }
             long topologyBytesRemaining = options.MaximumTopologyPayloadBytes;
             WriteTopology(ref writer, world, options.MaximumTopologyPayloadBytes != 0, ref topologyBytesRemaining);
-            WriteEvents(ref writer, progress == CheckpointProgress.Preserve ? world.CopyEvents() : new([], world.DestroyedSequence, []));
+            WriteEvents(ref writer, progress == ProgressMode.Keep ? world.CopyEvents() : new([], world.DestroyedSequence, []));
             writer.WriteInt32(_services.Count);
             foreach (SavedService service in _services)
             {
@@ -194,7 +194,7 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
                 bool bounded = options.MaximumTopologyPayloadBytes != 0 && service.Type.Storage is SavedStorage.Parent or SavedStorage.Endpoints;
                 long start = writer.Position;
                 if (bounded) writer.LimitBytes(topologyBytesRemaining);
-                try { service.Write(ref writer, world, progress == CheckpointProgress.Preserve); }
+                try { service.Write(ref writer, world, progress == ProgressMode.Keep); }
                 finally { if (bounded) writer.EndByteLimit(); }
                 if (bounded) topologyBytesRemaining -= writer.Position - start;
                 writer.EndFrame();
@@ -207,7 +207,7 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
                 try
                 {
                     Span<ulong> values = versions.AsSpan(0, system.VersionCount * 2);
-                    if (progress == CheckpointProgress.Preserve) system.CopyVersions(values);
+                    if (progress == ProgressMode.Keep) system.CopyVersions(values);
                     else values.Fill(world.Version);
                     foreach (ulong value in values) writer.WriteUInt64(value);
                 }
@@ -217,32 +217,32 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
         finally { world.EndRead(); }
     }
 
-    private void WriteHeader(ref DataWriter writer, SavePurpose purpose, byte payloadKind = 0)
+    private void WriteHeader(ref SaveWriter writer, SavePurpose purpose, byte payloadKind = 0)
     {
-        _used.Sort(static (left, right) => left.Key.StableId.CompareTo(right.Key.StableId));
+        _used.Sort(static (left, right) => left.Key.Id.CompareTo(right.Key.Id));
         if (_fileTypes.Length < registry.Types.Count) Array.Resize(ref _fileTypes, registry.Types.Count);
         for (int index = 0; index < _used.Count; index++) _fileTypes[registry.GetOrder(_used[index])] = index;
         foreach (SavedType type in _used)
             if (purpose == SavePurpose.DurableSave && !type.SupportsDurable)
-                throw new InvalidOperationException("Durable save requires an explicit field codec and schema for every value type.");
+                throw new InvalidOperationException("Durable save requires an explicit field serializer and schema for every value type.");
         writer.WriteUInt32(Magic); writer.WriteUInt16(FormatVersion);
         writer.WriteByte((byte)purpose); writer.WriteByte(payloadKind);
         writer.WriteGuid(purpose == SavePurpose.RawCheckpoint ? typeof(World).Module.ModuleVersionId : Guid.Empty);
-        var schemas = new List<ValueSchema>();
-        var schemaIndices = new Dictionary<ValueSchema, int>(ReferenceEqualityComparer.Instance);
+        var schemas = new List<SavedFieldList>();
+        var schemaIndices = new Dictionary<SavedFieldList, int>(ReferenceEqualityComparer.Instance);
         writer.WriteInt32(_used.Count);
         foreach (SavedType type in _used)
         {
-            SerializationTypeKey key = type.KeyFor(purpose);
-            writer.WriteGuid(key.StableId); writer.WriteText(key.StableName); writer.WriteUInt64(key.SchemaFingerprint);
+            SavedTypeKey key = type.KeyFor(purpose);
+            writer.WriteGuid(key.Id); writer.WriteText(key.Name); writer.WriteUInt64(key.FieldHash);
             writer.WriteByte((byte)type.Storage); writer.WriteInt32(type.Width);
             writer.WriteInt32(type.Schema is { } schema ? AddSchema(schema, schemas, schemaIndices) : -1);
         }
         writer.WriteInt32(schemas.Count);
-        foreach (ValueSchema schema in schemas)
+        foreach (SavedFieldList schema in schemas)
         {
             writer.WriteGuid(schema.Id); writer.WriteUInt64(schema.Hash); writer.WriteInt32(schema.Fields.Length);
-            foreach (ValueField field in schema.Fields)
+            foreach (SavedField field in schema.Fields)
             {
                 writer.WriteText(field.Id); writer.WriteByte((byte)field.Kind);
                 writer.WriteInt32(field.Nested is { } nested ? schemaIndices[nested] : -1);
@@ -251,17 +251,17 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
     }
 
     /// <summary>Adds a field list after the nested field lists it refers to, so a reader can link them in one pass.</summary>
-    private static int AddSchema(ValueSchema schema, List<ValueSchema> schemas, Dictionary<ValueSchema, int> indices)
+    private static int AddSchema(SavedFieldList schema, List<SavedFieldList> schemas, Dictionary<SavedFieldList, int> indices)
     {
         if (indices.TryGetValue(schema, out int index)) return index;
-        foreach (ValueField field in schema.Fields)
+        foreach (SavedField field in schema.Fields)
             if (field.Nested is { } nested) AddSchema(nested, schemas, indices);
         indices.Add(schema, schemas.Count);
         schemas.Add(schema);
         return schemas.Count - 1;
     }
 
-    private void WriteTable(ref DataWriter writer, TableBinding binding)
+    private void WriteTable(ref SaveWriter writer, TableBinding binding)
     {
         Archetype table = binding.Table;
         writer.WriteInt32(binding.Columns.Length);
@@ -301,7 +301,7 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
         }
     }
 
-    private void WriteTopology(ref DataWriter writer, World world, bool bounded, ref long bytesRemaining)
+    private void WriteTopology(ref SaveWriter writer, World world, bool bounded, ref long bytesRemaining)
     {
         int count = 0;
         foreach (SavedType type in _used) if (type.Storage is SavedStorage.Parent or SavedStorage.Endpoints or SavedStorage.Children) count++;
@@ -335,7 +335,7 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
         }
     }
 
-    private static void WriteMask(ref DataWriter writer, ulong[]? words, int count)
+    private static void WriteMask(ref SaveWriter writer, ulong[]? words, int count)
     {
         writer.WriteByte(words is null ? (byte)0 : (byte)1);
         if (words is null) return;
@@ -344,7 +344,7 @@ public sealed partial class WorldSerializer(SerializationRegistry registry)
             writer.WriteUInt64(words[word] & (word == length - 1 && (count & 63) != 0 ? (1UL << (count & 63)) - 1 : ulong.MaxValue));
     }
 
-    private static void WriteEvents(ref DataWriter writer, in WorldEvents events)
+    private static void WriteEvents(ref SaveWriter writer, in WorldEvents events)
     {
         writer.WriteUInt64(events.Through); writer.WriteInt32(events.ValueCount);
         foreach (DestroyedEntity value in events.Values.AsSpan(0, events.ValueCount)) { writer.WriteEntity(value.Entity); writer.WriteUInt64(value.Sequence); }

@@ -7,9 +7,9 @@ using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS.Serialization;
 
-internal static class SavedValues<T, TCodec> where TCodec : struct, IValueCodec<T>
+internal static class SavedValues<T, TSerializer> where TSerializer : struct, IValueSerializer<T>
 {
-    internal static void Write(ref DataWriter writer, ReadOnlySpan<T> values, TCodec codec, bool raw)
+    internal static void Write(ref SaveWriter writer, ReadOnlySpan<T> values, TSerializer serializer, bool raw)
     {
         if (raw)
         {
@@ -18,11 +18,11 @@ internal static class SavedValues<T, TCodec> where TCodec : struct, IValueCodec<
             return;
         }
         long start = writer.Position;
-        foreach (ref readonly T value in values) { TCodec item = codec; item.Write(ref writer, value); }
+        foreach (ref readonly T value in values) { TSerializer item = serializer; item.Write(ref writer, value); }
         writer.WriteInt32(checked((int)(writer.Position - start)));
     }
 
-    internal static void Read(ref DataReader reader, Span<T> values, TCodec codec, bool raw, IReferencePatcher<T>? patcher = null)
+    internal static void Read(ref SaveReader reader, Span<T> values, TSerializer serializer, bool raw, IReferencePatcher<T>? patcher = null)
     {
         if (raw)
         {
@@ -35,26 +35,26 @@ internal static class SavedValues<T, TCodec> where TCodec : struct, IValueCodec<
         }
         long start = reader.Position;
         if (patcher is null || !reader.PatchesValues)
-            foreach (ref T value in values) { TCodec item = codec; item.Read(ref reader, out value); }
+            foreach (ref T value in values) { TSerializer item = serializer; item.Read(ref reader, out value); }
         else
             foreach (ref T value in values)
-            { TCodec item = codec; item.Read(ref reader, out value); reader.Patch(ref value, patcher); }
+            { TSerializer item = serializer; item.Read(ref reader, out value); reader.Patch(ref value, patcher); }
         long consumed = reader.Position - start;
         if (consumed != reader.Budget.PayloadLength(reader.ReadInt32()))
-            throw new InvalidDataException("Value codec length differs from its segment footer.");
+            throw new InvalidDataException("Value serializer length differs from its segment footer.");
     }
 }
 
-internal abstract class SavedShared(SerializationTypeKey key, int type, Type valueType, Type codecType, CodecTraits codecTraits)
-    : SavedColumn(key, SavedStorage.Shared, type, sizeof(int), false, valueType, codecType, codecTraits)
+internal abstract class SavedShared(SavedTypeKey key, int type, Type valueType, Type serializerType, SerializerTraits serializerTraits)
+    : SavedColumn(key, SavedStorage.Shared, type, sizeof(int), false, valueType, serializerType, serializerTraits)
 {
-    internal override void Write(ref DataWriter writer, ref ColumnEntry column, int count)
+    internal override void Write(ref SaveWriter writer, ref ColumnEntry column, int count)
     {
         Span<int> values = ColumnEntry.Span<int>(ref column, count);
         if (column.Presence is null) writer.WriteRawBytes(MemoryMarshal.AsBytes(values));
         else for (int row = 0; row < count; row++) if (column.Has(row)) writer.WriteInt32(values[row]);
     }
-    internal override void Read(ref DataReader reader, ref ColumnEntry column, int count)
+    internal override void Read(ref SaveReader reader, ref ColumnEntry column, int count)
     {
         Span<int> values = ColumnEntry.Span<int>(ref column, count);
         if (column.Presence is null) reader.ReadRawBytes(MemoryMarshal.AsBytes(values));
@@ -62,23 +62,23 @@ internal abstract class SavedShared(SerializationTypeKey key, int type, Type val
         if (reader.SharedMappings is { } mappings && mappings.TryGetValue(Type, out int[]? ids))
             for (int row = 0; row < count; row++) if (column.Has(row)) values[row] = ids[values[row]];
     }
-    internal abstract void WriteValues(ref DataWriter writer, SharedValues values);
-    internal abstract void WriteSelectedValues(ref DataWriter writer, SharedValues values, ReadOnlySpan<int> ids);
-    internal abstract SharedValues ReadValues(ref DataReader reader, World world);
+    internal abstract void WriteValues(ref SaveWriter writer, SharedValues values);
+    internal abstract void WriteSelectedValues(ref SaveWriter writer, SharedValues values, ReadOnlySpan<int> ids);
+    internal abstract SharedValues ReadValues(ref SaveReader reader, World world);
 }
 
-internal sealed class SavedShared<T, TCodec>(SerializationTypeKey key, TCodec codec, bool raw, IReferencePatcher<T>? patcher = null)
-    : SavedShared(key, ComponentValues.Bind<T>().Id, typeof(T), typeof(TCodec), CodecTraits.Of<T, TCodec>(codec))
-    where T : struct where TCodec : struct, IValueCodec<T>
+internal sealed class SavedShared<T, TSerializer>(SavedTypeKey key, TSerializer serializer, bool raw, IReferencePatcher<T>? patcher = null)
+    : SavedShared(key, ComponentValues.Bind<T>().Id, typeof(T), typeof(TSerializer), SerializerTraits.Of<T, TSerializer>(serializer))
+    where T : struct where TSerializer : struct, IValueSerializer<T>
 {
     private readonly IReferencePatcher<T>? _patcher = patcher ?? ReferencePatchers.DefaultValue<T>();
     internal override object? EntityPatcher => _patcher;
-    internal override void WriteSelectedValues(ref DataWriter writer, SharedValues source, ReadOnlySpan<int> ids)
+    internal override void WriteSelectedValues(ref SaveWriter writer, SharedValues source, ReadOnlySpan<int> ids)
     {
         writer.WriteInt32(ids.Length);
         long start = writer.Position;
         var values = (SharedValues<T>)source;
-        foreach (int id in ids) { TCodec item = codec; item.Write(ref writer, values.Values[id]); }
+        foreach (int id in ids) { TSerializer item = serializer; item.Write(ref writer, values.Values[id]); }
         if (!raw) writer.WriteInt32(checked((int)(writer.Position - start)));
     }
     internal override void PrepareRead(World world)
@@ -91,15 +91,15 @@ internal sealed class SavedShared<T, TCodec>(SerializationTypeKey key, TCodec co
         }
         world.SharedTypes[Type] ??= new SharedValues<T>(world.Records.Length);
     }
-    internal override void WriteCell(ref DataWriter writer, World world, ref ColumnEntry column, int row)
+    internal override void WriteCell(ref SaveWriter writer, World world, ref ColumnEntry column, int row)
     {
         var values = (SharedValues<T>)world.SharedTypes[Type]!;
-        TCodec item = codec;
+        TSerializer item = serializer;
         item.Write(ref writer, values.Values[ColumnEntry.At<int>(ref column, row)]);
     }
-    internal override void ReadCell(ref DataReader reader, ref ColumnEntry column, int row)
+    internal override void ReadCell(ref SaveReader reader, ref ColumnEntry column, int row)
     {
-        TCodec item = codec;
+        TSerializer item = serializer;
         item.Read(ref reader, out T value);
         reader.Patch(ref value, _patcher);
         World world = reader.ValuesWorld!;
@@ -108,13 +108,13 @@ internal sealed class SavedShared<T, TCodec>(SerializationTypeKey key, TCodec co
         ColumnEntry.At<int>(ref column, row) = id;
         if (id != before && ComponentType<T>.HasValueOperationsType) ComponentType<T>.ReleaseValue(world, ref value);
     }
-    internal override void WriteValues(ref DataWriter writer, SharedValues source)
+    internal override void WriteValues(ref SaveWriter writer, SharedValues source)
     {
         var values = (SharedValues<T>)source;
         writer.WriteInt32(values.Count);
-        SavedValues<T, TCodec>.Write(ref writer, values.Values.AsSpan(0, values.Count), codec, raw);
+        SavedValues<T, TSerializer>.Write(ref writer, values.Values.AsSpan(0, values.Count), serializer, raw);
     }
-    internal override SharedValues ReadValues(ref DataReader reader, World world)
+    internal override SharedValues ReadValues(ref SaveReader reader, World world)
     {
         int count = reader.Budget.TopologyEntryCount(reader.ReadInt32(), "shared value");
         var values = new SharedValues<T>(world.Records.Length);
@@ -129,7 +129,7 @@ internal sealed class SavedShared<T, TCodec>(SerializationTypeKey key, TCodec co
         world.SharedTypes[Type] = values;
         if (!reader.NormalizeShared)
         {
-            SavedValues<T, TCodec>.Read(ref reader, values.Values.AsSpan(0, count), codec, raw, _patcher);
+            SavedValues<T, TSerializer>.Read(ref reader, values.Values.AsSpan(0, count), serializer, raw, _patcher);
             values.RebuildLoadedValues();
             return values;
         }
@@ -146,7 +146,7 @@ internal sealed class SavedShared<T, TCodec>(SerializationTypeKey key, TCodec co
                     ref byte first = ref Unsafe.As<T, byte>(ref value);
                     reader.ReadRawBytes(MemoryMarshal.CreateSpan(ref first, Unsafe.SizeOf<T>()));
                 }
-                else { TCodec item = codec; item.Read(ref reader, out value); }
+                else { TSerializer item = serializer; item.Read(ref reader, out value); }
                 reader.Patch(ref value, _patcher);
                 int before = values.Count, target = values.Intern(value);
                 stored = target == before;
@@ -164,29 +164,29 @@ internal sealed class SavedShared<T, TCodec>(SerializationTypeKey key, TCodec co
             }
         }
         if (!raw && reader.Position - start != reader.Budget.PayloadLength(reader.ReadInt32()))
-            throw new InvalidDataException("Value codec length differs from its segment footer.");
+            throw new InvalidDataException("Value serializer length differs from its segment footer.");
         return values;
     }
 }
 
-internal abstract class SavedSparse(SerializationTypeKey key, int type, Type valueType, Type codecType, CodecTraits codecTraits)
-    : SavedType(key, SavedStorage.Sparse, type, 0, false, valueType, codecType, codecTraits)
+internal abstract class SavedSparse(SavedTypeKey key, int type, Type valueType, Type serializerType, SerializerTraits serializerTraits)
+    : SavedType(key, SavedStorage.Sparse, type, 0, false, valueType, serializerType, serializerTraits)
 {
-    internal abstract void Write(ref DataWriter writer, SparseStore values);
-    internal abstract void Read(ref DataReader reader, World world, bool preserve);
-    internal abstract void WriteCell(ref DataWriter writer, SparseStore values, Entity entity);
-    internal abstract void WriteSelected(ref DataWriter writer, SparseStore values, ReadOnlySpan<Entity> entities, ulong version);
+    internal abstract void Write(ref SaveWriter writer, SparseStore values);
+    internal abstract void Read(ref SaveReader reader, World world, bool preserve);
+    internal abstract void WriteCell(ref SaveWriter writer, SparseStore values, Entity entity);
+    internal abstract void WriteSelected(ref SaveWriter writer, SparseStore values, ReadOnlySpan<Entity> entities, ulong version);
     internal abstract void AllocateAppend(World world, ReadOnlySpan<Entity> entities, ReadOnlySpan<int> members);
-    internal abstract void ReadCell(ref DataReader reader, World world, Entity entity);
+    internal abstract void ReadCell(ref SaveReader reader, World world, Entity entity);
 }
 
-internal sealed class SavedSparse<T, TCodec>(SerializationTypeKey key, TCodec codec, bool raw, IReferencePatcher<T>? patcher = null)
-    : SavedSparse(key, ComponentValues.Bind<T>().Id, typeof(T), typeof(TCodec), CodecTraits.Of<T, TCodec>(codec)), IStoredValueCodec<T>
-    where T : struct where TCodec : struct, IValueCodec<T>
+internal sealed class SavedSparse<T, TSerializer>(SavedTypeKey key, TSerializer serializer, bool raw, IReferencePatcher<T>? patcher = null)
+    : SavedSparse(key, ComponentValues.Bind<T>().Id, typeof(T), typeof(TSerializer), SerializerTraits.Of<T, TSerializer>(serializer)), IStoredValueSerializer<T>
+    where T : struct where TSerializer : struct, IValueSerializer<T>
 {
     private readonly IReferencePatcher<T>? _patcher = patcher ?? ReferencePatchers.DefaultValue<T>();
     internal override object? EntityPatcher => _patcher;
-    internal override void WriteSelected(ref DataWriter writer, SparseStore source, ReadOnlySpan<Entity> entities, ulong version)
+    internal override void WriteSelected(ref SaveWriter writer, SparseStore source, ReadOnlySpan<Entity> entities, ulong version)
     {
         writer.WriteInt32(entities.Length);
         writer.WriteEntities(entities);
@@ -196,9 +196,9 @@ internal sealed class SavedSparse<T, TCodec>(SerializationTypeKey key, TCodec co
         SavedChanges.WriteBaseline(ref writer, entities.Length, ComponentType<T>.TracksWritesType,
             ComponentType<T>.TracksAddedType, version);
     }
-    internal override void WriteCell(ref DataWriter writer, SparseStore values, Entity entity)
+    internal override void WriteCell(ref SaveWriter writer, SparseStore values, Entity entity)
     {
-        TCodec item = codec;
+        TSerializer item = serializer;
         item.Write(ref writer, ((SparseStore<T>)values).Get(entity));
     }
     internal override void AllocateAppend(World world, ReadOnlySpan<Entity> entities, ReadOnlySpan<int> members)
@@ -221,35 +221,35 @@ internal sealed class SavedSparse<T, TCodec>(SerializationTypeKey key, TCodec co
             if (values.Changes is { } tracked) tracked[0].Stamp(row, world.NextVersion(), true, ComponentType<T>.TracksAddedType);
         }
     }
-    internal override void ReadCell(ref DataReader reader, World world, Entity entity)
+    internal override void ReadCell(ref SaveReader reader, World world, Entity entity)
     {
         var values = (SparseStore<T>)world.SparseTypes!.Types[Type]!;
         ref T value = ref values.Get(entity);
-        TCodec item = codec;
+        TSerializer item = serializer;
         item.Read(ref reader, out value);
         reader.Patch(ref value, _patcher);
     }
-    public void WriteValue(ref DataWriter writer, in T value)
+    public void WriteValue(ref SaveWriter writer, in T value)
     {
-        TCodec item = codec;
+        TSerializer item = serializer;
         item.Write(ref writer, value);
     }
-    public T ReadValue(ref DataReader reader)
+    public T ReadValue(ref SaveReader reader)
     {
-        TCodec item = codec;
+        TSerializer item = serializer;
         item.Read(ref reader, out T value);
         return value;
     }
-    internal override void Write(ref DataWriter writer, SparseStore source)
+    internal override void Write(ref SaveWriter writer, SparseStore source)
     {
         var values = (SparseStore<T>)source;
         writer.WriteInt32(values.Count);
         writer.WriteEntities(values.Entities.AsSpan(0, values.Count));
-        SavedValues<T, TCodec>.Write(ref writer, values.Values.AsSpan(0, values.Count), codec, raw);
+        SavedValues<T, TSerializer>.Write(ref writer, values.Values.AsSpan(0, values.Count), serializer, raw);
         SavedChanges.Write(ref writer, values.Changes is { } changes ? changes[0] : default,
             values.Count, ComponentType<T>.TracksWritesType, ComponentType<T>.TracksAddedType);
     }
-    internal override void Read(ref DataReader reader, World world, bool preserve)
+    internal override void Read(ref SaveReader reader, World world, bool preserve)
     {
         int count = reader.Budget.TopologyEntryCount(reader.ReadInt32(), "sparse value");
         SparseStores stores = world.SparseTypes ??= new(world, world.Records.Length);
@@ -263,7 +263,7 @@ internal sealed class SavedSparse<T, TCodec>(SerializationTypeKey key, TCodec co
             Entity entity = values.Entities[row] = reader.MapEntity(reader.ReadEntity());
             values.EnsureCell(entity.Id) = new() { RowPlusOne = row + 1, AttachmentPlusOne = stores.Attach(entity.Id, Type) };
         }
-        SavedValues<T, TCodec>.Read(ref reader, values.Values.AsSpan(0, count), codec, raw, _patcher);
+        SavedValues<T, TSerializer>.Read(ref reader, values.Values.AsSpan(0, count), serializer, raw, _patcher);
         if (values.Changes is { } tracked)
         {
             if (tracked[0].Rows.Length < capacity) tracked[0].Grow(capacity, ComponentType<T>.TracksAddedType);
@@ -273,91 +273,91 @@ internal sealed class SavedSparse<T, TCodec>(SerializationTypeKey key, TCodec co
     }
 }
 
-internal abstract class SavedResource(SerializationTypeKey key, int type, Type valueType, Type codecType, CodecTraits codecTraits)
-    : SavedType(key, SavedStorage.Resource, type, 0, false, valueType, codecType, codecTraits)
+internal abstract class SavedResource(SavedTypeKey key, int type, Type valueType, Type serializerType, SerializerTraits serializerTraits)
+    : SavedType(key, SavedStorage.Resource, type, 0, false, valueType, serializerType, serializerTraits)
 {
-    internal abstract void Write(ref DataWriter writer, ResourceValue value);
-    internal abstract void Read(ref DataReader reader, World world);
+    internal abstract void Write(ref SaveWriter writer, ResourceValue value);
+    internal abstract void Read(ref SaveReader reader, World world);
 }
 
-internal sealed class SavedResource<T, TCodec>(SerializationTypeKey key, TCodec codec, IReferencePatcher<T>? patcher = null)
-    : SavedResource(key, ResourceType<T>.Id, typeof(T), typeof(TCodec), CodecTraits.Of<T, TCodec>(codec))
-    where TCodec : struct, IValueCodec<T>
+internal sealed class SavedResource<T, TSerializer>(SavedTypeKey key, TSerializer serializer, IReferencePatcher<T>? patcher = null)
+    : SavedResource(key, ResourceType<T>.Id, typeof(T), typeof(TSerializer), SerializerTraits.Of<T, TSerializer>(serializer))
+    where TSerializer : struct, IValueSerializer<T>
 {
     // Resources may be classes, so their entity patcher is never inferred: register one when a resource holds entities.
     private readonly IReferencePatcher<T>? _patcher = patcher;
-    internal override void Write(ref DataWriter writer, ResourceValue value)
+    internal override void Write(ref SaveWriter writer, ResourceValue value)
     {
         long start = writer.Position;
-        TCodec item = codec;
+        TSerializer item = serializer;
         item.Write(ref writer, ((ResourceValue<T>)value).Value);
         writer.WriteInt32(checked((int)(writer.Position - start)));
     }
-    internal override void Read(ref DataReader reader, World world)
+    internal override void Read(ref SaveReader reader, World world)
     {
         var value = new ResourceValue<T>(default!);
         world.ResourceValues.Set(Type, value);
         long start = reader.Position;
-        TCodec item = codec;
+        TSerializer item = serializer;
         item.Read(ref reader, out value.Value);
         reader.Patch(ref value.Value, _patcher);
         if (reader.Position - start != reader.Budget.PayloadLength(reader.ReadInt32()))
-            throw new InvalidDataException("Resource codec length differs from its segment footer.");
+            throw new InvalidDataException("Resource serializer length differs from its segment footer.");
     }
 }
 
-public sealed partial class SerializationRegistry
+public sealed partial class SaveRegistry
 {
     internal readonly Dictionary<int, SavedSparse> Sparse = [];
     internal readonly Dictionary<int, SavedResource> Resources = [];
 
-    public SerializationRegistry RegisterResource<T>(SerializationTypeKey key) where T : struct
+    public SaveRegistry RegisterResource<T>(SavedTypeKey key) where T : struct
     {
-        if (RuntimeHelpers.IsReferenceOrContainsReferences<T>()) throw new ArgumentException("Register a resource value codec for managed fields.");
-        return RegisterResource<T, RawCodec<T>>(key);
+        if (RuntimeHelpers.IsReferenceOrContainsReferences<T>()) throw new ArgumentException("Register a resource value serializer for managed fields.");
+        return RegisterResource<T, MemoryCopySerializer<T>>(key);
     }
 
-    private SerializationRegistry RegisterShared<T, TCodec>(SerializationTypeKey key, TCodec codec, bool raw,
+    private SaveRegistry RegisterShared<T, TSerializer>(SavedTypeKey key, TSerializer serializer, bool raw,
         IReferencePatcher<T>? patcher)
-        where T : struct where TCodec : struct, IComponentCodec<T>
+        where T : struct where TSerializer : struct, IValueSerializer<T>
     {
         if (raw && RuntimeHelpers.IsReferenceOrContainsReferences<T>())
-            throw new ArgumentException("Register a shared value codec for managed fields.");
+            throw new ArgumentException("Register a shared value serializer for managed fields.");
         patcher ??= ReferencePatchers.DefaultValue<T>();
-        _entries.Add(Add(new SavedShared<T, TCodec>(key, codec, raw, patcher)).Describe());
+        _entries.Add(Add(new SavedShared<T, TSerializer>(key, serializer, raw, patcher)).Describe());
         if (ComponentType<T>.KeepsRemovedType && !Columns.ContainsKey(ComponentType<Removed<T>>.TypeId))
-            Add(new SavedColumn<Removed<T>, RemovedCodec<T, TCodec>>(Derived(key, 32, "Removed"), SavedStorage.Removed,
-                new(codec), raw, ReferencePatchers.Removed(patcher)));
+            Add(new SavedColumn<Removed<T>, RemovedSerializer<T, TSerializer>>(Derived(key, 32, "Removed"), SavedStorage.Removed,
+                new(serializer), raw, ReferencePatchers.Removed(patcher)));
         return this;
     }
-    private SerializationRegistry RegisterSparse<T, TCodec>(SerializationTypeKey key, TCodec codec, bool raw,
+    private SaveRegistry RegisterSparse<T, TSerializer>(SavedTypeKey key, TSerializer serializer, bool raw,
         IReferencePatcher<T>? patcher)
-        where T : struct where TCodec : struct, IComponentCodec<T>
+        where T : struct where TSerializer : struct, IValueSerializer<T>
     {
         if (raw && RuntimeHelpers.IsReferenceOrContainsReferences<T>())
-            throw new ArgumentException("Register a sparse value codec for managed fields.");
+            throw new ArgumentException("Register a sparse value serializer for managed fields.");
         patcher ??= ReferencePatchers.DefaultValue<T>();
-        var binding = Add(new SavedSparse<T, TCodec>(key, codec, raw, patcher));
+        var binding = Add(new SavedSparse<T, TSerializer>(key, serializer, raw, patcher));
         _entries.Add(binding.Describe());
         Sparse.Add(binding.Type, binding);
         if (ComponentType<T>.KeepsRemovedType && !Columns.ContainsKey(ComponentType<Removed<T>>.TypeId))
-            Add(new SavedColumn<Removed<T>, RemovedCodec<T, TCodec>>(Derived(key, 32, "Removed"), SavedStorage.Removed,
-                new(codec), raw, ReferencePatchers.Removed(patcher)));
+            Add(new SavedColumn<Removed<T>, RemovedSerializer<T, TSerializer>>(Derived(key, 32, "Removed"), SavedStorage.Removed,
+                new(serializer), raw, ReferencePatchers.Removed(patcher)));
         return this;
     }
-    public SerializationRegistry RegisterResource<T, TCodec>(SerializationTypeKey key, TCodec codec = default)
-        where TCodec : struct, IValueCodec<T>
+    public SaveRegistry RegisterResource<T, TSerializer>(SavedTypeKey key, TSerializer serializer = default)
+        where TSerializer : struct, IValueSerializer<T>
     {
-        var binding = Add(new SavedResource<T, TCodec>(key, codec));
+        var binding = Add(new SavedResource<T, TSerializer>(key, serializer));
         _entries.Add(binding.Describe());
         Resources.Add(binding.Type, binding);
         return this;
     }
 
-    public SerializationRegistry RegisterResource<T, TCodec, TPatcher>(SerializationTypeKey key, TCodec codec, TPatcher patcher)
-        where TCodec : struct, IValueCodec<T> where TPatcher : struct, IReferencePatcher<T>
+    public SaveRegistry RegisterResource<T, TSerializer, TPatcher>(SavedTypeKey key, TSerializer serializer, TPatcher patcher)
+        where TSerializer : struct, IValueSerializer<T> where TPatcher : struct, IReferencePatcher<T>
     {
-        var binding = Add(new SavedResource<T, TCodec>(key, codec, ReferencePatchers.Bind<T, TPatcher>(patcher)));
+        var binding = Add(new SavedResource<T, TSerializer>(key, serializer, ReferencePatchers.Bind<T, TPatcher>(patcher)));
         _entries.Add(binding.Describe());
         Resources.Add(binding.Type, binding);
         return this;

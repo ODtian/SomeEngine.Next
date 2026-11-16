@@ -9,7 +9,7 @@ namespace SomeEngine.ECS.Serialization;
 public readonly record struct WorldCheckpointInfo(ulong PayloadOffset, ulong PayloadLength, ulong TotalLength);
 
 /// <summary>Authenticated envelope around the version 5 World encoding.</summary>
-public static class WorldCheckpointCodec
+public static class WorldCheckpointFile
 {
     public const int HeaderSize = 128;
 
@@ -25,12 +25,12 @@ public static class WorldCheckpointCodec
     private static ReadOnlySpan<byte> Magic => "SEWCHECK"u8;
 
     /// <summary>Captures the World, then writes its version 5 payload and authenticated envelope.</summary>
-    public static void Write(Stream destination, World world, SerializationRegistry registry)
+    public static void Write(Stream destination, World world, SaveRegistry registry)
     {
         if (!destination.CanWrite || !destination.CanSeek)
             throw new ArgumentException("Checkpoint destination must be writable and seekable.", nameof(destination));
 
-        using var captured = new WorldCheckpoint();
+        using var captured = new WorldCopy();
         captured.Capture(world);
         long checkpointStart = destination.Position;
         Digest256 registryIdentity = ComputeRegistryIdentity(registry);
@@ -50,12 +50,12 @@ public static class WorldCheckpointCodec
     }
 
     /// <summary>Reads and authenticates one version 5 World payload.</summary>
-    public static World Read(Stream source, SerializationRegistry registry, SerializationReadLimits? limits = null)
+    public static World Read(Stream source, SaveRegistry registry, ReadLimits? limits = null)
     {
         RequireSeekableReadable(source);
         long checkpointStart = source.Position;
         Header header = ReadHeader(source);
-        SerializationReadLimits effectiveLimits = limits ?? SerializationReadLimits.Default;
+        ReadLimits effectiveLimits = limits ?? ReadLimits.Default;
         if (effectiveLimits.MaxCheckpointBytes < 0 ||
             header.PayloadLength > checked((ulong)effectiveLimits.MaxCheckpointBytes))
             throw SerializationErrors.CreateDataException(SerializationError.LimitExceeded,
@@ -191,23 +191,23 @@ public static class WorldCheckpointCodec
             Digest256.Read(bytes[PayloadHashOffset..HeaderHashOffset]));
     }
 
-    private static Digest256 ComputeRegistryIdentity(SerializationRegistry registry)
+    private static Digest256 ComputeRegistryIdentity(SaveRegistry registry)
     {
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         Span<byte> record = stackalloc byte[32];
         Span<byte> count = stackalloc byte[4];
         BinaryPrimitives.WriteInt32LittleEndian(count, registry.Types.Count);
         hash.AppendData(count);
-        foreach (SavedType type in registry.Types.OrderBy(type => type.Key.StableId))
+        foreach (SavedType type in registry.Types.OrderBy(type => type.Key.Id))
         {
-            SerializationTypeKey key = type.CheckpointKey;
+            SavedTypeKey key = type.CheckpointKey;
             record.Clear();
             record[0] = (byte)type.Storage;
-            record[1] = (byte)type.CodecKind;
-            key.StableId.TryWriteBytes(record[8..24]);
-            BinaryPrimitives.WriteUInt64LittleEndian(record[24..], key.SchemaFingerprint);
+            record[1] = (byte)type.ValueEncoding;
+            key.Id.TryWriteBytes(record[8..24]);
+            BinaryPrimitives.WriteUInt64LittleEndian(record[24..], key.FieldHash);
             hash.AppendData(record);
-            byte[] name = new System.Text.UTF8Encoding(false, true).GetBytes(key.StableName);
+            byte[] name = new System.Text.UTF8Encoding(false, true).GetBytes(key.Name);
             BinaryPrimitives.WriteInt32LittleEndian(count, name.Length);
             hash.AppendData(count);
             hash.AppendData(name);

@@ -8,7 +8,7 @@ public sealed class RootComponentContractTests
     [Fact]
     public void RootOnlyComponent_RegistersAndRoundTripsAsComponentAndWorldData()
     {
-        var registry = new SerializationRegistry()
+        var registry = new SaveRegistry()
             .Register<RootOnlySerializedValue>();
         using var componentStream = new MemoryStream();
 
@@ -35,7 +35,7 @@ public sealed class RootComponentContractTests
     [Fact]
     public void RootOnlyRelationPayload_RegistersTopologyAndRoundTrips()
     {
-        var registry = new SerializationRegistry()
+        var registry = new SaveRegistry()
             .Register<RootOnlySerializedRelation>()
             .RegisterRelation<RootOnlySerializedRelation>();
         using var sourceWorld = new World();

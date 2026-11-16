@@ -10,11 +10,11 @@ public sealed record NavigationSaveResult(World World, NavigationSaveResources R
 /// <summary>Durable resource provenance and navigation intent followed by the game's existing durable World payload.</summary>
 public static partial class NavigationSave
 {
-    private static readonly SerializationRegistry TableRegistry = new SerializationRegistry().Register<NavigationSavedTable, NavigationSaveCodec>(
+    private static readonly SaveRegistry TableRegistry = new SaveRegistry().Register<NavigationSavedTable, NavigationSaveCodec>(
         new(Guid.Parse("35e686ea-57c6-4441-b691-d6e3493d1fa0"), "SomeEngine.Navigation.Save", 1));
 
     /// <summary>Call after actual movement, input changes and navigation Apply have completed for the save boundary.</summary>
-    public static void Write(Stream stream, World world, SerializationRegistry gameRegistry, NavigationSaveResources resources,
+    public static void Write(Stream stream, World world, SaveRegistry gameRegistry, NavigationSaveResources resources,
         SerializeOptions options = default)
     {
         var capture = new NavigationSaveResourceCapture(resources);
