@@ -15,6 +15,10 @@
                       Condition="'@(_ViewsReference)' != ''"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot" />
   </ItemGroup>
+  <!-- Libraries that ship in NativeAOT builds fail to compile on trimming and AOT analyzer warnings. -->
+  <PropertyGroup Condition="'$(IsAotCompatible)' == 'true'">
+    <WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2046;IL2050;IL2055;IL2057;IL2058;IL2059;IL2060;IL2062;IL2065;IL2067;IL2068;IL2069;IL2070;IL2072;IL2073;IL2075;IL2077;IL2078;IL2080;IL2087;IL2088;IL2089;IL2090;IL2091;IL2092;IL2093;IL2094;IL2095;IL2096;IL2097;IL2098;IL2099;IL2103;IL2106;IL2111;IL3050;IL3051</WarningsAsErrors>
+  </PropertyGroup>
   <PropertyGroup>
     <SomeEngineViewsCompilerPath>$(SomeEngineRepositoryRoot)src/SomeEngine.Views.Compiler/bin/$(Configuration)/netstandard2.0/SomeEngine.Views.Compiler.dll</SomeEngineViewsCompilerPath>
   </PropertyGroup>
