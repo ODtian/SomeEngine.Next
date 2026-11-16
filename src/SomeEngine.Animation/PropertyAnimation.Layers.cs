@@ -72,7 +72,7 @@ public static partial class PropertyAnimation
     {
         if (channel.Component != ComponentId<AnimationLayers>.Value && world.Has<AnimationLayers>(target))
         {
-            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(target);
+            AnimationLayers layers = world.ReadValue<AnimationLayers>(target);
             DevelopmentCheck.Require(layers.Count <= 8 && layerIndex < layers.Count,
                 "A property track requires a defined animation layer.");
             AnimationLayer layer = layers.Items[layerIndex];

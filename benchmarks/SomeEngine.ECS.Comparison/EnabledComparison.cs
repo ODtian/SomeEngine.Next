@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Systems;
 using Arch.Core;
 using Friflo.Engine.ECS;
 
@@ -10,7 +11,7 @@ public struct Signal : IEnableableComponent, EasyEcs.IComponent, Friflo.Engine.E
 
 public struct DisabledSignal : IComponent, EasyEcs.IComponent, Friflo.Engine.ECS.IComponent;
 
-internal struct SignalPass(int value) : IComponentAction<Signal>, EasyEcs.IForEachBatch<Signal>
+internal struct SignalPass(int value) : EasyEcs.IForEachBatch<Signal>
 {
     internal int Count;
     public void Execute(Span<Signal> values)
@@ -52,8 +53,10 @@ internal sealed partial class SomeEngineWorld
         }
         var active = new SignalPass(7);
         var disabled = new SignalPass(43);
-        _enabledSignals.GetValueOrDefault().ForEach<Signal, SignalPass>(ref active);
-        _disabledSignals.GetValueOrDefault().ForEach<Signal, SignalPass>(ref disabled);
+        using (QueryScope scope = _enabledSignals.GetValueOrDefault().Open())
+            foreach (QueryChunk chunk in scope) active.Execute(chunk.Write<Signal>());
+        using (QueryScope scope = _disabledSignals.GetValueOrDefault().Open())
+            foreach (QueryChunk chunk in scope) disabled.Execute(chunk.Write<Signal>());
         EnabledActiveCount = active.Count;
         EnabledDisabledCount = disabled.Count;
         EnabledStoredCount = stored;

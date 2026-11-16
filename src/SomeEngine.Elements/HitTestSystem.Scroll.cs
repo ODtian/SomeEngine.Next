@@ -18,7 +18,7 @@ public sealed partial class HitTestSystem
         _scrollInputs.Clear();
         foreach (Entity node in _nodes)
         {
-            ScrollInput input = world.ReadComponentData<ScrollInput>(node);
+            ScrollInput input = world.ReadValue<ScrollInput>(node);
             input.Delta = Vector2.Zero;
             _scrollInputs.Add(node, input);
         }
@@ -42,7 +42,7 @@ public sealed partial class HitTestSystem
     {
         if (!_scrollInputs.TryGetValue(node, out ScrollInput input))
             return;
-        ScrollOffset offset = world.ReadComponentData<ScrollOffset>(node);
+        ScrollOffset offset = world.ReadValue<ScrollOffset>(node);
         Vector2 value = Vector2.Clamp(offset.Value + input.Delta + delta, Vector2.Zero, offset.Max);
         input.Delta = value - offset.Value;
         input.Count = unchecked(input.Count + 1);
@@ -53,7 +53,7 @@ public sealed partial class HitTestSystem
     {
         foreach (var (node, input) in _scrollInputs)
         {
-            ScrollInput previous = world.ReadComponentData<ScrollInput>(node);
+            ScrollInput previous = world.ReadValue<ScrollInput>(node);
             if (input.Delta != previous.Delta || input.Count != previous.Count)
                 world.Set(node, input);
         }

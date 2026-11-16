@@ -206,7 +206,7 @@ public static class CrowdContent
             foreach (QueryChunk chunk in rows)
                 foreach (Entity entity in chunk.Entities) members.Add(entity);
         entities.GetBlock<EntityBlock>().WriteEntities(world, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(members),
-            new(Codecs: SceneSerialization.Codecs));
+            SceneSerialization.CreateRegistry());
         project.RegisterAsset(await entities.SaveAsync(Path.Combine(project.RootPath, "assets/Scenes/default.entities.asset")));
         using var scene = new WorldAsset(entry.AssetGuid) { Name = "1000 GPU characters" };
         scene.GetBlock<WorldBlock>().Contents =

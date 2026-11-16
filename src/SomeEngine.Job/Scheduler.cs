@@ -134,80 +134,129 @@ public sealed partial class Scheduler : IDisposable
     internal bool TryReclaimLatencyWork(long sequence) =>
         _workQueue.TryReclaimLatencyWork(sequence);
 
-    public JobHandle Schedule<T>(in T job, JobHandle dependency = default)
-        where T : struct, IJob
-    {
-        return Schedule(job, JobScheduleOptions.Default, dependency);
-    }
-
-    public JobHandle Schedule<T>(in T job, JobScheduleOptions options, JobHandle dependency = default)
-        where T : struct, IJob
-    {
-        return Schedule(job, ReadOnlySpan<JobResourceAccess>.Empty, options, dependency);
-    }
-
-    public JobHandle Schedule<T>(in T job, JobResourceAccess access, JobHandle dependency = default)
-        where T : struct, IJob
-    {
-        ReadOnlySpan<JobResourceAccess> accesses = stackalloc JobResourceAccess[] { access };
-        return Schedule(job, accesses, JobScheduleOptions.Default, dependency);
-    }
-
-    public JobHandle Schedule<T>(
+    /// <summary>Schedules index batches after their dependency, holding the declared resource accesses while they run.</summary>
+    public JobHandle ScheduleParallel<T>(
         in T job,
-        JobResourceAccess access,
-        JobScheduleOptions options,
-        JobHandle dependency = default)
-        where T : struct, IJob
+        int length,
+        int batchSize,
+        ReadOnlySpan<JobResourceAccess> accesses = default,
+        JobHandle dependency = default,
+        JobScheduleOptions options = default)
+        where T : struct, IJobParallelFor
     {
-        ReadOnlySpan<JobResourceAccess> accesses = stackalloc JobResourceAccess[] { access };
-        return Schedule(job, accesses, options, dependency);
+        using Submission submissionScope = EnterSubmission();
+        ValidateDependency(dependency);
+        var lane = BeginParallelSchedule<T>(options, batchSize);
+        if (length <= 0)
+            return dependency;
+        options = ResolveCategoryOptions(options);
+
+        bool automaticBatch = batchSize == JobScheduleOptions.AutomaticBatchSize;
+        ParallelBatchSizer<T>? batchSizer = automaticBatch ? GetParallelBatchSizer<T>() : null;
+        int resolvedBatchSize = automaticBatch
+            ? batchSizer!.Resolve(
+                length,
+                _config.WorkerCount,
+                _config.AutoBatchTargetMicroseconds,
+                _config.AutoBatchMaxTilesPerWorker)
+            : batchSize;
+
+        JobSubmissionReservation submission = default;
+        bool ownsCategoryRequest = false;
+
+        int batchCount = CalculateParallelBatchCount(length, resolvedBatchSize);
+        _workQueue.EnsureItemCapacity(batchCount);
+        int tokenCount = CalculateParallelTokenCount(batchCount);
+        if (options.Category is { } category)
+            tokenCount = Math.Min(tokenCount, category.Config.MaxExecuting);
+        bool hasResourceAccesses = accesses.Length != 0;
+        bool hasScheduleDependencies = dependency.Index != 0 || hasResourceAccesses;
+        bool deferResourceActivation =
+            hasResourceAccesses &&
+            dependency.Index != 0 &&
+            !_dependencies.IsSatisfied(dependency, waitForWorkOnly: false);
+        JobHandle state = default;
+        ResourceAccessRegistration registration = ResourceAccessRegistration.Empty;
+        ResourceAccessReservation reservation = ResourceAccessReservation.Empty;
+        WorkBatch work = default;
+        int[]? slots = null;
+        WorkStream<ScheduledParallelToken<T>>? stream = null;
+        ParallelJobGroup<T>? group = null;
+        int preparedSlots = 0;
+        try
+        {
+            ownsCategoryRequest = StartCategoryRequest(options.Category);
+            submission = JobSubmissionTracker.Begin(this, accesses);
+            state = CreateState(
+                batchCount + tokenCount,
+                pendingDependencies: 0,
+                scheduleDependenciesSealed: !hasScheduleDependencies);
+            _completion.SetConcurrentExecution(state, batchCount > 1);
+            if (deferResourceActivation)
+                reservation = ReserveAccesses<T>(accesses);
+            else
+                registration = RegisterAccesses<T>(state, accesses, hasResourceAccesses);
+            AttachToCurrentScope(state);
+            submission.Bind(state);
+            ScheduleParallelWork(
+                job,
+                state,
+                dependency,
+                registration,
+                reservation,
+                options,
+                length,
+                resolvedBatchSize,
+                batchCount,
+                tokenCount,
+                batchSizer,
+                hasScheduleDependencies,
+                deferResourceActivation,
+                ref work,
+                ref slots,
+                ref stream,
+                ref group,
+                ref preparedSlots);
+            BindCategoryRequest(state, options.Category, ownsCategoryRequest);
+            _counters.Scheduled(lane);
+            return state;
+        }
+        catch
+        {
+            try
+            {
+                CancelReservation(reservation);
+                CleanupParallelUnscheduled(work, stream, slots, group, preparedSlots);
+                ReleaseAccessesIfRegistered(registration);
+                if (state.Index != 0)
+                    CancelUnscheduledState(state);
+            }
+            finally
+            {
+                submission.Rollback();
+                if (ownsCategoryRequest)
+                    options.Category!.CompleteRequest();
+            }
+            throw;
+        }
+        finally
+        {
+            _resources.ReleaseReservationReference(reservation);
+            submission.Release();
+        }
     }
 
-    public JobHandle Schedule<T>(in T job, ReadOnlySpan<JobResourceAccess> accesses, JobHandle dependency = default)
+    /// <summary>Schedules a job after its dependency, holding the declared resource accesses while it runs.</summary>
+    public JobHandle Schedule<T>(in T job, ReadOnlySpan<JobResourceAccess> accesses = default,
+        JobHandle dependency = default, JobScheduleOptions options = default)
         where T : struct, IJob
-    {
-        return Schedule(job, accesses, JobScheduleOptions.Default, dependency);
-    }
+        => ScheduleCore(job, accesses, options, dependency, ignoreExplicitDependencyFault: false);
 
-    public JobHandle Schedule<T>(
-        in T job,
-        ReadOnlySpan<JobResourceAccess> accesses,
-        JobScheduleOptions options,
-        JobHandle dependency = default)
+    /// <summary>Schedules cleanup after its dependency succeeds, faults or is cancelled.</summary>
+    public JobHandle ScheduleFinally<T>(in T job, ReadOnlySpan<JobResourceAccess> accesses = default,
+        JobHandle dependency = default, JobScheduleOptions options = default)
         where T : struct, IJob
-    {
-        return ScheduleCore(
-            job,
-            accesses,
-            options,
-            dependency,
-            ignoreExplicitDependencyFault: false);
-    }
-
-    public JobHandle ScheduleFinally<T>(
-        in T job,
-        JobScheduleOptions options,
-        JobHandle dependency)
-        where T : struct, IJob
-    {
-        return ScheduleFinally(job, ReadOnlySpan<JobResourceAccess>.Empty, options, dependency);
-    }
-
-    public JobHandle ScheduleFinally<T>(
-        in T job,
-        ReadOnlySpan<JobResourceAccess> accesses,
-        JobScheduleOptions options,
-        JobHandle dependency)
-        where T : struct, IJob
-    {
-        return ScheduleCore(
-            job,
-            accesses,
-            options,
-            dependency,
-            ignoreExplicitDependencyFault: true);
-    }
+        => ScheduleCore(job, accesses, options, dependency, ignoreExplicitDependencyFault: true);
 
     private JobHandle ScheduleCore<T>(
         in T job,
@@ -365,170 +414,6 @@ public sealed partial class Scheduler : IDisposable
         work.ReleaseJobs();
         ReleaseAccessesIfRegistered(registration);
         CancelUnscheduledState(state);
-    }
-
-    public JobHandle ScheduleParallel<T>(in T job, int length, int batchSize, JobHandle dependency = default)
-        where T : struct, IJobParallelFor
-    {
-        return ScheduleParallel(job, length, batchSize, JobScheduleOptions.Default, dependency);
-    }
-
-    public JobHandle ScheduleParallel<T>(
-        in T job,
-        int length,
-        int batchSize,
-        JobScheduleOptions options,
-        JobHandle dependency = default)
-        where T : struct, IJobParallelFor
-    {
-        return ScheduleParallel(job, length, batchSize, ReadOnlySpan<JobResourceAccess>.Empty, options, dependency);
-    }
-
-    public JobHandle ScheduleParallel<T>(
-        in T job,
-        int length,
-        int batchSize,
-        JobResourceAccess access,
-        JobHandle dependency = default)
-        where T : struct, IJobParallelFor
-    {
-        ReadOnlySpan<JobResourceAccess> accesses = stackalloc JobResourceAccess[] { access };
-        return ScheduleParallel(job, length, batchSize, accesses, JobScheduleOptions.Default, dependency);
-    }
-
-    public JobHandle ScheduleParallel<T>(
-        in T job,
-        int length,
-        int batchSize,
-        JobResourceAccess access,
-        JobScheduleOptions options,
-        JobHandle dependency = default)
-        where T : struct, IJobParallelFor
-    {
-        ReadOnlySpan<JobResourceAccess> accesses = stackalloc JobResourceAccess[] { access };
-        return ScheduleParallel(job, length, batchSize, accesses, options, dependency);
-    }
-
-    public JobHandle ScheduleParallel<T>(
-        in T job,
-        int length,
-        int batchSize,
-        ReadOnlySpan<JobResourceAccess> accesses,
-        JobHandle dependency = default)
-        where T : struct, IJobParallelFor
-    {
-        return ScheduleParallel(job, length, batchSize, accesses, JobScheduleOptions.Default, dependency);
-    }
-
-    public JobHandle ScheduleParallel<T>(
-        in T job,
-        int length,
-        int batchSize,
-        ReadOnlySpan<JobResourceAccess> accesses,
-        JobScheduleOptions options,
-        JobHandle dependency = default)
-        where T : struct, IJobParallelFor
-    {
-        using Submission submissionScope = EnterSubmission();
-        ValidateDependency(dependency);
-        var lane = BeginParallelSchedule<T>(options, batchSize);
-        if (length <= 0)
-            return dependency;
-        options = ResolveCategoryOptions(options);
-
-        bool automaticBatch = batchSize == JobScheduleOptions.AutomaticBatchSize;
-        ParallelBatchSizer<T>? batchSizer = automaticBatch ? GetParallelBatchSizer<T>() : null;
-        int resolvedBatchSize = automaticBatch
-            ? batchSizer!.Resolve(
-                length,
-                _config.WorkerCount,
-                _config.AutoBatchTargetMicroseconds,
-                _config.AutoBatchMaxTilesPerWorker)
-            : batchSize;
-
-        JobSubmissionReservation submission = default;
-        bool ownsCategoryRequest = false;
-
-        int batchCount = CalculateParallelBatchCount(length, resolvedBatchSize);
-        _workQueue.EnsureItemCapacity(batchCount);
-        int tokenCount = CalculateParallelTokenCount(batchCount);
-        if (options.Category is { } category)
-            tokenCount = Math.Min(tokenCount, category.Config.MaxExecuting);
-        bool hasResourceAccesses = accesses.Length != 0;
-        bool hasScheduleDependencies = dependency.Index != 0 || hasResourceAccesses;
-        bool deferResourceActivation =
-            hasResourceAccesses &&
-            dependency.Index != 0 &&
-            !_dependencies.IsSatisfied(dependency, waitForWorkOnly: false);
-        JobHandle state = default;
-        ResourceAccessRegistration registration = ResourceAccessRegistration.Empty;
-        ResourceAccessReservation reservation = ResourceAccessReservation.Empty;
-        WorkBatch work = default;
-        int[]? slots = null;
-        WorkStream<ScheduledParallelToken<T>>? stream = null;
-        ParallelJobGroup<T>? group = null;
-        int preparedSlots = 0;
-        try
-        {
-            ownsCategoryRequest = StartCategoryRequest(options.Category);
-            submission = JobSubmissionTracker.Begin(this, accesses);
-            state = CreateState(
-                batchCount + tokenCount,
-                pendingDependencies: 0,
-                scheduleDependenciesSealed: !hasScheduleDependencies);
-            _completion.SetConcurrentExecution(state, batchCount > 1);
-            if (deferResourceActivation)
-                reservation = ReserveAccesses<T>(accesses);
-            else
-                registration = RegisterAccesses<T>(state, accesses, hasResourceAccesses);
-            AttachToCurrentScope(state);
-            submission.Bind(state);
-            ScheduleParallelWork(
-                job,
-                state,
-                dependency,
-                registration,
-                reservation,
-                options,
-                length,
-                resolvedBatchSize,
-                batchCount,
-                tokenCount,
-                batchSizer,
-                hasScheduleDependencies,
-                deferResourceActivation,
-                ref work,
-                ref slots,
-                ref stream,
-                ref group,
-                ref preparedSlots);
-            BindCategoryRequest(state, options.Category, ownsCategoryRequest);
-            _counters.Scheduled(lane);
-            return state;
-        }
-        catch
-        {
-            try
-            {
-                CancelReservation(reservation);
-                CleanupParallelUnscheduled(work, stream, slots, group, preparedSlots);
-                ReleaseAccessesIfRegistered(registration);
-                if (state.Index != 0)
-                    CancelUnscheduledState(state);
-            }
-            finally
-            {
-                submission.Rollback();
-                if (ownsCategoryRequest)
-                    options.Category!.CompleteRequest();
-            }
-            throw;
-        }
-        finally
-        {
-            _resources.ReleaseReservationReference(reservation);
-            submission.Release();
-        }
     }
 
     private JobPayloadLane BeginParallelSchedule<T>(JobScheduleOptions options, int batchSize)

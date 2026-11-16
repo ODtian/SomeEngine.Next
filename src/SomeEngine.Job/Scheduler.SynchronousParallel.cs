@@ -8,14 +8,12 @@ public sealed partial class Scheduler
 {
     [ThreadStatic] private static int s_synchronousParallelDepth;
 
-    /// <summary>Executes index ranges on this scheduler and the calling thread, returning after every participant exits.</summary>
+    /// <summary>
+    /// Executes index batches on this scheduler and the calling thread, returning after every participant exits.
+    /// The declared accesses are held through execution; a caller that already holds a grant passes it instead.
+    /// </summary>
     public void ExecuteParallel<T>(in T job, int length, int batchSize = 1,
-        JobScheduleOptions options = default) where T : struct, IJobParallelFor =>
-        ExecuteParallel(job, length, batchSize, ReadOnlySpan<JobResourceAccess>.Empty, options);
-
-    /// <summary>Holds the declared accesses through synchronous execution. Nested calls share the current scope's accesses.</summary>
-    public void ExecuteParallel<T>(in T job, int length, int batchSize,
-        ReadOnlySpan<JobResourceAccess> accesses, JobScheduleOptions options = default)
+        ReadOnlySpan<JobResourceAccess> accesses = default, JobScheduleOptions options = default, JobHandle grant = default)
         where T : struct, IJobParallelFor
     {
         using Submission submission = EnterSubmission();
@@ -30,12 +28,13 @@ public sealed partial class Scheduler
             : batchSize;
         int count = CalculateParallelBatchCount(length, resolvedSize);
         SynchronousResourceAccess resources = default;
-        JobHandle access = GetCurrentScope();
-        if (JobThreads.IsActive)
+        JobHandle access = grant;
+        if (access.Index == 0 && JobThreads.IsActive)
         {
+            access = GetCurrentScope();
             foreach (JobResourceAccess declared in accesses) RequireCurrentAccess(declared, requireSingleWorkItem: false);
         }
-        else
+        else if (access.Index == 0)
         {
             resources = accesses.IsEmpty ? default : AcquireSynchronousAccess(accesses);
             access = resources.Handle;

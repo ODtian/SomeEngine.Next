@@ -5,9 +5,9 @@ using SomeEngine.Navigation;
 
 namespace SomeEngine.Assets;
 
-internal readonly partial struct NavigationSaveCodec : IComponentCodec<NavigationSavedTable>
+internal readonly partial struct NavigationSaveCodec : IValueSerializer<NavigationSavedTable>
 {
-    public void Write(ref DataWriter writer, in NavigationSavedTable value)
+    public void Write(ref SaveWriter writer, in NavigationSavedTable value)
     {
         writer.WriteInt32(value.Resources.Length);
         foreach (NavigationSavedResource resource in value.Resources) WriteResource(ref writer, resource);
@@ -23,7 +23,7 @@ internal readonly partial struct NavigationSaveCodec : IComponentCodec<Navigatio
         WriteWorld(ref writer, value.Sources, value.Regions, value.Crowd);
     }
 
-    public void Read(ref DataReader reader, out NavigationSavedTable value)
+    public void Read(ref SaveReader reader, out NavigationSavedTable value)
     {
         var resources = new NavigationSavedResource[reader.ReadInt32()];
         for (int index = 0; index < resources.Length; index++) resources[index] = ReadResource(ref reader);
@@ -35,7 +35,7 @@ internal readonly partial struct NavigationSaveCodec : IComponentCodec<Navigatio
         value = new(resources, actors, sources, regions, crowd);
     }
 
-    private static void WriteResource(ref DataWriter writer, NavigationSavedResource resource)
+    private static void WriteResource(ref SaveWriter writer, NavigationSavedResource resource)
     {
         switch (resource)
         {
@@ -84,7 +84,7 @@ internal readonly partial struct NavigationSaveCodec : IComponentCodec<Navigatio
         }
     }
 
-    private static NavigationSavedResource ReadResource(ref DataReader reader)
+    private static NavigationSavedResource ReadResource(ref SaveReader reader)
     {
         byte kind = reader.ReadByte();
         switch (kind)
@@ -123,33 +123,33 @@ internal readonly partial struct NavigationSaveCodec : IComponentCodec<Navigatio
         }
     }
 
-    private static void WriteGoal(ref DataWriter writer, NavigationGoal goal)
+    private static void WriteGoal(ref SaveWriter writer, NavigationGoal goal)
     {
         WriteVector(ref writer, goal.Position); writer.WriteEntity(goal.Target); writer.WriteBoolean(goal.IsEntityTarget);
         writer.WriteSingle(goal.ArrivalRange); WriteNullable(ref writer, goal.Heading); writer.WriteSingle(goal.HeadingTolerance);
     }
-    private static NavigationGoal ReadGoal(ref DataReader reader)
+    private static NavigationGoal ReadGoal(ref SaveReader reader)
     {
         Vector3 position = ReadVector(ref reader);
         var target = reader.ReadEntity(); bool entity = reader.ReadBoolean();
         return new(position, reader.ReadSingle(), ReadNullable(ref reader), reader.ReadSingle()) { Target = target, IsEntityTarget = entity };
     }
-    private static void WriteHybrid(ref DataWriter writer, HybridAStarSettings settings)
+    private static void WriteHybrid(ref SaveWriter writer, HybridAStarSettings settings)
     {
         writer.WriteInt32(settings.HeadingBins); writer.WriteInt32(settings.CurvatureSteps);
         WriteNullable(ref writer, settings.SpatialResolution); WriteNullable(ref writer, settings.StepLength); WriteNullable(ref writer, settings.AnalyticExpansionDistance);
         writer.WriteSingle(settings.TurningPenalty); writer.WriteSingle(settings.ReversePenalty); writer.WriteSingle(settings.DirectionChangeCost);
     }
-    private static HybridAStarSettings ReadHybrid(ref DataReader reader) => new()
+    private static HybridAStarSettings ReadHybrid(ref SaveReader reader) => new()
     {
         HeadingBins = reader.ReadInt32(), CurvatureSteps = reader.ReadInt32(), SpatialResolution = ReadNullable(ref reader),
         StepLength = ReadNullable(ref reader), AnalyticExpansionDistance = ReadNullable(ref reader),
         TurningPenalty = reader.ReadSingle(), ReversePenalty = reader.ReadSingle(), DirectionChangeCost = reader.ReadSingle(),
     };
-    private static void WriteCell(ref DataWriter writer, SavedCell cell) { WriteVector(ref writer, cell.Position); writer.WriteInt32(cell.Layer); }
-    private static SavedCell ReadCell(ref DataReader reader) => new(ReadVector(ref reader), reader.ReadInt32());
-    private static void WriteVector(ref DataWriter writer, Vector3 value) { writer.WriteSingle(value.X); writer.WriteSingle(value.Y); writer.WriteSingle(value.Z); }
-    private static Vector3 ReadVector(ref DataReader reader) => new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
-    private static void WriteNullable(ref DataWriter writer, float? value) { writer.WriteBoolean(value.HasValue); if (value.HasValue) writer.WriteSingle(value.Value); }
-    private static float? ReadNullable(ref DataReader reader) => reader.ReadBoolean() ? reader.ReadSingle() : null;
+    private static void WriteCell(ref SaveWriter writer, SavedCell cell) { WriteVector(ref writer, cell.Position); writer.WriteInt32(cell.Layer); }
+    private static SavedCell ReadCell(ref SaveReader reader) => new(ReadVector(ref reader), reader.ReadInt32());
+    private static void WriteVector(ref SaveWriter writer, Vector3 value) { writer.WriteSingle(value.X); writer.WriteSingle(value.Y); writer.WriteSingle(value.Z); }
+    private static Vector3 ReadVector(ref SaveReader reader) => new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+    private static void WriteNullable(ref SaveWriter writer, float? value) { writer.WriteBoolean(value.HasValue); if (value.HasValue) writer.WriteSingle(value.Value); }
+    private static float? ReadNullable(ref SaveReader reader) => reader.ReadBoolean() ? reader.ReadSingle() : null;
 }

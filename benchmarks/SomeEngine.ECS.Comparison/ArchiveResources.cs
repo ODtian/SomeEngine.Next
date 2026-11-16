@@ -25,11 +25,11 @@ internal readonly struct NativeArchiveResources(ReferenceResources resources, Re
     public void Restore<T>(ReadOnlySpan<long> values) where T : struct => resources.Set(ArchiveResources.Value<T>(counter, values));
     public void Release<T>() where T : struct => resources.Remove<ResourceData<T>>();
 }
-internal readonly struct ArchiveResourceCodec<T>(ResourceCounter counter) : IValueCodec<ResourceData<T>> where T : struct
+internal readonly struct ArchiveResourceSerializer<T>(ResourceCounter counter) : IValueSerializer<ResourceData<T>> where T : struct
 {
-    public void Write(ref DataWriter writer, in ResourceData<T> value)
+    public void Write(ref SaveWriter writer, in ResourceData<T> value)
     { writer.WriteInt64(value.Value); writer.WriteInt64(value.Second); writer.WriteInt64(value.Third); }
-    public void Read(ref DataReader reader, out ResourceData<T> value)
+    public void Read(ref SaveReader reader, out ResourceData<T> value)
         => value = new(counter, reader.ReadInt64()) { Second = reader.ReadInt64(), Third = reader.ReadInt64() };
 }
 internal static class ArchiveResources
@@ -134,24 +134,24 @@ internal static class ArchiveResources
         values.Release<Kind14>();
         values.Release<Kind15>();
     }
-    internal static void Register(SerializationRegistry registry, ResourceCounter counter)
+    internal static void Register(SaveRegistry registry, ResourceCounter counter)
     {
-        registry.RegisterResource<ResourceData<Kind0>, ArchiveResourceCodec<Kind0>>(SaveSchema.Key(100, "Resource.Kind0"), new(counter));
-        registry.RegisterResource<ResourceData<Kind1>, ArchiveResourceCodec<Kind1>>(SaveSchema.Key(101, "Resource.Kind1"), new(counter));
-        registry.RegisterResource<ResourceData<Kind2>, ArchiveResourceCodec<Kind2>>(SaveSchema.Key(102, "Resource.Kind2"), new(counter));
-        registry.RegisterResource<ResourceData<Kind3>, ArchiveResourceCodec<Kind3>>(SaveSchema.Key(103, "Resource.Kind3"), new(counter));
-        registry.RegisterResource<ResourceData<Kind4>, ArchiveResourceCodec<Kind4>>(SaveSchema.Key(104, "Resource.Kind4"), new(counter));
-        registry.RegisterResource<ResourceData<Kind5>, ArchiveResourceCodec<Kind5>>(SaveSchema.Key(105, "Resource.Kind5"), new(counter));
-        registry.RegisterResource<ResourceData<Kind6>, ArchiveResourceCodec<Kind6>>(SaveSchema.Key(106, "Resource.Kind6"), new(counter));
-        registry.RegisterResource<ResourceData<Kind7>, ArchiveResourceCodec<Kind7>>(SaveSchema.Key(107, "Resource.Kind7"), new(counter));
-        registry.RegisterResource<ResourceData<Kind8>, ArchiveResourceCodec<Kind8>>(SaveSchema.Key(108, "Resource.Kind8"), new(counter));
-        registry.RegisterResource<ResourceData<Kind9>, ArchiveResourceCodec<Kind9>>(SaveSchema.Key(109, "Resource.Kind9"), new(counter));
-        registry.RegisterResource<ResourceData<Kind10>, ArchiveResourceCodec<Kind10>>(SaveSchema.Key(110, "Resource.Kind10"), new(counter));
-        registry.RegisterResource<ResourceData<Kind11>, ArchiveResourceCodec<Kind11>>(SaveSchema.Key(111, "Resource.Kind11"), new(counter));
-        registry.RegisterResource<ResourceData<Kind12>, ArchiveResourceCodec<Kind12>>(SaveSchema.Key(112, "Resource.Kind12"), new(counter));
-        registry.RegisterResource<ResourceData<Kind13>, ArchiveResourceCodec<Kind13>>(SaveSchema.Key(113, "Resource.Kind13"), new(counter));
-        registry.RegisterResource<ResourceData<Kind14>, ArchiveResourceCodec<Kind14>>(SaveSchema.Key(114, "Resource.Kind14"), new(counter));
-        registry.RegisterResource<ResourceData<Kind15>, ArchiveResourceCodec<Kind15>>(SaveSchema.Key(115, "Resource.Kind15"), new(counter));
+        registry.RegisterResource<ResourceData<Kind0>, ArchiveResourceSerializer<Kind0>>(SaveSchema.Key(100, "Resource.Kind0"), new(counter));
+        registry.RegisterResource<ResourceData<Kind1>, ArchiveResourceSerializer<Kind1>>(SaveSchema.Key(101, "Resource.Kind1"), new(counter));
+        registry.RegisterResource<ResourceData<Kind2>, ArchiveResourceSerializer<Kind2>>(SaveSchema.Key(102, "Resource.Kind2"), new(counter));
+        registry.RegisterResource<ResourceData<Kind3>, ArchiveResourceSerializer<Kind3>>(SaveSchema.Key(103, "Resource.Kind3"), new(counter));
+        registry.RegisterResource<ResourceData<Kind4>, ArchiveResourceSerializer<Kind4>>(SaveSchema.Key(104, "Resource.Kind4"), new(counter));
+        registry.RegisterResource<ResourceData<Kind5>, ArchiveResourceSerializer<Kind5>>(SaveSchema.Key(105, "Resource.Kind5"), new(counter));
+        registry.RegisterResource<ResourceData<Kind6>, ArchiveResourceSerializer<Kind6>>(SaveSchema.Key(106, "Resource.Kind6"), new(counter));
+        registry.RegisterResource<ResourceData<Kind7>, ArchiveResourceSerializer<Kind7>>(SaveSchema.Key(107, "Resource.Kind7"), new(counter));
+        registry.RegisterResource<ResourceData<Kind8>, ArchiveResourceSerializer<Kind8>>(SaveSchema.Key(108, "Resource.Kind8"), new(counter));
+        registry.RegisterResource<ResourceData<Kind9>, ArchiveResourceSerializer<Kind9>>(SaveSchema.Key(109, "Resource.Kind9"), new(counter));
+        registry.RegisterResource<ResourceData<Kind10>, ArchiveResourceSerializer<Kind10>>(SaveSchema.Key(110, "Resource.Kind10"), new(counter));
+        registry.RegisterResource<ResourceData<Kind11>, ArchiveResourceSerializer<Kind11>>(SaveSchema.Key(111, "Resource.Kind11"), new(counter));
+        registry.RegisterResource<ResourceData<Kind12>, ArchiveResourceSerializer<Kind12>>(SaveSchema.Key(112, "Resource.Kind12"), new(counter));
+        registry.RegisterResource<ResourceData<Kind13>, ArchiveResourceSerializer<Kind13>>(SaveSchema.Key(113, "Resource.Kind13"), new(counter));
+        registry.RegisterResource<ResourceData<Kind14>, ArchiveResourceSerializer<Kind14>>(SaveSchema.Key(114, "Resource.Kind14"), new(counter));
+        registry.RegisterResource<ResourceData<Kind15>, ArchiveResourceSerializer<Kind15>>(SaveSchema.Key(115, "Resource.Kind15"), new(counter));
     }
     internal static void Copy<TSource, TTarget>(TSource source, TTarget target)
         where TSource : struct, IArchiveResources where TTarget : struct, IArchiveResources
@@ -174,7 +174,7 @@ internal static class ArchiveResources
         source.Capture<Kind14>(value); target.Restore<Kind14>(value);
         source.Capture<Kind15>(value); target.Restore<Kind15>(value);
     }
-    internal static void Write<TAccess>(TAccess values, ref DataWriter writer) where TAccess : struct, IArchiveResources
+    internal static void Write<TAccess>(TAccess values, ref SaveWriter writer) where TAccess : struct, IArchiveResources
     {
         Span<long> value = stackalloc long[3];
         values.Capture<Kind0>(value); Write(ref writer, value);
@@ -194,7 +194,7 @@ internal static class ArchiveResources
         values.Capture<Kind14>(value); Write(ref writer, value);
         values.Capture<Kind15>(value); Write(ref writer, value);
     }
-    internal static void Read<TAccess>(TAccess values, ref DataReader reader) where TAccess : struct, IArchiveResources
+    internal static void Read<TAccess>(TAccess values, ref SaveReader reader) where TAccess : struct, IArchiveResources
     {
         Span<long> value = stackalloc long[3];
         for (int i = 0; i < 3; i++) value[i] = reader.ReadInt64(); values.Restore<Kind0>(value);
@@ -216,26 +216,26 @@ internal static class ArchiveResources
     }
     internal static NativeArchiveType[] Metadata()
         => [
-            new NativeArchiveMetadataType(SaveSchema.Key(100, "Resource.Kind0"), typeof(ResourceData<Kind0>), typeof(ArchiveResourceCodec<Kind0>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(101, "Resource.Kind1"), typeof(ResourceData<Kind1>), typeof(ArchiveResourceCodec<Kind1>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(102, "Resource.Kind2"), typeof(ResourceData<Kind2>), typeof(ArchiveResourceCodec<Kind2>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(103, "Resource.Kind3"), typeof(ResourceData<Kind3>), typeof(ArchiveResourceCodec<Kind3>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(104, "Resource.Kind4"), typeof(ResourceData<Kind4>), typeof(ArchiveResourceCodec<Kind4>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(105, "Resource.Kind5"), typeof(ResourceData<Kind5>), typeof(ArchiveResourceCodec<Kind5>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(106, "Resource.Kind6"), typeof(ResourceData<Kind6>), typeof(ArchiveResourceCodec<Kind6>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(107, "Resource.Kind7"), typeof(ResourceData<Kind7>), typeof(ArchiveResourceCodec<Kind7>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(108, "Resource.Kind8"), typeof(ResourceData<Kind8>), typeof(ArchiveResourceCodec<Kind8>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(109, "Resource.Kind9"), typeof(ResourceData<Kind9>), typeof(ArchiveResourceCodec<Kind9>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(110, "Resource.Kind10"), typeof(ResourceData<Kind10>), typeof(ArchiveResourceCodec<Kind10>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(111, "Resource.Kind11"), typeof(ResourceData<Kind11>), typeof(ArchiveResourceCodec<Kind11>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(112, "Resource.Kind12"), typeof(ResourceData<Kind12>), typeof(ArchiveResourceCodec<Kind12>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(113, "Resource.Kind13"), typeof(ResourceData<Kind13>), typeof(ArchiveResourceCodec<Kind13>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(114, "Resource.Kind14"), typeof(ResourceData<Kind14>), typeof(ArchiveResourceCodec<Kind14>)),
-            new NativeArchiveMetadataType(SaveSchema.Key(115, "Resource.Kind15"), typeof(ResourceData<Kind15>), typeof(ArchiveResourceCodec<Kind15>))
+            new NativeArchiveMetadataType(SaveSchema.Key(100, "Resource.Kind0"), typeof(ResourceData<Kind0>), typeof(ArchiveResourceSerializer<Kind0>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(101, "Resource.Kind1"), typeof(ResourceData<Kind1>), typeof(ArchiveResourceSerializer<Kind1>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(102, "Resource.Kind2"), typeof(ResourceData<Kind2>), typeof(ArchiveResourceSerializer<Kind2>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(103, "Resource.Kind3"), typeof(ResourceData<Kind3>), typeof(ArchiveResourceSerializer<Kind3>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(104, "Resource.Kind4"), typeof(ResourceData<Kind4>), typeof(ArchiveResourceSerializer<Kind4>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(105, "Resource.Kind5"), typeof(ResourceData<Kind5>), typeof(ArchiveResourceSerializer<Kind5>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(106, "Resource.Kind6"), typeof(ResourceData<Kind6>), typeof(ArchiveResourceSerializer<Kind6>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(107, "Resource.Kind7"), typeof(ResourceData<Kind7>), typeof(ArchiveResourceSerializer<Kind7>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(108, "Resource.Kind8"), typeof(ResourceData<Kind8>), typeof(ArchiveResourceSerializer<Kind8>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(109, "Resource.Kind9"), typeof(ResourceData<Kind9>), typeof(ArchiveResourceSerializer<Kind9>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(110, "Resource.Kind10"), typeof(ResourceData<Kind10>), typeof(ArchiveResourceSerializer<Kind10>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(111, "Resource.Kind11"), typeof(ResourceData<Kind11>), typeof(ArchiveResourceSerializer<Kind11>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(112, "Resource.Kind12"), typeof(ResourceData<Kind12>), typeof(ArchiveResourceSerializer<Kind12>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(113, "Resource.Kind13"), typeof(ResourceData<Kind13>), typeof(ArchiveResourceSerializer<Kind13>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(114, "Resource.Kind14"), typeof(ResourceData<Kind14>), typeof(ArchiveResourceSerializer<Kind14>)),
+            new NativeArchiveMetadataType(SaveSchema.Key(115, "Resource.Kind15"), typeof(ResourceData<Kind15>), typeof(ArchiveResourceSerializer<Kind15>))
         ];
-    internal static void Write(ref DataWriter writer, scoped ReadOnlySpan<long> values)
+    internal static void Write(ref SaveWriter writer, scoped ReadOnlySpan<long> values)
     { foreach (long value in values) writer.WriteInt64(value); }
-    internal static long[] Read(ref DataReader reader)
+    internal static long[] Read(ref SaveReader reader)
     { long[] data = new long[48]; for (int i = 0; i < data.Length; i++) data[i] = reader.ReadInt64(); return data; }
     internal static void Check(ReadOnlySpan<long> data)
     { for (int i = 0; i < data.Length; i++) if (data[i] != i + 1) throw new InvalidOperationException("Archive typed resource values differ."); }

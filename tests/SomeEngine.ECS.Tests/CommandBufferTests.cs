@@ -174,7 +174,7 @@ public class CommandBufferTests
     public void CandidatePlaybackFailurePreservesSourceAndStopsAfterSuccessfulPrefix()
     {
         using var world = new World();
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using var commands = new CommandBuffer(candidate);
@@ -379,7 +379,7 @@ public class CommandBufferTests
         using var control = new World();
         Entity controlSeed = control.Create();
         control.Destroy(controlSeed);
-        using var checkpoint = new WorldCheckpoint().Capture(source, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(source, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using var commands = new CommandBuffer(candidate);

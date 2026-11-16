@@ -1,0 +1,1417 @@
+using SomeEngine.ECS.Entities;
+using ManualResetEventSlim = SomeEngine.Testing.TestSignal;
+using SomeEngine.ECS.Components;
+using SomeEngine.ECS.Commands;
+using SomeEngine.Job;
+
+namespace SomeEngine.ECS.Systems.Tests;
+
+public sealed class LifecycleClosureTests : JobTest
+{
+    [Fact]
+    public async Task CompleteAsyncWaitsForRootAndDescendantAndKeepsTheGroupOpen()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        using var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        group.Add(new SpawnDescendantSystem());
+        group.Update();
+        try
+        {
+            Assert.True(state.RootStarted.Wait(TimeSpan.FromSeconds(5)));
+            ValueTask completion = group.CompleteAsync();
+            Assert.False(completion.IsCompleted);
+            state.AllowDescendant.Set();
+            Assert.True(state.DescendantStarted.Wait(TimeSpan.FromSeconds(5)));
+            Assert.False(completion.IsCompleted);
+            state.ReleaseDescendant.Set();
+            await completion;
+            Assert.False(state.Destroyed.IsSet);
+            group.Update();
+            await group.CompleteAsync();
+        }
+        finally
+        {
+            state.AllowDescendant.Set();
+            state.ReleaseDescendant.Set();
+        }
+    }
+
+    [Fact]
+    public async Task Dispose_WaitsRootAndDescendantScopeBeforeOnDestroy()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        group.Add(new SpawnDescendantSystem());
+        group.Update();
+        Assert.True(state.RootStarted.Wait(TimeSpan.FromSeconds(5)));
+
+        Task<Exception?> disposal = Task.Run(() => Capture(group.Dispose));
+        Assert.True(SpinWait.SpinUntil(
+            () => ThrowsDisposed(() => group.Update()),
+            TimeSpan.FromSeconds(5)));
+
+        state.AllowDescendant.Set();
+        Assert.True(state.DescendantStarted.Wait(TimeSpan.FromSeconds(5)));
+        Assert.False(disposal.IsCompleted);
+        Assert.False(state.Destroyed.IsSet);
+
+        state.ReleaseDescendant.Set();
+        Assert.Null(await disposal.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.True(state.Destroyed.IsSet);
+        group.Dispose();
+    }
+
+    [Fact]
+    public async Task Disable_WaitsOutstandingScopeAndEnableCreatesFreshLifetime()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        int slot = group.Add(new BlockingSystem());
+        group.Update();
+        Assert.True(state.RootStarted.Wait(TimeSpan.FromSeconds(5)));
+
+        Task<Exception?> disable = Task.Run(() => Capture(() => group.Disable(slot)));
+        Assert.False(disable.IsCompleted);
+        state.ReleaseRoot.Set();
+        Assert.Null(await disable.WaitAsync(TimeSpan.FromSeconds(5)));
+
+        int updates = Volatile.Read(ref state.UpdateCount);
+        group.Update();
+        Assert.Equal(updates, Volatile.Read(ref state.UpdateCount));
+
+        state.RootStarted.Reset();
+        state.ReleaseRoot.Set();
+        group.Enable(slot);
+        group.Update();
+        Assert.Equal(updates + 1, Volatile.Read(ref state.UpdateCount));
+        group.Dispose();
+    }
+
+    [Fact]
+    public async Task Remove_WaitsOutstandingScopeDestroysSystemAndShiftsSlots()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        group.Add(new BlockingSystem());
+        group.Add(new PassiveSystem());
+        group.Update();
+        Assert.True(state.RootStarted.Wait(TimeSpan.FromSeconds(5)));
+
+        Task<Exception?> removal = Task.Run(() => Capture(() => group.Remove(0)));
+        Assert.False(removal.IsCompleted);
+        state.ReleaseRoot.Set();
+
+        Assert.Null(await removal.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.True(state.Destroyed.IsSet);
+        Assert.Equal(1, group.Count);
+        Assert.Equal(0, group.GetState(0).Index);
+        group.Dispose();
+    }
+
+    [Theory]
+    [InlineData(PendingSystemTeardown.Disable)]
+    [InlineData(PendingSystemTeardown.Remove)]
+    public async Task SystemTeardownDoesNotBlockReadOnlyGroupQueries(
+        PendingSystemTeardown operation)
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        int slot = group.Add(new BlockingSystem());
+        state.PendingControl = () => _ = group.Count;
+        group.Update();
+        Assert.True(state.RootStarted.Wait(TimeSpan.FromSeconds(5)));
+
+        Task<Exception?> teardown = Task.Run(() => Capture(() =>
+        {
+            if (operation == PendingSystemTeardown.Disable)
+                group.Disable(slot);
+            else
+                group.Remove(slot);
+        }));
+        Assert.True(SpinWait.SpinUntil(
+            () => !group.GetState(slot).Enabled,
+            TimeSpan.FromSeconds(5)));
+
+        using var externalCountStarted = new ManualResetEventSlim();
+        Task<int> externalCount = Task.Run(() =>
+        {
+            externalCountStarted.Set();
+            return group.Count;
+        });
+        Assert.True(externalCountStarted.Wait(TimeSpan.FromSeconds(5)));
+        Assert.Equal(1, await externalCount.WaitAsync(TimeSpan.FromSeconds(5)));
+
+        state.ReleaseRoot.Set();
+        Assert.True(state.PendingControlStarted.Wait(TimeSpan.FromSeconds(5)));
+        Assert.True(state.PendingControlFinished.Wait(TimeSpan.FromSeconds(5)));
+        Assert.Null(state.PendingControlError);
+        Assert.Null(await teardown.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(operation == PendingSystemTeardown.Disable ? 1 : 0, group.Count);
+        group.Dispose();
+    }
+
+    [Theory]
+    [InlineData(PendingSystemTeardown.Disable)]
+    [InlineData(PendingSystemTeardown.Remove)]
+    public async Task SystemTeardownFailureDoesNotBlockReadOnlyGroupQueries(
+        PendingSystemTeardown operation)
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        using var waiterStarted = new ManualResetEventSlim();
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        Task<Exception?>? teardown = null;
+        Task<int>? waiter = null;
+        try
+        {
+            int slot = group.Add(new BlockingFaultingSystem());
+            group.Update();
+            Assert.True(state.RootStarted.Wait(TimeSpan.FromSeconds(5)));
+
+            teardown = StartLongRunning(() => Capture(() =>
+            {
+                if (operation == PendingSystemTeardown.Disable)
+                    group.Disable(slot);
+                else
+                    group.Remove(slot);
+            }));
+            Assert.True(SpinWait.SpinUntil(
+                () => !group.GetState(slot).Enabled,
+                TimeSpan.FromSeconds(5)));
+
+            waiter = StartLongRunning(() =>
+            {
+                waiterStarted.Set();
+                return group.Count;
+            });
+            Assert.True(waiterStarted.Wait(TimeSpan.FromSeconds(5)));
+            Assert.Equal(1, await waiter.WaitAsync(TimeSpan.FromSeconds(5)));
+
+            state.ReleaseRoot.Set();
+            Exception? teardownError =
+                await teardown.WaitAsync(TimeSpan.FromSeconds(5));
+            AggregateException aggregate =
+                Assert.IsType<AggregateException>(teardownError).Flatten();
+            Assert.Contains(
+                aggregate.InnerExceptions,
+                exception => exception is TestFault fault && fault.Code == "teardown-job-fault");
+            Assert.Equal(operation == PendingSystemTeardown.Disable ? 1 : 0, group.Count);
+        }
+        finally
+        {
+            state.ReleaseRoot.Set();
+            if (teardown is not null)
+            {
+                try
+                {
+                    await teardown.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch
+                {
+                    // Preserve the assertion failure while ensuring the blocked root can unwind.
+                }
+            }
+
+            _ = Capture(group.Dispose);
+            if (waiter is not null)
+            {
+                try
+                {
+                    await waiter.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch
+                {
+                    // A failing implementation may close the group while waking the waiter.
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ConcurrentDispose_WaitsForClosureAndPendingJobControlFailsFast()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        group.Add(new BlockingSystem());
+        state.PendingControl = () => _ = group.Count;
+        group.Update();
+        Assert.True(state.RootStarted.Wait(TimeSpan.FromSeconds(5)));
+
+        Task<Exception?> first = Task.Run(() => Capture(group.Dispose));
+        Assert.True(SpinWait.SpinUntil(
+            () => ThrowsDisposed(() => group.Update()),
+            TimeSpan.FromSeconds(5)));
+
+        using var secondStarted = new ManualResetEventSlim();
+        Task<Exception?> second = Task.Run(() =>
+        {
+            secondStarted.Set();
+            return Capture(group.Dispose);
+        });
+        Assert.True(secondStarted.Wait(TimeSpan.FromSeconds(5)));
+        Assert.False(second.IsCompleted);
+
+        state.ReleaseRoot.Set();
+        Assert.True(state.PendingControlStarted.Wait(TimeSpan.FromSeconds(5)));
+        Assert.True(state.PendingControlFinished.Wait(TimeSpan.FromSeconds(5)));
+        Assert.IsType<ObjectDisposedException>(state.PendingControlError);
+        Assert.Null(await first.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Null(await second.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Throws<ObjectDisposedException>(() => _ = group.Count);
+    }
+
+    [Fact]
+    public void Dispose_AggregatesJobAndDestroyFaultsAndContinuesTeardown()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        group.Add(new FaultingLifecycleSystem("destroy-one"));
+        group.Add(new FaultingLifecycleSystem("destroy-two"));
+        group.Update();
+
+        AggregateException error = Assert.Throws<AggregateException>(group.Dispose).Flatten();
+
+        Assert.Contains(error.InnerExceptions, exception => exception is TestFault fault && fault.Code == "job-fault");
+        Assert.Contains(error.InnerExceptions, exception => exception is TestFault fault && fault.Code == "destroy-one");
+        Assert.Contains(error.InnerExceptions, exception => exception is TestFault fault && fault.Code == "destroy-two");
+        Assert.Equal(2, Volatile.Read(ref state.DestroyCount));
+        group.Dispose();
+    }
+
+    [Fact]
+    public void OnDestroy_LaunchesCleanupRootAndDisposeDrainsIt()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        group.Add(new SchedulingDestroySystem());
+        group.Update();
+
+        group.Dispose();
+
+        Assert.Equal(1, Volatile.Read(ref state.DestroyScheduledJobRuns));
+        group.Dispose();
+    }
+
+    [Fact]
+    public void OnDestroy_CanScheduleParallelCleanupAndDisposeDrainsEveryWorkItem()
+    {
+        const int WorkItemCount = 37;
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        group.Add(new ParallelSchedulingDestroySystem(WorkItemCount));
+        group.Update();
+
+        group.Dispose();
+
+        Assert.Equal(
+            WorkItemCount,
+            Volatile.Read(ref state.DestroyParallelJobRuns));
+        group.Dispose();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemoveAndDispose_WaitForOnDestroyCleanupJobs(bool remove)
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        group.Add(new BlockingDestroySystem(fault: false));
+        group.Update();
+
+        Task<Exception?> teardown = Task.Run(() => Capture(() =>
+        {
+            if (remove)
+                group.Remove(0);
+            else
+                group.Dispose();
+        }));
+
+        Assert.True(state.DestroyJobStarted.Wait(TimeSpan.FromSeconds(5)));
+        Assert.False(teardown.IsCompleted);
+        Assert.False(state.DestroyJobFinished.IsSet);
+
+        state.ReleaseDestroyJob.Set();
+        Assert.Null(await teardown.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.True(state.DestroyJobFinished.IsSet);
+        Assert.Equal(1, Volatile.Read(ref state.DestroyScheduledJobRuns));
+
+        group.Dispose();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OnDestroyFault_StillDrainsCleanupJobAndAggregatesBothFaults(bool remove)
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        group.Add(new BlockingDestroySystem(fault: true));
+        group.Update();
+
+        Task<Exception?> teardown = Task.Run(() => Capture(() =>
+        {
+            if (remove)
+                group.Remove(0);
+            else
+                group.Dispose();
+        }));
+
+        Assert.True(state.DestroyJobStarted.Wait(TimeSpan.FromSeconds(5)));
+        Assert.False(teardown.IsCompleted);
+        state.ReleaseDestroyJob.Set();
+
+        AggregateException error = Assert.IsType<AggregateException>(
+            await teardown.WaitAsync(TimeSpan.FromSeconds(5))).Flatten();
+        Assert.Contains(
+            error.InnerExceptions,
+            exception => exception is TestFault fault && fault.Code == "destroy-callback-fault");
+        Assert.Contains(
+            error.InnerExceptions,
+            exception => exception is TestFault fault && fault.Code == "destroy-job-fault");
+        Assert.True(state.DestroyJobFinished.IsSet);
+
+        group.Dispose();
+    }
+
+    [Fact]
+    public void RepeatedUpdatesFinishEverySubmittedJobBeforeGroupDisposal()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var world = CreateJobWorld();
+        world.Create(new LifetimeComponent());
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        group.Add(new ManyRootsSystem(world));
+
+        for (int i = 0; i < 2_000; i++)
+            group.Update();
+
+        group.Dispose();
+        Assert.Equal(2_000, state.CompletedWork);
+        Assert.Equal(1, world.EntityCount);
+        world.Dispose();
+    }
+
+    [Fact]
+    public void ObservedJobFailuresDoNotPreventLaterUpdatesAndDisposal()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var world = CreateJobWorld();
+        world.Create(new LifetimeComponent());
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        group.Add(new ManyObservedFaultRootsSystem(world));
+
+        for (int i = 0; i < 2_000; i++)
+        {
+            group.Update();
+            Assert.Throws<TestFault>(() => state.LastHandle.Complete());
+        }
+
+        Assert.Equal(1, world.EntityCount);
+        group.Dispose();
+        world.Dispose();
+    }
+
+    [Fact]
+    public void DisposeFromJobCallback_RejectsBeforeMutatingSystemGroupState()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        group.Add(new PassiveSystem());
+
+        JobHandle disposer = Jobs.Schedule(new DisposeSystemGroupJob(group));
+        InvalidOperationException error =
+            Assert.Throws<InvalidOperationException>(() => disposer.Complete());
+
+        Assert.Equal(1, group.Count);
+        Assert.True(group.GetState(0).Enabled);
+        group.Update();
+        group.Dispose();
+    }
+
+    [Fact]
+    public void CreateAndUpdateCallbacks_RejectReentrantLifecycleControlWithoutMutation()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        foreach (bool invokeOnCreate in new[] { true, false })
+        {
+            foreach (ReentrantGroupOperation operation in Enum.GetValues<ReentrantGroupOperation>())
+            {
+                using var state = new LifetimeState(Jobs)
+                {
+                    InvokeReentrantControlOnCreate = invokeOnCreate,
+                };
+                var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+                group.Add(new ReentrantControlSystem());
+                state.ReentrantControl = () =>
+                    InvokeReentrantGroupOperation(group, operation);
+
+                group.Update();
+
+                Assert.True(
+                    state.ReentrantError is InvalidOperationException,
+                    $"{operation} was not rejected during " +
+                    (invokeOnCreate ? "OnCreate." : "OnUpdate."));
+                Assert.Equal(1, group.Count);
+                Assert.True(group.GetState(0).Enabled);
+                group.Update();
+                group.Dispose();
+            }
+        }
+    }
+
+    public static IEnumerable<object[]> DriverLifecycleReentryCases()
+    {
+        foreach (DriverLifecycleCallback callback in Enum.GetValues<DriverLifecycleCallback>())
+        {
+            foreach (ReentrantGroupOperation operation in Enum.GetValues<ReentrantGroupOperation>())
+                yield return [callback, operation];
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(DriverLifecycleReentryCases))]
+    public void DriverLifecycleCallbacks_RejectControlBeforeMutatingGroupState(
+        DriverLifecycleCallback callback,
+        ReentrantGroupOperation operation)
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs)
+        {
+            DriverReentryPoint = callback,
+        };
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        int activeSlot = group.Add(new CountingSystem());
+        int disabledSlot = group.Add(new PassiveSystem());
+        group.Disable(disabledSlot);
+        state.ReentrantControl = () =>
+            InvokeReentrantGroupOperation(group, operation, disabledSlot);
+
+        try
+        {
+            group.Update();
+
+            Assert.IsType<InvalidOperationException>(state.ReentrantError);
+            Assert.Equal(2, group.Count);
+            Assert.True(group.GetState(activeSlot).Enabled);
+            Assert.False(group.GetState(disabledSlot).Enabled);
+            Assert.Equal(1, Volatile.Read(ref state.UpdateCount));
+
+            group.Update();
+            Assert.Equal(2, Volatile.Read(ref state.UpdateCount));
+        }
+        finally
+        {
+            _ = Capture(group.Dispose);
+        }
+    }
+
+    [Fact]
+    public async Task ExternalDispose_WaitsForActiveUpdateCallback()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        group.Add(new BlockingCallbackSystem());
+
+        Task update = Task.Run(group.Update);
+        Assert.True(state.CallbackStarted.Wait(TimeSpan.FromSeconds(5)));
+        Task<Exception?> disposal = Task.Run(() => Capture(group.Dispose));
+        Assert.False(disposal.IsCompleted);
+
+        state.ReleaseCallback.Set();
+        await update.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Null(await disposal.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    public static IEnumerable<object[]> ReentrantGroupOperationCases()
+    {
+        foreach (ReentrantGroupOperation operation in Enum.GetValues<ReentrantGroupOperation>())
+            yield return [operation];
+    }
+
+    [Theory]
+    [MemberData(nameof(ReentrantGroupOperationCases))]
+    public void OnDestroy_RejectsEveryReentrantControlWithoutMutatingSlots(
+        ReentrantGroupOperation operation)
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        int destroyedSlot = group.Add(new ReentrantDestroySystem());
+        int disabledSlot = group.Add(new PassiveSystem());
+        group.Disable(disabledSlot);
+        group.Update();
+        state.ReentrantControl = () =>
+            InvokeReentrantGroupOperation(group, operation, disabledSlot);
+
+        try
+        {
+            group.Remove(destroyedSlot);
+
+            Assert.IsType<InvalidOperationException>(state.ReentrantError);
+            Assert.Equal(1, group.Count);
+            Assert.False(group.GetState(0).Enabled);
+        }
+        finally
+        {
+            _ = Capture(group.Dispose);
+        }
+    }
+
+    [Fact]
+    public async Task WorldDispose_RejectsNewWorkAndWaitsTypedRootAndDescendant()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var world = CreateJobWorld();
+        world.Create(new LifetimeComponent { Value = 1 });
+
+        JobHandle root = Jobs.Schedule(
+            new WorldRootJob(world, state),
+            [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<LifetimeComponent>()]);
+        Assert.True(state.RootStarted.Wait(TimeSpan.FromSeconds(5)));
+
+        Task<Exception?> disposal = Task.Run(() => Capture(world.Dispose));
+        Assert.True(SpinWait.SpinUntil(
+            () => ThrowsDisposed(() => _ = world.EntityCount),
+            TimeSpan.FromSeconds(5)));
+
+        state.AllowDescendant.Set();
+        Assert.True(state.DescendantStarted.Wait(TimeSpan.FromSeconds(5)));
+        Assert.False(disposal.IsCompleted);
+        state.ReleaseDescendant.Set();
+
+        Assert.Null(await disposal.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.True(root.IsCompleted);
+        Assert.Throws<ObjectDisposedException>(() => world.Create());
+        Assert.Throws<ObjectDisposedException>(
+            () => ((WorldJobs)world.Execution!).Read<LifetimeComponent>());
+        world.Dispose();
+    }
+
+    [Fact]
+    public async Task WorldClosing_RejectsUnrelatedJobCallback()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        var world = CreateJobWorld();
+        world.Create(new LifetimeComponent());
+        _ = Jobs.Schedule(
+            new BlockingRootJob(state),
+            [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<LifetimeComponent>()]);
+        Assert.True(state.RootStarted.Wait(TimeSpan.FromSeconds(5)));
+
+        Task<Exception?> disposal = StartLongRunning(() => Capture(world.Dispose));
+        try
+        {
+            Assert.True(SpinWait.SpinUntil(
+                () => ThrowsDisposed(() => _ = world.EntityCount),
+                TimeSpan.FromSeconds(5)));
+
+            JobHandle unrelated = Jobs.Schedule(new ReadWorldJob(world));
+            Assert.Throws<ObjectDisposedException>(() => unrelated.Complete());
+        }
+        finally
+        {
+            state.ReleaseRoot.Set();
+        }
+
+        Assert.Null(await disposal.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    public void WorldDisposalWaitsForDataUseWithoutConsumingTheTaskFailure()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
+        world.Create(new LifetimeComponent());
+        JobHandle task = Jobs.Schedule(
+            new ThrowingJob(), [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<LifetimeComponent>()]);
+        world.Dispose();
+        Assert.True(task.IsCompleted);
+        Assert.Equal("job-fault", Assert.Throws<TestFault>(task.Complete).Code);
+        world.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => _ = world.EntityCount);
+    }
+
+    [Fact]
+    public void WorldDispose_FromBoundQueryCallbackRejectsBeforeClosing()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        var world = CreateJobWorld();
+        var entity = world.Create(new LifetimeComponent { Value = 7 });
+        var query = world.Query(new QueryDescription().WithStored<LifetimeComponent>());
+        Exception? disposeError = null;
+
+        using (QueryScope rows = query.OpenRead()) disposeError = Capture(world.Dispose);
+
+        Assert.IsType<InvalidOperationException>(disposeError);
+        Assert.Equal(1, world.EntityCount);
+        Assert.Equal(7, world.ReadValue<LifetimeComponent>(entity).Value);
+        world.Dispose();
+    }
+
+    [Fact]
+    public void WorldDisposeInsideAStructureWriteRangeRejectsBeforeClosing()
+    {
+        World world = CreateJobWorld();
+        Exception? error;
+        using (WorldStructureWriteScope structure = world.OpenStructureWrite())
+        {
+            world.Create(new LifetimeComponent());
+            error = Capture(world.Dispose);
+        }
+        Assert.IsType<InvalidOperationException>(error);
+        Assert.Equal(1, world.EntityCount);
+        world.Dispose();
+    }
+
+    [Fact]
+    public async Task WorldDisposalWaitsForAnActiveQueryAndRejectsNewOperations()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var world = CreateJobWorld();
+        world.Create(new LifetimeComponent { Value = 7 });
+        var query = world.Query(new QueryDescription().WithStored<LifetimeComponent>());
+        int readValue = 0;
+        Task reading = Task.Run(() =>
+        {
+            using QueryScope rows = query.OpenRead();
+            entered.Set();
+            if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException();
+            foreach (QueryChunk chunk in rows)
+                foreach (LifetimeComponent value in chunk.Read<LifetimeComponent>()) readValue += value.Value;
+        });
+        Task? closing = null;
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            closing = Task.Run(world.Dispose);
+            Assert.True(SpinWait.SpinUntil(
+                () => Capture(() => _ = world.EntityCount) is ObjectDisposedException,
+                TimeSpan.FromSeconds(5)));
+            Assert.False(closing.IsCompleted);
+        }
+        finally
+        {
+            release.Set();
+            await reading.WaitAsync(TimeSpan.FromSeconds(5));
+            if (closing is not null)
+                await closing.WaitAsync(TimeSpan.FromSeconds(5));
+            else
+                world.Dispose();
+        }
+        Assert.Equal(7, readValue);
+        Assert.Throws<ObjectDisposedException>(() => world.Create());
+    }
+
+    [Fact]
+    public async Task WorldDisposalDrainsQueryAndRejectsLaterMutation()
+    {
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var holderEntered = new ManualResetEventSlim();
+        using var releaseHolder = new ManualResetEventSlim();
+        using var lateStarted = new ManualResetEventSlim();
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var world = CreateJobWorld();
+        world.Create(new LifetimeComponent());
+        var query = world.Query(new QueryDescription().WithStored<LifetimeComponent>());
+        Task<int> holder = StartLongRunning(() =>
+        {
+            using QueryScope rows = query.OpenRead();
+            holderEntered.Set();
+            releaseHolder.Wait();
+            events.Enqueue("query released");
+            return 0;
+        });
+        var lateResult = new TaskCompletionSource<Exception?>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var lateThread = new Thread(() =>
+        {
+            lateStarted.Set();
+            lateResult.SetResult(Capture(() => world.Create()));
+        }) { IsBackground = true };
+        Task<Exception?>? disposal = null;
+        try
+        {
+            Assert.True(holderEntered.Wait(TimeSpan.FromSeconds(5)));
+            lateThread.Start();
+            Assert.True(lateStarted.Wait(TimeSpan.FromSeconds(5)));
+            disposal = StartLongRunning(() =>
+            {
+                var fault = Capture(world.Dispose);
+                events.Enqueue("world disposed");
+                return fault;
+            });
+            Assert.True(SpinWait.SpinUntil(
+                () => ThrowsDisposed(() => _ = world.EntityCount), TimeSpan.FromSeconds(5)));
+            Assert.False(disposal.IsCompleted);
+            releaseHolder.Set();
+            await holder.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.IsType<ObjectDisposedException>(
+                await lateResult.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.Null(await disposal.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.True(lateThread.Join(TimeSpan.FromSeconds(5)));
+            Assert.Equal(new[] { "query released", "world disposed" }, events.ToArray());
+        }
+        finally
+        {
+            releaseHolder.Set();
+            await holder.WaitAsync(TimeSpan.FromSeconds(5));
+            if (lateThread.ThreadState != ThreadState.Unstarted)
+                lateThread.Join(TimeSpan.FromSeconds(5));
+            if (disposal is not null)
+                await disposal.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    private sealed class TestFault(string code) : InvalidOperationException
+    {
+        public string Code { get; } = code;
+    }
+
+    private bool ThrowsDisposed(Action action)
+    {
+        try
+        {
+            action();
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+            return true;
+        }
+    }
+
+    private Exception? Capture(Action action)
+    {
+        try
+        {
+            action();
+            return null;
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
+    }
+
+    private Task<T> StartLongRunning<T>(Func<T> action) =>
+        Task.Factory.StartNew(
+            action,
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+
+    private sealed class DisposeResult { internal Exception? Error; }
+    private readonly record struct DisposeBundleState(World World, DisposeResult Result);
+    private sealed class LifetimeDriver : ISystemDriver<LifetimeContext>
+    {
+        private readonly LifetimeState _state;
+        private ulong _version;
+
+        internal LifetimeDriver(LifetimeState state)
+        {
+            _state = state;
+        }
+
+        public ulong AcquireSystemVersion(ref SystemState slot)
+        {
+            _state.InvokeDriverReentrantControl(
+                DriverLifecycleCallback.AcquireSystemVersion);
+            return ++_version;
+        }
+
+        public LifetimeContext CreateContext(scoped ref SystemState slot)
+        {
+            _state.InvokeDriverReentrantControl(DriverLifecycleCallback.CreateContext);
+            return new LifetimeContext(_state);
+        }
+
+        public void BeforeUpdate(ref SystemState slot, ref LifetimeContext context)
+        {
+            _state.InvokeDriverReentrantControl(DriverLifecycleCallback.BeforeUpdate);
+        }
+
+        public void AfterUpdate(ref SystemState slot, ref LifetimeContext context)
+        {
+            _state.InvokeDriverReentrantControl(DriverLifecycleCallback.AfterUpdate);
+        }
+    }
+
+    private readonly struct LifetimeContext
+    {
+        internal LifetimeContext(LifetimeState state)
+        {
+            State = state;
+        }
+
+        internal LifetimeState State { get; }
+    }
+
+    private sealed class LifetimeState(Scheduler scheduler) : IDisposable
+    {
+        internal Scheduler Jobs { get; } = scheduler;
+        internal ManualResetEventSlim RootStarted { get; } = new();
+        internal ManualResetEventSlim ReleaseRoot { get; } = new();
+        internal ManualResetEventSlim AllowDescendant { get; } = new();
+        internal ManualResetEventSlim DescendantStarted { get; } = new();
+        internal ManualResetEventSlim ReleaseDescendant { get; } = new();
+        internal ManualResetEventSlim Destroyed { get; } = new();
+        internal ManualResetEventSlim DestroyJobStarted { get; } = new();
+        internal ManualResetEventSlim ReleaseDestroyJob { get; } = new();
+        internal ManualResetEventSlim DestroyJobFinished { get; } = new();
+        internal int UpdateCount;
+        internal int DestroyCount;
+        internal int DestroyScheduledJobRuns;
+        internal int DestroyParallelJobRuns;
+        internal JobHandle LastHandle;
+        internal int CompletedWork;
+        internal Action? ReentrantControl;
+        internal Exception? ReentrantError;
+        internal Action? PendingControl;
+        internal Exception? PendingControlError;
+        internal bool InvokeReentrantControlOnCreate;
+        internal DriverLifecycleCallback? DriverReentryPoint;
+        internal ManualResetEventSlim CallbackStarted { get; } = new();
+        internal ManualResetEventSlim ReleaseCallback { get; } = new();
+        internal ManualResetEventSlim PendingControlStarted { get; } = new();
+        internal ManualResetEventSlim PendingControlFinished { get; } = new();
+
+        internal void InvokePendingControl()
+        {
+            Action? control = Interlocked.Exchange(ref PendingControl, null);
+            if (control is null)
+                return;
+
+            PendingControlStarted.Set();
+            try
+            {
+                control();
+            }
+            catch (Exception exception)
+            {
+                PendingControlError = exception;
+            }
+            finally
+            {
+                PendingControlFinished.Set();
+            }
+        }
+
+        internal void InvokeDriverReentrantControl(DriverLifecycleCallback callback)
+        {
+            if (DriverReentryPoint != callback)
+                return;
+
+            Action? control = Interlocked.Exchange(ref ReentrantControl, null);
+            if (control is null)
+                return;
+
+            try
+            {
+                control();
+            }
+            catch (Exception exception)
+            {
+                ReentrantError = exception;
+            }
+        }
+
+        public void Dispose()
+        {
+            RootStarted.Dispose();
+            ReleaseRoot.Dispose();
+            AllowDescendant.Dispose();
+            DescendantStarted.Dispose();
+            ReleaseDescendant.Dispose();
+            Destroyed.Dispose();
+            DestroyJobStarted.Dispose();
+            ReleaseDestroyJob.Dispose();
+            DestroyJobFinished.Dispose();
+            CallbackStarted.Dispose();
+            ReleaseCallback.Dispose();
+            PendingControlStarted.Dispose();
+            PendingControlFinished.Dispose();
+        }
+    }
+
+    private readonly struct SpawnDescendantSystem : ISystem<LifetimeContext>
+    {
+        public void OnUpdate(ref LifetimeContext context)
+        {
+            context.State.Jobs.Schedule(new SpawnDescendantJob(context.State));
+        }
+
+        public void OnDestroy(ref LifetimeContext context)
+        {
+            context.State.Destroyed.Set();
+        }
+    }
+
+    private readonly struct BlockingSystem : ISystem<LifetimeContext>
+    {
+        public void OnUpdate(ref LifetimeContext context)
+        {
+            Interlocked.Increment(ref context.State.UpdateCount);
+            context.State.Jobs.Schedule(new BlockingRootJob(context.State));
+        }
+
+        public void OnDestroy(ref LifetimeContext context)
+        {
+            context.State.Destroyed.Set();
+        }
+    }
+
+    private readonly struct BlockingFaultingSystem : ISystem<LifetimeContext>
+    {
+        public void OnUpdate(ref LifetimeContext context)
+        {
+            context.State.Jobs.Schedule(new BlockingFaultingRootJob(context.State));
+        }
+    }
+
+    private readonly struct CountingSystem : ISystem<LifetimeContext>
+    {
+        public void OnUpdate(ref LifetimeContext context)
+        {
+            Interlocked.Increment(ref context.State.UpdateCount);
+        }
+    }
+
+    private readonly struct PassiveSystem : ISystem<LifetimeContext>
+    {
+        public void OnUpdate(ref LifetimeContext context)
+        {
+        }
+    }
+
+    private readonly struct FaultingLifecycleSystem : ISystem<LifetimeContext>
+    {
+        private readonly string _destroyMessage;
+
+        internal FaultingLifecycleSystem(string destroyMessage)
+        {
+            _destroyMessage = destroyMessage;
+        }
+
+        public void OnUpdate(ref LifetimeContext context)
+        {
+            context.State.Jobs.Schedule(new ThrowingJob());
+        }
+
+        public void OnDestroy(ref LifetimeContext context)
+        {
+            Interlocked.Increment(ref context.State.DestroyCount);
+            throw new TestFault(_destroyMessage);
+        }
+    }
+
+    private readonly struct SchedulingDestroySystem : ISystem<LifetimeContext>
+    {
+        public void OnUpdate(ref LifetimeContext context)
+        {
+        }
+
+        public void OnDestroy(ref LifetimeContext context)
+        {
+            context.State.Jobs.Schedule(new CountJob(context.State));
+        }
+    }
+
+    private readonly struct ParallelSchedulingDestroySystem(int workItemCount) :
+        ISystem<LifetimeContext>
+    {
+        public void OnUpdate(ref LifetimeContext context)
+        {
+        }
+
+        public void OnDestroy(ref LifetimeContext context)
+        {
+            context.State.Jobs.ScheduleParallel(
+                new CountParallelDestroyJob(context.State),
+                workItemCount,
+                batchSize: 1);
+        }
+    }
+
+    private readonly struct BlockingDestroySystem(bool fault) : ISystem<LifetimeContext>
+    {
+        public void OnUpdate(ref LifetimeContext context)
+        {
+        }
+
+        public void OnDestroy(ref LifetimeContext context)
+        {
+            context.State.Jobs.Schedule(new BlockingDestroyJob(context.State, fault));
+            if (fault)
+                throw new TestFault("destroy-callback-fault");
+        }
+    }
+
+    private readonly struct ManyRootsSystem : ISystem<LifetimeContext>
+    {
+        private readonly World _world;
+
+        internal ManyRootsSystem(World world)
+        {
+            _world = world;
+        }
+
+        public void OnUpdate(ref LifetimeContext context)
+        {
+            _world.Execution!.Scheduler!.Schedule(new CountWorkJob(context.State), [.. _world.Execution!.StructureRead, ((WorldJobs)_world.Execution!).Read<LifetimeComponent>()]);
+        }
+    }
+
+    private readonly struct CountWorkJob(LifetimeState state) : IJob
+    {
+        public void Execute() => Interlocked.Increment(ref state.CompletedWork);
+    }
+
+    private readonly struct ManyObservedFaultRootsSystem : ISystem<LifetimeContext>
+    {
+        private readonly World _world;
+
+        internal ManyObservedFaultRootsSystem(World world)
+        {
+            _world = world;
+        }
+
+        public void OnUpdate(ref LifetimeContext context)
+        {
+            context.State.LastHandle =
+                _world.Execution!.Scheduler!.Schedule(new ThrowingJob(), [.. _world.Execution!.StructureRead, ((WorldJobs)_world.Execution!).Read<LifetimeComponent>()]);
+        }
+    }
+
+    private readonly struct DisposeSystemGroupJob : IJob
+    {
+        private readonly SystemGroup<LifetimeContext> _group;
+
+        internal DisposeSystemGroupJob(SystemGroup<LifetimeContext> group)
+        {
+            _group = group;
+        }
+
+        public void Execute()
+        {
+            _group.Dispose();
+        }
+    }
+
+    private readonly struct ReentrantControlSystem : ISystem<LifetimeContext>
+    {
+        public void OnCreate(ref LifetimeContext context)
+        {
+            if (context.State.InvokeReentrantControlOnCreate)
+                Invoke(ref context);
+        }
+
+        public void OnUpdate(ref LifetimeContext context)
+        {
+            if (!context.State.InvokeReentrantControlOnCreate)
+                Invoke(ref context);
+        }
+
+        private static void Invoke(ref LifetimeContext context)
+        {
+            Action? control = Interlocked.Exchange(
+                ref context.State.ReentrantControl,
+                null);
+            if (control is null)
+                return;
+
+            try
+            {
+                control();
+            }
+            catch (Exception exception)
+            {
+                context.State.ReentrantError = exception;
+            }
+        }
+    }
+
+    private readonly struct BlockingCallbackSystem : ISystem<LifetimeContext>
+    {
+        public void OnUpdate(ref LifetimeContext context)
+        {
+            context.State.CallbackStarted.Set();
+            context.State.ReleaseCallback.Wait();
+        }
+    }
+
+    private readonly struct ReentrantDestroySystem : ISystem<LifetimeContext>
+    {
+        public void OnUpdate(ref LifetimeContext context)
+        {
+        }
+
+        public void OnDestroy(ref LifetimeContext context)
+        {
+            Action? control = Interlocked.Exchange(
+                ref context.State.ReentrantControl,
+                null);
+            if (control is null)
+                return;
+
+            try
+            {
+                control();
+            }
+            catch (Exception exception)
+            {
+                context.State.ReentrantError = exception;
+            }
+        }
+    }
+
+    private readonly struct SpawnDescendantJob : IJob
+    {
+        private readonly LifetimeState _state;
+
+        internal SpawnDescendantJob(LifetimeState state)
+        {
+            _state = state;
+        }
+
+        public void Execute()
+        {
+            _state.RootStarted.Set();
+            _state.AllowDescendant.Wait();
+            _state.Jobs.Schedule(new BlockingDescendantJob(_state));
+        }
+    }
+
+    private readonly struct WorldRootJob : IJob
+    {
+        private readonly World _world;
+        private readonly LifetimeState _state;
+
+        internal WorldRootJob(World world, LifetimeState state)
+        {
+            _world = world;
+            _state = state;
+        }
+
+        public void Execute()
+        {
+            _state.RootStarted.Set();
+            _state.AllowDescendant.Wait();
+            _world.Execution!.Scheduler!.Schedule(new WorldDescendantJob(_world, _state), [.. _world.Execution!.StructureRead, ((WorldJobs)_world.Execution!).Read<LifetimeComponent>()]);
+        }
+    }
+
+    private readonly struct WorldDescendantJob : IJob
+    {
+        private readonly World _world;
+        private readonly LifetimeState _state;
+
+        internal WorldDescendantJob(World world, LifetimeState state)
+        {
+            _world = world;
+            _state = state;
+        }
+
+        public void Execute()
+        {
+            _ = _world.EntityCount;
+            _state.DescendantStarted.Set();
+            _state.ReleaseDescendant.Wait();
+        }
+    }
+
+    private readonly struct BlockingRootJob : IJob
+    {
+        private readonly LifetimeState _state;
+
+        internal BlockingRootJob(LifetimeState state)
+        {
+            _state = state;
+        }
+
+        public void Execute()
+        {
+            _state.RootStarted.Set();
+            _state.ReleaseRoot.Wait();
+            _state.InvokePendingControl();
+        }
+    }
+
+    private readonly struct BlockingFaultingRootJob : IJob
+    {
+        private readonly LifetimeState _state;
+
+        internal BlockingFaultingRootJob(LifetimeState state)
+        {
+            _state = state;
+        }
+
+        public void Execute()
+        {
+            _state.RootStarted.Set();
+            _state.ReleaseRoot.Wait();
+            throw new TestFault("teardown-job-fault");
+        }
+    }
+
+    private readonly struct ReadWorldJob : IJob
+    {
+        private readonly World _world;
+
+        internal ReadWorldJob(World world)
+        {
+            _world = world;
+        }
+
+        public void Execute()
+        {
+            _ = _world.EntityCount;
+        }
+    }
+
+    private readonly struct BlockingDescendantJob : IJob
+    {
+        private readonly LifetimeState _state;
+
+        internal BlockingDescendantJob(LifetimeState state)
+        {
+            _state = state;
+        }
+
+        public void Execute()
+        {
+            _state.DescendantStarted.Set();
+            _state.ReleaseDescendant.Wait();
+        }
+    }
+
+    private readonly struct CountJob : IJob
+    {
+        private readonly LifetimeState _state;
+
+        internal CountJob(LifetimeState state)
+        {
+            _state = state;
+        }
+
+        public void Execute()
+        {
+            Interlocked.Increment(ref _state.DestroyScheduledJobRuns);
+        }
+    }
+
+    private readonly struct CountParallelDestroyJob(LifetimeState state) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            Interlocked.Increment(ref state.DestroyParallelJobRuns);
+        }
+    }
+
+    private readonly struct BlockingDestroyJob(LifetimeState state, bool fault) : IJob
+    {
+        public void Execute()
+        {
+            state.DestroyJobStarted.Set();
+            state.ReleaseDestroyJob.Wait();
+            Interlocked.Increment(ref state.DestroyScheduledJobRuns);
+            state.DestroyJobFinished.Set();
+            if (fault)
+                throw new TestFault("destroy-job-fault");
+        }
+    }
+
+    private readonly struct ThrowingJob : IJob
+    {
+        public void Execute()
+        {
+            throw new TestFault("job-fault");
+        }
+    }
+
+    private readonly struct NoOpJob : IJob
+    {
+        public void Execute()
+        {
+        }
+    }
+
+    private struct LifetimeComponent : IComponent
+    {
+        public int Value;
+    }
+
+    public enum DriverLifecycleCallback
+    {
+        AcquireSystemVersion,
+        CreateContext,
+        BeforeUpdate,
+        AfterUpdate,
+    }
+
+    public enum ReentrantGroupOperation
+    {
+        Add,
+        Enable,
+        Disable,
+        Remove,
+        Dispose,
+        Update,
+    }
+
+    public enum PendingSystemTeardown
+    {
+        Disable,
+        Remove,
+    }
+
+    private void InvokeReentrantGroupOperation(
+        SystemGroup<LifetimeContext> group,
+        ReentrantGroupOperation operation,
+        int enableIndex = 0)
+    {
+        switch (operation)
+        {
+            case ReentrantGroupOperation.Add:
+                group.Add(new PassiveSystem());
+                break;
+            case ReentrantGroupOperation.Enable:
+                group.Enable(enableIndex);
+                break;
+            case ReentrantGroupOperation.Disable:
+                group.Disable(0);
+                break;
+            case ReentrantGroupOperation.Remove:
+                group.Remove(0);
+                break;
+            case ReentrantGroupOperation.Dispose:
+                group.Dispose();
+                break;
+            case ReentrantGroupOperation.Update:
+                group.Update();
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operation));
+        }
+    }
+
+}

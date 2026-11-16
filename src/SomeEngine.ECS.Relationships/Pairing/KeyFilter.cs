@@ -75,7 +75,7 @@ public ref struct KeyRelation<TRelation, TImplementation, TComponent, TKey> : IQ
     public bool Matches(in (Entity, Entity) pair)
     {
         if (!_values.Has(pair.Item1) || !_values.Has(pair.Item2)) return false;
-        TKey first = _values.ReadKnown(pair.Item1).GetKey(), second = _values.ReadKnown(pair.Item2).GetKey();
+        TKey first = _values.Read(pair.Item1).GetKey(), second = _values.Read(pair.Item2).GetKey();
         return _implementation.Matches(in _relation, in first, in second);
     }
     public bool Matches(in (Entity, Entity) pair, int first, int second, bool reversed)

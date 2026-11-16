@@ -49,7 +49,7 @@ public class QueryModelTests
         using var world = new World();
         Entity entity = world.Create(new Position());
         Query source = world.Query<Position>();
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         candidate.Add(entity, new Velocity());
@@ -165,7 +165,7 @@ public class QueryModelTests
         Query positions = world.Query(description);
         Query moving = world.Query(description.WithChanged<Velocity>(0));
         world.Create(new Position());
-        world.Create(new Position(), new Velocity());
+        world.Add(world.Create(new Position()), new Velocity());
         Assert.Equal(2, positions.Count);
         Assert.Equal(1, moving.Count);
     }
@@ -229,8 +229,10 @@ public class QueryModelTests
         using var world = new World();
         SharedId<SceneId> firstId = world.InternShared(new SceneId { Value = 10 });
         SharedId<SceneId> secondId = world.InternShared(new SceneId { Value = 20 });
-        Entity first = world.Create(new Position { X = 1 }, new SceneId { Value = 10 });
-        Entity second = world.Create(new Position { X = 2 }, new SceneId { Value = 20 });
+        Entity first = world.Create(new Position { X = 1 });
+        world.Add(first, new SceneId { Value = 10 });
+        Entity second = world.Create(new Position { X = 2 });
+        world.Add(second, new SceneId { Value = 20 });
         Query firstQuery = world.Query(new QueryDescription().WithStored<Position>().WithShared(firstId));
         Query secondQuery = world.Query(new QueryDescription().WithShared(secondId).WithStored<Position>());
         using QueryScope firstMembers = firstQuery.OpenRead();

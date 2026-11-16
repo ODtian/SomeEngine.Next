@@ -17,14 +17,14 @@ public sealed partial class WorldSerializer
     private sealed class CapturedTable
     {
         private static readonly IComparer<SavedColumn> ColumnOrder = Comparer<SavedColumn>.Create(
-            static (left, right) => left.Key.StableId.CompareTo(right.Key.StableId));
+            static (left, right) => left.Key.Id.CompareTo(right.Key.Id));
         internal ChunkData First = null!;
         internal SavedColumn[] Columns = [];
         internal readonly List<ChunkData> Chunks = [];
         internal int[] ColumnIndices = [];
         internal int ColumnCount;
 
-        internal void Bind(ChunkData first, SerializationRegistry registry)
+        internal void Bind(ChunkData first, SaveRegistry registry)
         {
             First = first;
             Chunks.Clear(); Chunks.Add(first);
@@ -44,41 +44,29 @@ public sealed partial class WorldSerializer
         internal void Clear() { First = null!; Chunks.Clear(); Array.Clear(Columns); }
     }
 
-    public void Save(WorldCheckpoint captured, IBufferWriter<byte> output,
+    public void Save(WorldCopy captured, IBufferWriter<byte> output,
         SavePurpose purpose = SavePurpose.RawCheckpoint)
         => Save(captured, output, new SerializeOptions(Purpose: purpose));
 
-    public void Save(WorldCheckpoint checkpoint, IBufferWriter<byte> output, SerializeOptions options)
+    public void Save(WorldCopy checkpoint, IBufferWriter<byte> output, SerializeOptions options)
     {
-        if (!options.Codecs.IsDefaultOrEmpty)
-        {
-            new WorldSerializer(SerializationRegistry.Bind(registry, options.Codecs))
-                .Save(checkpoint, output, options with { Codecs = default });
-            return;
-        }
         ValidateWriteOptions(options);
-        var writer = new DataWriter(output, options.ExternalReferences);
+        var writer = new SaveWriter(output, options.ExternalReferences);
         Write(checkpoint, ref writer, options);
         writer.Flush();
     }
-    public void Save(WorldCheckpoint captured, Stream output, SavePurpose purpose = SavePurpose.RawCheckpoint)
+    public void Save(WorldCopy captured, Stream output, SavePurpose purpose = SavePurpose.RawCheckpoint)
         => Save(captured, output, new SerializeOptions(Purpose: purpose));
 
-    public void Save(WorldCheckpoint checkpoint, Stream output, SerializeOptions options)
+    public void Save(WorldCopy checkpoint, Stream output, SerializeOptions options)
     {
-        if (!options.Codecs.IsDefaultOrEmpty)
-        {
-            new WorldSerializer(SerializationRegistry.Bind(registry, options.Codecs))
-                .Save(checkpoint, output, options with { Codecs = default });
-            return;
-        }
         ValidateWriteOptions(options);
-        var writer = new DataWriter(output, options.ExternalReferences);
+        var writer = new SaveWriter(output, options.ExternalReferences);
         Write(checkpoint, ref writer, options);
         writer.Flush();
     }
 
-    private void Select(WorldCheckpoint captured)
+    private void Select(WorldCopy captured)
     {
         SynchronizeRegistry();
         foreach (SavedType type in _used) _seen[registry.GetOrder(type)] = false;
@@ -120,14 +108,14 @@ public sealed partial class WorldSerializer
             if (_seen[registry.GetOrder(type)]) { _fileTypes[registry.GetOrder(type)] = _used.Count; _used.Add(type); }
     }
 
-    private void SaveCaptured(WorldCheckpoint checkpoint, Stream output, SerializeOptions options)
+    private void SaveCaptured(WorldCopy checkpoint, Stream output, SerializeOptions options)
     {
-        var writer = new DataWriter(output, options.ExternalReferences);
+        var writer = new SaveWriter(output, options.ExternalReferences);
         Write(checkpoint, ref writer, options, countsChecked: true);
         writer.Flush();
     }
 
-    private void Write(WorldCheckpoint captured, ref DataWriter writer, SerializeOptions options, bool countsChecked = false)
+    private void Write(WorldCopy captured, ref SaveWriter writer, SerializeOptions options, bool countsChecked = false)
     {
         Select(captured);
         if (!countsChecked)
@@ -157,17 +145,17 @@ public sealed partial class WorldSerializer
         writer.WriteInt32(sharedCount);
         foreach (SavedType type in _used)
             if (type is SavedShared shared)
-            { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); shared.WriteValues(ref writer, captured.Shared[type.Type]!); }
+            { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); writer.BeginFrame(); shared.WriteValues(ref writer, captured.Shared[type.Type]!); writer.EndFrame(); }
         writer.WriteInt32(_checkpointTableCount);
         foreach (CapturedTable table in CheckpointTables) WriteTable(ref writer, table);
         writer.WriteInt32(sparseCount);
         foreach (SavedType type in _used)
             if (type is SavedSparse sparse)
-            { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); sparse.Write(ref writer, captured.Sparse[type.Type]!); }
+            { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); writer.BeginFrame(); sparse.Write(ref writer, captured.Sparse[type.Type]!); writer.EndFrame(); }
         writer.WriteInt32(resourceCount);
         foreach (SavedType type in _used)
             if (type is SavedResource resource)
-            { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); resource.Write(ref writer, captured.Resources.Get(type.Type)!); }
+            { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); writer.BeginFrame(); resource.Write(ref writer, captured.Resources.Get(type.Type)!); writer.EndFrame(); }
         long topologyBytesRemaining = options.MaximumTopologyPayloadBytes;
         WriteCapturedTopology(ref writer, options.MaximumTopologyPayloadBytes != 0, ref topologyBytesRemaining);
         WriteEvents(ref writer, captured.Events);
@@ -175,12 +163,14 @@ public sealed partial class WorldSerializer
         foreach (var service in _capturedServices)
         {
             writer.WriteInt32(_fileTypes[registry.GetOrder(service.Binding.Type)]);
+            writer.BeginFrame();
             bool bounded = options.MaximumTopologyPayloadBytes != 0 && service.Binding.Type.Storage is SavedStorage.Parent or SavedStorage.Endpoints;
             long start = writer.Position;
             if (bounded) writer.LimitBytes(topologyBytesRemaining);
             try { service.Binding.WriteData(ref writer, service.Data); }
             finally { if (bounded) writer.EndByteLimit(); }
             if (bounded) topologyBytesRemaining -= writer.Position - start;
+            writer.EndFrame();
         }
         writer.WriteInt32(captured.SystemCount);
         for (int i = 0; i < captured.SystemCount; i++)
@@ -190,7 +180,7 @@ public sealed partial class WorldSerializer
         }
     }
 
-    private void WriteTable(ref DataWriter writer, CapturedTable table)
+    private void WriteTable(ref SaveWriter writer, CapturedTable table)
     {
         ChunkData first = table.First;
         writer.WriteInt32(table.ColumnCount);
@@ -216,17 +206,19 @@ public sealed partial class WorldSerializer
                 int source = table.ColumnIndices[i];
                 ComponentType type = chunk.Components[source];
                 ref ColumnEntry column = ref chunk.Columns[source];
+                writer.BeginFrame();
                 WriteMask(ref writer, column.Presence, chunk.Count);
                 if (binding.Storage is not (SavedStorage.Parent or SavedStorage.Endpoints or SavedStorage.Children))
                     binding.Write(ref writer, ref column, chunk.Count);
                 WriteMask(ref writer, chunk.Enabled is { } enabled ? enabled[source] : null, chunk.Count);
                 SavedChanges.Write(ref writer, chunk.Changes is { } changes ? changes[source] : default,
                     chunk.Count, type.TracksWrites, type.TracksAdded);
+                writer.EndFrame();
             }
         }
     }
 
-    private void WriteCapturedTopology(ref DataWriter writer, bool bounded, ref long bytesRemaining)
+    private void WriteCapturedTopology(ref SaveWriter writer, bool bounded, ref long bytesRemaining)
     {
         int count = 0;
         foreach (SavedType type in _used) if (type.Storage is SavedStorage.Parent or SavedStorage.Endpoints or SavedStorage.Children) count++;
@@ -245,6 +237,7 @@ public sealed partial class WorldSerializer
                     if (chunk.Columns[column].Presence is null) rows += chunk.Count;
                     else for (int row = 0; row < chunk.Count; row++) if (chunk.Columns[column].Has(row)) rows++;
             }
+            writer.BeginFrame();
             writer.WriteInt32(rows);
             long start = writer.Position;
             if (bounded) writer.LimitBytes(bytesRemaining);
@@ -261,32 +254,42 @@ public sealed partial class WorldSerializer
             finally { if (bounded) writer.EndByteLimit(); }
             if (bounded) bytesRemaining -= writer.Position - start;
             writer.WriteInt32(checked((int)(writer.Position - start)));
+            writer.EndFrame();
         }
     }
 
     public Task SaveAsync(World world, Stream output, SavePurpose purpose = SavePurpose.DurableSave,
-        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
+        ProgressMode progress = ProgressMode.Reset, params ISystemVersions[] systems)
         => SaveAsync(world, output, new SerializeOptions(Purpose: purpose), progress, systems);
 
     public Task SaveAsync(World world, Stream output, SerializeOptions options,
-        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
+        ProgressMode progress = ProgressMode.Reset, params ISystemVersions[] systems)
     {
-        if (!options.Codecs.IsDefaultOrEmpty)
-            return new WorldSerializer(SerializationRegistry.Bind(registry, options.Codecs))
-                .SaveAsync(world, output, options with { Codecs = default }, progress, systems);
-        Scheduler scheduler = JobSystem.Current;
         ValidateWriteOptions(options);
-        var checkpoint = new WorldCheckpoint();
+        var checkpoint = new WorldCopy();
         try { checkpoint.Capture(world, registry, options, progress, systems); }
         catch { checkpoint.Dispose(); throw; }
-        try
-        {
-            return scheduler.Schedule(new SaveStreamJob(registry, checkpoint, output, options)).CompleteAsync().AsTask();
-        }
+        try { return RunOnWorldScheduler(world, new SaveStreamJob(registry, checkpoint, output, options)); }
         catch { checkpoint.Dispose(); throw; }
     }
 
-    private readonly struct SaveStreamJob(SerializationRegistry registry, WorldCheckpoint checkpoint,
+    /// <summary>Runs a save on the World's scheduler, or on the calling thread when the World has none.</summary>
+    private static Task RunOnWorldScheduler<TJob>(World world, in TJob job) where TJob : struct, IJob
+    {
+        if (world.Execution?.Scheduler is { } scheduler)
+            return scheduler.Schedule(job).CompleteAsync().AsTask();
+        try
+        {
+            job.Execute();
+            return Task.CompletedTask;
+        }
+        catch (Exception exception)
+        {
+            return Task.FromException(exception);
+        }
+    }
+
+    private readonly struct SaveStreamJob(SaveRegistry registry, WorldCopy checkpoint,
         Stream output, SerializeOptions options) : IJob
     {
         public void Execute()

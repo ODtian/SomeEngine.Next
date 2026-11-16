@@ -8,8 +8,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-[Xunit.Collection("Direct3D12 shader compilation")]
-public sealed class TextureDisplacementTests(D3D12TestCompiler shaderCompiler)
+public sealed class TextureDisplacementTests(D3D12TestCompiler shaderCompiler) : Xunit.IClassFixture<D3D12TestCompiler>
 {
     [Fact]
     public void Bounds_enclose_sampled_surfaces_and_converge_across_bilinear_cells_and_repeat_seams()

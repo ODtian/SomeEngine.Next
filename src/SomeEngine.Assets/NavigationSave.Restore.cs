@@ -10,7 +10,7 @@ namespace SomeEngine.Assets;
 
 public static partial class NavigationSave
 {
-    public static async ValueTask<NavigationSaveResult> ReadAsync(Stream stream, SerializationRegistry gameRegistry,
+    public static async ValueTask<NavigationSaveResult> ReadAsync(Stream stream, SaveRegistry gameRegistry,
         AssetLoader loader, Scheduler? scheduler = null, NavigationSaveOptions? options = null, CancellationToken cancellationToken = default)
     {
         scheduler ??= JobSystem.Default;

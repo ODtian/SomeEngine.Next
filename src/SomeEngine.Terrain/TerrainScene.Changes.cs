@@ -93,7 +93,7 @@ public sealed partial class TerrainScene
         if (WorldJobs.TryGetScheduler(_world!, out Scheduler? scheduler))
             scheduler.ExecuteParallel(work, input.Length, JobScheduleOptions.AutomaticBatchSize);
         else
-            JobSystem.ExecuteParallel(work, input.Length, JobScheduleOptions.AutomaticBatchSize);
+            JobSystem.Current.ExecuteParallel(work, input.Length, JobScheduleOptions.AutomaticBatchSize);
         for (int index = 0; index < affected.Length; index++)
             if (affected[index]) _dirtyGeometry.Add(input[index].Id);
     }

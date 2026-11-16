@@ -30,7 +30,7 @@ public sealed partial class ViewGenerator
                 .Append(" @").Append(callback.Name).Append('(')
                 .Append(string.Join(", ", invoke.Parameters.Select((parameter, index) =>
                     parameter.Type.ToDisplayString(s_callbackTypeFormat) + " arg" + index)))
-                .Append(") => world.ReadSparse<@").Append(viewName).Append(typeParameters).Append(">(entity).@")
+                .Append(") => world.Read<@").Append(viewName).Append(typeParameters).Append(">(entity).@")
                 .Append(callback.Name).Append("!(")
                 .Append(string.Join(", ", invoke.Parameters.Select((_, index) => "arg" + index))).AppendLine(");");
         }

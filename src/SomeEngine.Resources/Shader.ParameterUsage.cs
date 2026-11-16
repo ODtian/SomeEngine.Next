@@ -41,8 +41,7 @@ public partial class Shader
     {
         scheduler ??= JobSystem.Current;
         var metadataByEntry = new IMetadata[targetCount * entryCount];
-        scheduler.ExecuteParallel(new ReadParameterMetadata(slangData, entryCount, unboundEntries, metadataByEntry),
-            metadataByEntry.Length, options: new() { Category = ShaderCodeJobs.GetCategory(scheduler) });
+        scheduler.ExecuteParallel(new ReadParameterMetadata(slangData, entryCount, unboundEntries, metadataByEntry), metadataByEntry.Length, options: new() { Category = ShaderCodeJobs.GetCategory(scheduler) });
         IComponentType code = slangData.Code;
         var result = ImmutableArray.CreateBuilder<ImmutableHashSet<SlangDescriptorLocation>>();
         for (int target = 0; target < targetCount; target++)

@@ -95,7 +95,7 @@ internal static class GpuRigPlayback
 
             }
         }
-        GpuPoseTarget output = world.ReadComponentData<GpuPoseTarget>(target);
+        GpuPoseTarget output = world.ReadValue<GpuPoseTarget>(target);
         output.Clip = null; output.StateMachine = null;
         output.Blend = rig.Source; output.Rig = rig;
         output.Controls = instance.Controls;
@@ -145,7 +145,7 @@ internal struct GpuRigSystem : ISystem<ImmediateSystemContext>
                             if (!time.Active || instance.Finished) continue;
                             float elapsed = Math.Min(time.Time.Time, instance.Duration);
                             for (int input = 0; input < instance.Controls.Length; input++) instance.Controls[input] = controls.Values[input];
-                            GpuPoseTarget output = world.ReadComponentData<GpuPoseTarget>(instance.Target);
+                            GpuPoseTarget output = world.ReadValue<GpuPoseTarget>(instance.Target);
                             output.Clip = null; output.StateMachine = null;
                             output.Blend = instance.Rig.Source; output.Rig = instance.Rig;
                             output.Controls = instance.Controls;

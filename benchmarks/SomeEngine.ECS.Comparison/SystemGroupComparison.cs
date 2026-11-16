@@ -100,7 +100,8 @@ internal sealed class NativeSystemGroupJobs<T, TQuery, TEntity, THandle, TComman
     { for (int i = 0; i < 2; i++) { _states[i].Last = versions[i * 2]; _states[i].Current = versions[i * 2 + 1]; } }
     private readonly struct Completion(JobResource structure, NativeSystemProgress state, Action? playback, Action? finish, Action? clear) : IStagedJob
     {
-        public static int StageCount => 1;
+        public int StageCount => 1;
+        public void Reserve(ref AccessBuilder<JobResourceAccess> accesses) { }
         public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses)
         { if (playback is not null || finish is not null) accesses.Add(JobResourceAccess.Write(structure)); }
         public void Execute() { playback?.Invoke(); finish?.Invoke(); state.Last = state.Current; }
@@ -120,7 +121,7 @@ internal sealed partial class SomeEngineWorld
     }
     private sealed class SourceSystemGroupJobs : ISystemGroupJobs
     {
-        private readonly SystemGroup _group;
+        private readonly SystemGroup<ImmediateSystemContext> _group;
         private readonly SystemState _first, _second;
         private readonly SystemGroupFrame<Entity, DeferredEntity, SomeCommandComparison, SomeHierarchyComparison> _frame;
         private JobHandle _last;
@@ -128,21 +129,19 @@ internal sealed partial class SomeEngineWorld
         internal SourceSystemGroupJobs(World world, Scheduler scheduler, CommandBatch commands,
             SystemGroupFrame<Entity, DeferredEntity, SomeCommandComparison, SomeHierarchyComparison> frame)
         {
-            _frame = frame; _group = new(world, scheduler);
+            _frame = frame; _group = new(new ImmediateSystemDriver(world));
             Query query = world.Query<Position, Velocity>();
-            _first = _group.Add<Position, Velocity, MovePositions>(query, new(), commands: commands);
-            SystemState finish = _group.AddJob(new FinishGroup(frame), structureWrite: true);
-            _group.After(finish, _first);
-            _second = _group.Add<Position, Velocity, MovePositions>(query, new());
-            _group.After(_second, finish);
+            _first = _group.GetState(_group.AddJob(new MovePositions(), query, commands));
+            _group.AddJob(new FinishGroup(frame), structureWrite: true);
+            _second = _group.GetState(_group.AddJob(new MovePositions(), query));
         }
         private readonly struct FinishGroup(SystemGroupFrame<Entity, DeferredEntity, SomeCommandComparison, SomeHierarchyComparison> frame) : IJob
         {
             public void Execute() => frame.Finish();
         }
         public void Run(bool scheduled, bool parallel, bool dependent)
-        { _frame.Commands.RecordCommands(); _last = _group.Schedule(); _last.Complete(); Runs++; }
-        public bool Check() => _group.GraphBuildCount == 1 && _last.IsCompleted && _frame.Check()
+        { _frame.Commands.RecordCommands(); _last = _group.Update(); _last.Complete(); Runs++; }
+        public bool Check() => _last.IsCompleted && _frame.Check()
             && _first.LastSystemVersion == _first.CurrentSystemVersion && _second.LastSystemVersion == _second.CurrentSystemVersion
             && _second.CurrentSystemVersion >= _first.CurrentSystemVersion;
         public void Dispose() { _group.Complete(); _frame.Dispose(); }

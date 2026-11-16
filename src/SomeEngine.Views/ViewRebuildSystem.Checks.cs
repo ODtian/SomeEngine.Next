@@ -39,7 +39,7 @@ public sealed partial class ViewRebuildSystem
             if (!requested)
             {
                 _dependencyChanges.CopyVersions(world, entity, _versions);
-                if (world.HasSparse<Computations>(entity))
+                if (world.Has<Computations>(entity))
                 {
                     CollectComputations(world, entity);
                     foreach (Computation computation in _computations)
@@ -78,19 +78,19 @@ public sealed partial class ViewRebuildSystem
         if (scheduler is not null)
             scheduler.ExecuteParallel(job, length, JobScheduleOptions.AutomaticBatchSize);
         else
-            global::SomeEngine.Job.JobSystem.ExecuteParallel(job, length, JobScheduleOptions.AutomaticBatchSize);
+            global::SomeEngine.Job.JobSystem.Current.ExecuteParallel(job, length, JobScheduleOptions.AutomaticBatchSize);
     }
 
     private void RefreshDependencies(World world)
     {
         foreach (Entity entity in _views)
         {
-            if (!world.Has<ObjectDependencies>(entity) && !world.HasSparse<Computations>(entity)) continue;
+            if (!world.Has<ObjectDependencies>(entity) && !world.Has<Computations>(entity)) continue;
             if (world.Has<BuildRequest>(entity) || world.Read<ViewType>(entity).RebuildRequired ||
                 _builds.HasParameterChanges(world, entity)) continue;
             if (world.Has<ObjectDependencies>(entity))
                 world.Read<ObjectDependencies>(entity).Reads.Refresh(_frame);
-            if (!world.HasSparse<Computations>(entity)) continue;
+            if (!world.Has<Computations>(entity)) continue;
             CollectComputations(world, entity);
             foreach (Computation computation in _computations)
                 if (!computation.Released && !computation.EvaluatesOnRead)

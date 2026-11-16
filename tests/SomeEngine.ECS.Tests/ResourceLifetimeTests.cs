@@ -11,7 +11,7 @@ public sealed class ResourceLifetimeTests
         var stream = new CountedStream();
         using var world = new World();
         world.SetResource<MemoryStream>(stream);
-        using (var checkpoint = new WorldCheckpoint()) checkpoint.Capture(world);
+        using (var checkpoint = new WorldCopy()) checkpoint.Capture(world);
 
         world.ReadResource<MemoryStream>().WriteByte(7);
 
@@ -30,7 +30,7 @@ public sealed class ResourceLifetimeTests
         using var source = new World();
         var entity = source.Create(new Number(3));
         source.SetResource<MemoryStream>(stream);
-        using (var checkpoint = new WorldCheckpoint().Capture(source, CheckpointProgress.Preserve))
+        using (var checkpoint = new WorldCopy().Capture(source, ProgressMode.Keep))
         {
             using var candidate = new World();
             checkpoint.Restore(candidate);
@@ -58,7 +58,7 @@ public sealed class ResourceLifetimeTests
         var second = new CountedStream();
         using var source = new World();
         source.SetResource<MemoryStream>(first);
-        using (var checkpoint = new WorldCheckpoint().Capture(source, CheckpointProgress.Preserve))
+        using (var checkpoint = new WorldCopy().Capture(source, ProgressMode.Keep))
         {
             using var candidate = new World();
             checkpoint.Restore(candidate);
@@ -66,7 +66,7 @@ public sealed class ResourceLifetimeTests
             Assert.Same(first, source.ReadResource<MemoryStream>());
             Assert.Same(second, candidate.ReadResource<MemoryStream>());
 
-            checkpoint.Capture(candidate, CheckpointProgress.Preserve);
+            checkpoint.Capture(candidate, ProgressMode.Keep);
             checkpoint.Restore(source);
 
             Assert.Same(second, source.ReadResource<MemoryStream>());

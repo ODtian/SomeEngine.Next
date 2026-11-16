@@ -28,7 +28,7 @@ internal partial struct NavigationPathJob<TSpace, TSearch, TState, TMotion, TRea
     where TMotion : unmanaged, IComponent
     where TReader : struct, INavigationMotionReader<TMotion>
 {
-    public static SystemAccesses AdditionalAccesses { get; } = new SystemAccesses().ReadRandom<TMotion>();
+    public static SystemAccesses AdditionalAccesses { get; } = new SystemAccesses().Read<TMotion>();
 
     private readonly World _world = world;
     private readonly int _expansionBudget = expansionBudget;

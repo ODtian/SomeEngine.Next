@@ -28,7 +28,7 @@ public static partial class GpuPoseAnimation
     /// <summary>Installs or explicitly changes visual sampling and bone LOD.</summary>
     public static void SetEvaluation(World world, Entity target, GpuPoseEvaluation? evaluation)
     {
-        GpuPoseTarget input = world.ReadComponentData<GpuPoseTarget>(target);
+        GpuPoseTarget input = world.ReadValue<GpuPoseTarget>(target);
         input.Evaluation = evaluation;
         world.Set(target, input);
     }

@@ -13,7 +13,7 @@ public sealed class IndexedCandidateTests
         Entity first = world.Create(new Number(7));
         Entity second = world.Create(new Number(7));
         Assert.Equal([first, second], ReadIndexedEntities<Number, int>(world, 7));
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using (var commands = new CommandBuffer(candidate))

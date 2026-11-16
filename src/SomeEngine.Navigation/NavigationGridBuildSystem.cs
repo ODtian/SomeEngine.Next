@@ -52,7 +52,7 @@ public sealed class NavigationGridBuildSystem(NavigationRegionSources region,
             }
             NavigationBuild<NavigationGridBuildState> grid = NavigationGridBuilder.Schedule(built.Surface, state.Input.Settings.Profile,
                 links, state.Input.Version, system._scheduler, footprintMode: mode);
-            system._scheduler.Schedule(new BuildGraph(system, state, grid.State, previous), grid.Completion);
+            system._scheduler.Schedule(new BuildGraph(system, state, grid.State, previous), dependency: grid.Completion);
         }
     }
 
@@ -63,7 +63,7 @@ public sealed class NavigationGridBuildSystem(NavigationRegionSources region,
         {
             NavigationBuild<NavigationGridRegionBuildState> graph = NavigationGridRegionBuilder.Schedule(grid.Grid,
                 state.Input.Settings.Profile, state.Input.Settings.Policy, system._scheduler);
-            system._scheduler.Schedule(new ScheduleComplete(system, state, graph.State, previous), graph.Completion);
+            system._scheduler.Schedule(new ScheduleComplete(system, state, graph.State, previous), dependency: graph.Completion);
         }
     }
 

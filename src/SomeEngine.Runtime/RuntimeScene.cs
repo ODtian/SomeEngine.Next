@@ -97,13 +97,13 @@ internal sealed class RuntimeScene : IDisposable
         Entity[] instances = Entities(world, new QueryDescription().WithStored<MeshSource>().WithStored<WorldTransform>());
         Entity[] cameras = Entities(world, new QueryDescription().WithStored<SceneCamera>());
         if (cameras.Length != 1) throw new InvalidDataException("The Game world must contain one scene camera.");
-        SceneCamera camera = world.ReadComponentData<SceneCamera>(cameras[0]);
+        SceneCamera camera = world.ReadValue<SceneCamera>(cameras[0]);
         var meshes = new Dictionary<Guid, (Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings, ClusterSkinBounds? SkinBounds)>();
         var materials = new Dictionary<Guid, Material>();
         Vector3 meshPositionMin = new(float.PositiveInfinity);
         Vector3 meshPositionMax = new(float.NegativeInfinity);
         AssetId<MeshAsset>[] meshIds = instances
-            .Select(entity => world.ReadComponentData<MeshSource>(entity).Mesh)
+            .Select(entity => world.ReadValue<MeshSource>(entity).Mesh)
             .Distinct()
             .ToArray();
         var loadedMeshes = new SceneMeshData?[meshIds.Length];
@@ -195,13 +195,13 @@ internal sealed class RuntimeScene : IDisposable
                     bindings[value.Region] = new(materials[value.Material.Value]);
                 meshes[meshId] = (data.Mesh, data.PageSource, bindings, data.SkinBounds);
             }
-            instances = instances.Where(entity => meshes.ContainsKey(world.ReadComponentData<MeshSource>(entity).Mesh.Value)).ToArray();
+            instances = instances.Where(entity => meshes.ContainsKey(world.ReadValue<MeshSource>(entity).Mesh.Value)).ToArray();
 
             foreach (Entity entity in instances)
             {
-                MeshSource source = world.ReadComponentData<MeshSource>(entity);
+                MeshSource source = world.ReadValue<MeshSource>(entity);
                 var meshData = meshes[source.Mesh.Value];
-                TransformQvvs transform = world.ReadComponentData<WorldTransform>(entity).Qvvs;
+                TransformQvvs transform = world.ReadValue<WorldTransform>(entity).Qvvs;
                 meshPositionMin = Vector3.Min(meshPositionMin, transform.Position);
                 meshPositionMax = Vector3.Max(meshPositionMax, transform.Position);
                 world.Set(entity, new MeshInstance { Mesh = meshData.Mesh, PageSource = meshData.Source,
@@ -213,14 +213,14 @@ internal sealed class RuntimeScene : IDisposable
                     buffer.AddRange(bindings);
                 if (world.Has<MeshMotion>(entity))
                 {
-                    MeshMotion motion = world.ReadComponentData<MeshMotion>(entity);
+                    MeshMotion motion = world.ReadValue<MeshMotion>(entity);
                     if (motion.Amplitude != Vector3.Zero) world.Set(entity, SceneMotion.Create(transform, motion.Amplitude, motion.Seed));
                     world.Remove<MeshMotion>(entity);
                 }
                 world.Remove<MeshSource>(entity);
             }
             var playbackLights = Entities(world, new QueryDescription().WithStored<PointLight>())
-                .Select(entity => (entity, world.ReadComponentData<PointLight>(entity))).ToArray();
+                .Select(entity => (entity, world.ReadValue<PointLight>(entity))).ToArray();
             var runtimeCamera = new RuntimeCamera(camera.Position, camera.Target, camera.Up);
             world.Remove<SceneCamera>(cameras[0]);
             if (instances.Length == 0) meshPositionMin = meshPositionMax = Vector3.Zero;
@@ -270,19 +270,19 @@ internal sealed class RuntimeScene : IDisposable
         var lights = new List<SceneLight>();
         foreach (Entity entity in Entities(_world, new QueryDescription().WithStored<DirectionalLight>()))
         {
-            DirectionalLight light = _world.ReadComponentData<DirectionalLight>(entity);
+            DirectionalLight light = _world.ReadValue<DirectionalLight>(entity);
             lights.Add(new(SceneLightKind.Directional, Vector3.Zero, light.Direction, 0, 0, 0,
                 light.Color, light.Intensity, light.LayerMask, light.ShadowSettings));
         }
         foreach (Entity entity in GetPointLights())
         {
-            PointLight light = _world.ReadComponentData<PointLight>(entity);
+            PointLight light = _world.ReadValue<PointLight>(entity);
             lights.Add(new(SceneLightKind.Point, light.Position, Vector3.Zero, light.Range, 0, 0,
                 light.Color, light.Intensity, light.LayerMask, light.ShadowSettings));
         }
         foreach (Entity entity in Entities(_world, new QueryDescription().WithStored<SpotLight>()))
         {
-            SpotLight light = _world.ReadComponentData<SpotLight>(entity);
+            SpotLight light = _world.ReadValue<SpotLight>(entity);
             lights.Add(new(SceneLightKind.Spot, light.Position, light.Direction, light.Range,
                 light.InnerConeCos, light.OuterConeCos, light.Color, light.Intensity, light.LayerMask, light.ShadowSettings));
         }
@@ -291,18 +291,18 @@ internal sealed class RuntimeScene : IDisposable
             NearPlane = _nearPlane, FarPlane = _farPlane, Lights = lights.ToArray(),
             Meshes = GetMeshEntities().Select(entity =>
             {
-                Mesh mesh = _world.ReadComponentData<MeshInstance>(entity).Mesh;
+                Mesh mesh = _world.ReadValue<MeshInstance>(entity).Mesh;
                 Guid asset = _meshes.FirstOrDefault(value => ReferenceEquals(value.Mesh, mesh)).Asset;
-                return new SceneMeshTransform(asset, _world.ReadComponentData<WorldTransform>(entity).Qvvs.ToMatrix());
+                return new SceneMeshTransform(asset, _world.ReadValue<WorldTransform>(entity).Qvvs.ToMatrix());
             }).ToArray(),
         };
     }
 
-    internal Mesh GetMesh(Entity entity) => _world.ReadComponentData<MeshInstance>(entity).Mesh;
+    internal Mesh GetMesh(Entity entity) => _world.ReadValue<MeshInstance>(entity).Mesh;
 
     internal void ReplaceMesh(Entity entity, Mesh mesh)
     {
-        MeshInstance instance = _world.ReadComponentData<MeshInstance>(entity);
+        MeshInstance instance = _world.ReadValue<MeshInstance>(entity);
         instance.Mesh = mesh;
         instance.PageSource = null;
         _world.Set(entity, instance);
@@ -329,7 +329,7 @@ internal sealed class RuntimeScene : IDisposable
         MeshMaterialBinding[] bindings;
         using (ReadOnlyBuffer<MeshMaterialBinding> values = _world.ReadBuffer<MeshMaterialBinding>(source))
             bindings = values.AsSpan().ToArray();
-        return AddMeshEntity(_world.ReadComponentData<MeshInstance>(source), bindings, transform);
+        return AddMeshEntity(_world.ReadValue<MeshInstance>(source), bindings, transform);
     }
 
     internal Entity AddEntity(Mesh mesh, IReadOnlyList<Material> materials, TransformQvvs transform, float boundsExpansion)

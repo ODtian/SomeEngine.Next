@@ -133,8 +133,8 @@ internal static class SpatialTraversal
                 {
                     ref var firstRecord = ref queries.World.Records[entities.Item1.Id];
                     ref var secondRecord = ref queries.World.Records[entities.Item2.Id];
-                    var firstChunk = new QueryChunk(firstRecord.Chunk!, 0, firstRecord.Chunk!.Count, write: false);
-                    var secondChunk = new QueryChunk(secondRecord.Chunk!, 0, secondRecord.Chunk!.Count, write: false);
+                    var firstChunk = new QueryChunk(firstRecord.Chunk!, 0, firstRecord.Chunk!.Count, ChunkWrites.ReadOnly);
+                    var secondChunk = new QueryChunk(secondRecord.Chunk!, 0, secondRecord.Chunk!.Count, ChunkWrites.ReadOnly);
                     if (!filter.MatchesLeaves(firstChunk, firstRecord.Row, secondChunk, secondRecord.Row,
                         firstNode, secondNode, in results)) continue;
                 }

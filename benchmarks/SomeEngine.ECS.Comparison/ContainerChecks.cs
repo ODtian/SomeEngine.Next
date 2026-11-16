@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using System.Runtime.CompilerServices;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
@@ -5,8 +6,9 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Comparison;
 
-internal static class ContainerChecks
+internal static partial class ContainerChecks
 {
+    private partial struct ElementBody : IComponentBundle { internal Body Body; internal ReadOnlyMemory<Element> Elements; }
     internal static void Run()
     {
         var releases = new ReleaseCount();
@@ -38,11 +40,12 @@ internal static class ContainerChecks
         var variableBuffers = new SomeEngine.ECS.Entities.Entity[2];
         var repeatedBuffers = new SomeEngine.ECS.Entities.Entity[2];
         Position[] positions = [new() { X = 10 }, new() { X = 11 }];
-        Buffer<Element> template = world.Read<Buffer<Element>>(source);
-        Buffer<Element>[] inputs = [template, template];
-        world.Create<Position, Buffer<Element>, Velocity, Health>(variableBuffers, positions, inputs, new Velocity(), new Health());
-        Velocity[] velocities = [new(), new()];
-        world.Create<Position, Velocity, Health, Buffer<Element>>(repeatedBuffers, positions, velocities, new Health(), template);
+        Element[] template;
+        using (var read = world.ReadBuffer<Element>(source)) template = read.AsSpan().ToArray();
+        ElementBody[] copies = [new() { Body = new() { Position = positions[0] }, Elements = template },
+            new() { Body = new() { Position = positions[1] }, Elements = template }];
+        world.Spawn<ElementBody>(copies, variableBuffers);
+        world.Spawn<ElementBody>(copies, repeatedBuffers);
         using (var first = world.GetBuffer<Element>(variableBuffers[0])) first[0].Value = 70;
         using (var first = world.GetBuffer<Element>(repeatedBuffers[0])) first[0].Value = 80;
         using (var variable = world.ReadBuffer<Element>(variableBuffers[1]))
@@ -79,7 +82,7 @@ internal static class ContainerChecks
         world.RemoveResource<ResourceCounter>();
         Require(releases.Count == 2 && !world.HasResource<ResourceCounter>(), "resource removal completes release");
         world.SetResource(new ResourceCounter(releases, 3));
-        world.SetSparse(source, new ResourceCounter(releases, 4));
+        world.Set(source, new ResourceCounter(releases, 4));
         world.Clear();
         Require(releases.Count == 4, "world clear releases resources and sparse owned values");
         world.SetResource(new ResourceCounter(releases, 5));
@@ -102,7 +105,7 @@ internal static class ContainerChecks
         using var world = new World(execution: execution);
         Entity entity = world.Create(new Position { X = 17 });
         Entity missing = world.Create(new Extra());
-        world.SetShared(entity, new ScopedShared(9));
+        world.Set(entity, new ScopedShared(9));
         world.AddBuffer<Element>(entity);
         using (var buffer = world.GetBuffer<Element>(entity)) buffer.Add(new Element { Value = 42 });
         world.RemoveBuffer<Element>(entity);
@@ -141,9 +144,9 @@ internal static class ContainerChecks
     {
         if (!condition) throw new InvalidOperationException(behavior);
     }
-    private struct Element : IAddedComponent, IRemovedComponent { internal int Value; }
+    private struct Element : IAddedComponent, IRemovedComponent<Element> { internal int Value; }
     private sealed class ReleaseCount { internal int Count; }
-    private readonly struct ResourceCounter(ReleaseCount releases, int value) : IDisposable
+    private readonly struct ResourceCounter(ReleaseCount releases, int value) : ISparseComponent, IDisposable, SomeEngine.ECS.Storage.IDisposableComponent<ResourceCounter>
     {
         internal int Value { get; } = value;
         public void Dispose() => releases.Count++;

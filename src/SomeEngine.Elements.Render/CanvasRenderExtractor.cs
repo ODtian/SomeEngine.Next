@@ -387,28 +387,25 @@ public partial class CanvasRenderExtractor : IRenderExtractionSystem
         internal ImageInstance ImageInstance;
     }
 
-    private readonly struct DrawingJob(List<DrawingData> drawings) : SomeEngine.Job.IJobChunk
+    private readonly struct DrawingJob(List<DrawingData> drawings) : IJobParallelFor
     {
-        public void Execute(JobChunk chunk)
+        public void Execute(int index)
         {
-            for (int index = chunk.Start; index < chunk.Start + chunk.Length; index++)
+            DrawingData drawing = drawings[index];
+            if (drawing.HasSurface)
             {
-                DrawingData drawing = drawings[index];
-                if (drawing.HasSurface)
-                {
-                    SurfaceData data = drawing.Surface;
-                    Surface surface = data.Surface;
-                    var presentation = ElementPresentation.Calculate(data.Rectangle, data.Transform, data.Offset);
-                    drawing.SurfaceValue = new(data.Rectangle, surface.Fill, surface.CornerRadius,
-                        surface.BorderColor, surface.BorderWidth, surface.Shadow, presentation.Matrix, presentation.Alpha);
-                    drawing.SurfaceInstance = new(drawing.Node, data.Rectangle, surface.Fill, surface.CornerRadius,
-                        surface.BorderColor, surface.BorderWidth, drawing.Clip, drawing.Order, 0)
-                    { Shadow = surface.Shadow, Matrix = presentation.Matrix, Alpha = presentation.Alpha };
-                }
-                if (drawing.HasImage)
-                    drawing.ImageInstance = CreateImage(drawing.Node, drawing.Image) with
-                        { ClipRectangle = drawing.Clip, DrawOrder = drawing.Order };
+                SurfaceData data = drawing.Surface;
+                Surface surface = data.Surface;
+                var presentation = ElementPresentation.Calculate(data.Rectangle, data.Transform, data.Offset);
+                drawing.SurfaceValue = new(data.Rectangle, surface.Fill, surface.CornerRadius,
+                    surface.BorderColor, surface.BorderWidth, surface.Shadow, presentation.Matrix, presentation.Alpha);
+                drawing.SurfaceInstance = new(drawing.Node, data.Rectangle, surface.Fill, surface.CornerRadius,
+                    surface.BorderColor, surface.BorderWidth, drawing.Clip, drawing.Order, 0)
+                { Shadow = surface.Shadow, Matrix = presentation.Matrix, Alpha = presentation.Alpha };
             }
+            if (drawing.HasImage)
+                drawing.ImageInstance = CreateImage(drawing.Node, drawing.Image) with
+                    { ClipRectangle = drawing.Clip, DrawOrder = drawing.Order };
         }
     }
 }

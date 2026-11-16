@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using System.Buffers;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Serialization;
@@ -9,8 +10,8 @@ internal static class ExternalReferenceChecks
     internal static void Run()
     {
         ExternalFieldsCollectTheirNonemptyKeys();
-        ComponentCodecResolvesTheTargetAsset();
-        BufferCodecResolvesItsElements();
+        ComponentSerializerResolvesTheTargetAsset();
+        BufferSerializerResolvesItsElements();
         WorldStreamSaveCollectsExternalKeys();
         WorldBufferSaveCollectsExternalKeys();
         CheckpointStreamSaveCollectsExternalKeys();
@@ -27,77 +28,77 @@ internal static class ExternalReferenceChecks
 
     private static void ExternalFieldsCollectTheirNonemptyKeys()
     {
-        var key = new ExternalReferenceKey(Guid.NewGuid());
-        var references = new HashSet<ExternalReferenceKey>();
+        var key = new AssetReference(Guid.NewGuid());
+        var references = new HashSet<AssetReference>();
         var output = new ArrayBufferWriter<byte>();
-        var writer = new DataWriter(output, references);
+        var writer = new SaveWriter(output, references);
         writer.WriteExternalReference(key);
         writer.WriteExternalReference(default);
         writer.WriteExternalReference(key);
         writer.Flush();
-        var reader = new DataReader(output.WrittenSpan);
+        var reader = new SaveReader(output.WrittenSpan);
         Require(output.WrittenCount == 48 && reader.ReadExternalReference() == key
             && reader.ReadExternalReference() == default && reader.ReadExternalReference() == key
             && references.SetEquals([key]),
             "external fields retain their Guid values and collect each nonempty key");
     }
 
-    private static void ComponentCodecResolvesTheTargetAsset()
+    private static void ComponentSerializerResolvesTheTargetAsset()
     {
-        var key = new ExternalReferenceKey(Guid.NewGuid());
+        var key = new AssetReference(Guid.NewGuid());
         var original = new Asset(key, "source");
         var resolved = new Asset(key, "target");
         using var source = new World();
-        var entity = source.Create(new AssetReference(original));
-        var writeRegistry = new SerializationRegistry()
-            .RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(original)));
+        var entity = source.Create(new AssetLink(original));
+        var writeRegistry = new SaveRegistry()
+            .Register<AssetLink, AssetSerializer>(Key(1), new(new AssetResolver(original)));
         using var output = new MemoryStream();
         new WorldSerializer(writeRegistry).Save(source, output, SavePurpose.DurableSave);
         output.Position = 0;
         using var target = new World();
-        var readRegistry = new SerializationRegistry()
-            .RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(resolved)));
+        var readRegistry = new SaveRegistry()
+            .Register<AssetLink, AssetSerializer>(Key(1), new(new AssetResolver(resolved)));
         new WorldSerializer(readRegistry).Load(target, output);
-        Require(ReferenceEquals(target.ReadValue<AssetReference>(entity).Value, resolved),
+        Require(ReferenceEquals(target.ReadValue<AssetLink>(entity).Value, resolved),
             "a loaded component uses the resolver instance held by its target registry");
     }
 
-    private static void BufferCodecResolvesItsElements()
+    private static void BufferSerializerResolvesItsElements()
     {
-        var key = new ExternalReferenceKey(Guid.NewGuid());
+        var key = new AssetReference(Guid.NewGuid());
         var original = new Asset(key, "source");
         var resolved = new Asset(key, "target");
         using var source = new World();
         var entity = source.Create();
-        source.AddBuffer<AssetReference>(entity);
-        using (var values = source.GetBuffer<AssetReference>(entity))
+        source.AddBuffer<AssetLink>(entity);
+        using (var values = source.GetBuffer<AssetLink>(entity))
         {
             values.Add(new(original));
             values.Add(default);
         }
-        var writeRegistry = new SerializationRegistry()
-            .RegisterCodec<AssetReference, AssetCodec>(new(new AssetResolver(original)))
-            .RegisterBufferCodec<AssetReference, AssetCodec>(new(new AssetResolver(original)));
+        var writeRegistry = new SaveRegistry()
+            .Register<AssetLink, AssetSerializer>(Key(1), new(new AssetResolver(original)))
+            .RegisterBuffer<AssetLink, AssetSerializer>(Key(2), new(new AssetResolver(original)));
         var output = new ArrayBufferWriter<byte>();
         new WorldSerializer(writeRegistry).Save(source, output, SavePurpose.DurableSave);
         using var target = new World();
-        var readRegistry = new SerializationRegistry()
-            .RegisterCodec<AssetReference, AssetCodec>(new(new AssetResolver(resolved)))
-            .RegisterBufferCodec<AssetReference, AssetCodec>(new(new AssetResolver(resolved)));
+        var readRegistry = new SaveRegistry()
+            .Register<AssetLink, AssetSerializer>(Key(1), new(new AssetResolver(resolved)))
+            .RegisterBuffer<AssetLink, AssetSerializer>(Key(2), new(new AssetResolver(resolved)));
         new WorldSerializer(readRegistry).Load(target, output.WrittenSpan);
-        using var elements = target.ReadBuffer<AssetReference>(entity);
+        using var elements = target.ReadBuffer<AssetLink>(entity);
         Require(elements.Count == 2 && ReferenceEquals(elements[0].Value, resolved) && elements[1].Value is null,
             "buffer elements use their registered resolver and retain empty references");
     }
 
     private static void WorldStreamSaveCollectsExternalKeys()
     {
-        var key = new ExternalReferenceKey(Guid.NewGuid());
+        var key = new AssetReference(Guid.NewGuid());
         var asset = new Asset(key, "world stream");
         using var world = new World();
-        world.Create(new AssetReference(asset));
-        var registry = new SerializationRegistry().RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
-        var references = new HashSet<ExternalReferenceKey>();
+        world.Create(new AssetLink(asset));
+        var registry = new SaveRegistry().Register<AssetLink, AssetSerializer>(Key(1), new(new AssetResolver(asset)));
+        var references = new HashSet<AssetReference>();
         using var output = new MemoryStream();
         new WorldSerializer(registry).Save(world, output,
             new SerializeOptions(Purpose: SavePurpose.DurableSave, ExternalReferences: references));
@@ -109,12 +110,12 @@ internal static class ExternalReferenceChecks
 
     private static void WorldBufferSaveCollectsExternalKeys()
     {
-        var key = new ExternalReferenceKey(Guid.NewGuid());
+        var key = new AssetReference(Guid.NewGuid());
         var asset = new Asset(key, "world buffer");
         using var world = new World();
-        world.Create(new AssetReference(asset));
-        var registry = new SerializationRegistry().RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
-        var references = new HashSet<ExternalReferenceKey>();
+        world.Create(new AssetLink(asset));
+        var registry = new SaveRegistry().Register<AssetLink, AssetSerializer>(Key(1), new(new AssetResolver(asset)));
+        var references = new HashSet<AssetReference>();
         var output = new ArrayBufferWriter<byte>();
         new WorldSerializer(registry).Save(world, output,
             new SerializeOptions(ExternalReferences: references));
@@ -124,14 +125,14 @@ internal static class ExternalReferenceChecks
 
     private static void CheckpointStreamSaveCollectsExternalKeys()
     {
-        var key = new ExternalReferenceKey(Guid.NewGuid());
+        var key = new AssetReference(Guid.NewGuid());
         var asset = new Asset(key, "checkpoint stream");
         using var world = new World();
-        world.Create(new AssetReference(asset));
-        var registry = new SerializationRegistry().RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
-        using var checkpoint = new WorldCheckpoint();
+        world.Create(new AssetLink(asset));
+        var registry = new SaveRegistry().Register<AssetLink, AssetSerializer>(Key(1), new(new AssetResolver(asset)));
+        using var checkpoint = new WorldCopy();
         checkpoint.Capture(world);
-        var references = new HashSet<ExternalReferenceKey>();
+        var references = new HashSet<AssetReference>();
         using var output = new MemoryStream();
         new WorldSerializer(registry).Save(checkpoint, output, new SerializeOptions(ExternalReferences: references));
         Require(output.Length > 0 && references.SetEquals([key]),
@@ -140,14 +141,14 @@ internal static class ExternalReferenceChecks
 
     private static void CheckpointBufferSaveCollectsExternalKeys()
     {
-        var key = new ExternalReferenceKey(Guid.NewGuid());
+        var key = new AssetReference(Guid.NewGuid());
         var asset = new Asset(key, "checkpoint buffer");
         using var world = new World();
-        world.Create(new AssetReference(asset));
-        var registry = new SerializationRegistry().RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
-        using var checkpoint = new WorldCheckpoint();
+        world.Create(new AssetLink(asset));
+        var registry = new SaveRegistry().Register<AssetLink, AssetSerializer>(Key(1), new(new AssetResolver(asset)));
+        using var checkpoint = new WorldCopy();
         checkpoint.Capture(world);
-        var references = new HashSet<ExternalReferenceKey>();
+        var references = new HashSet<AssetReference>();
         var output = new ArrayBufferWriter<byte>();
         new WorldSerializer(registry).Save(checkpoint, output, new SerializeOptions(ExternalReferences: references));
         Require(output.WrittenCount > 0 && references.SetEquals([key]),
@@ -156,12 +157,12 @@ internal static class ExternalReferenceChecks
 
     private static void BackgroundSaveCollectsExternalKeys()
     {
-        var key = new ExternalReferenceKey(Guid.NewGuid());
+        var key = new AssetReference(Guid.NewGuid());
         var asset = new Asset(key, "background");
         using var world = new World();
-        world.Create(new AssetReference(asset));
-        var registry = new SerializationRegistry().RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
-        var references = new HashSet<ExternalReferenceKey>();
+        world.Create(new AssetLink(asset));
+        var registry = new SaveRegistry().Register<AssetLink, AssetSerializer>(Key(1), new(new AssetResolver(asset)));
+        var references = new HashSet<AssetReference>();
         using var output = new MemoryStream();
         new WorldSerializer(registry).SaveAsync(world, output,
             new SerializeOptions(Purpose: SavePurpose.DurableSave, ExternalReferences: references)).GetAwaiter().GetResult();
@@ -171,12 +172,12 @@ internal static class ExternalReferenceChecks
 
     private static void FileSaveCollectsExternalKeys()
     {
-        var key = new ExternalReferenceKey(Guid.NewGuid());
+        var key = new AssetReference(Guid.NewGuid());
         var asset = new Asset(key, "file");
         using var world = new World();
-        world.Create(new AssetReference(asset));
-        var registry = new SerializationRegistry().RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
-        var references = new HashSet<ExternalReferenceKey>();
+        world.Create(new AssetLink(asset));
+        var registry = new SaveRegistry().Register<AssetLink, AssetSerializer>(Key(1), new(new AssetResolver(asset)));
+        var references = new HashSet<AssetReference>();
         DirectoryInfo directory = Directory.CreateTempSubdirectory("ecs-external-");
         try
         {
@@ -192,12 +193,12 @@ internal static class ExternalReferenceChecks
 
     private static void BackgroundFileSaveCollectsExternalKeys()
     {
-        var key = new ExternalReferenceKey(Guid.NewGuid());
+        var key = new AssetReference(Guid.NewGuid());
         var asset = new Asset(key, "background file");
         using var world = new World();
-        world.Create(new AssetReference(asset));
-        var registry = new SerializationRegistry().RegisterCodec<AssetReference, AssetCodec>(Key(1), new(new AssetResolver(asset)));
-        var references = new HashSet<ExternalReferenceKey>();
+        world.Create(new AssetLink(asset));
+        var registry = new SaveRegistry().Register<AssetLink, AssetSerializer>(Key(1), new(new AssetResolver(asset)));
+        var references = new HashSet<AssetReference>();
         DirectoryInfo directory = Directory.CreateTempSubdirectory("ecs-external-");
         try
         {
@@ -214,9 +215,9 @@ internal static class ExternalReferenceChecks
     private static void WorldSaveBoundsSparseMemberships()
     {
         using var world = new World();
-        world.SetSparse(world.Create(), 10);
-        world.SetSparse(world.Create(), 20);
-        var registry = new SerializationRegistry().RegisterSparse<int>(Key(1));
+        world.Set(world.Create(), new SparseCount(10));
+        world.Set(world.Create(), new SparseCount(20));
+        var registry = new SaveRegistry().Register<SparseCount>(Key(1));
         var serializer = new WorldSerializer(registry);
         var output = new ArrayBufferWriter<byte>();
         serializer.Save(world, output, new SerializeOptions(MaximumSparseMemberships: 2));
@@ -229,11 +230,11 @@ internal static class ExternalReferenceChecks
     private static void CheckpointSaveBoundsSparseMemberships()
     {
         using var world = new World();
-        world.SetSparse(world.Create(), 10);
-        world.SetSparse(world.Create(), 20);
-        var registry = new SerializationRegistry().RegisterSparse<int>(Key(1));
+        world.Set(world.Create(), new SparseCount(10));
+        world.Set(world.Create(), new SparseCount(20));
+        var registry = new SaveRegistry().Register<SparseCount>(Key(1));
         var serializer = new WorldSerializer(registry);
-        using var checkpoint = new WorldCheckpoint();
+        using var checkpoint = new WorldCopy();
         checkpoint.Capture(world);
         var output = new ArrayBufferWriter<byte>();
         serializer.Save(checkpoint, output, new SerializeOptions(MaximumSparseMemberships: 2));
@@ -251,8 +252,8 @@ internal static class ExternalReferenceChecks
         Hierarchy<SaveTree>.SetParent(world, child, parent);
         var copies = new ResourceCopies();
         world.SetResource(new CountedResource(copies));
-        var registry = new SerializationRegistry().RegisterHierarchy<SaveTree>(Key(1))
-            .RegisterResource<CountedResource, CountedResourceCodec>(Key(2));
+        var registry = new SaveRegistry().RegisterHierarchy<SaveTree>(Key(1))
+            .RegisterResource<CountedResource, CountedResourceSerializer>(Key(2));
         var serializer = new WorldSerializer(registry);
         using var output = new MemoryStream();
         serializer.SaveAsync(world, output, new SerializeOptions(MaximumTopologyRecords: 1024)).GetAwaiter().GetResult();
@@ -271,9 +272,9 @@ internal static class ExternalReferenceChecks
         var parent = world.Create();
         var child = world.Create();
         Hierarchy<SaveTree>.SetParent(world, child, parent);
-        var registry = new SerializationRegistry().RegisterHierarchy<SaveTree>(Key(1));
+        var registry = new SaveRegistry().RegisterHierarchy<SaveTree>(Key(1));
         var serializer = new WorldSerializer(registry);
-        using var checkpoint = new WorldCheckpoint();
+        using var checkpoint = new WorldCopy();
         checkpoint.Capture(world);
         var output = new ArrayBufferWriter<byte>();
         serializer.Save(checkpoint, output, new SerializeOptions(MaximumTopologyPayloadBytes: 1024));
@@ -289,39 +290,40 @@ internal static class ExternalReferenceChecks
     {
         public object Clone() { copies.Count++; return new CountedResource(copies); }
     }
-    private readonly struct CountedResourceCodec : IValueCodec<CountedResource>
+    private readonly struct CountedResourceSerializer : IValueSerializer<CountedResource>
     {
-        public void Write(ref DataWriter writer, in CountedResource value) => writer.WriteByte(0);
-        public void Read(ref DataReader reader, out CountedResource value) { reader.ReadByte(); value = new(new()); }
+        public void Write(ref SaveWriter writer, in CountedResource value) => writer.WriteByte(0);
+        public void Read(ref SaveReader reader, out CountedResource value) { reader.ReadByte(); value = new(new()); }
     }
 
-    private sealed record Asset(ExternalReferenceKey Key, string Name);
-    private readonly record struct AssetReference(Asset? Value);
+    private sealed record Asset(AssetReference Key, string Name);
+    private readonly record struct AssetLink(Asset? Value);
+    private readonly record struct SparseCount(int Value) : ISparseComponent;
 
     private sealed class AssetResolver(Asset asset) : IExternalResolver
     {
-        public bool TryResolve(ExternalReferenceKey id, out object value)
+        public bool TryResolve(AssetReference id, out object value)
         {
             value = asset;
             return id == asset.Key;
         }
     }
 
-    private readonly struct AssetCodec(IExternalResolver resolver) : IComponentCodec<AssetReference>
+    private readonly struct AssetSerializer(IExternalResolver resolver) : IValueSerializer<AssetLink>
     {
-        public void Write(ref DataWriter writer, in AssetReference value)
+        public void Write(ref SaveWriter writer, in AssetLink value)
             => writer.WriteExternalReference(value.Value?.Key ?? default);
 
-        public void Read(ref DataReader reader, out AssetReference value)
+        public void Read(ref SaveReader reader, out AssetLink value)
         {
-            ExternalReferenceKey key = reader.ReadExternalReference();
+            AssetReference key = reader.ReadExternalReference();
             if (key.Value == Guid.Empty) value = default;
             else if (resolver.TryResolve(key, out object resolved) && resolved is Asset asset) value = new(asset);
             else throw new InvalidDataException("The asset key could not be resolved to its declared type.");
         }
     }
 
-    private static SerializationTypeKey Key(int value)
+    private static SavedTypeKey Key(int value)
         => new(new Guid(value, 0x31fa, 0x47c2, 0x8b, 0x17, 0x51, 0x32, 0x12, 0x77, 0x31, 0x40), "External.Asset." + value, 1);
 
     private static void Require(bool condition, string behavior)

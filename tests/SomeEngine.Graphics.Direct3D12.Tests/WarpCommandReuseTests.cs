@@ -6,8 +6,7 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-[Xunit.Collection("Direct3D12 shader compilation")]
-public sealed class WarpCommandReuseTests(D3D12TestCompiler shaderCompiler)
+public sealed class WarpCommandReuseTests(D3D12TestCompiler shaderCompiler) : Xunit.IClassFixture<D3D12TestCompiler>
 {
     [Fact]
     public void Descriptor_storage_tracks_resource_changes_and_heap_replacement_while_constants_change()

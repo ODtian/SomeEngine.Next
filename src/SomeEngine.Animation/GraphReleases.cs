@@ -4,7 +4,7 @@ using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.Animation;
 
-internal unsafe struct GraphRelease : IBufferElement
+internal unsafe struct GraphRelease : IBufferElement, INativeHandleValue
 {
     internal delegate* managed<World, Entity, void> Function;
 }

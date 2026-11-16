@@ -36,12 +36,6 @@ public sealed partial class WorldSerializer
 
     private void SaveSelected(World world, ReadOnlySpan<Entity> entities, Query? query, Stream output, SerializeOptions options)
     {
-        if (!options.Codecs.IsDefaultOrEmpty)
-        {
-            new WorldSerializer(SerializationRegistry.Bind(registry, options.Codecs))
-                .SaveSelected(world, entities, query, output, options with { Codecs = default });
-            return;
-        }
         ValidateWriteOptions(options);
         foreach (SavedService service in registry.Services) service.Maintain(world);
         using WorldAccess structure = world.OpenStructure(false);
@@ -110,7 +104,7 @@ public sealed partial class WorldSerializer
             var types = new TypeSet(false, columns.Select(column => column.Type).ToArray());
             if (!bySource.TryGetValue(chunk.Archetype, out var groups)) bySource.Add(chunk.Archetype, groups = []);
             if (!groups.TryGetValue(types, out SelectedTable? table))
-            { groups.Add(types, table = new(chunk.Archetype, columns.OrderBy(column => column.Key.StableId).ToArray())); tables.Add(table); }
+            { groups.Add(types, table = new(chunk.Archetype, columns.OrderBy(column => column.Key.Id).ToArray())); tables.Add(table); }
             table.Entities.Add(entity);
         }
         var sparse = new List<(SavedSparse Column, Entity[] Entities)>();
@@ -142,9 +136,9 @@ public sealed partial class WorldSerializer
         foreach (SavedType type in registry.Types)
             if (used.Contains(type))
             { int order = registry.GetOrder(type); _seen[order] = true; _fileTypes[order] = _used.Count; _used.Add(type); }
-        var writer = new DataWriter(output, options.ExternalReferences);
+        var writer = new SaveWriter(output, options.ExternalReferences);
         WriteHeader(ref writer, options.Purpose);
-        writer.WriteByte((byte)CheckpointProgress.Rebuild); writer.WriteUInt64(world.Version);
+        writer.WriteByte((byte)ProgressMode.Reset); writer.WriteUInt64(world.Version);
         writer.WriteInt32(world.Used); writer.WriteInt32(entities.Length); writer.WriteInt32(world.Used - entities.Length);
         for (int id = 1; id <= world.Used; id++) writer.WriteInt32(world.Records[id].Generation);
         for (int id = 1; id <= world.Used; id++)
@@ -153,7 +147,9 @@ public sealed partial class WorldSerializer
         foreach (SelectedShared entries in shared.Values)
         {
             writer.WriteInt32(_fileTypes[registry.GetOrder(entries.Column)]);
+            writer.BeginFrame();
             entries.Column.WriteSelectedValues(ref writer, world.SharedTypes[entries.Column.Type]!, CollectionsMarshal.AsSpan(entries.Ids));
+            writer.EndFrame();
         }
         writer.WriteInt32(tables.Count);
         foreach (SelectedTable table in tables) WriteSelectedTable(ref writer, world, table, selected, shared);
@@ -161,7 +157,9 @@ public sealed partial class WorldSerializer
         foreach (var section in sparse)
         {
             writer.WriteInt32(_fileTypes[registry.GetOrder(section.Column)]);
+            writer.BeginFrame();
             section.Column.WriteSelected(ref writer, world.SparseTypes!.Types[section.Column.Type]!, section.Entities, world.Version);
+            writer.EndFrame();
         }
         writer.WriteInt32(0); // World resources belong to the whole-World entry.
         int topologyCount = 0;
@@ -175,7 +173,9 @@ public sealed partial class WorldSerializer
             var column = (SavedColumn)type;
             int count = 0;
             foreach (SelectedTable table in tables) if (table.Columns.Contains(column)) count += table.Entities.Count;
-            writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); writer.WriteInt32(count);
+            writer.WriteInt32(_fileTypes[registry.GetOrder(type)]);
+            writer.BeginFrame();
+            writer.WriteInt32(count);
             long start = writer.Position;
             if (options.MaximumTopologyPayloadBytes != 0) writer.LimitBytes(bytesRemaining);
             try
@@ -191,23 +191,26 @@ public sealed partial class WorldSerializer
             }
             finally { if (options.MaximumTopologyPayloadBytes != 0) writer.EndByteLimit(); }
             long length = writer.Position - start; bytesRemaining -= length; writer.WriteInt32(checked((int)length));
+            writer.EndFrame();
         }
         WriteEvents(ref writer, new WorldEvents([], 0, []));
         writer.WriteInt32(services.Length);
         foreach (SavedService service in services)
         {
             writer.WriteInt32(_fileTypes[registry.GetOrder(service.Type)]);
+            writer.BeginFrame();
             long start = writer.Position;
             if (options.MaximumTopologyPayloadBytes != 0) writer.LimitBytes(bytesRemaining);
             try { service.WriteSelected(ref writer, world, selected); }
             finally { if (options.MaximumTopologyPayloadBytes != 0) writer.EndByteLimit(); }
             bytesRemaining -= writer.Position - start;
+            writer.EndFrame();
         }
         writer.WriteInt32(0); // Selection entry points have no system participants.
         writer.Flush();
     }
 
-    private void WriteSelectedTable(ref DataWriter writer, World world, SelectedTable table,
+    private void WriteSelectedTable(ref SaveWriter writer, World world, SelectedTable table,
         IReadOnlySet<Entity> selected, Dictionary<int, SelectedShared> shared)
     {
         writer.WriteInt32(table.Columns.Length);
@@ -226,6 +229,7 @@ public sealed partial class WorldSerializer
         foreach (SavedColumn column in table.Columns)
         {
             ComponentType type = ComponentTypes.Get(column.Type);
+            writer.BeginFrame();
             writer.WriteByte(0); // Rows are grouped by their present projection columns.
             if (column.Storage is not (SavedStorage.Parent or SavedStorage.Children or SavedStorage.Endpoints))
             {
@@ -257,6 +261,7 @@ public sealed partial class WorldSerializer
                     writer.WriteUInt64(word);
                 }
             SavedChanges.WriteBaseline(ref writer, table.Entities.Count, type.TracksWrites, type.TracksAdded, world.Version);
+            writer.EndFrame();
         }
     }
 }

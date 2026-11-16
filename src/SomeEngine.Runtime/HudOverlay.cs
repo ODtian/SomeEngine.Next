@@ -45,7 +45,7 @@ public sealed partial class HudOverlay : IDisposable
     public void Resize(int width, int height)
     {
         Size size = new(width, height);
-        if (_world.ReadComponentData<Canvas>(Canvas).Size == size) return;
+        if (_world.ReadValue<Canvas>(Canvas).Size == size) return;
         _world.Set(Canvas, new Canvas { Size = size });
         _world.Set(_view, new OverlayView(width, height, _text.Font, _frame));
     }

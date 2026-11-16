@@ -71,9 +71,9 @@ internal static class StorageCosts
         int count = int.Parse(args[3]);
         string output = Path.GetFullPath(args[4]);
         string phase = args.Length > 5 ? args[5] : "first";
-        bool compact = workload is "save-compact-preserve-codec" or "save-compact-preserve-raw"
-            or "save-compact-rebuild-codec" or "save-compact-rebuild-raw";
-        bool archive = compact || workload is "save-preserve-codec" or "save-preserve-raw" or "save-rebuild-codec" or "save-rebuild-raw";
+        bool compact = workload is "save-compact-preserve-serializer" or "save-compact-preserve-raw"
+            or "save-compact-rebuild-serializer" or "save-compact-rebuild-raw";
+        bool archive = compact || workload is "save-preserve-serializer" or "save-preserve-raw" or "save-rebuild-serializer" or "save-rebuild-raw";
         bool preserve = workload.Contains("-preserve-", StringComparison.Ordinal), raw = workload.EndsWith("-raw");
         (string Name, Func<ComparisonWorld> Create)[]? libraries = null;
         ArchiveComparison.Library[]? archiveLibraries = null;
@@ -133,7 +133,7 @@ internal static class StorageCosts
             CompleteActions = !archive && phase == "cycle" ? 100 : 1,
             WorldScope = "One benchmark instance, including capability state. SomeEngine prefab also holds one template World; native prefab stores are included in each library's measured bytes.",
             Progress = archive ? preserve ? "preserve" : "rebuild" : null,
-            Encoding = archive ? raw ? "raw" : "codec" : null,
+            Encoding = archive ? raw ? "raw" : "serializer" : null,
             OutputConfiguration = archive ? compact ? "Compact 64 KiB segments and exact continuous result" : "ArrayBufferWriter" : null,
             Units = "bytes",
             Storage = archive ? "Full archive values and progress" : ComparisonEntry.QueryStorage(workload, libraryName),

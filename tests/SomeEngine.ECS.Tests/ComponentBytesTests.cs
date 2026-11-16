@@ -17,7 +17,7 @@ public sealed class ComponentBytesTests
         int component;
         if (sparse)
         {
-            world.SetSparse(entity, new SparseByteComponent { Number = 13, Opacity = 0.25f });
+            world.Set(entity, new SparseByteComponent { Number = 13, Opacity = 0.25f });
             component = ComponentId<SparseByteComponent>.Value;
         }
         else
@@ -25,17 +25,17 @@ public sealed class ComponentBytesTests
             world.Add(entity, new ByteComponent { Number = 13, Opacity = 0.25f });
             component = ComponentId<ByteComponent>.Value;
         }
-        ulong version = sparse ? world.ComponentDataWriteVersion<SparseByteComponent>(entity) : world.ComponentDataWriteVersion<ByteComponent>(entity);
+        ulong version = sparse ? world.ComponentWriteVersion<SparseByteComponent>(entity) : world.ComponentWriteVersion<ByteComponent>(entity);
         ulong typeVersion = sparse ? world.ComponentWriteVersion(ComponentId<SparseByteComponent>.Value) : world.ComponentWriteVersion(ComponentId<ByteComponent>.Value);
 
         int number = Unsafe.ReadUnaligned<int>(in world.ReadBytes(entity, component));
         float opacity = Unsafe.ReadUnaligned<float>(in world.ReadBytes(entity, component, sizeof(int), sizeof(float)));
 
         Assert.Equal((13, 0.25f), (number, opacity));
-        Assert.Equal(version, sparse ? world.ComponentDataWriteVersion<SparseByteComponent>(entity) : world.ComponentDataWriteVersion<ByteComponent>(entity));
+        Assert.Equal(version, sparse ? world.ComponentWriteVersion<SparseByteComponent>(entity) : world.ComponentWriteVersion<ByteComponent>(entity));
         Assert.Equal(typeVersion, sparse ? world.ComponentWriteVersion(ComponentId<SparseByteComponent>.Value) : world.ComponentWriteVersion(ComponentId<ByteComponent>.Value));
         if (sparse)
-            Assert.Equal((13, 0.25f), (world.ReadSparse<SparseByteComponent>(entity).Number, world.ReadSparse<SparseByteComponent>(entity).Opacity));
+            Assert.Equal((13, 0.25f), (world.Read<SparseByteComponent>(entity).Number, world.Read<SparseByteComponent>(entity).Opacity));
         else
             Assert.Equal((13, 0.25f), (world.Read<ByteComponent>(entity).Number, world.Read<ByteComponent>(entity).Opacity));
     }
@@ -46,16 +46,16 @@ public sealed class ComponentBytesTests
         using var world = new World();
         Entity entity = world.Create(new ByteComponent { Number = 7, Opacity = 0.25f });
         Entity other = world.Create(new ByteComponent { Number = 11, Opacity = 0.5f });
-        ulong before = world.ComponentDataWriteVersion<ByteComponent>(entity);
-        ulong otherBefore = world.ComponentDataWriteVersion<ByteComponent>(other);
+        ulong before = world.ComponentWriteVersion<ByteComponent>(entity);
+        ulong otherBefore = world.ComponentWriteVersion<ByteComponent>(other);
 
         ref byte bytes = ref world.WriteBytes(entity, ComponentId<ByteComponent>.Value);
         Unsafe.As<byte, float>(ref Unsafe.Add(ref bytes, sizeof(int))) = 0.75f;
 
         ByteComponent value = world.Read<ByteComponent>(entity);
         Assert.Equal((7, 0.75f), (value.Number, value.Opacity));
-        Assert.NotEqual(before, world.ComponentDataWriteVersion<ByteComponent>(entity));
-        Assert.Equal(otherBefore, world.ComponentDataWriteVersion<ByteComponent>(other));
+        Assert.NotEqual(before, world.ComponentWriteVersion<ByteComponent>(entity));
+        Assert.Equal(otherBefore, world.ComponentWriteVersion<ByteComponent>(other));
     }
 
     [Fact]
@@ -63,15 +63,15 @@ public sealed class ComponentBytesTests
     {
         using var world = new World();
         Entity entity = world.Create();
-        world.SetSparse(entity, new SparseByteComponent { Number = 13, Opacity = 0.25f });
-        ulong before = world.ComponentDataWriteVersion<SparseByteComponent>(entity);
+        world.Set(entity, new SparseByteComponent { Number = 13, Opacity = 0.25f });
+        ulong before = world.ComponentWriteVersion<SparseByteComponent>(entity);
 
         ref byte bytes = ref world.WriteBytes(entity, ComponentId<SparseByteComponent>.Value);
         Unsafe.As<byte, float>(ref Unsafe.Add(ref bytes, sizeof(int))) = 0.875f;
 
-        SparseByteComponent value = world.ReadSparse<SparseByteComponent>(entity);
+        SparseByteComponent value = world.Read<SparseByteComponent>(entity);
         Assert.Equal((13, 0.875f), (value.Number, value.Opacity));
-        Assert.NotEqual(before, world.ComponentDataWriteVersion<SparseByteComponent>(entity));
+        Assert.NotEqual(before, world.ComponentWriteVersion<SparseByteComponent>(entity));
     }
 
     [Fact]
@@ -122,7 +122,7 @@ public sealed class ComponentBytesTests
         int component;
         if (sparse)
         {
-            world.SetSparse(entity, new SparseByteComponent { Number = 13, Opacity = 0.25f });
+            world.Set(entity, new SparseByteComponent { Number = 13, Opacity = 0.25f });
             component = ComponentId<SparseByteComponent>.Value;
         }
         else
@@ -136,7 +136,7 @@ public sealed class ComponentBytesTests
 
         if (sparse)
         {
-            SparseByteComponent value = world.ReadSparse<SparseByteComponent>(entity);
+            SparseByteComponent value = world.Read<SparseByteComponent>(entity);
             Assert.Equal((13, 0.875f), (value.Number, value.Opacity));
         }
         else
@@ -170,7 +170,7 @@ public sealed class ComponentBytesTests
         int component;
         if (sparse)
         {
-            world.SetSparse(entity, new SparseByteComponent { Number = 13 });
+            world.Set(entity, new SparseByteComponent { Number = 13 });
             component = ComponentId<SparseByteComponent>.Value;
         }
         else
@@ -180,8 +180,8 @@ public sealed class ComponentBytesTests
         }
 
         ulong ReadVersion() => sparse
-            ? world.ComponentDataWriteVersion<SparseByteComponent>(entity)
-            : world.ComponentDataWriteVersion<ByteComponent>(entity);
+            ? world.ComponentWriteVersion<SparseByteComponent>(entity)
+            : world.ComponentWriteVersion<ByteComponent>(entity);
         ulong before = ReadVersion();
         world.WriteBytes(entity, component);
         ulong first = ReadVersion();
@@ -254,54 +254,15 @@ Assert.Equal([new Vector2(1, 2), new Vector2(3, 4), new Vector2(7, 8)],
     }
 
     [Fact]
-    public void ColumnWriteReportsReadOnlyQuery()
-    {
-        using var world = new World();
-        Entity entity = world.Create(new ByteComponent { Number = 7, Opacity = 0.25f });
-        Query query = world.Query(new QueryDescription().WithStored<ByteComponent>());
-
-        Assert.Throws<InvalidOperationException>(() => {
-            using QueryScope cursor = (query).Open();
-            foreach (QueryChunk chunk in cursor)
-                chunk.WriteColumn(ComponentId<ByteComponent>.Value, out _);
-
-        });
-        Assert.Equal(0.25f, world.Read<ByteComponent>(entity).Opacity);
-    }
-
-    [Fact]
-    public void ColumnWriteReportsComponentWithManagedFields()
-    {
-        using var world = new World();
-        Entity entity = world.Create(new NamedComponent { Name = "menu" });
-        Query query = world.Query(new QueryDescription().WithStored<NamedComponent>());
-
-        Assert.Throws<InvalidOperationException>(() => {
-            using QueryScope cursor = (query).Open();
-            foreach (QueryChunk chunk in cursor)
-                chunk.WriteColumn(ComponentId<NamedComponent>.Value, out _);
-
-        });
-        Assert.Equal("menu", world.Read<NamedComponent>(entity).Name);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void ByteWriteReportsDynamicBufferStorage(bool inline)
+    public void ByteWriteReportsDynamicBufferStorage()
     {
         using var world = new World();
         Entity entity = world.Create();
         world.AddBuffer<Track<float>>(entity);
-        int component = checked((ushort)(inline
-            ? BufferComponents.Inline<Track<float>>()
-            : BufferComponents.Header<Track<float>>()));
 
-        Assert.Throws<InvalidOperationException>(() => world.WriteBytes(entity, component));
-        {
-            using ReadOnlyBuffer<Track<float>> buffer = world.ReadBuffer<Track<float>>(entity);
-Assert.Equal(0, buffer.Count);
-        };
+        Assert.Throws<InvalidOperationException>(() => world.WriteBytes(entity, ComponentId<Buffer<Track<float>>>.Value));
+        using ReadOnlyBuffer<Track<float>> buffer = world.ReadBuffer<Track<float>>(entity);
+        Assert.Equal(0, buffer.Count);
     }
 
     [Fact]

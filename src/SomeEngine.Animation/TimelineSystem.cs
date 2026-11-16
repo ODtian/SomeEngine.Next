@@ -18,7 +18,7 @@ public struct TimelineSystem(Entity time = default) : ISystem<ImmediateSystemCon
     {
         AnimationTime time = _time == Entity.Null
             ? new AnimationTime((float)context.DeltaTime)
-            : context.World.ReadComponentData<AnimationTime>(_time);
+            : context.World.ReadValue<AnimationTime>(_time);
         DevelopmentCheck.Require(float.IsFinite(time.Delta) && time.Delta >= 0, "Animation frame time must be finite and nonnegative.");
         DevelopmentCheck.Require(float.IsFinite(time.GameScale) && time.GameScale >= 0, "Game time scale must be finite and nonnegative.");
         AnimationDeltas deltas = time.Deltas;

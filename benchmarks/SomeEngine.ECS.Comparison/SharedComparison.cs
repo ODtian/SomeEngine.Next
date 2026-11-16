@@ -133,11 +133,11 @@ internal sealed partial class SomeEngineWorld
         for (int i = 0; i < Count; i += 4)
         {
             var value = new SharedNumber((i + SharedShift) % SharedGroupCount);
-            if (_world.ReadShared<SharedNumber>(_entities[i]) != value) _world.SetShared(_entities[i], value);
+            if (_world.Read<SharedNumber>(_entities[i]) != value) _world.Set(_entities[i], value);
         }
         long total = 0;
         using (var values = _world.OpenRead<SharedNumber>())
-            for (int i = 0; i < Lookups; i++) total += values.ReadKnown(_lookupEntities[i]).Value;
+            for (int i = 0; i < Lookups; i++) total += values.Read(_lookupEntities[i]).Value;
         int count = 0;
         foreach (Query query in _sharedQueries!) count += query.Count;
         ReadTotal = total;

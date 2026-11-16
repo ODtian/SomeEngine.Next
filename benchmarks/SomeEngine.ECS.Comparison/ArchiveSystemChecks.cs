@@ -6,9 +6,9 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Comparison;
 
-internal static class ArchiveSystemChecks
+internal static partial class ArchiveSystemChecks
 {
-    private readonly struct Advance : IComponentAction<SaveCounter, Position>
+    private readonly partial struct Advance : IJobChunk
     {
         public void Execute(Span<SaveCounter> counters, ReadOnlySpan<Position> positions)
         { foreach (ref SaveCounter counter in counters) counter.Value++; }
@@ -19,39 +19,39 @@ internal static class ArchiveSystemChecks
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, EnableCounters = false });
         using var world = new World(128, chunkCapacity: 64, execution: new WorldJobs(scheduler));
         var entities = new Entity[128];
-        for (int i = 0; i < entities.Length; i++) entities[i] = world.Create(new SaveCounter(2, i), new Position { X = i });
-        var group = new SystemGroup(world, scheduler, 64);
-        group.Add<SaveCounter, Position, Advance>(world.Query<SaveCounter, Position>(), new Advance());
-        group.Add<SaveCounter, Position, Advance>(world.Query<SaveCounter, Position>(), new Advance());
-        var registry = new SerializationRegistry()
-            .Register<SaveCounter, SaveSchema.CounterCodec>(SaveSchema.Key(1, "SystemCounter"))
-            .Register<Position, SaveSchema.PositionCodec>(SaveSchema.Key(2, "SystemPosition"));
+        for (int i = 0; i < entities.Length; i++) entities[i] = world.Spawn(new CounterPosition { Counter = new(2, i), Position = new() { X = i } });
+        var group = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world), 64);
+        group.AddJob(new Advance(), world.Query<SaveCounter, Position>());
+        group.AddJob(new Advance(), world.Query<SaveCounter, Position>());
+        var registry = new SaveRegistry()
+            .Register<SaveCounter, SaveSchema.CounterSerializer>(SaveSchema.Key(1, "SystemCounter"))
+            .Register<Position, SaveSchema.PositionSerializer>(SaveSchema.Key(2, "SystemPosition"));
         var serializer = new WorldSerializer(registry);
-        using var snapshot = new WorldCheckpoint();
+        using var snapshot = new WorldCopy();
 
-        JobHandle pending = group.Schedule();
-        snapshot.Capture(world, CheckpointProgress.Preserve, group);
+        JobHandle pending = group.Update();
+        snapshot.Capture(world, ProgressMode.Keep, group);
         Require(pending.IsCompleted, "memory capture completes the bound system group");
         ulong[] versions = Versions(group);
         Check(world, entities, group, versions, 4);
-        pending = group.Schedule();
+        pending = group.Update();
         snapshot.Restore(world, group);
         Require(pending.IsCompleted, "memory restore completes the previous bound system run");
         Check(world, entities, group, versions, 4);
 
-        pending = group.Schedule();
+        pending = group.Update();
         var bytes = new ArrayBufferWriter<byte>();
-        serializer.Save(world, bytes, SavePurpose.RawCheckpoint, CheckpointProgress.Preserve, group);
+        serializer.Save(world, bytes, SavePurpose.RawCheckpoint, ProgressMode.Keep, group);
         Require(pending.IsCompleted, "binary save completes the bound system group");
         versions = Versions(group);
-        pending = group.Schedule();
+        pending = group.Update();
         serializer.Load(world, bytes.WrittenSpan, null, group);
         Require(pending.IsCompleted, "binary load completes the previous bound system run");
         Check(world, entities, group, versions, 6);
 
-        pending = group.Schedule();
+        pending = group.Update();
         using var stream = new MemoryStream();
-        Task saving = serializer.SaveAsync(world, stream, SavePurpose.DurableSave, CheckpointProgress.Preserve, group);
+        Task saving = serializer.SaveAsync(world, stream, SavePurpose.DurableSave, ProgressMode.Keep, group);
         Require(pending.IsCompleted, "background save completes system progress during caller capture");
         versions = Versions(group);
         world.Set(entities[0], new SaveCounter(999, 0));
@@ -111,7 +111,7 @@ internal static class ArchiveSystemChecks
         return values;
     }
 
-    private static void Check(World world, Entity[] entities, SystemGroup group, ulong[] versions, int expected)
+    private static void Check(World world, Entity[] entities, SystemGroup<ImmediateSystemContext> group, ulong[] versions, int expected)
     {
         foreach (Entity entity in entities)
             Require(world.ReadValue<SaveCounter>(entity).Value == expected, "captured system rows restore together");

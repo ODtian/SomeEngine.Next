@@ -63,7 +63,7 @@ public sealed class RuntimeSafetyTests
         using var second = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         int[] counts = [0];
         JobHandle dependency = first.Schedule(new Increment(counts, 0));
-        Assert.Throws<ArgumentException>(() => second.Schedule(new Increment(counts, 0), dependency));
+        Assert.Throws<ArgumentException>(() => second.Schedule(new Increment(counts, 0), dependency: dependency));
         Assert.Throws<ArgumentException>(() => second.CombineDependencies([dependency]));
         Assert.Equal(0, counts[0]);
         dependency.Complete();
@@ -139,12 +139,12 @@ public sealed class RuntimeSafetyTests
     {
         JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         int[] counts = [0, 0];
-        JobHandle old = JobSystem.Schedule(new Increment(counts, 0));
+        JobHandle old = JobSystem.Current.Schedule(new Increment(counts, 0));
         JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         try
         {
             Assert.Equal(1, counts[0]);
-            JobHandle current = JobSystem.Schedule(new Increment(counts, 1));
+            JobHandle current = JobSystem.Current.Schedule(new Increment(counts, 1));
             old.Complete();
             Assert.True(old.IsCompleted);
             Assert.False(current.IsCompleted);
@@ -160,15 +160,15 @@ public sealed class RuntimeSafetyTests
     {
         JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         int[] counts = [0];
-        JobHandle handle = JobSystem.Schedule(new Increment(counts, 0));
+        JobHandle handle = JobSystem.Current.Schedule(new Increment(counts, 0));
         JobSystem.Shutdown();
         Assert.Equal(1, counts[0]);
         handle.Complete();
-        Assert.Throws<InvalidOperationException>(() => JobSystem.Schedule(new Increment(counts, 0)));
+        Assert.Throws<InvalidOperationException>(() => JobSystem.Current.Schedule(new Increment(counts, 0)));
         JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         try
         {
-            JobSystem.Schedule(new Increment(counts, 0)).Complete();
+            JobSystem.Current.Schedule(new Increment(counts, 0)).Complete();
             Assert.Equal(2, counts[0]);
         }
         finally { JobSystem.Shutdown(); }
@@ -183,12 +183,12 @@ public sealed class RuntimeSafetyTests
         JobResourceToken token = first.CreateResourceToken("first token");
         int[] counts = [0];
         Assert.Throws<JobResourceSafetyException>(() =>
-            second.Schedule(new Increment(counts, 0), JobResourceAccess.Read(resource), default));
+            second.Schedule(new Increment(counts, 0), [JobResourceAccess.Read(resource)], default));
         Assert.Throws<JobResourceSafetyException>(() =>
-            second.Schedule(new Increment(counts, 0), JobResourceAccess.Write(token), default));
+            second.Schedule(new Increment(counts, 0), [JobResourceAccess.Write(token)], default));
         Assert.Throws<JobResourceSafetyException>(() => second.ReleaseResource(resource));
         Assert.Throws<JobResourceSafetyException>(() => second.ReleaseResourceToken(token));
-        first.Schedule(new Increment(counts, 0), JobResourceAccess.Read(resource), default).Complete();
+        first.Schedule(new Increment(counts, 0), [JobResourceAccess.Read(resource)], default).Complete();
         Assert.Equal(1, counts[0]);
         first.ReleaseResource(resource);
         first.ReleaseResourceToken(token);
@@ -221,7 +221,7 @@ public sealed class RuntimeSafetyTests
 
     private readonly struct SpawnChild(int[] counts) : IJob
     {
-        public void Execute() => JobSystem.Schedule(new Increment(counts, 0));
+        public void Execute() => JobSystem.Current.Schedule(new Increment(counts, 0));
     }
 
     private readonly struct WaitAndSpawn(
@@ -231,7 +231,7 @@ public sealed class RuntimeSafetyTests
         {
             started.Set();
             if (!gate.Wait(Timeout)) throw new TimeoutException("Parent gate was not released.");
-            JobSystem.Schedule(new Increment(counts, 0));
+            JobSystem.Current.Schedule(new Increment(counts, 0));
         }
     }
 
@@ -242,7 +242,7 @@ public sealed class RuntimeSafetyTests
 
     private readonly struct SpawnFailingChild : IJob
     {
-        public void Execute() => JobSystem.Schedule(new ThrowingJob());
+        public void Execute() => JobSystem.Current.Schedule(new ThrowingJob());
     }
 
     private readonly struct ThrowingJob : IJob

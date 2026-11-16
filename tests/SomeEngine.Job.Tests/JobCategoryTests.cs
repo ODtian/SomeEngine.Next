@@ -8,10 +8,10 @@ public sealed class JobCategoryTests
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         JobCategory category = scheduler.CreateCategory(new JobCategoryConfig { MaxInFlight = 1 });
         var options = new JobScheduleOptions { Category = category };
-        JobHandle failed = scheduler.Schedule(new ThrowWork(), options);
+        JobHandle failed = scheduler.Schedule(new ThrowWork(), options: options);
         Assert.Throws<ApplicationException>(failed.Complete);
         int[] result = [0];
-        scheduler.Schedule(new Store(result, 17), options).Complete();
+        scheduler.Schedule(new Store(result, 17), options: options).Complete();
         Assert.Equal(17, result[0]);
     }
 
@@ -22,7 +22,7 @@ public sealed class JobCategoryTests
         JobCategory category = scheduler.CreateCategory(new JobCategoryConfig { MaxInFlight = 1 });
         var options = new JobScheduleOptions { Category = category };
         int[] result = [0];
-        _ = scheduler.Schedule(new Store(result, 9), options);
+        _ = scheduler.Schedule(new Store(result, 9), options: options);
         ValueTask<JobHandle> submitted = scheduler.ScheduleAsync(new Store(result, 17), options);
         scheduler.Dispose();
         (await submitted).Complete();
@@ -67,7 +67,7 @@ public sealed class JobCategoryTests
         var options = new JobScheduleOptions { Category = category };
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
-        JobHandle first = scheduler.Schedule(new Block(entered, release), options);
+        JobHandle first = scheduler.Schedule(new Block(entered, release), options: options);
         Task completed = Task.Run(first.Complete);
         int[] values = [0];
         int[] result = [0];
@@ -76,8 +76,8 @@ public sealed class JobCategoryTests
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
             JobHandle parent = scheduler.Schedule(new QueueChild(scheduler, options, values));
             JobHandle follower = scheduler.Schedule(new Copy(values, result),
-                new JobScheduleOptions(JobPriority.High), parent);
-            _ = scheduler.Schedule(new ReleaseGate(release), new JobScheduleOptions(JobPriority.Low));
+                options: new JobScheduleOptions(JobPriority.High), dependency: parent);
+            _ = scheduler.Schedule(new ReleaseGate(release), options: new JobScheduleOptions(JobPriority.Low));
             follower.Complete();
             Assert.Equal(23, result[0]);
         }
@@ -97,7 +97,7 @@ public sealed class JobCategoryTests
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         int[] result = [0];
-        JobHandle first = scheduler.Schedule(new Block(entered, release), options);
+        JobHandle first = scheduler.Schedule(new Block(entered, release), options: options);
         try
         {
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
@@ -140,7 +140,7 @@ public sealed class JobCategoryTests
         using var release = new ManualResetEventSlim();
         int[] values = new int[4];
         int[] result = [0];
-        JobHandle first = scheduler.Schedule(new Block(entered, release), options);
+        JobHandle first = scheduler.Schedule(new Block(entered, release), options: options);
         try
         {
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
@@ -149,7 +149,7 @@ public sealed class JobCategoryTests
             Assert.False(admitted.IsCompleted);
             release.Set();
             (await admitted).Complete();
-            scheduler.Schedule(new Store(result, 17), options).Complete();
+            scheduler.Schedule(new Store(result, 17), options: options).Complete();
             Assert.Equal([1, 1, 1, 1, 17], values.Append(result[0]));
         }
         finally
@@ -172,7 +172,7 @@ public sealed class JobCategoryTests
         using var release = new ManualResetEventSlim();
         using var cancellation = new CancellationTokenSource();
         int[] result = [0];
-        JobHandle first = scheduler.Schedule(new Block(entered, release), options);
+        JobHandle first = scheduler.Schedule(new Block(entered, release), options: options);
         try
         {
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
@@ -204,7 +204,7 @@ public sealed class JobCategoryTests
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
-        JobHandle first = scheduler.Schedule(new RecordBlocked(events, entered, release), options);
+        JobHandle first = scheduler.Schedule(new RecordBlocked(events, entered, release), options: options);
         Task completed = Task.Run(first.Complete);
         try
         {
@@ -236,9 +236,9 @@ public sealed class JobCategoryTests
         });
         var options = new JobScheduleOptions { Category = foreground, Priority = JobPriority.High };
         var data = new ForegroundData(scheduler, options);
-        JobHandle frame = scheduler.Schedule(new ContinueForeground(data), options);
+        JobHandle frame = scheduler.Schedule(new ContinueForeground(data), options: options);
         scheduler.Schedule(new RecordBackground(data),
-            new JobScheduleOptions { Category = background, Priority = JobPriority.Low }).Complete();
+            options: new JobScheduleOptions { Category = background, Priority = JobPriority.Low }).Complete();
         frame.Complete();
 
         Assert.Equal(4, data.ForegroundAtBackground);
@@ -256,12 +256,12 @@ public sealed class JobCategoryTests
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
-        JobHandle first = scheduler.Schedule(new RecordBlocked(events, entered, release), options);
+        JobHandle first = scheduler.Schedule(new RecordBlocked(events, entered, release), options: options);
         try
         {
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
-            JobHandle second = scheduler.Schedule(new RecordFinished(events), options);
-            scheduler.Schedule(new ReleaseGate(release), new JobScheduleOptions(JobPriority.Low)).Complete();
+            JobHandle second = scheduler.Schedule(new RecordFinished(events), options: options);
+            scheduler.Schedule(new ReleaseGate(release), options: new JobScheduleOptions(JobPriority.Low)).Complete();
             first.Complete();
             second.Complete();
             Assert.Equal(["first-start", "first-end", "second-start", "second-end"], events);
@@ -288,11 +288,11 @@ public sealed class JobCategoryTests
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         int[] result = [0];
-        JobHandle first = scheduler.Schedule(new StartChild(scheduler, entered, release), options);
+        JobHandle first = scheduler.Schedule(new StartChild(scheduler, entered, release), options: options);
         try
         {
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
-            Assert.Throws<InvalidOperationException>(() => scheduler.Schedule(new Store(result, 9), options));
+            Assert.Throws<InvalidOperationException>(() => scheduler.Schedule(new Store(result, 9), options: options));
             ValueTask<JobHandle> admitted = scheduler.ScheduleAsync(new Store(result, 17), options);
             Assert.False(admitted.IsCompleted);
             release.Set();
@@ -417,7 +417,7 @@ public sealed class JobCategoryTests
         {
             Data.Starts++;
             if (!Data.BackgroundStarted && Data.Starts < 32)
-                Data.Scheduler.Schedule(this, Data.Options);
+                Data.Scheduler.Schedule(this, options: Data.Options);
         }
     }
 

@@ -12,7 +12,6 @@ namespace SomeEngine.Graphics.Direct3D12;
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct D3D12ValidationOptions(
     bool DisableGpuBasedValidation = false,
@@ -23,7 +22,6 @@ public readonly record struct D3D12ValidationOptions(
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct D3D12BackendOptions(
     D3D12ValidationOptions Validation = default,
@@ -37,7 +35,6 @@ public readonly record struct D3D12BackendOptions(
 /// <para><b>Thread safety:</b> Thread-safe. The factory is stateless.</para>
 /// <para><b>Ownership:</b> The caller owns the returned <see cref="IGraphicsBackend"/> and must dispose it.</para>
 /// <para><b>After Dispose:</b> The factory has no independent Dispose state; each returned backend enforces its own terminal state.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public static class D3D12GraphicsBackend
 {
@@ -54,7 +51,6 @@ public static class D3D12GraphicsBackend
 /// right; transferring it to the Validation Layer does not leave a second disposal right. It destroys
 /// Devices and backend-created Surfaces before releasing DXGI and D3D12 runtime state.</para>
 /// <para><b>After Dispose:</b> No receiver or native-access operation is valid and the runtime never reopens.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 internal sealed unsafe partial class D3D12Backend :
     IGraphicsBackend,

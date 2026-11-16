@@ -23,9 +23,10 @@ internal static class LifecycleChecks
         world.Clear();
         Entity retained = world.Create(new RemovedValue(42));
         world.Destroy(retained);
-        world.Destroy(retained);
-        Require(world.IsPendingCleanup(retained) && world.Read<Removed<RemovedValue>>(retained).Value.Value == 42,
-            "destroy retains the old component value until cleanup");
+        bool rejected = false;
+        try { world.Destroy(retained); } catch (InvalidOperationException) { rejected = true; }
+        Require(rejected && world.IsPendingCleanup(retained) && world.Read<Removed<RemovedValue>>(retained).Value.Value == 42,
+            "destroy retains the old component value until cleanup and rejects a second destroy");
         Check(first, new[] { retained }, through + 1);
         world.ClearRemoved<RemovedValue>();
         Require(!world.IsAlive(retained), "consuming retained values completes the entity lifetime");
@@ -57,5 +58,5 @@ internal static class LifecycleChecks
         if (!condition) throw new InvalidOperationException(behavior);
     }
 
-    private readonly record struct RemovedValue(int Value) : IRemovedComponent;
+    private readonly record struct RemovedValue(int Value) : IRemovedComponent<RemovedValue>;
 }

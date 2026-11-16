@@ -47,7 +47,7 @@ internal sealed partial class SphereNameplates : ISystem<ImmediateSystemContext>
     }
 
     private TransformQvvs PlateTransform(Entity sphere) => TransformQvvs.Combine(
-        _world.ReadComponentData<WorldTransform>(sphere).Qvvs,
+        _world.ReadValue<WorldTransform>(sphere).Qvvs,
         new TransformQvvs(new Vector3(2.4f, 2.5f, -0.2f),
             Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI), 0.03f));
 

@@ -31,7 +31,7 @@ public struct GraphEndSystem : ISystem<ImmediateSystemContext>
                         GraphInstance instance = values0[rowIndex];
                         if (instance.Data is null || instance.TimeSource == default || !world.IsAlive(instance.TimeSource))
                             continue;
-                        Timeline time = world.ReadComponentData<Timeline>(instance.TimeSource);
+                        Timeline time = world.ReadValue<Timeline>(instance.TimeSource);
                         time.Running |= values1[rowIndex].Running;
                         world.Set(instance.TimeSource, time);
                         if (instance.Data[0].GroupCount > 0)

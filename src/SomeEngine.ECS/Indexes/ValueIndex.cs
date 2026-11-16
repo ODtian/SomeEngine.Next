@@ -5,7 +5,10 @@ using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS;
 
-public interface IIndexedComponent<TKey> : IComponent where TKey : notnull
+/// <summary>A component kept in a value index, whatever its key type.</summary>
+public interface IIndexedComponent : IComponent;
+
+public interface IIndexedComponent<TKey> : IIndexedComponent where TKey : notnull
 {
     TKey GetKey();
 }

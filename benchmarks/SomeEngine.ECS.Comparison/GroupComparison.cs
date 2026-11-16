@@ -1,8 +1,9 @@
+using SomeEngine.ECS.Systems;
 using Friflo.Engine.ECS;
 
 namespace SomeEngine.ECS.Comparison;
 
-public readonly record struct GroupedNumber(int Value, int Ordinal) : IGroupComponent, EasyEcs.IComponent, EasyEcs.IGroup,
+public readonly record struct GroupedNumber(int Value, int Ordinal) : IGroupComponent<GroupedNumber>, EasyEcs.IComponent, EasyEcs.IGroup,
     Friflo.Engine.ECS.IComponent
 {
     public int GetGroup() { GroupProjection.Calls++; return Value; }
@@ -36,8 +37,7 @@ internal static class GroupInputs
     }
 }
 
-internal struct GroupPass(int[] output, int count, int key) : IComponentAction<Position, Velocity, GroupedNumber>,
-    EasyEcs.IForEachBatch<Position, Velocity, GroupedNumber>
+internal struct GroupPass(int[] output, int count, int key) : EasyEcs.IForEachBatch<Position, Velocity, GroupedNumber>
 {
     internal int Count = count;
     internal bool Valid = true;
@@ -383,7 +383,9 @@ internal sealed partial class SomeEngineWorld
         for (int i = 0; i < 8; i++)
         {
             var pass = new GroupPass(GroupMembers, GroupMemberCount, i + 4);
-            _groupQueries![i].ForEach<Position, Velocity, GroupedNumber, GroupPass>(ref pass);
+            using (QueryScope scope = _groupQueries![i].Open())
+                foreach (QueryChunk chunk in scope)
+                    pass.Execute(chunk.Write<Position>(), chunk.Read<Velocity>(), chunk.Read<GroupedNumber>());
             FinishGroupPass(in pass);
         }
     }

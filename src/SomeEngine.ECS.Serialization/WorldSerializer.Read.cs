@@ -19,18 +19,17 @@ internal readonly struct EmptyWorldSystemBinding : IWorldSystemBinding
 
 public sealed partial class WorldSerializer
 {
-    public static World ReadWorld(Stream input, SerializationRegistry registry, WorldLoadOptions options = default)
+    public static World ReadWorld(Stream input, SaveRegistry registry, WorldLoadOptions options = default)
         => ReadWorldCore(input, registry, options, new EmptyWorldSystemBinding());
 
-    public static World ReadWorld<TBinding>(Stream input, SerializationRegistry registry, WorldLoadOptions options,
+    public static World ReadWorld<TBinding>(Stream input, SaveRegistry registry, WorldLoadOptions options,
         in TBinding bindSystems) where TBinding : struct, IWorldSystemBinding
         => ReadWorldCore(input, registry, options, bindSystems);
 
-    private static World ReadWorldCore<TBinding>(Stream input, SerializationRegistry registry, WorldLoadOptions options,
+    private static World ReadWorldCore<TBinding>(Stream input, SaveRegistry registry, WorldLoadOptions options,
         in TBinding bindSystems) where TBinding : struct, IWorldSystemBinding
     {
-        registry = SerializationRegistry.Bind(registry, options.Codecs);
-        var reader = new DataReader(input, options.ReadLimits);
+        var reader = new SaveReader(input, options.ReadLimits);
         try
         {
             var serializer = new WorldSerializer(registry);
@@ -47,19 +46,25 @@ public sealed partial class WorldSerializer
         finally { reader.Dispose(); }
     }
 
-    public void Load(World world, ReadOnlySpan<byte> input, SerializationReadLimits? limits = null, params ISystemVersions[] systems)
+    public void Load(World world, ReadOnlySpan<byte> input, ReadLimits? limits = null, params ISystemVersions[] systems)
     {
-        var reader = new DataReader(input, limits);
+        var reader = new SaveReader(input, limits);
         Read(world, ref reader, systems);
     }
-    public void Load(World world, Stream input, SerializationReadLimits? limits = null, params ISystemVersions[] systems)
+    public void Load(World world, Stream input, ReadLimits? limits = null, params ISystemVersions[] systems)
     {
-        var reader = new DataReader(input, limits);
+        var reader = new SaveReader(input, limits);
         try { Read(world, ref reader, systems); }
         finally { reader.Dispose(); }
     }
 
-    private SavedType[] ReadManifest(ref DataReader reader, SavePurpose? requiredPurpose, byte payloadKind = 0)
+    /// <returns>The registered type of each saved type, or null for a type the registry retired.</returns>
+    private SavedType?[] ReadManifest(ref SaveReader reader, SavePurpose? requiredPurpose, byte payloadKind = 0)
+        => ReadManifest(ref reader, requiredPurpose, out _, payloadKind);
+
+    /// <param name="storages">How each saved type was stored, which a retired type's data still follows.</param>
+    private SavedType?[] ReadManifest(ref SaveReader reader, SavePurpose? requiredPurpose, out SavedStorage[] storages,
+        byte payloadKind = 0)
     {
         if (reader.ReadUInt32() != Magic)
             throw SerializationErrors.CreateDataException(SerializationError.InvalidData, "The ECS container has a different format.");
@@ -74,35 +79,89 @@ public sealed partial class WorldSerializer
         if (purpose == SavePurpose.RawCheckpoint && build != typeof(World).Module.ModuleVersionId)
             throw SerializationErrors.CreateDataException(SerializationError.SchemaMismatch, "The raw checkpoint belongs to a different Core build.");
         int count = reader.Budget.ManifestCount(reader.ReadInt32());
-        var types = new SavedType[count];
+        var types = new SavedType?[count];
+        var keys = new SavedTypeKey[count];
+        storages = new SavedStorage[count];
+        var schemaIndices = new int[count];
         Guid previousId = default;
         for (int i = 0; i < count; i++)
         {
-            var key = new SerializationTypeKey(reader.ReadGuid(), reader.ReadText(true), reader.ReadUInt64());
+            var key = new SavedTypeKey(reader.ReadGuid(), reader.ReadText(true), reader.ReadUInt64());
             SavedStorage storage = (SavedStorage)reader.ReadByte();
             int width = reader.ReadInt32();
-            if (!registry.ById.TryGetValue(key.StableId, out SavedType? binding))
-                throw SerializationErrors.CreateDataException(SerializationError.UnknownType, "The saved type requires a registry entry.");
-            if (binding.KeyFor(purpose) != key || binding.Storage != storage || binding.Width != width
+            schemaIndices[i] = reader.ReadInt32();
+            storages[i] = storage;
+            if (i > 0 && key.Id.CompareTo(previousId) <= 0)
+                throw new InvalidDataException("The type manifest must follow format identity order with each type appearing once.");
+            previousId = key.Id;
+            keys[i] = key;
+            if (!registry.ById.TryGetValue(key.Id, out SavedType? binding))
+            {
+                if (!registry.RetiredTypes.Contains(key.Id))
+                    throw SerializationErrors.CreateDataException(SerializationError.UnknownType, "The saved type requires a registry entry.");
+                continue;
+            }
+            if (binding.Storage != storage || binding.Width != width
                 || purpose == SavePurpose.DurableSave && !binding.SupportsDurable)
                 throw SerializationErrors.CreateDataException(SerializationError.SchemaMismatch, "A serialized type differs from its registered schema.");
-            if (i > 0 && key.StableId.CompareTo(previousId) <= 0)
-                throw new InvalidDataException("The type manifest must follow format identity order with each type appearing once.");
-            previousId = key.StableId;
             types[i] = binding;
+        }
+        SavedFieldList[] schemas = ReadSchemas(ref reader);
+        for (int i = 0; i < count; i++)
+        {
+            if (types[i] is not { } binding) continue;
+            if ((uint)schemaIndices[i] >= (uint)schemas.Length && schemaIndices[i] != -1)
+                throw new InvalidDataException("A saved type refers to a field list the save does not contain.");
+            SavedFieldList? saved = schemaIndices[i] >= 0 ? schemas[schemaIndices[i]] : null;
+            // A durable save stays readable after a generated type's fields change: the saved field list says
+            // where each saved field goes. Tags carry no values. Everything else must match exactly.
+            bool readsByField = purpose == SavePurpose.DurableSave && saved is not null && binding.Schema is not null;
+            if (binding.KeyFor(purpose) != keys[i]
+                && !(purpose == SavePurpose.DurableSave && (readsByField || binding.Storage == SavedStorage.Tag)))
+                throw SerializationErrors.CreateDataException(SerializationError.SchemaMismatch, "A serialized type differs from its registered schema.");
+            if (readsByField && saved!.Hash != binding.Schema!.Hash)
+            {
+                reader.FieldMappings ??= [];
+                if (reader.FieldMappings.TryGetValue(binding.Schema.Id, out FieldMapping? existing) && existing.SavedHash != saved.Hash)
+                    throw SerializationErrors.CreateDataException(SerializationError.SchemaMismatch, "Two saved field lists map to one type.");
+                reader.FieldMappings[binding.Schema.Id] = existing ?? new FieldMapping(saved, binding.Schema);
+            }
         }
         return types;
     }
 
-    private readonly record struct ReadHeaderData(SavedType[] Types, bool Preserve, ulong Version,
+    /// <summary>Reads the saved field lists. Each nested field list comes before the lists that refer to it.</summary>
+    private static SavedFieldList[] ReadSchemas(ref SaveReader reader)
+    {
+        var schemas = new SavedFieldList[reader.Budget.ManifestCount(reader.ReadInt32())];
+        for (int index = 0; index < schemas.Length; index++)
+        {
+            Guid id = reader.ReadGuid();
+            ulong hash = reader.ReadUInt64();
+            var fields = new SavedField[reader.Budget.ManifestCount(reader.ReadInt32())];
+            for (int field = 0; field < fields.Length; field++)
+            {
+                string name = reader.ReadText(true);
+                var kind = (SavedFieldKind)reader.ReadByte();
+                int nested = reader.ReadInt32();
+                if (kind > SavedFieldKind.Nested || (kind == SavedFieldKind.Nested) != (nested >= 0) || nested >= index)
+                    throw new InvalidDataException("A saved field list is malformed.");
+                fields[field] = new SavedField(name, kind, nested >= 0 ? schemas[nested] : null);
+            }
+            schemas[index] = new SavedFieldList(id, hash, fields);
+        }
+        return schemas;
+    }
+
+    private readonly record struct ReadHeaderData(SavedType?[] Types, bool Preserve, ulong Version,
         int Used, int Alive, int[] Generations, int[] Free);
 
-    private ReadHeaderData ReadHeader(ref DataReader reader, SavePurpose? requiredPurpose)
+    private ReadHeaderData ReadHeader(ref SaveReader reader, SavePurpose? requiredPurpose)
     {
-        SavedType[] types = ReadManifest(ref reader, requiredPurpose);
-        bool preserve = (CheckpointProgress)reader.ReadByte() == CheckpointProgress.Preserve;
+        SavedType?[] types = ReadManifest(ref reader, requiredPurpose);
+        bool preserve = (ProgressMode)reader.ReadByte() == ProgressMode.Keep;
         ulong savedVersion = reader.ReadUInt64();
-        int used = reader.Budget.EntitySlotCount(reader.ReadInt32());
+        int used = reader.Budget.EntityIdCount(reader.ReadInt32());
         int alive = reader.Budget.EntityCount(reader.ReadInt32());
         int freeCount = reader.Budget.Count(reader.ReadInt32(), used, "free entity");
         var generations = new int[used + 1];
@@ -112,10 +171,10 @@ public sealed partial class WorldSerializer
         return new(types, preserve, savedVersion, used, alive, generations, free);
     }
 
-    private void Read(World world, ref DataReader reader, ISystemVersions[] systems)
+    private void Read(World world, ref SaveReader reader, ISystemVersions[] systems)
         => ReadValues(world, ref reader, ReadHeader(ref reader, null), systems, default, new EmptyWorldSystemBinding(), false);
 
-    private void ReadValues<TBinding>(World world, ref DataReader reader, ReadHeaderData header, ISystemVersions[] systems,
+    private void ReadValues<TBinding>(World world, ref SaveReader reader, ReadHeaderData header, ISystemVersions[] systems,
         WorldLoadOptions options, in TBinding bindSystems, bool completeWorld) where TBinding : struct, IWorldSystemBinding
     {
         reader.ValuesWorld = world;
@@ -132,7 +191,7 @@ public sealed partial class WorldSerializer
         };
         if (completeWorld) reader.BindReferenceViews();
         foreach (ISystemVersions system in systems) system.Complete();
-        SavedType[] types = header.Types;
+        SavedType?[] types = header.Types;
         bool preserve = header.Preserve;
         ulong version = preserve ? header.Version : Math.Max(header.Version, world.Version) + 1;
         world.Execution?.BeginClear();
@@ -144,18 +203,25 @@ public sealed partial class WorldSerializer
             foreach (SomeEngine.ECS.Shared.SharedValues? values in world.SharedTypes) values?.Release(world);
             Array.Clear(world.SharedTypes);
             int sharedCount = reader.Budget.ManifestCount(reader.ReadInt32());
-            for (int i = 0; i < sharedCount; i++) ReadType<SavedShared>(ref reader, types).ReadValues(ref reader, world);
+            for (int i = 0; i < sharedCount; i++)
+                if (EnterFrame(ref reader, ReadSectionType<SavedShared>(ref reader, types), out SavedShared? shared, out long start, out int length))
+                { shared.ReadValues(ref reader, world); reader.EndFrame(start, length); }
             int tableCount = reader.Budget.TopologyPayloadCount(reader.ReadInt32());
-            Dictionary<Archetype, int>? nextChunks = completeWorld ? new() : null;
+            // Saved tables can restore into one table once a retired column is dropped, so chunks are appended per table.
+            var nextChunks = new Dictionary<Archetype, int>();
             var readEntities = new bool[header.Used + 1];
             foreach (int id in header.Free) readEntities[id] = true;
             int entityCount = 0;
             for (int i = 0; i < tableCount; i++) entityCount += ReadTable(ref reader, world, types, preserve, nextChunks, header, readEntities);
             if (entityCount != header.Alive) throw new InvalidDataException("The table row count differs from the saved entity count.");
             int sparseCount = reader.Budget.ManifestCount(reader.ReadInt32());
-            for (int i = 0; i < sparseCount; i++) ReadType<SavedSparse>(ref reader, types).Read(ref reader, world, preserve);
+            for (int i = 0; i < sparseCount; i++)
+                if (EnterFrame(ref reader, ReadSectionType<SavedSparse>(ref reader, types), out SavedSparse? sparse, out long start, out int length))
+                { sparse.Read(ref reader, world, preserve); reader.EndFrame(start, length); }
             int resourceCount = reader.Budget.ManifestCount(reader.ReadInt32());
-            for (int i = 0; i < resourceCount; i++) ReadType<SavedResource>(ref reader, types).Read(ref reader, world);
+            for (int i = 0; i < resourceCount; i++)
+                if (EnterFrame(ref reader, ReadSectionType<SavedResource>(ref reader, types), out SavedResource? resource, out long start, out int length))
+                { resource.Read(ref reader, world); reader.EndFrame(start, length); }
             ReadTopology(ref reader, world, types);
             foreach (SavedService service in registry.Services) service.ValidateMain(world);
             world.RestoreEvents(ReadEvents(ref reader));
@@ -166,15 +232,26 @@ public sealed partial class WorldSerializer
             var services = new HashSet<SavedService>();
             for (int i = 0; i < serviceCount; i++)
             {
-                SavedType type = ReadType<SavedType>(ref reader, types);
+                if (!EnterFrame(ref reader, ReadSectionType<SavedType>(ref reader, types), out SavedType? type, out long start, out int length))
+                    continue;
                 if (!registry.ServicesByType.TryGetValue(type.Type, out SavedService? service) || !services.Add(service))
                     throw new InvalidDataException("Each topology service requires one matching type section.");
                 service.Read(ref reader, world, preserve);
+                reader.EndFrame(start, length);
             }
             if (completeWorld) world.RebuildDataGroups();
             world.RebuildDataIndexes();
             if (completeWorld) systems = bindSystems.Create(world);
             int systemCount = reader.Budget.ManifestCount(reader.ReadInt32());
+            if (!preserve)
+            {
+                // Without kept progress every system starts from the load version, so systems added or removed
+                // since the save do not stop it from loading.
+                for (int i = 0; i < systemCount; i++)
+                    reader.Skip((long)reader.Budget.ManifestCount(reader.ReadInt32()) * 2 * sizeof(ulong));
+                foreach (ISystemVersions system in systems) RestoreVersions(system, version);
+                return;
+            }
             if (systemCount != systems.Length) throw new InvalidDataException("System progress participants differ from their saved registration.");
             for (int i = 0; i < systemCount; i++)
             {
@@ -184,8 +261,7 @@ public sealed partial class WorldSerializer
                 try
                 {
                     Span<ulong> values = buffer.AsSpan(0, count * 2);
-                    for (int item = 0; item < values.Length; item++)
-                    { ulong value = reader.ReadUInt64(); values[item] = preserve ? value : version; }
+                    for (int item = 0; item < values.Length; item++) values[item] = reader.ReadUInt64();
                     systems[i].RestoreVersions(values);
                 }
                 finally { ArrayPool<ulong>.Shared.Return(buffer); }
@@ -194,32 +270,55 @@ public sealed partial class WorldSerializer
         finally { world.Execution?.EndClear(); }
     }
 
-    private static int ReadTable(ref DataReader reader, World world, SavedType[] types, bool preserve,
+    private static void RestoreVersions(ISystemVersions system, ulong version)
+    {
+        ulong[] buffer = ArrayPool<ulong>.Shared.Rent(system.VersionCount * 2);
+        try
+        {
+            Span<ulong> values = buffer.AsSpan(0, system.VersionCount * 2);
+            values.Fill(version);
+            system.RestoreVersions(values);
+        }
+        finally { ArrayPool<ulong>.Shared.Return(buffer); }
+    }
+
+    private static int ReadTable(ref SaveReader reader, World world, SavedType?[] types, bool preserve,
         Dictionary<Archetype, int>? nextChunks, ReadHeaderData header, bool[] readEntities)
     {
         int entityCount = 0;
         int count = reader.Budget.EntityItemCount(reader.ReadInt32());
-        var columns = new SavedColumn[count];
-        var localTypes = new int[count];
+        // A retired column stays null: its data is skipped and it is not part of the restored table.
+        var columns = new SavedColumn?[count];
+        var localTypes = new List<int>(count);
+        int previousIndex = -1;
         for (int i = 0; i < count; i++)
         {
-            columns[i] = ReadType<SavedColumn>(ref reader, types);
-            localTypes[i] = columns[i].Type;
-            if (i > 0 && columns[i].Key.StableId.CompareTo(columns[i - 1].Key.StableId) <= 0)
+            int index = reader.ReadInt32();
+            if ((uint)index >= (uint)types.Length || types[index] is not null and not SavedColumn)
+                throw new InvalidDataException("The section type index requires a matching manifest entry.");
+            if (index <= previousIndex)
                 throw new InvalidDataException("Table columns must follow format identity order with each column appearing once.");
+            previousIndex = index;
+            columns[i] = (SavedColumn?)types[index];
+            if (columns[i] is { } known) localTypes.Add(known.Type);
         }
         int groupCount = reader.Budget.Count(reader.ReadInt32(), count, "table grouping");
-        var groups = new KeyValuePair<int, int>[groupCount];
+        var groupList = new List<KeyValuePair<int, int>>(groupCount);
         for (int i = 0; i < groupCount; i++)
         {
-            SavedType type = types[reader.ReadInt32()];
+            int index = reader.ReadInt32();
+            int key = reader.ReadInt32();
+            if ((uint)index >= (uint)types.Length) throw new InvalidDataException("The section type index requires a matching manifest entry.");
+            if (types[index] is not { } type) continue;
             type.Activate(world);
-            groups[i] = new(type.Type, reader.ReadInt32());
+            groupList.Add(new(type.Type, key));
         }
+        KeyValuePair<int, int>[] groups = groupList.ToArray();
+        groupCount = groups.Length;
         Array.Sort(groups, static (left, right) => left.Key.CompareTo(right.Key));
         var groupKeys = new int[groupCount];
         for (int i = 0; i < groups.Length; i++) groupKeys[i] = groups[i].Value;
-        Archetype table = world.RestoreArchetype(new TypeSet(localTypes), groupKeys);
+        Archetype table = world.RestoreArchetype(new TypeSet(localTypes.ToArray()), groupKeys);
         int chunkCount = reader.Budget.TopologyEntryCount(reader.ReadInt32(), "physical chunk");
         int firstChunk = nextChunks?.GetValueOrDefault(table) ?? 0;
         for (int index = 0; index < chunkCount; index++)
@@ -238,8 +337,9 @@ public sealed partial class WorldSerializer
                 Entity entity = chunk.Entities[row] = reader.MapEntity(saved);
                 world.Records[entity.Id] = new(chunk, row, entity.Generation);
             }
-            foreach (SavedColumn binding in columns)
+            foreach (SavedColumn? saved in columns)
             {
+                if (!EnterFrame(ref reader, saved, out SavedColumn? binding, out long start, out int length)) continue;
                 ComponentType type = ComponentTypes.Get(binding.Type);
                 ref ColumnEntry column = ref chunk.Columns[type.Id];
                 int local = column.ColumnPlusOne - 1;
@@ -263,19 +363,22 @@ public sealed partial class WorldSerializer
                     SavedChanges.Read(ref reader, ref chunk.Changes![local], rows, true, type.TracksAdded, preserve, world.Version);
                 else
                 { ComponentChanges unused = default; SavedChanges.Read(ref reader, ref unused, rows, false, false, preserve, world.Version); }
+                reader.EndFrame(start, length);
             }
         }
         if (nextChunks is not null) nextChunks[table] = firstChunk + chunkCount;
         return entityCount;
     }
 
-    private static void ReadTopology(ref DataReader reader, World world, SavedType[] types)
+    private static void ReadTopology(ref SaveReader reader, World world, SavedType?[] types)
     {
         int count = reader.Budget.ManifestCount(reader.ReadInt32());
         var readTypes = new HashSet<int>();
         for (int type = 0; type < count; type++)
         {
-            var binding = ReadType<SavedColumn>(ref reader, types);
+            if (!EnterFrame(ref reader, ReadSectionType<SavedColumn>(ref reader, types), out SavedColumn? binding,
+                    out long frameStart, out int frameLength))
+                continue;
             if (binding.Storage is not (SavedStorage.Parent or SavedStorage.Endpoints or SavedStorage.Children)
                 || !readTypes.Add(binding.Type))
                 throw new InvalidDataException("Each topology column requires one matching type section.");
@@ -294,25 +397,42 @@ public sealed partial class WorldSerializer
             }
             if (reader.Position - start != reader.Budget.PayloadLength(reader.ReadInt32()))
                 throw new InvalidDataException("Topology value length differs from its segment footer.");
+            reader.EndFrame(frameStart, frameLength);
         }
     }
 
-    private static TBinding ReadType<TBinding>(ref DataReader reader, SavedType[] types) where TBinding : SavedType
+    /// <summary>The registered type a section belongs to, or null when the registry retired it.</summary>
+    private static TBinding? ReadSectionType<TBinding>(ref SaveReader reader, SavedType?[] types) where TBinding : SavedType
     {
         int index = reader.ReadInt32();
-        if ((uint)index >= (uint)types.Length || types[index] is not TBinding binding)
+        if ((uint)index >= (uint)types.Length || types[index] is not null and not TBinding)
             throw new InvalidDataException("The section type index requires a matching manifest entry.");
-        return binding;
+        return (TBinding?)types[index];
     }
 
-    private static ulong[]? ReadMask(ref DataReader reader, int capacity, int count)
+    /// <summary>
+    /// Reads the length in front of one type's data. Returns false after stepping over the data of a retired type.
+    /// </summary>
+    private static bool EnterFrame<TBinding>(ref SaveReader reader, TBinding? type,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out TBinding? binding, out long start, out int length)
+        where TBinding : SavedType
+    {
+        length = reader.ReadFrameLength();
+        start = reader.Position;
+        binding = type;
+        if (binding is not null) return true;
+        reader.Skip(length);
+        return false;
+    }
+
+    private static ulong[]? ReadMask(ref SaveReader reader, int capacity, int count)
     {
         if (reader.ReadByte() == 0) return null;
         var words = new ulong[(capacity + 63) >> 6];
         for (int word = 0; word < (count + 63) >> 6; word++) words[word] = reader.ReadUInt64();
         return words;
     }
-    private static WorldEvents ReadEvents(ref DataReader reader)
+    private static WorldEvents ReadEvents(ref SaveReader reader)
     {
         ulong through = reader.ReadUInt64();
         int count = reader.Budget.TopologyEntryCount(reader.ReadInt32(), "destroyed entity fact");

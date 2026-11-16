@@ -46,7 +46,7 @@ public static class BoneAttachments
     /// <summary>Selects the source bone used by the next attachment update.</summary>
     public static void SelectBone(World world, Entity attachment, int bone)
     {
-        BoneAttachment current = world.ReadComponentData<BoneAttachment>(attachment);
+        BoneAttachment current = world.ReadValue<BoneAttachment>(attachment);
         world.Set(attachment, new BoneAttachment(current.Skeleton, bone, current.Offset));
     }
 }

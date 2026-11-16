@@ -56,7 +56,7 @@ internal sealed class BuildQueue
     internal bool HasParameterChanges(World world, Entity entity) =>
         _builds.TryGetValue(entity, out Scope.ScopeData? data)
             ? data.ParameterVersion is ulong version &&
-                world.ComponentDataWriteVersion(entity, data.ParameterComponent) != version
+                world.ComponentWriteVersion(entity, data.ParameterComponent) != version
             : ViewTypes.HasParameterChanges(world, entity);
 
     internal void Cancel(Entity entity, bool restore)
@@ -76,9 +76,9 @@ internal sealed class BuildQueue
     private void Release(World world, Entity entity)
     {
         Cancel(entity, restore: false);
-        if (world.HasSparse<Computations>(entity))
-            world.ReadSparse<Computations>(entity).List.ReleaseChildren();
-        if (world.HasSparse<Computations>(entity)) world.RemoveSparse<Computations>(entity);
+        if (world.Has<Computations>(entity))
+            world.Read<Computations>(entity).List.ReleaseChildren();
+        if (world.Has<Computations>(entity)) world.Remove<Computations>(entity);
         while (_computations.TryGetValue(entity, out var computations))
             Cancel(computations.First(), restore: false);
     }
@@ -95,7 +95,7 @@ internal sealed class BuildQueue
         var job = new ReleaseDestroyedJob(world, this);
         if (world.Execution is WorldJobs jobs)
         {
-            JobResourceAccess[] values = jobs.CollectAccess(new SystemAccesses().WriteSparse<Computations>(), structureWrite: true);
+            JobResourceAccess[] values = jobs.CollectAccess(new SystemAccesses().Write<Computations>(), structureWrite: true);
             var accesses = new JobResourceAccess[values.Length + 1];
             values.CopyTo(accesses, 0);
             accesses[^1] = _destroyed.Read;

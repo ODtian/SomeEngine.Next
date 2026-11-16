@@ -52,7 +52,7 @@ internal static class CheckpointHolderCounts
     private static int Size<T>() => Unsafe.SizeOf<T>();
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    internal static Dictionary<string, long> ReadCurrent(WorldCheckpoint? checkpoint, SourceFullArchiveWorld? full)
+    internal static Dictionary<string, long> ReadCurrent(WorldCopy? checkpoint, SourceFullArchiveWorld? full)
     {
         var count = new Census();
         if (checkpoint is not null) count.Checkpoint(checkpoint);
@@ -290,7 +290,7 @@ internal static class CheckpointHolderCounts
             }
         }
 
-        internal void Checkpoint(WorldCheckpoint checkpoint)
+        internal void Checkpoint(WorldCopy checkpoint)
         {
             Add("CheckpointAux.Objects", 1);
             Array("CheckpointAux.Records", Read(checkpoint, "Records") as Array);

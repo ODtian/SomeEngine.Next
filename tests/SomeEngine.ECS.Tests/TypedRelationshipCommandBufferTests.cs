@@ -414,7 +414,7 @@ public class TypedRelationshipCommandBufferTests
         var oldChildren = ReadChildren<SceneDomain>(world, oldParent);
         var newChildren = ReadChildren<SceneDomain>(world, newParent);
 
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using var commands = new CommandBuffer(candidate);
@@ -660,7 +660,7 @@ public class TypedRelationshipCommandBufferTests
         Entity oldTarget = world.Create();
         Entity newTarget = world.Create();
         var edge = world.CreateRelation(source, oldTarget, new CommandLink());
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using var commands = new CommandBuffer(candidate);
@@ -687,7 +687,7 @@ public class TypedRelationshipCommandBufferTests
         var edge = world.CreateRelation(source, oldTarget, new CommandLink());
         var oldGeneration = ReadIncoming<CommandLink>(world, oldTarget);
         var newGeneration = ReadIncoming<CommandLink>(world, newTarget);
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using var commands = new CommandBuffer(candidate);

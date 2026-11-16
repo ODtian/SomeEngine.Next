@@ -107,8 +107,10 @@ internal sealed partial class SomeEngineWorld
                 break;
             case GrowthFeature.Changes:
                 foreach (var entity in created) ObserveGrowth(_world.Read<ScoreValue>(entity).Value);
-                _world.Reserve<Position, Velocity, Health, ScoreValue, Removed<ScoreValue>>(created.Length - 1);
-                _world.Reserve<Position, Velocity, Health, ScoreValue, Removed<ScoreValue>, GrowthMarker>(1);
+                _world.ReserveBundle([ComponentId<Position>.Value, ComponentId<Velocity>.Value, ComponentId<Health>.Value,
+                    ComponentId<ScoreValue>.Value, ComponentId<Removed<ScoreValue>>.Value], created.Length - 1);
+                _world.ReserveBundle([ComponentId<Position>.Value, ComponentId<Velocity>.Value, ComponentId<Health>.Value,
+                    ComponentId<ScoreValue>.Value, ComponentId<Removed<ScoreValue>>.Value, ComponentId<GrowthMarker>.Value], 1);
                 foreach (var entity in created) _world.Remove<ScoreValue>(entity);
                 foreach (var entity in created) ObserveGrowthOldValue(_world.Read<Removed<ScoreValue>>(entity).Value.Value);
                 _world.ClearRemoved<ScoreValue>();
@@ -129,7 +131,7 @@ internal sealed partial class SomeEngineWorld
                 break;
             case GrowthFeature.Shared:
                 foreach (var entity in created)
-                    ObserveGrowth(_world.ReadShared<SharedNumber>(entity).Value);
+                    ObserveGrowth(_world.Read<SharedNumber>(entity).Value);
                 break;
             case GrowthFeature.Index:
                 foreach (var entity in created) ObserveGrowth(_world.Read<IndexedNumber>(entity).Value);
@@ -137,11 +139,11 @@ internal sealed partial class SomeEngineWorld
             case GrowthFeature.Sparse:
                 for (int i = 0; i < created.Length; i += SparseStride)
                 {
-                    _world.SetSparse(created[i], new SparseNumber(SparseCounter, i + 1, Count + i));
-                    if (i % (SparseStride * 2) == 0) _world.SetSparse(created[i], new SparseWeight(Count + i));
+                    _world.Set(created[i], new SparseNumber(SparseCounter, i + 1, Count + i));
+                    if (i % (SparseStride * 2) == 0) _world.Set(created[i], new SparseWeight(Count + i));
                 }
                 for (int i = 0; i < created.Length; i += SparseStride)
-                    ObserveGrowth(_world.ReadSparse<SparseNumber>(created[i]).Value);
+                    ObserveGrowth(_world.Read<SparseNumber>(created[i]).Value);
                 break;
             case GrowthFeature.Group:
                 _world.Set<GroupedNumber>(created, GroupGrowthValues);

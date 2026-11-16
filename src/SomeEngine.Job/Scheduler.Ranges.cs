@@ -7,12 +7,12 @@ namespace SomeEngine.Job;
 public sealed partial class Scheduler
 {
     /// <summary>Executes the first count items on this scheduler and the calling thread, sharing the current access scope.</summary>
-    public void ExecuteRanges<TWork, TItem>(TItem[] items, int count, in TWork work)
+    internal void ExecuteRanges<TWork, TItem>(TItem[] items, int count, in TWork work)
         where TWork : struct, IRangeWork<TItem> =>
         ExecuteRanges(items, count, work, GetCurrentScope());
 
     /// <summary>Uses the supplied resource grant for every item and returns after all executing participants exit.</summary>
-    public void ExecuteRanges<TWork, TItem>(TItem[] items, int count, in TWork work,
+    internal void ExecuteRanges<TWork, TItem>(TItem[] items, int count, in TWork work,
         JobHandle access, JobScheduleOptions options = default)
         where TWork : struct, IRangeWork<TItem>
     {
@@ -188,16 +188,16 @@ public sealed partial class Scheduler
             }
         }
 
-        internal void DrainCaller(Scheduler scheduler, uint epoch) => DrainClaimed(scheduler, epoch, 0);
+        internal void DrainCaller(Scheduler scheduler, uint epoch) => DrainClaimed(scheduler, epoch, 0, caller: true);
 
         internal void Drain(Scheduler scheduler, uint epoch, int workerIndex)
         {
             int preferred = TClaims.UsesWorkerIndex ? workerIndex + 1 : -1;
             if (!TryClaim(epoch, preferred, out int index)) return;
-            DrainClaimed(scheduler, epoch, index);
+            DrainClaimed(scheduler, epoch, index, caller: false);
         }
 
-        private void DrainClaimed(Scheduler scheduler, uint epoch, int index)
+        private void DrainClaimed(Scheduler scheduler, uint epoch, int index, bool caller)
         {
             Interlocked.Increment(ref Participants);
             TWork template = _work;
@@ -241,8 +241,10 @@ public sealed partial class Scheduler
                 s_executing = previousScheduler;
                 JobThreads.Exit();
                 s_synchronousParallelDepth = previousDepth;
-                Interlocked.Decrement(ref Participants);
-                scheduler._workQueue.Pulse();
+                // Only the batch's caller waits for it. Wake it once, when the last helper leaves a finished batch;
+                // the caller itself and helpers leaving while others still run wake no one.
+                if (Interlocked.Decrement(ref Participants) == 0 && !caller && Volatile.Read(ref Remaining) == 0)
+                    scheduler._workQueue.Pulse();
             }
         }
     }

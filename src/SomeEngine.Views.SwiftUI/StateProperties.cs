@@ -18,13 +18,13 @@ public static class StateProperties
         DevelopmentCheck.Require(propertyNumber >= 0, "State properties require a nonnegative property number.");
         DevelopmentCheck.Require(TView.Mode == BuildMode.Rerun, "State properties require a Rerun view.");
         CheckView<TView>();
-        if (!world.HasSparse<StateValues>(entity))
+        if (!world.Has<StateValues>(entity))
         {
-            world.SetSparse(entity, new StateValues(new List<object?>()));
+            world.Set(entity, new StateValues(new List<object?>()));
             if (!world.Has<LocalState>(entity))
                 world.Add(entity, default(LocalState));
         }
-        List<object?> values = world.ReadSparse<StateValues>(entity).Values;
+        List<object?> values = world.Read<StateValues>(entity).Values;
         while (values.Count <= propertyNumber)
             values.Add(null);
         if (values[propertyNumber] is { } value)

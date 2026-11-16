@@ -49,7 +49,7 @@ public readonly struct GpuBlendLeaf : IAnimationLeaf<GpuBlendParameters>
 
             }
         }
-        GpuPoseTarget output = world.ReadComponentData<GpuPoseTarget>(target);
+        GpuPoseTarget output = world.ReadValue<GpuPoseTarget>(target);
         output.Clip = null;
         output.StateMachine = null;
         output.Blend = blend;
@@ -105,7 +105,7 @@ internal struct GpuBlendSystem : ISystem<ImmediateSystemContext>
                             GpuBlendParameters parameters = instance.Definition.Parameters[instance.Index];
                             float elapsed = Math.Min(time.Time.Time, parameters.Duration);
                             for (int input = 0; input < instance.Controls.Length; input++) instance.Controls[input] = controls.Values[input];
-                            GpuPoseTarget output = world.ReadComponentData<GpuPoseTarget>(instance.Target);
+                            GpuPoseTarget output = world.ReadValue<GpuPoseTarget>(instance.Target);
                             output.Clip = null;
                             output.StateMachine = null;
                             output.Blend = parameters.Blend;

@@ -76,23 +76,24 @@ internal abstract partial class ComparisonWorld
 
 internal sealed partial class SomeEngineWorld
 {
-    private SparseQuery? _mixedSparse;
+    private Query? _mixedSparse;
     private void PrepareSparse(string workload)
     {
         if (_mixedSparse is not null) return;
         PrepareSparseResult(workload);
         for (int i = 0; i < Count; i += SparseStride)
         {
-            _world.SetSparse(_entities[i], new SparseNumber(SparseCounter, 1, i));
-            if (i % (SparseStride * 2) == 0) _world.SetSparse(_entities[i], new SparseWeight(i));
+            _world.Set(_entities[i], new SparseNumber(SparseCounter, 1, i));
+            if (i % (SparseStride * 2) == 0) _world.Set(_entities[i], new SparseWeight(i));
         }
-        _mixedSparse = _world.QuerySparse<SparseNumber>(new QueryDescription().With<Position>().With<Team>()).With<SparseWeight>();
+        _mixedSparse = _world.Query(new QueryDescription().With<Position>().With<Team>().With<SparseNumber>().With<SparseWeight>());
     }
     private int ReadSparseMembers()
     {
-        using var members = _mixedSparse!.Open();
+        using QueryScope members = _mixedSparse!.Value.OpenRead();
         int count = 0;
-        foreach (var entity in members) SparseMembers[count++] = _world.ReadSparse<SparseNumber>(entity).Ordinal;
+        foreach (QueryChunk chunk in members)
+            for (int row = 0; row < chunk.Count; row++) SparseMembers[count++] = chunk.Read<SparseNumber>(row).Ordinal;
         return count;
     }
     internal override void SparseCycle()
@@ -101,30 +102,29 @@ internal sealed partial class SomeEngineWorld
         foreach (int ordinal in SparseLookupIndices)
         {
             var entity = _entities[ordinal];
-            ReadTotal += _world.ReadSparse<SparseNumber>(entity).Value;
-            _world.SetSparse(entity, new SparseNumber(SparseCounter, 42, ordinal));
+            ReadTotal += _world.Read<SparseNumber>(entity).Value;
+            _world.Set(entity, new SparseNumber(SparseCounter, 42, ordinal));
         }
-        using (var values = _world.OpenSparseRead<SparseNumber>())
+        using (var values = _world.OpenSparseValues<SparseNumber>())
             foreach (ref readonly var value in values.Values)
             {
                 SparseDenseTotal += value.Value;
                 if (ReferenceEquals(value.Counter, SparseCounter)) SparseDenseCount++;
             }
         SparseMixedCount = ReadSparseMembers();
-        for (int i = 0; i < Count; i += SparseStride * 2) _world.RemoveSparse<SparseNumber>(_entities[i]);
+        for (int i = 0; i < Count; i += SparseStride * 2) _world.Remove<SparseNumber>(_entities[i]);
         for (int i = SparseStride; i < Count; i += SparseStride * 2) _world.Destroy(_entities[i]);
         SparseEmptyCount = ReadSparseMembers();
         SparseReleased = SparseCounter.Count;
-        for (int i = 0; i < Count; i += SparseStride * 2) _world.RemoveSparse<SparseWeight>(_entities[i]);
+        for (int i = 0; i < Count; i += SparseStride * 2) _world.Remove<SparseWeight>(_entities[i]);
         for (int i = SparseStride; i < Count; i += SparseStride * 2)
-            _entities[i] = _world.Create(new Position { X = i }, new Velocity { X = 1, Y = 2 },
-                new Health { Value = 100, Max = 100 }, new Team(), new Sleeping());
+            _entities[i] = _world.Spawn(new SleepingTeamBody { Body = Body.Moving(new Position { X = i }) });
         for (int i = 0; i < Count; i += SparseStride)
         {
-            _world.SetSparse(_entities[i], new SparseNumber(SparseCounter, 1, i));
-            if (i % (SparseStride * 2) == 0) _world.SetSparse(_entities[i], new SparseWeight(i));
+            _world.Set(_entities[i], new SparseNumber(SparseCounter, 1, i));
+            if (i % (SparseStride * 2) == 0) _world.Set(_entities[i], new SparseWeight(i));
         }
-        using var complete = _world.OpenSparseRead<SparseNumber>();
+        using var complete = _world.OpenSparseValues<SparseNumber>();
         SparseFinalCount = complete.Count;
     }
 }

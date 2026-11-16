@@ -7,17 +7,17 @@ namespace SomeEngine.ECS.Comparison;
 
 internal static class NativeArchiveColumns
 {
-    internal static void Read<T, TCodec>(Span<T> values, ref DataReader reader, TCodec codec, bool raw)
-        where T : struct where TCodec : struct, IValueCodec<T>
+    internal static void Read<T, TSerializer>(Span<T> values, ref SaveReader reader, TSerializer serializer, bool raw)
+        where T : struct where TSerializer : struct, IValueSerializer<T>
     {
         if (raw) reader.ReadRawBytes(MemoryMarshal.AsBytes(values));
         else
         {
             long start = reader.Position;
-            for (int i = 0; i < values.Length; i++) { TCodec item = codec; item.Read(ref reader, out values[i]); }
+            for (int i = 0; i < values.Length; i++) { TSerializer item = serializer; item.Read(ref reader, out values[i]); }
             long consumed = reader.Position - start;
             if (reader.ReadInt32() != consumed)
-                throw new InvalidDataException("Native component codec length differs from its column footer.");
+                throw new InvalidDataException("Native component serializer length differs from its column footer.");
         }
     }
     internal static void Copy<T>(ReadOnlySpan<T> values, Span<T> target, Func<T, T>? clone) where T : struct
@@ -67,12 +67,12 @@ internal sealed partial class EasyArchiveStore
         Span<T> target = MemoryMarshal.CreateSpan(ref _entities[group.Identities[0].Value.Id].Get<T>(), values.Length);
         NativeArchiveColumns.Copy(values, target, clone);
     }
-    internal override void ReadColumn<T, TCodec>(NativeArchiveGroup group, int count, ref DataReader reader, TCodec codec, bool raw)
+    internal override void ReadColumn<T, TSerializer>(NativeArchiveGroup group, int count, ref SaveReader reader, TSerializer serializer, bool raw)
     {
         if (!DirectRestore || typeof(T) == typeof(IndexedNumber) || typeof(T) == typeof(SharedNumberId))
-        { base.ReadColumn<T, TCodec>(group, count, ref reader, codec, raw); return; }
+        { base.ReadColumn<T, TSerializer>(group, count, ref reader, serializer, raw); return; }
         Span<T> target = MemoryMarshal.CreateSpan(ref _entities[group.Identities[0].Value.Id].Get<T>(), count);
-        NativeArchiveColumns.Read(target, ref reader, codec, raw);
+        NativeArchiveColumns.Read(target, ref reader, serializer, raw);
     }
 }
 
@@ -111,12 +111,12 @@ internal sealed partial class FrifloArchiveStore
         Span<T> target = MemoryMarshal.CreateSpan(ref _entities[group.Identities[0].Value.Id].GetComponent<T>(), values.Length);
         NativeArchiveColumns.Copy(values, target, clone);
     }
-    internal override void ReadColumn<T, TCodec>(NativeArchiveGroup group, int count, ref DataReader reader, TCodec codec, bool raw)
+    internal override void ReadColumn<T, TSerializer>(NativeArchiveGroup group, int count, ref SaveReader reader, TSerializer serializer, bool raw)
     {
         if (!DirectRestore || typeof(T) == typeof(IndexedNumber) || typeof(T) == typeof(SharedNumberId))
-        { base.ReadColumn<T, TCodec>(group, count, ref reader, codec, raw); return; }
+        { base.ReadColumn<T, TSerializer>(group, count, ref reader, serializer, raw); return; }
         Span<T> target = MemoryMarshal.CreateSpan(ref _entities[group.Identities[0].Value.Id].GetComponent<T>(), count);
-        NativeArchiveColumns.Read(target, ref reader, codec, raw);
+        NativeArchiveColumns.Read(target, ref reader, serializer, raw);
     }
 }
 

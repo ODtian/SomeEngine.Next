@@ -16,27 +16,3 @@
 渲染端到端测试经过引擎公共启动入口；测试内容自给并在结束后清理。图像优先与到达同一状态的另一种方式比较；绝对期望使用明确的像素区域、颜色及容差。性能验收采用根级 AGENTS 的统一场景平台，单独记录性能证据。
 
 图像断言失败时，测试将实际图、期望图与差异图保存为 PNG，输出目录由 `SOMEENGINE_TEST_ARTIFACTS` 指定；本地默认使用 `artifacts/test-results`。整图、区域、颜色和尺寸比较共用这一失败留存行为。尺寸不同时，实际图与期望图保留各自尺寸，差异图覆盖二者的完整范围。
-
-## 自动检查
-
-本页是测试规则的唯一来源。规则变更先修改本页，再修改检查器与样例测试。自动检查覆盖以下三条可识别的规则，其余规则通过行为评审落实。
-
-| 检查编号 | 检查内容 |
-| --- | --- |
-| TEST001 | 向测试程序集授予 `InternalsVisibleTo`：C# 程序集属性、项目或共享 `.props` / `.targets` 中的 `InternalsVisibleTo` 项、`AssemblyAttribute` 项；C# 按所属项目解析跨文件常量与全局别名，项目间保持语义隔离；识别当前文件属性及标准项目名称，未决属性按可能授权的测试程序集识别 |
-| TEST002 | 测试代码中的异常消息文本断言：`Assert` / `Xunit.Assert` 的参数读取 `.Message`，以及当前成员中由该文本计算的局部变量；`Assert.True` / `False` 的失败说明参数和 `Assert.Fail` 的诊断输出属于失败报告 |
-| TEST003 | 测试代码调用 `Thread.Sleep`，包括限定名称、类型别名和静态导入 |
-
-检查使用 C# 语法树，字符串、注释中的样例文字不参与判定。TEST002 通过语法中的 `Message` 读取识别文本依赖，并使用可解析的类型排除普通数据的同名成员。检查包含条件编译分支。测试目录和仓库自有 C# / MSBuild 声明参与扫描；`bin`、`obj`、`.git` 和第三方 `external` 内容按构建输出或依赖处理。
-
-根级 `Directory.Build.targets` 在每个测试项目的 `VSTest` 入口构建 C# 检查工具并执行检查，`dotnet test`、指定项目的 `dotnet test` 和 `dotnet test --no-build` 均执行。发现违规后，命令以失败退出，输出检查编号、文件、行列、成员和本页链接。
-
-检查对全部测试项目生效，发现任何违规都使命令失败。默认 CI 在构建与软件适配器测试前执行全项目规则检查，覆盖软件、硬件、长时间模糊与性能类别的测试项目。
-
-检查器的公共输入输出测试位于 `tests/SomeEngine.TestRules.Tests`，覆盖违规样例、合规样例、位置报告、重复违规及各类别测试项目的命令失败行为。执行：
-
-```powershell
-dotnet test tests/SomeEngine.TestRules.Tests/SomeEngine.TestRules.Tests.csproj
-dotnet msbuild tests/SomeEngine.TestRules.Tests/SomeEngine.TestRules.Tests.csproj -t:CheckTestRules
-pwsh -NoProfile -File tools/Check-TestRules.ps1
-```

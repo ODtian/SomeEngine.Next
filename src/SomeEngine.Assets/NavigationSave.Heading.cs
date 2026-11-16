@@ -49,7 +49,7 @@ internal sealed partial class NavigationSaveResourceReader
 
 internal readonly partial struct NavigationSaveCodec
 {
-    private static void WriteHeadingResource(ref DataWriter writer, NavigationSavedResource resource)
+    private static void WriteHeadingResource(ref SaveWriter writer, NavigationSavedResource resource)
     {
         switch (resource)
         {
@@ -75,7 +75,7 @@ internal readonly partial struct NavigationSaveCodec
         }
     }
 
-    private static NavigationSavedResource ReadHeadingResource(byte kind, ref DataReader reader)
+    private static NavigationSavedResource ReadHeadingResource(byte kind, ref SaveReader reader)
     {
         switch (kind)
         {

@@ -6,7 +6,7 @@ namespace SomeEngine.ECS.Relations;
 public readonly record struct RelationEdge<T>(Entity Entity) where T : struct;
 
 public readonly record struct RelationEndpoints<T>(Entity Source, Entity Target)
-    : IAddedComponent, IRemovedComponent, IControlledComponent, IComponentInitialization<RelationEndpoints<T>>, IEntityReferenceValue<RelationEndpoints<T>>,
+    : IAddedComponent, IRemovedComponent<RelationEndpoints<T>>, IControlledComponent, IComponentInitialization<RelationEndpoints<T>>, IEntityReferenceValue<RelationEndpoints<T>>,
     IEntityReferenceOperations<RelationEndpoints<T>> where T : struct
 {
     static void IEntityReferenceValue<RelationEndpoints<T>>.Remap(ref RelationEndpoints<T> value, in EntityMap entities)

@@ -8,7 +8,6 @@ namespace SomeEngine.Graphics;
 /// <para><b>Thread safety:</b> Thread-safe. Immutable metadata may be shared.</para>
 /// <para><b>Ownership:</b> Borrowed immutable metadata owned by its Device.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state and does not revive its disposed Device.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public sealed class Presentation : DeviceCapability
 {
@@ -25,7 +24,6 @@ public sealed class Presentation : DeviceCapability
 /// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
 /// <para>Basic asynchronous Pipeline creation is part of <see cref="IGraphicsBackend"/> and does
 /// not require any flag in this enum. These flags describe only optional native behavior.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 [Flags]
 public enum PipelineCreationFeatures : byte
@@ -41,7 +39,6 @@ public enum PipelineCreationFeatures : byte
 /// <para><b>Thread safety:</b> Thread-safe. Immutable metadata may be shared.</para>
 /// <para><b>Ownership:</b> Borrowed immutable metadata owned by its Device.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state and does not revive its disposed Device.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public sealed class PipelineCreationSupport : DeviceCapability
 {
@@ -57,7 +54,6 @@ public sealed class PipelineCreationSupport : DeviceCapability
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Borrowed or caller-supplied managed identity; it owns no independent native lifetime unless a member explicitly says otherwise.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; associated RHI objects retain their own terminal state.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public sealed class CalibratedTimestamps : DeviceCapability
 {
@@ -71,7 +67,6 @@ public sealed class CalibratedTimestamps : DeviceCapability
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct CalibratedTimestampInfo(
     long CpuCounter,
@@ -83,7 +78,6 @@ public readonly record struct CalibratedTimestampInfo(
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Borrowed or caller-supplied managed identity; it owns no independent native lifetime unless a member explicitly says otherwise.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; associated RHI objects retain their own terminal state.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public sealed class LinkedAdapters : DeviceCapability
 {
@@ -114,7 +108,6 @@ public sealed class LinkedAdapters : DeviceCapability
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public enum ExternalHandleType : byte
 {
@@ -129,7 +122,6 @@ public enum ExternalHandleType : byte
 /// the input handle.</para>
 /// <para><b>After Dispose:</b> Type remains readable; Value throws
 /// <see cref="ObjectDisposedException"/> and the closed OS handle is never reused.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public sealed class ExternalHandle : IDisposable
 {
@@ -181,7 +173,6 @@ public sealed class ExternalHandle : IDisposable
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Borrowed or caller-supplied managed identity; it owns no independent native lifetime unless a member explicitly says otherwise.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; associated RHI objects retain their own terminal state.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public sealed class ExternalResources : DeviceCapability
 {
@@ -249,7 +240,6 @@ public sealed class ExternalResources : DeviceCapability
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Borrowed or caller-supplied managed identity; it owns no independent native lifetime unless a member explicitly says otherwise.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; associated RHI objects retain their own terminal state.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public sealed class ExternalTimelines : DeviceCapability
 {
@@ -297,7 +287,6 @@ public sealed class ExternalTimelines : DeviceCapability
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct ImportedResourceState(
     PipelineSync Sync,

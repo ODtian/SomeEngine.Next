@@ -12,7 +12,7 @@ public static class WorldExtensions
         ArgumentNullException.ThrowIfNull(world);
         if (entity != EntityId.Null && world.IsAlive(entity) && world.Has<T>(entity))
         {
-            component = world.ReadComponentData<T>(entity);
+            component = world.ReadValue<T>(entity);
             return true;
         }
 

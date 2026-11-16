@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.9" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Content Include="Typography/Fonts/*.otf;Typography/Fonts/*.ttf" Link="Fonts/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/SpatialCollisionExample.cs" Link="Physics/SpatialCollisionExample.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialCollision.cs" Link="Physics/HandwrittenSpatialCollision.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialGroups.cs" Link="Physics/HandwrittenSpatialGroups.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialMaintenance.cs" Link="Physics/HandwrittenSpatialMaintenance.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/SpatialCollisionConsumption.cs" Link="Physics/SpatialCollisionConsumption.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/SpatialCollisionFrames.cs" Link="Physics/SpatialCollisionFrames.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialPartitions.cs" Link="Physics/HandwrittenSpatialPartitions.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/SpatialParallelFrames.cs" Link="Physics/SpatialParallelFrames.cs" />
+    <Compile Include="../../benchmarks/SomeEngine.ECS.Benchmarks/Relations/HandwrittenSpatialBitmap.cs" Link="Physics/HandwrittenSpatialBitmap.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/SomeEngine.Diagnostics/SomeEngine.Diagnostics.csproj" />
+    <ProjectReference Include="../../tools/SomeEngine.Trace/SomeEngine.Trace.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Job/SomeEngine.Job.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Typography/SomeEngine.Typography.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Resources/SomeEngine.Resources.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Terrain/SomeEngine.Terrain.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Physics/SomeEngine.Physics.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Serialization/SomeEngine.Serialization.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <Reference Include="SomeEngine.Generators" HintPath="../../src/SomeEngine.Generators/bin/$(Configuration)/netstandard2.0/SomeEngine.Generators.dll" />
+  </ItemGroup>
+</Project>

@@ -9,8 +9,7 @@ using Xunit.Sdk;
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
 [Trait("Category", "Hardware")]
-[Xunit.Collection("Direct3D12 shader compilation")]
-public sealed class IntelCompatibilityTests(D3D12TestCompiler shaderCompiler)
+public sealed class IntelCompatibilityTests(D3D12TestCompiler shaderCompiler) : Xunit.IClassFixture<D3D12TestCompiler>
 {
     [Theory]
     [IntelHardwareData]

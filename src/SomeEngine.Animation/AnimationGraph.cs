@@ -23,7 +23,7 @@ public static partial class AnimationGraph
     /// <summary>Reads the shared phase time and weight selected for an installed public leaf.</summary>
     public static AnimationLeafTime ReadTime(World world, Entity animation, in AnimationLeafPlacement placement)
     {
-        Timeline timeline = world.ReadComponentData<Timeline>(animation);
+        Timeline timeline = world.ReadValue<Timeline>(animation);
         LeafPhase phase = CreatePhase(in timeline, in placement);
         float weight = 1;
         uint starts = timeline.Starts;
@@ -43,7 +43,7 @@ public static partial class AnimationGraph
                 using var motions = world.ReadBuffer<GraphMotion>(animation);
                 motion.Value = motions[motion.Index];
             }
-            GraphData[] graph = world.ReadComponentData<GraphInstance>(animation).Data!;
+            GraphData[] graph = world.ReadValue<GraphInstance>(animation).Data!;
             SelectMotion(ref phase, in motion.Value, graph, in placement);
             weight = motion.Value.Weight;
             starts = motion.Value.Starts;
@@ -125,7 +125,7 @@ public static partial class AnimationGraph
     {
         if (placement.Motion == 0)
         {
-            Timeline timeline = world.ReadComponentData<Timeline>(animation);
+            Timeline timeline = world.ReadValue<Timeline>(animation);
             timeline.Submit(running);
             world.Set(animation, timeline);
         }
@@ -287,7 +287,7 @@ public struct GraphSystem : ISystem<ImmediateSystemContext>
                                 disabled.Add(chunk.Entities[rowIndex]);
                                 continue;
                             }
-                            values0[rowIndex] = world.ReadComponentData<Timeline>(instance.TimeSource);
+                            values0[rowIndex] = world.ReadValue<Timeline>(instance.TimeSource);
                             if (instance.Data[0].GroupCount > 0)
                             {
                                 DynamicBuffer<GraphMotion> motions = buffers0[rowIndex];

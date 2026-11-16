@@ -39,7 +39,7 @@ public readonly struct FlowMatchingLeaf : IAnimationLeaf<FlowMatchingParameters>
             Index = index,
             Placement = placement,
             Output = output,
-            State = new(parameters.Model, world.ReadComponentData<PoseTarget>(target).Skeleton.Skeleton),
+            State = new(parameters.Model, world.ReadValue<PoseTarget>(target).Skeleton.Skeleton),
             Node = PoseAnimation.RegisterNode(world, animation, output, [], in placement),
         };
         {

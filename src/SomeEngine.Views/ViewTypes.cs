@@ -33,22 +33,22 @@ internal static unsafe class ViewTypes
 
     internal static void Build(World world, Entity entity, ulong frame)
     {
-        ushort typeId = world.ReadComponentData<ViewType>(entity).Id;
+        ushort typeId = world.ReadValue<ViewType>(entity).Id;
         Volatile.Read(ref s_functions)[typeId].BuildFunction(world, entity, frame);
     }
 
     internal static bool HasParameterChanges(World world, Entity entity)
     {
-        ushort typeId = world.ReadComponentData<ViewType>(entity).Id;
+        ushort typeId = world.ReadValue<ViewType>(entity).Id;
         return Volatile.Read(ref s_functions)[typeId].ParameterCheckFunction(world, entity);
     }
 
     internal static bool HasMeasure(World world, Entity entity) =>
         world.Has<ViewType>(entity) &&
-        Volatile.Read(ref s_functions)[world.ReadComponentData<ViewType>(entity).Id].MeasureFunction != null;
+        Volatile.Read(ref s_functions)[world.ReadValue<ViewType>(entity).Id].MeasureFunction != null;
 
     internal static Size Measure(World world, Entity entity, ref LayoutPass pass, in Constraints constraints) =>
-        Volatile.Read(ref s_functions)[world.ReadComponentData<ViewType>(entity).Id].MeasureFunction(world, entity, ref pass, in constraints);
+        Volatile.Read(ref s_functions)[world.ReadValue<ViewType>(entity).Id].MeasureFunction(world, entity, ref pass, in constraints);
 
     internal static Size Measure(ushort typeId, World world, Entity entity, ref LayoutPass pass, in Constraints constraints) =>
         Volatile.Read(ref s_functions)[typeId].MeasureFunction(world, entity, ref pass, in constraints);
@@ -96,7 +96,7 @@ internal static unsafe class ViewTypes
     internal static void CheckContent(World world, Entity entity)
     {
 #if DEBUG
-        ushort typeId = world.ReadComponentData<ViewType>(entity).Id;
+        ushort typeId = world.ReadValue<ViewType>(entity).Id;
         DevelopmentCheck.Require(Volatile.Read(ref s_functions)[typeId].Children == ChildSource.Caller,
             "Content requires ChildSource.Caller; ChildSource.Build views declare children in their own Build.");
 #endif
@@ -146,20 +146,20 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
         BuildQueue builds = BuildQueue.For(world);
         builds.CountBuild();
         builds.Cancel(entity, restore: true);
-        ViewType viewType = world.ReadComponentData<ViewType>(entity);
+        ViewType viewType = world.ReadValue<ViewType>(entity);
         if (viewType.RebuildRequired)
         {
             firstBuild = true;
             viewType.RebuildRequired = false;
-            world.OverwriteComponentData(entity, in viewType);
+            world.Overwrite(entity, in viewType);
         }
         if (world.Has<BuildRequest>(entity))
         {
             firstBuild = true;
             world.Remove<BuildRequest>(entity);
         }
-        T view = world.ReadComponentData<T>(entity);
-        ulong parameterVersion = T.Mode == BuildMode.Rerun ? world.ComponentDataWriteVersion<T>(entity) : 0;
+        T view = world.ReadValue<T>(entity);
+        ulong parameterVersion = T.Mode == BuildMode.Rerun ? world.ComponentWriteVersion<T>(entity) : 0;
         RebuildDiagnostics.Record<T>(world, entity, frame, firstBuild, parameterVersion);
         if (Profiler.IsActive || EngineTrace.IsEnabled)
             BuildWithTracing(world, entity, frame, in view, parameterVersion);
@@ -199,7 +199,7 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
 
     private static bool HasParameterChanges(World world, Entity entity) =>
         T.Mode == BuildMode.Rerun &&
-        world.ComponentDataWriteVersion<T>(entity) != world.ReadComponentData<ParameterVersion>(entity).Value;
+        world.ComponentWriteVersion<T>(entity) != world.ReadValue<ParameterVersion>(entity).Value;
 
     private static Size Measure(World world, Entity entity, ref LayoutPass pass, in Constraints constraints)
     {

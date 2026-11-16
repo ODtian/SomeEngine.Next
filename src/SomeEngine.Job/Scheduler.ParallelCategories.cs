@@ -30,7 +30,7 @@ public sealed partial class Scheduler
             return new(dependency);
         JobCategory? category = options.Category;
         if (category is null || SharesCurrentCategoryRequest(category))
-            return new(ScheduleParallel(job, length, batchSize, accesses, options, dependency));
+            return new(ScheduleParallel(job, length, batchSize, accesses, dependency, options));
 
         bool automaticBatch = batchSize == JobScheduleOptions.AutomaticBatchSize;
         ParallelBatchSizer<T>? batchSizer = automaticBatch ? GetParallelBatchSizer<T>() : null;

@@ -29,7 +29,6 @@ internal sealed partial class RelationData<T> : IWorldLifecycle where T : struct
 
     internal RelationData(World world)
     {
-        RelationSerializationType<T>.Register();
         _world = world;
         _schema = RelationSchema.For<T>();
         _directed = _schema.Direction == RelationDirection.Directed;

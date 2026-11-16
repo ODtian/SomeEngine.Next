@@ -38,8 +38,8 @@ public sealed class NavigationTileRead<TTile> where TTile : class
         try { bytes = source.ReadAsync(coordinate, cancellationToken).AsTask(); }
         catch { source.Dispose(); throw; }
         JobHandle ready = scheduler.CreateExternalFenceHandle(new ReadFence(bytes));
-        JobHandle decoded = scheduler.Schedule(new ScheduleDecode(this, source, coordinate, bytes, scheduler), ready);
-        JobHandle released = scheduler.ScheduleFinally(new ReleaseSource(source), JobScheduleOptions.Default, decoded);
+        JobHandle decoded = scheduler.Schedule(new ScheduleDecode(this, source, coordinate, bytes, scheduler), dependency: ready);
+        JobHandle released = scheduler.ScheduleFinally(new ReleaseSource(source), dependency: decoded, options: JobScheduleOptions.Default);
         Completion = scheduler.CombineDependencies([decoded, released]);
     }
 

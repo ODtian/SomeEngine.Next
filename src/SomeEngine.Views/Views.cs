@@ -28,7 +28,7 @@ public static class Views
         ushort typeId = ViewRegistration<T>.Id;
         Entity entity = world.Create(new ViewType { Id = typeId });
         world.Add(entity, key);
-        world.AddComponentData(entity, in view);
+        world.Add(entity, in view);
         if (T.Mode == BuildMode.Rerun)
             world.Add(entity, new ParameterVersion());
         Hierarchy<ElementTree>.SetOrdered(world, entity, true);

@@ -6,8 +6,8 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-[Xunit.Collection("Direct3D12 shader compilation")]
-public sealed class WarpCapabilityTests(D3D12TestCompiler shaderCompiler)
+[Collection(GlobalJobSystemCollection.Name)]
+public sealed class WarpCapabilityTests(D3D12TestCompiler shaderCompiler) : Xunit.IClassFixture<D3D12TestCompiler>
 {
     [Fact]
     public void Graphics_pipeline_accepts_combined_known_dynamic_states_and_rejects_unknown_bits()

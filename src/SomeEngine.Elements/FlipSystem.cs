@@ -30,25 +30,25 @@ public struct FlipSystem : ISystem<ImmediateSystemContext>
             foreach (QueryChunk chunk in range)
                 foreach (Entity entity in chunk.Entities)
                 {
-                FlipFrame previous = world.ReadComponentData<FlipFrame>(entity);
+                FlipFrame previous = world.ReadValue<FlipFrame>(entity);
                 if (!world.Has<LayoutRect>(entity))
                 {
                     if (previous.HasFrame) world.Get<FlipFrame>(entity).HasFrame = false;
                     continue;
                 }
-                Rect rectangle = world.ReadComponentData<LayoutRect>(entity).Value;
+                Rect rectangle = world.ReadValue<LayoutRect>(entity).Value;
                 ElementTransform transform = world.Has<ElementTransform>(entity)
-                    ? world.ReadComponentData<ElementTransform>(entity) : ElementTransform.Identity;
+                    ? world.ReadValue<ElementTransform>(entity) : ElementTransform.Identity;
                 if (previous.HasFrame && previous.Rectangle == rectangle &&
                     previous.Transform == transform.Matrix && previous.Alpha == transform.Alpha)
                     continue;
 
                 if (previous.HasFrame)
                 {
-                    PresentationOffset offset = world.ReadComponentData<PresentationOffset>(entity);
+                    PresentationOffset offset = world.ReadValue<PresentationOffset>(entity);
                     bool matrixChanged = previous.Rectangle != rectangle || previous.Transform != transform.Matrix;
                     bool alphaChanged = previous.Alpha != transform.Alpha;
-                    Spec spec = world.ReadComponentData<FlipSettings>(entity).Spec;
+                    Spec spec = world.ReadValue<FlipSettings>(entity).Spec;
                     if (matrixChanged) offset.Matrix = Invert(previous, rectangle, transform.Matrix) * offset.Matrix;
                     if (alphaChanged) offset.Alpha = transform.Alpha != 0 ? previous.Alpha * offset.Alpha / transform.Alpha : 1;
                     world.Get<PresentationOffset>(entity) = offset;

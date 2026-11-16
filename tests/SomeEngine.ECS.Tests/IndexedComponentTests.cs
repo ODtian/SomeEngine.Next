@@ -234,7 +234,8 @@ public class IndexedComponentTests
     public void TypedIndexUpdatesPreserveOtherComponentsFromTheSameEntity()
     {
         using var world = new World();
-        Entity entity = world.Create(new IndexedName { Value = "old" }, new Position { X = 1, Y = 2 });
+        Entity entity = world.Create(new IndexedName { Value = "old" });
+        world.Add(entity, new Position { X = 1, Y = 2 });
         ValueIndex<IndexedName, string> index = world.Index<IndexedName, string>();
         world.Set(entity, new IndexedName { Value = "pair" });
         Assert.Empty(ReadIndexedEntities<IndexedName, string>(world, "old"));

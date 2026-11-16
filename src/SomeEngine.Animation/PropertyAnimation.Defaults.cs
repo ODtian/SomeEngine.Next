@@ -171,8 +171,8 @@ public static partial class PropertyAnimation
             break;
         }
         DevelopmentCheck.Require(destination >= 0, "Moving a source requires declared target capacity.");
-        Timeline previous = world.ReadComponentData<Timeline>(source.Animation);
-        Timeline timeline = world.ReadComponentData<Timeline>(target);
+        Timeline previous = world.ReadValue<Timeline>(source.Animation);
+        Timeline timeline = world.ReadValue<Timeline>(target);
         if (!world.IsEnabled<Timeline>(target))
         {
             timeline.Time = previous.Time;
@@ -244,7 +244,7 @@ public static partial class PropertyAnimation
     private static ReadOnlyMemory<Keyframe> CopyKeyframes(World world, Entity target, in Curve curve)
     {
         if (!world.Has<KeyframeCopy>(target)) world.Add(target, new KeyframeCopy());
-        KeyframeCopy copy = world.ReadComponentData<KeyframeCopy>(target);
+        KeyframeCopy copy = world.ReadValue<KeyframeCopy>(target);
         var range = (Start: curve.KeyframeStart, Count: curve.KeyframeCount, Values: copy.Values);
         {
             using var keys = world.ReadBuffer<Keyframe>(target);

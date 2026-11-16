@@ -17,10 +17,10 @@ public sealed class WorldStreamSystem : ISystem<ImmediateSystemContext>
     private WorldStreamSource[] _values = [];
 
     public WorldStreamSystem(World world, AssetLoader loader, AssetId<WorldAsset> source,
-        WorldStreamOptions options, SerializationReadOptions readOptions = default)
+        WorldStreamOptions options, SaveRegistry registry, SerializationReadOptions readOptions = default)
     {
         _world = world;
-        Stream = new(world, loader, source, options, readOptions);
+        Stream = new(world, loader, source, options, registry, readOptions);
     }
 
     public WorldStream Stream { get; }

@@ -46,10 +46,11 @@ public sealed partial class RenderExtractionSystems
         }
     }
 
-    private readonly struct CollectRangesJob(RenderExtractionSystems systems) : IRangeWork<RangeCollection>
+    private readonly struct CollectRangesJob(RenderExtractionSystems systems, RangeCollection[] collections) : IJobParallelFor
     {
-        public void Execute(in RangeCollection collection)
+        public void Execute(int index)
         {
+            RangeCollection collection = collections[index];
             foreach (IRenderExtractionCollector? collector in collection.Collectors)
                 collector?.Collect(collection.Chunk, systems._lastSystemVersion, collection.FullCollection);
         }
@@ -92,9 +93,9 @@ public sealed partial class RenderExtractionSystems
         }
         try
         {
-            var work = new CollectRangesJob(this);
-            if (execution is not null) execution.ExecuteRanges(_rangeCollections, count, work);
-            else for (int range = 0; range < count; range++) work.Execute(in _rangeCollections[range]);
+            var work = new CollectRangesJob(this, _rangeCollections);
+            if (execution is not null) execution.ExecuteParallel(work, count);
+            else for (int range = 0; range < count; range++) work.Execute(range);
             for (int range = 0; range < count; range++)
             {
                 RangeCollection collection = _rangeCollections[range];

@@ -73,7 +73,7 @@ public static partial class PropertyAnimation
             else
             {
                 if (track.MotionInitialized) MotionAccesses<T>.Items[track.MotionType - 1].Release(world, animation, track.MotionIndex);
-                Timeline timeline = world.ReadComponentData<Timeline>(animation);
+                Timeline timeline = world.ReadValue<Timeline>(animation);
                 RemoveDirectBoundary<T>(world, animation, source.Track, in timeline);
                 track.SourceActive = false;
                 track.MotionInitialized = false;
@@ -222,7 +222,7 @@ public static partial class PropertyAnimation
 
     internal static bool SourceSelected<T>(World world, Entity target, Channel<T> channel, byte layer) where T : unmanaged =>
         channel.Component == ComponentId<AnimationLayers>.Value || !world.Has<AnimationLayers>(target) ||
-        Includes(world, target, channel, world.ReadComponentData<AnimationLayers>(target).Items[layer].Mask);
+        Includes(world, target, channel, world.ReadValue<AnimationLayers>(target).Items[layer].Mask);
 
     internal static int CompareSources<T>(in PropertySource<T> first, in PropertySource<T> second) where T : unmanaged
     {

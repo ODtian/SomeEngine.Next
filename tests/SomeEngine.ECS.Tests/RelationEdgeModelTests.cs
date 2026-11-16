@@ -530,7 +530,7 @@ public sealed class RelationEdgeModelTests
         Entity oldTarget = world.Create();
         Entity newTarget = world.Create();
         var edge = world.CreateRelation(source, oldTarget, new ParallelDirected());
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         Assert.Throws<ApplicationException>((Action)(() =>

@@ -77,213 +77,23 @@ public static partial class JobSystem
         return JobTraits.GetPayloadLane<T>();
     }
 
-    public static JobHandle Schedule<T>(in T job, JobHandle dependency = default)
-        where T : struct, IJob
-    {
-        return Current.Schedule(job, dependency);
-    }
-
-    public static JobHandle Schedule<T>(
-        in T job,
-        JobScheduleOptions options,
-        JobHandle dependency = default)
-        where T : struct, IJob
-    {
-        return Current.Schedule(job, options, dependency);
-    }
-
-    public static JobHandle Schedule<T>(in T job, JobResourceAccess access, JobHandle dependency = default)
-        where T : struct, IJob
-    {
-        return Current.Schedule(job, access, dependency);
-    }
-
-    public static JobHandle Schedule<T>(
-        in T job,
-        JobResourceAccess access,
-        JobScheduleOptions options,
-        JobHandle dependency = default)
-        where T : struct, IJob
-    {
-        return Current.Schedule(job, access, options, dependency);
-    }
-
-    public static JobHandle Schedule<T>(
-        in T job,
-        ReadOnlySpan<JobResourceAccess> accesses,
-        JobHandle dependency = default)
-        where T : struct, IJob
-    {
-        return Current.Schedule(job, accesses, dependency);
-    }
-
-    public static JobHandle Schedule<T>(
-        in T job,
-        ReadOnlySpan<JobResourceAccess> accesses,
-        JobScheduleOptions options,
-        JobHandle dependency = default)
-        where T : struct, IJob
-    {
-        return Current.Schedule(job, accesses, options, dependency);
-    }
-
-    /// <summary>Executes ranges on the current scheduler and caller, returning after every participant exits.</summary>
-    public static void ExecuteParallel<T>(in T job, int length, int batchSize = 1,
-        JobScheduleOptions options = default) where T : struct, IJobParallelFor =>
-        Current.ExecuteParallel(job, length, batchSize, options);
-
-    /// <summary>Holds the declared accesses through synchronous range execution on the current scheduler.</summary>
-    public static void ExecuteParallel<T>(in T job, int length, int batchSize,
-        ReadOnlySpan<JobResourceAccess> accesses, JobScheduleOptions options = default)
-        where T : struct, IJobParallelFor =>
-        Current.ExecuteParallel(job, length, batchSize, accesses, options);
-
-    public static JobHandle ScheduleParallel<T>(
-        in T job,
-        int length,
-        int batchSize,
-        JobHandle dependency = default)
-        where T : struct, IJobParallelFor
-    {
-        return Current.ScheduleParallel(job, length, batchSize, dependency);
-    }
-
-    public static JobHandle ScheduleParallel<T>(
-        in T job,
-        int length,
-        int batchSize,
-        JobScheduleOptions options,
-        JobHandle dependency = default)
-        where T : struct, IJobParallelFor
-    {
-        return Current.ScheduleParallel(job, length, batchSize, options, dependency);
-    }
-
-    public static JobHandle ScheduleParallel<T>(
-        in T job,
-        int length,
-        int batchSize,
-        JobResourceAccess access,
-        JobHandle dependency = default)
-        where T : struct, IJobParallelFor
-    {
-        return Current.ScheduleParallel(job, length, batchSize, access, dependency);
-    }
-
-    public static JobHandle ScheduleParallel<T>(
-        in T job,
-        int length,
-        int batchSize,
-        JobResourceAccess access,
-        JobScheduleOptions options,
-        JobHandle dependency = default)
-        where T : struct, IJobParallelFor
-    {
-        return Current.ScheduleParallel(job, length, batchSize, access, options, dependency);
-    }
-
-    public static JobHandle ScheduleParallel<T>(
-        in T job,
-        int length,
-        int batchSize,
-        ReadOnlySpan<JobResourceAccess> accesses,
-        JobHandle dependency = default)
-        where T : struct, IJobParallelFor
-    {
-        return Current.ScheduleParallel(job, length, batchSize, accesses, dependency);
-    }
-
-    public static JobHandle ScheduleParallel<T>(
-        in T job,
-        int length,
-        int batchSize,
-        ReadOnlySpan<JobResourceAccess> accesses,
-        JobScheduleOptions options,
-        JobHandle dependency = default)
-        where T : struct, IJobParallelFor
-    {
-        return Current.ScheduleParallel(job, length, batchSize, accesses, options, dependency);
-    }
-
-    public static JobHandle CombineDependencies(ReadOnlySpan<JobHandle> handles)
-    {
-        return Current.CombineDependencies(handles);
-    }
 }
 
 public static partial class JobSystem
 {
     internal static bool IsExecutingJob => JobThreads.IsActive;
 
-    public static JobHandle CreateExternalFenceHandle(ValueTask task, ReadOnlySpan<JobResourceAccess> accesses = default) =>
-        Current.CreateExternalFenceHandle(task, accesses);
-
-    public static JobHandle CreateExternalFenceHandle(Task task, ReadOnlySpan<JobResourceAccess> accesses = default) =>
-        Current.CreateExternalFenceHandle(task, accesses);
-
-    public static JobHandle CreateExternalFenceHandle(IJobExternalFence fence)
-    {
-        return Current.CreateExternalFenceHandle(fence, ReadOnlySpan<JobResourceAccess>.Empty);
-    }
-
-    public static JobHandle CreateExternalFenceHandle(IJobExternalFence fence, JobResourceAccess access)
-    {
-        ReadOnlySpan<JobResourceAccess> accesses = stackalloc JobResourceAccess[] { access };
-        return Current.CreateExternalFenceHandle(fence, accesses);
-    }
-
-    public static JobHandle CreateExternalFenceHandle(
-        IJobExternalFence fence,
-        ReadOnlySpan<JobResourceAccess> accesses)
-    {
-        return Current.CreateExternalFenceHandle(fence, accesses);
-    }
-
-    public static void OnCompleted(
+    internal static void OnCompleted(
         JobHandle handle,
         Action<JobHandle, object?> continuation,
         object? state = null)
     {
-        // Observer registration does not wait for completion. Callbacks are best-effort notifications
-        // and run inline on the registering, completing, or signaling thread; exceptions are suppressed.
+        // Registration does not wait for completion. The callback runs inline on the registering, completing or
+        // signaling thread, and its exceptions reach that thread.
         if (handle.Scheduler is { } scheduler)
             scheduler.OnCompleted(handle, continuation, state);
         else
-        {
-            ArgumentNullException.ThrowIfNull(continuation);
-            try { continuation(handle, state); }
-            catch { /* Completion observers do not alter the completed operation. */ }
-        }
-    }
-
-    public static JobResource CreateResource(string? name = null)
-    {
-        return Current.CreateResource(name);
-    }
-
-    public static JobResourceToken CreateResourceToken(string? name = null)
-    {
-        return Current.CreateResourceToken(name);
-    }
-
-    public static JobResource CreateScopeResource(string? name = null)
-    {
-        return Current.CreateScopeResource(name);
-    }
-
-    public static JobResourceToken CreateScopeResourceToken(string? name = null)
-    {
-        return Current.CreateScopeResourceToken(name);
-    }
-
-    public static void ReleaseResource(JobResource resource)
-    {
-        Current.ReleaseResource(resource);
-    }
-
-    public static void ReleaseResourceToken(JobResourceToken token)
-    {
-        Current.ReleaseResourceToken(token);
+            continuation(handle, state);
     }
 
     internal static bool IsCompleted(JobHandle handle)
@@ -346,30 +156,6 @@ public static partial class JobSystem
         bool requireSingleWorkItem = false)
     {
         Current.RequireCurrentAccess(required, requireSingleWorkItem);
-    }
-
-    /// <summary>
-    /// Schedules cleanup after <paramref name="dependency"/> reaches success, failure, or cancellation.
-    /// The cleanup job observes its retained completion result after restoring its data.
-    /// </summary>
-    public static JobHandle ScheduleFinally<T>(
-        in T job,
-        JobScheduleOptions options,
-        JobHandle dependency)
-        where T : struct, IJob
-    {
-        return Current.ScheduleFinally(job, options, dependency);
-    }
-
-    /// <summary>Schedules terminal cleanup with its actual resource accesses.</summary>
-    public static JobHandle ScheduleFinally<T>(
-        in T job,
-        ReadOnlySpan<JobResourceAccess> accesses,
-        JobScheduleOptions options,
-        JobHandle dependency)
-        where T : struct, IJob
-    {
-        return Current.ScheduleFinally(job, accesses, options, dependency);
     }
 
     internal static SynchronousResourceAccess AcquireSynchronousAccess(

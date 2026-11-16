@@ -115,17 +115,6 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
     private static void WriteFields<TComponent, TAccess>(World world, Channel<T> channel, ReadOnlySpan<FieldWrite<T>> writes)
         where TComponent : struct, IComponent where TAccess : struct, IFieldAccess<TComponent, T>
     {
-        if (typeof(ISparseComponent).IsAssignableFrom(typeof(TComponent)))
-        {
-            var sparse = world.OpenSparseWrite<TComponent>();
-            try
-            {
-                foreach (ref readonly FieldWrite<T> write in writes)
-                    if (write.Channel == channel) TAccess.Write(ref sparse.Get(write.Target), in write.Value);
-            }
-            finally { sparse.Dispose(); }
-            return;
-        }
         var roots = world.OpenWrite<TComponent>();
         try
         {
@@ -199,18 +188,6 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
     private static void WriteOffsetFields<TComponent>(World world, Channel<T> channel, ReadOnlySpan<FieldWrite<T>> writes)
         where TComponent : unmanaged, IComponent
     {
-        if (typeof(ISparseComponent).IsAssignableFrom(typeof(TComponent)))
-        {
-            var sparse = world.OpenSparseWrite<TComponent>();
-            try
-            {
-                foreach (ref readonly FieldWrite<T> write in writes)
-                    if (write.Channel == channel)
-                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref Unsafe.As<TComponent, byte>(ref sparse.Get(write.Target)), channel.Offset), write.Value);
-            }
-            finally { sparse.Dispose(); }
-            return;
-        }
         var roots = world.OpenWrite<TComponent>();
         try
         {

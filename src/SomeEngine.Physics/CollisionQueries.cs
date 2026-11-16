@@ -88,7 +88,7 @@ public sealed partial class CollisionQueries<TComponent, TReader> : ICollisionQu
         using ReadLookup<TComponent> values = _world.OpenRead<TComponent>();
         if (scope.Contains(entity) && values.Has(entity))
         {
-            surface = _reader.ReadSurface(in values.ReadKnown(entity));
+            surface = _reader.ReadSurface(in values.Read(entity));
             return true;
         }
         surface = default;
@@ -162,7 +162,7 @@ public sealed partial class CollisionQueries<TComponent, TReader> : ICollisionQu
                     continue;
                 }
                 if (!query.Contains(node.Entity) || !values.Has(node.Entity)) continue;
-                CollisionSurface surface = reader.ReadSurface(in values.ReadKnown(node.Entity));
+                CollisionSurface surface = reader.ReadSurface(in values.Read(node.Entity));
                 ReadOnlySpan<Vector3> points = surface.Mesh.Positions.Span;
                 ReadOnlySpan<uint> indices = surface.Mesh.Indices.Span;
                 for (int index = 0; index < indices.Length; index += 3)

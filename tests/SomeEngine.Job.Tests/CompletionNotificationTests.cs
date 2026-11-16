@@ -6,16 +6,16 @@ public sealed class CompletionNotificationTests
     public async Task ResourceReaderProceedsAfterCpuWorkWhileChildFenceIsIncomplete()
     {
         JobSystem.Initialize(new JobConfiguration { WorkerCount = 1 });
-        JobResource resource = JobSystem.CreateResource("CPU data with outstanding child fence");
+        JobResource resource = JobSystem.Current.CreateResource("CPU data with outstanding child fence");
         var fence = new TestFence();
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         using var reading = new ManualResetEventSlim();
-        JobHandle producer = JobSystem.Schedule(new SubmitFence(fence, entered, release),
-            JobResourceAccess.Write(resource));
+        JobHandle producer = JobSystem.Current.Schedule(new SubmitFence(fence, entered, release),
+            [JobResourceAccess.Write(resource)]);
         Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
         int[] values = [0];
-        JobHandle reader = JobSystem.Schedule(new ReadValue(values, reading), JobResourceAccess.Read(resource));
+        JobHandle reader = JobSystem.Current.Schedule(new ReadValue(values, reading), [JobResourceAccess.Read(resource)]);
         try
         {
             release.Set();
@@ -29,7 +29,7 @@ public sealed class CompletionNotificationTests
             producer.Complete();
             await Task.Run(reader.Complete).WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Equal(1, values[0]);
-            JobSystem.ReleaseResource(resource);
+            JobSystem.Current.ReleaseResource(resource);
         }
     }
 
@@ -106,7 +106,7 @@ public sealed class CompletionNotificationTests
     {
         public void Execute()
         {
-            JobSystem.CreateExternalFenceHandle(fence);
+            JobSystem.Current.CreateExternalFenceHandle(fence);
             entered.Set();
             Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
         }

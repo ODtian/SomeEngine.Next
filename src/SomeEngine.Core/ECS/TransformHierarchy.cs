@@ -46,11 +46,11 @@ public static class TransformHierarchy<TDomain>
         }
 
         Parent<TDomain>? previousParent = world.Has<Parent<TDomain>>(child)
-            ? world.ReadComponentData<Parent<TDomain>>(child)
+            ? world.ReadValue<Parent<TDomain>>(child)
             : null;
         int? previousSiblingIndex = GetOrderedSiblingIndex(world, child, previousParent);
-        LocalTransform previousLocal = world.ReadComponentData<LocalTransform>(child);
-        WorldTransform previousWorld = world.ReadComponentData<WorldTransform>(child);
+        LocalTransform previousLocal = world.ReadValue<LocalTransform>(child);
+        WorldTransform previousWorld = world.ReadValue<WorldTransform>(child);
 
         Hierarchy<TDomain>.SetParent(world, child, parent);
         try
@@ -81,11 +81,11 @@ public static class TransformHierarchy<TDomain>
 
         TransformQvvs childWorld = ComputeWorldTransform(world, child);
         Parent<TDomain>? previousParent = world.Has<Parent<TDomain>>(child)
-            ? world.ReadComponentData<Parent<TDomain>>(child)
+            ? world.ReadValue<Parent<TDomain>>(child)
             : null;
         int? previousSiblingIndex = GetOrderedSiblingIndex(world, child, previousParent);
-        LocalTransform previousLocal = world.ReadComponentData<LocalTransform>(child);
-        WorldTransform previousWorld = world.ReadComponentData<WorldTransform>(child);
+        LocalTransform previousLocal = world.ReadValue<LocalTransform>(child);
+        WorldTransform previousWorld = world.ReadValue<WorldTransform>(child);
 
         Hierarchy<TDomain>.Detach(world, child);
         try
@@ -144,7 +144,7 @@ public static class TransformHierarchy<TDomain>
 
             if (hasLocal)
             {
-                TransformQvvs local = world.ReadComponentData<LocalTransform>(node).Value;
+                TransformQvvs local = world.ReadValue<LocalTransform>(node).Value;
                 result = TransformQvvs.Combine(result, local);
             }
         }

@@ -353,9 +353,9 @@ internal sealed class SomeRelationComparison<TPayload> : IRelationComparison<Ent
     public bool Active(Entity entity) => _world.IsAlive(entity) && !_world.IsPendingCleanup(entity);
     public Entity CreateEndpoint(int ordinal)
     {
-        var p = new Position { X = ordinal }; var v = new Velocity { X = 1, Y = 2 }; var h = new Health { Value = 100, Max = 100 };
-        return ordinal % 4 == 0 ? _world.Create(p, v, h, new Team(), new Sleeping())
-            : ordinal % 2 == 0 ? _world.Create(p, v, h, new Team()) : _world.Create(p, v, h);
+        Body body = Body.Moving(new Position { X = ordinal });
+        return ordinal % 4 == 0 ? _world.Spawn(new SleepingTeamBody { Body = body })
+            : ordinal % 2 == 0 ? _world.Spawn(new TeamBody { Body = body }) : _world.Spawn(body);
     }
     public Entity CreateEdge(Entity source, Entity target, int ordinal) => Relations<TPayload>.CreateEdge(_world, source, target, TPayload.Create(ordinal)).Entity;
     public void Retarget(ReadOnlySpan<RelationEdit<Entity>> edits, bool deferred)

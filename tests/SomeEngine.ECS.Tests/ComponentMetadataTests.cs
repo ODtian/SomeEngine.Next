@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Registry;
@@ -111,7 +112,9 @@ public class ComponentMetadataTests
     public void TableStorage()
     {
         using var world = new World();
-        var entity = world.Create(new Position { X = 1 }, new Velocity { Y = 2 }, new Health { Value = 3 });
+        Entity entity = world.Create(new Position { X = 1 });
+        world.Add(entity, new Velocity { Y = 2 });
+        world.Add(entity, new Health { Value = 3 });
         Assert.Equal(1, world.Read<Position>(entity).X);
         Assert.Equal(2, world.Read<Velocity>(entity).Y);
         Assert.Equal(3, world.Read<Health>(entity).Value);
@@ -121,7 +124,8 @@ public class ComponentMetadataTests
     public void TagStorage()
     {
         using var world = new World();
-        var entity = world.Create(new PlayerTag(), new EnemyTag());
+        Entity entity = world.Create(new PlayerTag());
+        world.Add(entity, new EnemyTag());
         world.Remove<PlayerTag>(entity);
         Assert.False(world.Has<PlayerTag>(entity));
         Assert.True(world.Has<EnemyTag>(entity));
@@ -143,17 +147,17 @@ public class ComponentMetadataTests
     {
         using var world = new World();
         var entity = world.Create();
-        world.SetSparse(entity, new Damage { Amount = 3 });
-        Assert.True(world.HasSparse<Damage>(entity));
-        Assert.False(world.Has<Damage>(entity));
-        Assert.Equal(3, world.ReadSparse<Damage>(entity).Amount);
+        world.Set(entity, new Damage { Amount = 3 });
+        Assert.True(world.Has<Damage>(entity));
+        Assert.Equal(3, world.Read<Damage>(entity).Amount);
     }
 
     [Fact]
     public void RelationPayloadUsesOrdinaryTableStorage()
     {
         using var world = new World();
-        var entity = world.Create(new Likes { Strength = 0.5f }, new Owns { Slot = 7 });
+        Entity entity = world.Create(new Likes { Strength = 0.5f });
+        world.Add(entity, new Owns { Slot = 7 });
         Assert.Equal(0.5f, world.Read<Likes>(entity).Strength);
         Assert.Equal(7, world.Read<Owns>(entity).Slot);
         Assert.False(world.Has<RelationEndpoints<Likes>>(entity));
@@ -200,7 +204,8 @@ public class ComponentMetadataTests
     public void ComponentBytesPreserveAdjacentFields()
     {
         using var world = new World();
-        var entity = world.Create(new Position { X = 1, Y = 2 }, new Health { Value = 3 });
+        Entity entity = world.Create(new Position { X = 1, Y = 2 });
+        world.Add(entity, new Health { Value = 3 });
         System.Runtime.CompilerServices.Unsafe.WriteUnaligned(ref world.WriteBytes(entity,
             ComponentId<Position>.Value, sizeof(float), sizeof(float)), 7f);
         Assert.Equal(1, world.Read<Position>(entity).X);

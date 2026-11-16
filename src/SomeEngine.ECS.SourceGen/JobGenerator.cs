@@ -133,9 +133,11 @@ internal static class JobGenerator
                 .Append(component.Value.Kind == "buffer" ? "Buffer" : "").Append('<').Append(EcsGenerator.Name(component.Key))
                 .Append(component.Value.HasResources ? ">(hasResources: true),\n" : ">(),\n");
         code.Append("};\nstatic global::System.ReadOnlySpan<global::SomeEngine.ECS.Systems.ChunkAccess> global::SomeEngine.ECS.Systems.IChunkAction.Components => __ecsComponents;\n");
+        if (collectsAdditional)
+            code.Append("static bool global::SomeEngine.ECS.Systems.IChunkAction.CollectsAdditionalResources => true;\n");
         if (inputs.Any(input => input.Resources is not null))
         {
-            code.Append("static void global::SomeEngine.ECS.Systems.IChunkAction.CollectResources(global::SomeEngine.ECS.Systems.SystemChunk rows, ref global::SomeEngine.ECS.Systems.JobResourceAccessBuilder resources) {\n");
+            code.Append("static void global::SomeEngine.ECS.Systems.IChunkAction.CollectResources(global::SomeEngine.ECS.QueryChunk rows, ref global::SomeEngine.ECS.Systems.JobResourceAccessBuilder resources) {\n");
             var collected = new HashSet<string>();
             foreach (Input input in inputs)
                 if (input.Resources is not null && collected.Add(EcsGenerator.Name(input.Type) + EcsGenerator.Name(input.Resources)))
@@ -148,20 +150,20 @@ internal static class JobGenerator
         {
             code.Append("private static readonly global::SomeEngine.ECS.Systems.SystemAccesses __ecsAdditional = new global::SomeEngine.ECS.Systems.SystemAccesses()");
             foreach (Input input in inputs.Where(input => input.Kind == "sparse"))
-                code.Append(input.Write ? ".WriteSparse<" : ".ReadSparse<").Append(EcsGenerator.Name(input.Type)).Append(">()");
+                code.Append(input.Write ? ".Write<" : ".Read<").Append(EcsGenerator.Name(input.Type)).Append(">()");
             foreach (AttributeData attribute in additional)
             {
                 if (attribute.ConstructorArguments[0].Value is not ITypeSymbol value) continue;
                 int storage = attribute.ConstructorArguments.Length > 1 && attribute.ConstructorArguments[1].Value is int location ? location : 0;
                 bool write = attribute.AttributeClass!.Name == "JobWriteAttribute";
-                if (write && storage == 0 && Controlled(value))
+                if (write && storage == 0 && !Sparse(value) && Controlled(value))
                 { EcsGenerator.Error(output, type, "Record random structural writes in the command producer."); return; }
-                code.Append('.').Append(write ? "Write" : "Read").Append(storage == 1 ? "Sparse" : storage == 2 ? "Resource" : "Random")
+                code.Append('.').Append(write ? "Write" : "Read").Append(storage == 1 ? "Resource" : "")
                     .Append('<').Append(EcsGenerator.Name(value)).Append(">()");
             }
             code.Append(";\nstatic global::SomeEngine.ECS.Systems.SystemAccesses? global::SomeEngine.ECS.Systems.IChunkAction.AdditionalAccesses => __ecsAdditional;\n");
         }
-        code.Append("void global::SomeEngine.ECS.Systems.IChunkAction.Execute(global::SomeEngine.ECS.Systems.SystemChunk __rows) {\n");
+        code.Append("void global::SomeEngine.ECS.Systems.IChunkAction.Execute(global::SomeEngine.ECS.QueryChunk __rows) {\n");
         if (inputs.Any(value => value.Kind is "entity" or "entities")) code.Append("var __entities = __rows.Entities;\n");
         for (int i = 0; i < inputs.Count; i++)
         {
@@ -173,7 +175,7 @@ internal static class JobGenerator
         }
         if (entity) code.Append("for (int __row = 0; __row < __rows.Count; __row++) {\n");
         foreach (Input input in inputs.Where(input => input.Kind == "sparse"))
-            code.Append("if (!__rows.HasSparse<").Append(EcsGenerator.Name(input.Type)).Append(">(__row)) continue;\n");
+            code.Append("if (!__rows.Has<").Append(EcsGenerator.Name(input.Type)).Append(">(__row)) continue;\n");
         for (int i = 0; i < inputs.Count; i++)
             if (inputs[i].Kind == "buffer") code.Append("using var __buffer").Append(i).Append(" = __rows.")
                 .Append(inputs[i].Write ? "GetBuffer" : "ReadBuffer").Append('<').Append(EcsGenerator.Name(inputs[i].Type)).Append(">(__row);\n");
@@ -184,18 +186,16 @@ internal static class JobGenerator
             if (input.Parameter.RefKind == RefKind.Ref) code.Append("ref ");
             else if (input.Parameter.RefKind is RefKind.In or RefKind.RefReadOnlyParameter) code.Append("in ");
             code.Append(input.Kind == "entity" ? "__entities[__row]" : input.Kind == "entities" ? "__entities" : input.Kind == "buffer" ? "__buffer" + i
-                : input.Kind == "sparse" ? "__rows." + (input.Write ? "GetSparse" : "ReadSparse") + "<" + EcsGenerator.Name(input.Type) + ">(__row)"
+                : input.Kind == "sparse" ? "__rows." + (input.Write ? "Write" : "Read") + "<" + EcsGenerator.Name(input.Type) + ">(__row)"
                 : "__column" + i + (entity ? "[__row]" : ""));
         }
         code.Append(");\n"); if (entity) code.Append("}\n"); code.Append("}\n");
-        code.Append("public void Execute(global::SomeEngine.ECS.World world, global::SomeEngine.Job.JobHandle dependency = default, global::SomeEngine.ECS.Query? query = null) { dependency.Complete(); global::SomeEngine.ECS.Systems.SystemRunner.Execute<")
-            .Append(self).Append(">(world, this, query); }\n");
         code.Append("public void ExecuteParallel(global::SomeEngine.ECS.World world, global::SomeEngine.Job.JobHandle dependency = default, global::SomeEngine.ECS.Query? query = null) { dependency.Complete(); new global::SomeEngine.ECS.Systems.SystemRunner(world).ExecuteParallel<")
-            .Append(self).Append(">(this, query); }\n");
+            .Append(self).Append(">(query, this); }\n");
         foreach (bool parallel in new[] { false, true })
             code.Append("public global::SomeEngine.Job.JobHandle ").Append(parallel ? "ScheduleParallel" : "Schedule")
                 .Append("(global::SomeEngine.ECS.World world, global::SomeEngine.Job.JobHandle dependency = default, global::SomeEngine.ECS.Query? query = null) => new global::SomeEngine.ECS.Systems.SystemRunner(world).Schedule<")
-                .Append(self).Append(">(this, dependency, ").Append(parallel ? "true" : "false").Append(", query);\n");
+                .Append(self).Append(">(query, this, dependency, ").Append(parallel ? "true" : "false").Append(");\n");
         EcsGenerator.Add(output, type, "Job", EcsGenerator.Wrap(type, "global::SomeEngine.ECS.Systems.IChunkAction", code.ToString()));
     }
 

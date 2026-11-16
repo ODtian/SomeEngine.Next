@@ -547,7 +547,7 @@ internal sealed partial class FrameExecutor
             return RecordCallingBatchAndJoinLatencyWorker(latencySequence, includeCallingWork);
 
         var job = new RecordBatchJob(this, _parallelBatches, 1);
-        JobHandle handle = JobSystem.ScheduleParallel(job, batchCount - 1, 1);
+        JobHandle handle = JobSystem.Current.ScheduleParallel(job, batchCount - 1, 1);
         Exception? callingThreadFailure = null;
         try
         {

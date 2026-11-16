@@ -81,10 +81,10 @@ public sealed class ComponentTypeWriteVersionTests
 
         Assert.Equal(0u, world.ComponentWriteVersion(ComponentId<SparseValue>.Value));
 
-        world.SetSparse(entity, new SparseValue { Value = 7 });
+        world.Set(entity, new SparseValue { Value = 7 });
 
         Assert.Equal(1u, world.ComponentWriteVersion(ComponentId<SparseValue>.Value));
-        Assert.Equal(7, world.ReadSparse<SparseValue>(entity).Value);
+        Assert.Equal(7, world.Read<SparseValue>(entity).Value);
     }
 
     [Fact]
@@ -92,15 +92,15 @@ public sealed class ComponentTypeWriteVersionTests
     {
         using var world = new World();
         var entity = world.Create(new Position { X = 2 });
-        world.SetSparse(entity, new SparseValue { Value = 7 });
+        world.Set(entity, new SparseValue { Value = 7 });
         ulong sparseVersion = world.ComponentWriteVersion(ComponentId<SparseValue>.Value);
         ulong positionVersion = world.ComponentWriteVersion(ComponentId<Position>.Value);
 
-        world.SetSparse(entity, new SparseValue { Value = 13 });
+        world.Set(entity, new SparseValue { Value = 13 });
 
         Assert.Equal(sparseVersion + 1, world.ComponentWriteVersion(ComponentId<SparseValue>.Value));
         Assert.Equal(positionVersion, world.ComponentWriteVersion(ComponentId<Position>.Value));
-        Assert.Equal(13, world.ReadSparse<SparseValue>(entity).Value);
+        Assert.Equal(13, world.Read<SparseValue>(entity).Value);
     }
 
     [Fact]
@@ -108,13 +108,13 @@ public sealed class ComponentTypeWriteVersionTests
     {
         using var world = new World();
         var entity = world.Create();
-        world.SetSparse(entity, new SparseValue { Value = 7 });
+        world.Set(entity, new SparseValue { Value = 7 });
         ulong before = world.ComponentWriteVersion(ComponentId<SparseValue>.Value);
 
-        world.RemoveSparse<SparseValue>(entity);
+        world.Remove<SparseValue>(entity);
 
         Assert.Equal(before + 1, world.ComponentWriteVersion(ComponentId<SparseValue>.Value));
-        Assert.False(world.HasSparse<SparseValue>(entity));
+        Assert.False(world.Has<SparseValue>(entity));
     }
 
     [Theory]
@@ -124,14 +124,14 @@ public sealed class ComponentTypeWriteVersionTests
     {
         using var world = new World();
         var entity = world.Create();
-        world.SetSparse(entity, new SparseValue { Value = 7 });
+        world.Set(entity, new SparseValue { Value = 7 });
         ulong before = world.ComponentWriteVersion(ComponentId<SparseValue>.Value);
 
         if (withState)
         {
             int value = 17;
             {
-                var sparseScope = world.OpenSparseWrite<SparseValue>();
+                var sparseScope = world.OpenSparseValueWrites<SparseValue>();
                 try
                 {
                     ReadOnlySpan<Entity> entities = sparseScope.Entities;
@@ -144,7 +144,7 @@ public sealed class ComponentTypeWriteVersionTests
         else
         {
             {
-                var sparseScope = world.OpenSparseWrite<SparseValue>();
+                var sparseScope = world.OpenSparseValueWrites<SparseValue>();
                 try
                 {
                     ReadOnlySpan<Entity> entities = sparseScope.Entities;
@@ -156,7 +156,7 @@ public sealed class ComponentTypeWriteVersionTests
         }
 
         Assert.Equal(before + 1, world.ComponentWriteVersion(ComponentId<SparseValue>.Value));
-        Assert.Equal(17, world.ReadSparse<SparseValue>(entity).Value);
+        Assert.Equal(17, world.Read<SparseValue>(entity).Value);
     }
 
     [Theory]
@@ -184,25 +184,11 @@ public sealed class ComponentTypeWriteVersionTests
     }
 
     [Fact]
-    public void BatchCreationAdvancesTypeWriteVersionForEachComponent()
-    {
-        using var world = new World();
-        world.Create(new Position());
-        ulong before = world.ComponentWriteVersion(ComponentId<Position>.Value);
-        int[] components = [ComponentId<Position>.Value];
-
-        world.ExecuteBundleSpawnBatch(components, 3, 0, new NumberedPositions());
-
-        Assert.True(world.ComponentWriteVersion(ComponentId<Position>.Value) > before);
-        Assert.Equal(4, world.EntityCount);
-    }
-
-    [Fact]
     public void CloningEntityAdvancesCopiedComponentTypeWriteVersions()
     {
         using var world = new World();
         var source = world.Create(new Position { X = 7 });
-        world.SetSparse(source, new SparseValue { Value = 13 });
+        world.Set(source, new SparseValue { Value = 13 });
         ulong positionVersion = world.ComponentWriteVersion(ComponentId<Position>.Value);
         ulong sparseVersion = world.ComponentWriteVersion(ComponentId<SparseValue>.Value);
 
@@ -211,7 +197,7 @@ public sealed class ComponentTypeWriteVersionTests
         Assert.True(world.ComponentWriteVersion(ComponentId<Position>.Value) > positionVersion);
         Assert.True(world.ComponentWriteVersion(ComponentId<SparseValue>.Value) > sparseVersion);
         Assert.Equal(7f, world.Read<Position>(clone).X);
-        Assert.Equal(13, world.ReadSparse<SparseValue>(clone).Value);
+        Assert.Equal(13, world.Read<SparseValue>(clone).Value);
     }
 
     [Fact]
@@ -219,7 +205,7 @@ public sealed class ComponentTypeWriteVersionTests
     {
         using var world = new World();
         var entity = world.Create(new Position { X = 7 });
-        world.SetSparse(entity, new SparseValue { Value = 13 });
+        world.Set(entity, new SparseValue { Value = 13 });
         ulong positionVersion = world.ComponentWriteVersion(ComponentId<Position>.Value);
         ulong sparseVersion = world.ComponentWriteVersion(ComponentId<SparseValue>.Value);
 
@@ -236,37 +222,14 @@ public sealed class ComponentTypeWriteVersionTests
         using var world = new World();
         var source = world.Create(new Position { X = 7 });
         var target = world.Create(new Position { X = 1 });
-        world.SetSparse(target, new SparseValue { Value = 13 });
+        world.Set(target, new SparseValue { Value = 13 });
         ulong before = world.ComponentWriteVersion(ComponentId<SparseValue>.Value);
 
         world.Copy(source, target);
 
         Assert.Equal(before + 1, world.ComponentWriteVersion(ComponentId<SparseValue>.Value));
-        Assert.False(world.HasSparse<SparseValue>(target));
+        Assert.False(world.Has<SparseValue>(target));
         Assert.Equal(7f, world.Read<Position>(target).X);
-    }
-
-    [Fact]
-    public void FailedBundleReplacementPreservesValuesAndTypeWriteVersions()
-    {
-        using var world = new World();
-        var entity = world.Create(new Position { X = 1 });
-        world.SetSparse(entity, new SparseValue { Value = 13 });
-        ulong positionVersion = world.ComponentWriteVersion(ComponentId<Position>.Value);
-        ulong sparseVersion = world.ComponentWriteVersion(ComponentId<SparseValue>.Value);
-        int[] components = [ComponentId<Position>.Value];
-        int[] sparseComponents = [ComponentId<SparseValue>.Value];
-
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
-        using var candidate = new World();
-        checkpoint.Restore(candidate);
-        Assert.Throws<InvalidOperationException>(() =>
-            candidate.ExecuteBundleReplace(entity, components, sparseComponents, 0, new FaultingReplacement()));
-
-        Assert.Equal(positionVersion, world.ComponentWriteVersion(ComponentId<Position>.Value));
-        Assert.Equal(sparseVersion, world.ComponentWriteVersion(ComponentId<SparseValue>.Value));
-        Assert.Equal(1f, world.Read<Position>(entity).X);
-        Assert.Equal(13, world.ReadSparse<SparseValue>(entity).Value);
     }
 
     [Fact]
@@ -310,8 +273,8 @@ public sealed class ComponentTypeWriteVersionTests
         var entity = world.Create();
         if (sparse)
         {
-            world.SetSparse(entity, new SparseValue { Value = 7 });
-            ulong rowVersion = world.ComponentDataWriteVersion<SparseValue>(entity);
+            world.Set(entity, new SparseValue { Value = 7 });
+            ulong rowVersion = world.ComponentWriteVersion<SparseValue>(entity);
             ulong typeVersion = world.ComponentWriteVersion(ComponentId<SparseValue>.Value);
             int componentId = ComponentId<SparseValue>.Value;
 
@@ -320,14 +283,14 @@ public sealed class ComponentTypeWriteVersionTests
                 : ref world.WriteBytes(entity, componentId));
             Unsafe.WriteUnaligned(ref value, 13);
 
-            Assert.NotEqual(rowVersion, world.ComponentDataWriteVersion<SparseValue>(entity));
+            Assert.NotEqual(rowVersion, world.ComponentWriteVersion<SparseValue>(entity));
             Assert.Equal(typeVersion + 1, world.ComponentWriteVersion(ComponentId<SparseValue>.Value));
-            Assert.Equal(13, world.ReadSparse<SparseValue>(entity).Value);
+            Assert.Equal(13, world.Read<SparseValue>(entity).Value);
         }
         else
         {
             world.Add(entity, new Position { X = 7 });
-            ulong rowVersion = world.ComponentDataWriteVersion<Position>(entity);
+            ulong rowVersion = world.ComponentWriteVersion<Position>(entity);
             ulong typeVersion = world.ComponentWriteVersion(ComponentId<Position>.Value);
             int componentId = ComponentId<Position>.Value;
 
@@ -336,7 +299,7 @@ public sealed class ComponentTypeWriteVersionTests
                 : ref world.WriteBytes(entity, componentId));
             Unsafe.WriteUnaligned(ref value, 13f);
 
-            Assert.NotEqual(rowVersion, world.ComponentDataWriteVersion<Position>(entity));
+            Assert.NotEqual(rowVersion, world.ComponentWriteVersion<Position>(entity));
             Assert.Equal(typeVersion + 1, world.ComponentWriteVersion(ComponentId<Position>.Value));
             Assert.Equal(13f, world.Read<Position>(entity).X);
         }
@@ -348,7 +311,7 @@ public sealed class ComponentTypeWriteVersionTests
         using var world = new World();
         var first = world.Create(new Position { X = 1 });
         var second = world.Create(new Position { X = 2 });
-        ulong rowVersion = world.ComponentDataWriteVersion<Position>(first);
+        ulong rowVersion = world.ComponentWriteVersion<Position>(first);
         ulong typeVersion = world.ComponentWriteVersion(ComponentId<Position>.Value);
         var query = world.Query(new QueryDescription().WithStored<Position>());
 
@@ -364,8 +327,8 @@ public sealed class ComponentTypeWriteVersionTests
 
         }
 
-        Assert.NotEqual(rowVersion, world.ComponentDataWriteVersion<Position>(first));
-        Assert.Equal(world.ComponentDataWriteVersion<Position>(first), world.ComponentDataWriteVersion<Position>(second));
+        Assert.NotEqual(rowVersion, world.ComponentWriteVersion<Position>(first));
+        Assert.Equal(world.ComponentWriteVersion<Position>(first), world.ComponentWriteVersion<Position>(second));
         Assert.Equal(typeVersion + 1, world.ComponentWriteVersion(ComponentId<Position>.Value));
         Assert.Equal(19f, world.Read<Position>(first).X);
         Assert.Equal(19f, world.Read<Position>(second).X);
@@ -374,21 +337,6 @@ public sealed class ComponentTypeWriteVersionTests
     private struct SparseValue : ISparseComponent, IAddedComponent
     {
         public int Value;
-    }
-
-    private readonly struct NumberedPositions : IBundleWriter<int>
-    {
-        public void Write(BundleWriteView view, in int state) => view.Write(new Position { X = view.Index + 1 });
-    }
-
-    private readonly struct FaultingReplacement : IBundleWriter<int>
-    {
-        public void Write(BundleWriteView view, in int value)
-        {
-            view.Write(new Position { X = 7 });
-            view.WriteSparse(new SparseValue { Value = 17 });
-            throw new InvalidOperationException();
-        }
     }
 
 }

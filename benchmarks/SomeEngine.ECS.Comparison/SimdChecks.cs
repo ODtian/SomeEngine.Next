@@ -64,8 +64,8 @@ internal static class SimdChecks
                 bool secondMatches = last || row % 5 != 0;
                 bool enabled = last || row % 7 != 0;
                 var entity = world.Create(new Ordinal { Value = row });
-                world.SetShared(entity, new SharedPrimary { Value = firstMatches ? 7 : 8 });
-                world.SetShared(entity, new SharedSecondary { Value = secondMatches ? 11 : 12 });
+                world.Set(entity, new SharedPrimary { Value = firstMatches ? 7 : 8 });
+                world.Set(entity, new SharedSecondary { Value = secondMatches ? 11 : 12 });
                 if (!enabled) world.Disable<SharedPrimary>(entity);
                 expectedSingle[row] = firstMatches && enabled;
                 expectedCombined[row] = firstMatches && secondMatches && enabled;

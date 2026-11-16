@@ -76,7 +76,7 @@ internal sealed partial class RelationData<T>
         ulong through = destroyed.Through;
         if (!_hasDeferredChanges)
         {
-            _version = _world.Version;
+            _version = _world.CompletedVersion;
             _reader.Advance(through);
             return;
         }
@@ -111,7 +111,7 @@ internal sealed partial class RelationData<T>
         }
         PublishFutureOrders();
         _hasDeferredChanges = false;
-        _version = _world.Version;
+        _version = _world.CompletedVersion;
         _reader.Advance(through);
     }
 
@@ -136,7 +136,7 @@ internal sealed partial class RelationData<T>
         ClearBatch();
         ClearOrder();
         _hasDeferredChanges = false;
-        _version = _world.Version;
+        _version = _world.CompletedVersion;
     }
 
     public void Dispose()

@@ -10,6 +10,25 @@ internal sealed class QueryDefinition(int id, QueryDescription description)
     internal readonly int Id = id;
     internal readonly QueryDescription Description = description;
     internal readonly int[] AccessTypes = CollectAccessTypes(description);
+    internal readonly int[] SparseRequiredTypes = Members(description.SparseRequired);
+    /// <summary>Sparse types the query reads: its sparse conditions and its optional sparse reads.</summary>
+    internal readonly int[] SparseAccessTypes = CollectSparseAccessTypes(description);
+
+    private static int[] Members(in ComponentBits bits)
+    {
+        var types = new List<int>();
+        for (int type = 0; type < ComponentTypes.Count; type++) if (bits.Has(type)) types.Add(type);
+        return types.ToArray();
+    }
+
+    private static int[] CollectSparseAccessTypes(QueryDescription description)
+    {
+        var types = new List<int>();
+        for (int type = 0; type < ComponentTypes.Count; type++)
+            if (description.SparseRequired.Has(type) || description.SparseExcluded.Has(type) || description.SparseReads.Has(type))
+                types.Add(type);
+        return types.ToArray();
+    }
 
     private static int[] CollectAccessTypes(QueryDescription description)
     {
@@ -47,7 +66,9 @@ internal static class QueryDefinitions
                 && left.Required.Equals(right.Required) && left.Stored.Equals(right.Stored) && left.Excluded.Equals(right.Excluded)
                 && left.Any.Equals(right.Any) && left.OptionalReads.Equals(right.OptionalReads)
                 && left.Disabled.Equals(right.Disabled) && left.Changed.Equals(right.Changed)
-                && left.Added.Equals(right.Added) && left.Shared.AsSpan().SequenceEqual(right.Shared)
+                && left.Added.Equals(right.Added) && left.SparseRequired.Equals(right.SparseRequired)
+                && left.SparseExcluded.Equals(right.SparseExcluded) && left.SparseReads.Equals(right.SparseReads)
+                && left.Shared.AsSpan().SequenceEqual(right.Shared)
                 && left.Groups.AsSpan().SequenceEqual(right.Groups);
 
         public int GetHashCode(QueryDescription description)
@@ -57,6 +78,8 @@ internal static class QueryDefinitions
             description.Any.AddHash(ref hash); description.OptionalReads.AddHash(ref hash);
             description.Disabled.AddHash(ref hash); description.Changed.AddHash(ref hash);
             description.Added.AddHash(ref hash);
+            description.SparseRequired.AddHash(ref hash); description.SparseExcluded.AddHash(ref hash);
+            description.SparseReads.AddHash(ref hash);
             foreach (var shared in description.Shared) { hash.Add(shared.Type); hash.Add(shared.Value); }
             foreach (var group in description.Groups) { hash.Add(group.Type); hash.Add(group.Value); }
             return hash.ToHashCode();
@@ -79,6 +102,8 @@ internal sealed class QueryData : QueryCoverage
     internal readonly QueryDescription Description;
     internal readonly bool CountShared;
     internal QueryMatch[] Matches = new QueryMatch[4];
+    /// <summary>Match index plus one for each archetype id, kept for queries with sparse conditions.</summary>
+    internal int[] MatchByArchetype = [];
     internal int Count;
     internal readonly int SingleValueType = -1;
     internal PodColumnBuffer? SingleValues;
@@ -93,12 +118,12 @@ internal sealed class QueryData : QueryCoverage
         Description = description;
         if (description.Required.Count == 1 && description.Excluded.Count == 0 && description.Any.Count == 0
             && description.Disabled.Count == 0 && description.Changed.Count == 0 && description.Added.Count == 0
-            && description.Shared.Length == 0 && description.Groups.Length == 0)
+            && description.Shared.Length == 0 && description.Groups.Length == 0 && !description.HasSparseConditions)
             SingleValueType = description.Required.First;
         CountShared = description.Shared.Length == 1 && description.Required.Count == 1
             && !description.Stored.Has(description.Shared[0].Type)
             && description.Excluded.Count == 0 && description.Disabled.Count == 0 && description.Changed.Count == 0
-            && description.Groups.Length == 0 && description.Any.Count == 0;
+            && description.Groups.Length == 0 && description.Any.Count == 0 && !description.HasSparseConditions;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -115,6 +140,7 @@ internal sealed class QueryData : QueryCoverage
             {
                 _checked = Count = 0;
                 UnmatchedColumns = default;
+                Array.Clear(MatchByArchetype);
                 _version = world.QueryVersion;
             }
             for (int i = _checked; i < world.ArchetypeCount; i++)
@@ -127,6 +153,11 @@ internal sealed class QueryData : QueryCoverage
                 {
                     if (Count == Matches.Length) Array.Resize(ref Matches, Math.Max(4, Count * 2));
                     Matches[Count++] = new(archetype, QueryRowFilter.Create(archetype, Description));
+                    if (Description.HasSparseConditions)
+                    {
+                        if (MatchByArchetype.Length <= archetype.Id) Array.Resize(ref MatchByArchetype, Math.Max(world.ArchetypeCount, archetype.Id + 1));
+                        MatchByArchetype[archetype.Id] = Count;
+                    }
                 }
                 else foreach (ComponentType type in archetype.Components) UnmatchedColumns.Add(type.Id);
             }

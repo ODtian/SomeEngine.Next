@@ -631,6 +631,9 @@ internal sealed partial class WorkQueue : IWorkQueue
 
     private bool TryExecuteLatencyWork()
     {
+        // Latency work is rare. Check without the shared state lock so every worker iteration does not contend on it;
+        // a request bumps the wake epoch and wakes a worker, and the idle wait checks the same sequences before sleeping.
+        if (Volatile.Read(ref _latencyClaimedSequence) == Volatile.Read(ref _latencyRequestedSequence)) return false;
         SomeEngine.Diagnostics.TraceContext traceContext;
         object? state;
         Action<object?, int>? action;

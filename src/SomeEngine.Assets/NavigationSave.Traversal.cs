@@ -23,7 +23,7 @@ public static partial class NavigationSave
 
 internal readonly partial struct NavigationSaveCodec
 {
-    private static void WriteTraversal(ref DataWriter writer, NavigationTraversalIntent intent)
+    private static void WriteTraversal(ref SaveWriter writer, NavigationTraversalIntent intent)
     {
         NavigationTraversalRequest value = intent.Request;
         writer.WriteUInt64(intent.Sequence); writer.WriteUInt64(value.RequestId); writer.WriteInt32(value.Connection); writer.WriteInt32(value.Action);
@@ -32,7 +32,7 @@ internal readonly partial struct NavigationSaveCodec
         writer.WriteByte((byte)value.Status); writer.WriteUInt64(value.PathVersion); writer.WriteUInt64(value.ConnectionVersion);
         writer.WriteInt32(value.ExitCorner); writer.WriteSingle(value.ExitRange);
     }
-    private static NavigationTraversalIntent ReadTraversal(ref DataReader reader)
+    private static NavigationTraversalIntent ReadTraversal(ref SaveReader reader)
     {
         ulong sequence = reader.ReadUInt64();
         var request = new NavigationTraversalRequest(reader.ReadUInt64(), reader.ReadInt32(), reader.ReadInt32(), ReadVector(ref reader), ReadVector(ref reader),

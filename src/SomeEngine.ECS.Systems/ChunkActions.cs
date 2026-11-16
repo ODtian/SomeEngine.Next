@@ -16,9 +16,11 @@ public interface IChunkAction
     /// <summary>Component declarations used to bind ranges, register access and merge tracked writes after completion.</summary>
     static abstract ReadOnlySpan<ChunkAccess> Components { get; }
     static virtual SystemAccesses? AdditionalAccesses => null;
-    static virtual void CollectResources(SystemChunk rows, ref JobResourceAccessBuilder resources) { }
+    static virtual void CollectResources(QueryChunk rows, ref JobResourceAccessBuilder resources) { }
+    /// <summary>True when the action implements <see cref="CollectAdditionalResources"/>.</summary>
+    static virtual bool CollectsAdditionalResources => false;
     void CollectAdditionalResources(ref JobResourceAccessBuilder resources) { }
-    void Execute(SystemChunk rows);
+    void Execute(QueryChunk rows);
 }
 
 public readonly struct ChunkAccess
@@ -50,58 +52,12 @@ public readonly struct ChunkAccess
         => new(ComponentType<Buffer<T>>.TypeId, true, ComponentType<Buffer<T>>.TracksWritesType, false);
 }
 
-/// <summary>A selected contiguous range, borrowed for one generated callback under its declared World access.</summary>
-public readonly ref partial struct SystemChunk
-{
-    private readonly Chunk _chunk;
-    private readonly int _start;
-    private readonly ulong _version;
-    public int Count { get; }
-    public ReadOnlySpan<Entity> Entities => _chunk.Entities.AsSpan(_start, Count);
-    internal SystemChunk(Chunk chunk, int start, int count, ulong version)
-        => (_chunk, _start, Count, _version) = (chunk, start, count, version);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ReadOnlySpan<T> Read<T>() where T : struct
-    {
-        if (ComponentType<T>.IsSharedType) throw new InvalidOperationException("Use the shared range entry.");
-        return ColumnEntry.Span<T>(ref _chunk.Columns[ComponentType<T>.TypeId], _chunk.Count).Slice(_start, Count);
-    }
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public Span<T> Write<T>() where T : struct
-    {
-        if (ComponentType<T>.IsSharedType || ComponentType<T>.IsControlledType || ComponentType<T>.IsIndexedType || ComponentType<T>.IsGroupedType)
-            throw new InvalidOperationException("Use the component's typed write entry.");
-        if (ComponentType<T>.TracksWritesType)
-        {
-            ref ComponentChanges changes = ref _chunk.Changes![_chunk.Columns[ComponentType<T>.TypeId].ColumnPlusOne - 1];
-            changes.StampRange(_start, Count, _version, ComponentType<T>.TracksAddedType, publish: false);
-        }
-        return ColumnEntry.Span<T>(ref _chunk.Columns[ComponentType<T>.TypeId], _chunk.Count).Slice(_start, Count);
-    }
-    public SharedReadOnlySpan<T> ReadShared<T>() where T : struct, ISharedComponent
-        => _chunk.Archetype.World.ReadSharedRange<T>(_chunk.Columns[ComponentType<T>.TypeId], _start, Count);
-    public ReadOnlyBuffer<T> ReadBuffer<T>(int row) where T : struct
-    {
-        ref Buffer<T> buffer = ref ColumnEntry.At<Buffer<T>>(ref _chunk.Columns[ComponentType<Buffer<T>>.TypeId], _start + row);
-        return new(_chunk.Archetype.World, in buffer, false);
-    }
-    public DynamicBuffer<T> GetBuffer<T>(int row) where T : struct
-    {
-        World world = _chunk.Archetype.World;
-        ref Buffer<T> buffer = ref ColumnEntry.At<Buffer<T>>(ref _chunk.Columns[ComponentType<Buffer<T>>.TypeId], _start + row);
-        if (ComponentType<Buffer<T>>.TracksWritesType)
-            _chunk.Changes![_chunk.Columns[ComponentType<Buffer<T>>.TypeId].ColumnPlusOne - 1]
-                .StampWord(_start + row, _version, ComponentType<Buffer<T>>.TracksAddedType);
-        if (buffer.Items is null) buffer = world.BufferPool<T>().Rent();
-        return new(world, ref buffer, false);
-    }
-}
-
 internal static class ChunkActionTypes<TAction> where TAction : struct, IChunkAction
 {
     private static readonly Dictionary<QueryDefinition, QueryDescription> FilterDescriptions = [];
     internal static readonly ChunkAccess[] Components = TAction.Components.ToArray();
+    /// <summary>Whether running the action needs resources found only at run time, in the action or in component values.</summary>
+    internal static readonly bool CollectsResources = TAction.CollectsAdditionalResources || Components.Any(component => component.HasResources);
     internal static readonly int[] Writes = Components.Where(c => c.WritesValue).Select(c => c.Type).ToArray();
     internal static readonly int[] TrackedWrites = Components.Where(c => c.WritesValue && c.Tracked).Select(c => c.Type).ToArray();
     internal static readonly QueryDescription Query = MakeQuery();

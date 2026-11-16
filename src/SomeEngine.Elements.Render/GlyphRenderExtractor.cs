@@ -116,7 +116,7 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
         // Keep the detached pixels available when an extraction transaction is retried.
         _atlasChanged |= !context.World.IsAlive(_atlasMirror) ||
             !context.World.Has<RenderGlyphAtlas>(_atlasMirror) ||
-            context.World.ReadComponentData<RenderGlyphAtlas>(_atlasMirror) != _pixels;
+            context.World.ReadValue<RenderGlyphAtlas>(_atlasMirror) != _pixels;
         return _atlasChanged;
     }
 
@@ -205,12 +205,9 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
         }
     }
 
-    private readonly struct GlyphJob(List<TextDrawing> drawings) : SomeEngine.Job.IJobChunk
+    private readonly struct GlyphJob(List<TextDrawing> drawings) : IJobParallelFor
     {
-        public void Execute(JobChunk chunk)
-        {
-            for (int index = chunk.Start; index < chunk.Start + chunk.Length; index++) drawings[index].CreateGlyphs();
-        }
+        public void Execute(int index) => drawings[index].CreateGlyphs();
     }
 
     public void Apply(RenderExtractionContext context)

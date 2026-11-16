@@ -111,7 +111,7 @@ internal static class RuntimeApplication
         string title = settings.Name;
         using var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
         var streaming = new WorldStreamSystem(gameWorld.World, assets, boot.Scene, new(),
-            new(Codecs: SceneSerialization.Codecs));
+            SceneSerialization.CreateRegistry());
         gameWorld.Systems.Add(streaming);
         gameWorld.Systems.Initialize();
         Task<ClusterShaders> pipelineTask = CreateClusterShadersAsync().AsTask();
@@ -789,7 +789,7 @@ internal static class RuntimeApplication
                     }
                     ValueTask work = nextGameUpdate.Current;
                     if (work.IsCompletedSuccessfully) work.GetAwaiter().GetResult();
-                    else nextGameCompletion = JobSystem.CreateExternalFenceHandle(work).WaitAsync().AsTask();
+                    else nextGameCompletion = JobSystem.Current.CreateExternalFenceHandle(work).WaitAsync().AsTask();
                 }
             }
             catch
@@ -1108,8 +1108,8 @@ internal static class RuntimeApplication
                 foreach (var request in sceneEdit.PoseReads)
                 {
                     Entity target = extraction.RequireMirror(request.Target);
-                    Entity section = renderWorld.World.ReadComponentData<RenderGpuPoseTarget>(target).Section;
-                    skinning.RequestReadback(renderWorld.World.ReadComponentData<RenderPoseSection>(section), request.Receive);
+                    Entity section = renderWorld.World.ReadValue<RenderGpuPoseTarget>(target).Section;
+                    skinning.RequestReadback(renderWorld.World.ReadValue<RenderPoseSection>(section), request.Receive);
                 }
                 long reconcileStarted = Stopwatch.GetTimestamp();
                 if (sceneEdit.ShadingPath is { } selectedShadingPath) shadingPath = selectedShadingPath;

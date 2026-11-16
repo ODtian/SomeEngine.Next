@@ -19,7 +19,7 @@ public static class Flip
             world.Add(node, PresentationOffset.Identity);
         PropertyAnimation.Declare<Matrix3x2>(world, node);
         PropertyAnimation.Declare<float>(world, node);
-        Timeline timeline = world.ReadComponentData<Timeline>(node);
+        Timeline timeline = world.ReadValue<Timeline>(node);
         if (timeline.Clock != TimelineClock.Interface)
         {
             timeline.Clock = TimelineClock.Interface;
@@ -42,7 +42,7 @@ internal struct FlipFrame : IComponent
 }
 
 /// <summary>The caller's motion settings for this entity's layout transitions.</summary>
-internal struct FlipSettings : IComponent
+internal struct FlipSettings : IComponent, INativeHandleValue
 {
     internal Spec Spec;
 }

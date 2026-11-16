@@ -71,7 +71,7 @@ public readonly struct GpuClipLeaf : IAnimationLeaf<GpuClipParameters>
             Index = index,
             Placement = placement,
             Target = target,
-            Signals = ((GpuClipSignalDefinition[])definitions.Data!)[index].Bind(world.ReadComponentData<GpuPoseTarget>(target).Skeleton.Skeleton)
+            Signals = ((GpuClipSignalDefinition[])definitions.Data!)[index].Bind(world.ReadValue<GpuPoseTarget>(target).Skeleton.Skeleton)
         };
         if (!world.Has<Buffer<TimelineEvent>>(animation)) world.AddBuffer<TimelineEvent>(animation);
         AnimationClip signalClip = instance.Signals.Definition.Clip;
@@ -101,7 +101,7 @@ public readonly struct GpuClipLeaf : IAnimationLeaf<GpuClipParameters>
 
             }
         }
-        GpuPoseTarget output = world.ReadComponentData<GpuPoseTarget>(target);
+        GpuPoseTarget output = world.ReadValue<GpuPoseTarget>(target);
         output.Clip = definitions.Parameters[index].Clip;
         output.StateMachine = null;
         output.Blend = null;
@@ -203,7 +203,7 @@ internal struct GpuClipSystem : ISystem<ImmediateSystemContext>
                             if (!time.Active || instance.Finished) continue;
                             GpuClipParameters parameters = instance.Definition.Parameters[instance.Index];
                             float elapsed = parameters.Loop ? time.Time.Time : Math.Min(time.Time.Time, parameters.Clip.Duration);
-                            GpuPoseTarget output = world.ReadComponentData<GpuPoseTarget>(instance.Target);
+                            GpuPoseTarget output = world.ReadValue<GpuPoseTarget>(instance.Target);
                             output.Clip = parameters.Clip;
                             output.StateMachine = null;
                             output.Blend = null;

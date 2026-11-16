@@ -335,9 +335,9 @@ public sealed class WarpPresentationTests
             ? new ValidationLayer(D3D12GraphicsBackend.Create())
             : D3D12GraphicsBackend.Create();
         using D3D12TestWindow window = new();
-        AdapterInfo adapter = D3D12TestSupport.SelectWarp(backend);
+        AdapterId adapter = D3D12TestSupport.WarpAdapterId();
         using Device device = backend.CreateDevice(new DeviceDesc(
-            adapter.Id,
+            adapter,
             [new(QueueType.Graphics, Count: 2)],
             optionalFeatures: DeviceFeatures.Presentation));
         using Surface surface = backend.CreateSurface(new SurfaceDesc(

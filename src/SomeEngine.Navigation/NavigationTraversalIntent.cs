@@ -10,17 +10,17 @@ public static partial class NavigationComponents
 {
     public static NavigationTraversalIntent CapturePathTraversal<TSpace, TState>(World world, Entity entity)
         where TSpace : class, INavigationSpace<TSpace> where TState : class =>
-        new(world.ReadComponentData<NavigationTraversalRequest>(entity), world.ReadComponentData<NavigationRequest<TSpace, TState>>(entity).Data.TraversalSequence);
+        new(world.ReadValue<NavigationTraversalRequest>(entity), world.ReadValue<NavigationRequest<TSpace, TState>>(entity).Data.TraversalSequence);
 
     public static NavigationTraversalIntent CaptureFlowTraversal(World world, Entity entity) =>
-        new(world.ReadComponentData<NavigationTraversalRequest>(entity), world.ReadComponentData<NavigationFlowFollowState>(entity).TraversalSequence);
+        new(world.ReadValue<NavigationTraversalRequest>(entity), world.ReadValue<NavigationFlowFollowState>(entity).TraversalSequence);
 
     /// <summary>Restores an action handoff; the next search starts at actual feedback after the consumer finishes at its exit.</summary>
     public static void RestorePathTraversal<TSpace, TState>(World world, Entity entity, NavigationTraversalIntent intent,
         NavigationLinkSet? links = null)
         where TSpace : class, INavigationSpace<TSpace> where TState : class
     {
-        NavigationRequestData<TSpace, TState> data = world.ReadComponentData<NavigationRequest<TSpace, TState>>(entity).Data;
+        NavigationRequestData<TSpace, TState> data = world.ReadValue<NavigationRequest<TSpace, TState>>(entity).Data;
         data.TraversalSequence = intent.Sequence;
         data.Version = intent.Request.PathVersion;
         data.Active = false;

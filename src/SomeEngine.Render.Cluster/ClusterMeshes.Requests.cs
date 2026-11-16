@@ -26,8 +26,7 @@ internal sealed partial class ClusterMeshes
             ThrowIfDisposed();
             var ranges = new PageRequestRange[(demands.Length + PageRequestsPerRange - 1) / PageRequestsPerRange];
             // The coordinator retains the directory through this synchronous join.
-            JobSystem.ExecuteParallel(new CollectDemandsJob(demands.ToArray(), ranges), ranges.Length,
-                batchSize: JobScheduleOptions.AutomaticBatchSize);
+            JobSystem.Current.ExecuteParallel(new CollectDemandsJob(demands.ToArray(), ranges), ranges.Length, JobScheduleOptions.AutomaticBatchSize);
             MergePageRequests(ranges, priorities);
             _fixups.ExpandDependencies(priorities);
         }
@@ -40,8 +39,7 @@ internal sealed partial class ClusterMeshes
         {
             ThrowIfDisposed();
             var ranges = new PageRequestRange[(requests.Length + PageRequestsPerRange - 1) / PageRequestsPerRange];
-            JobSystem.ExecuteParallel(new CollectRequestsJob(this, requests, ranges), ranges.Length,
-                batchSize: JobScheduleOptions.AutomaticBatchSize);
+            JobSystem.Current.ExecuteParallel(new CollectRequestsJob(this, requests, ranges), ranges.Length, JobScheduleOptions.AutomaticBatchSize);
             uint knownLeaves = 0;
             foreach (PageRequestRange range in ranges)
             {

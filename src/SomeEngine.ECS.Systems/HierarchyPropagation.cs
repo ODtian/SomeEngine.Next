@@ -100,7 +100,7 @@ public static class HierarchyPropagation<TDomain> where TDomain : struct, IHiera
             }
         var jobs = (WorldJobs)world.Execution!;
         var data = new PropagationData<TAction>(world, jobs, dirtyCandidates.ToArray(), action, rootsPerRange, writtenTypes);
-        return jobs.Scheduler.Schedule(new Propagate<TAction>(data), jobs.CollectAccess(accesses), options: options, dependency: dependency);
+        return jobs.Scheduler.Schedule(new Propagate<TAction>(data), jobs.CollectAccess(accesses), dependency, options);
     }
 
     private sealed class HierarchyRootChanges(Entity root)

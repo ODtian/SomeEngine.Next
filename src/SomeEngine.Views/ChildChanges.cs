@@ -103,13 +103,13 @@ internal sealed class ChildChanges
 
     internal ComputationList? RememberComputations(World world, Entity entity, ref ChildComputations? data)
     {
-        ComputationList? computations = world.HasSparse<Computations>(entity)
-            ? world.ReadSparse<Computations>(entity).List : null;
+        ComputationList? computations = world.Has<Computations>(entity)
+            ? world.Read<Computations>(entity).List : null;
         data ??= new();
         data.Capture(world, entity, computations);
         _previousData.Add(data);
         if (computations is not null)
-            world.RemoveSparse<Computations>(entity);
+            world.Remove<Computations>(entity);
         return computations;
     }
 
@@ -162,12 +162,12 @@ internal sealed class ChildChanges
     private static void RestoreValue<T>(World world, Entity entity, in T value) where T : struct
     {
         T restored = value;
-        T presented = world.ReadComponentData<T>(entity);
+        T presented = world.ReadValue<T>(entity);
         AnimatedFields.PreservePresentation(world, entity, ref restored, in presented);
         if (EqualityComparer<T>.Default.Equals(presented, restored))
-            world.OverwriteComponentData(entity, in restored);
+            world.Overwrite(entity, in restored);
         else
-            world.ReplaceComponentData(entity, in restored);
+            world.Set(entity, in restored);
     }
 
     internal sealed class ChildOrder : IChildData
@@ -214,21 +214,21 @@ internal sealed class ChildChanges
     {
         private readonly ViewType _viewType = world.Read<ViewType>(entity);
         private readonly bool _buildRequested = world.Has<BuildRequest>(entity);
-        private readonly ulong _parameterWriteVersion = T.Mode == BuildMode.Rerun ? world.ComponentDataWriteVersion<T>(entity) : 0;
+        private readonly ulong _parameterWriteVersion = T.Mode == BuildMode.Rerun ? world.ComponentWriteVersion<T>(entity) : 0;
         private readonly ulong? _parameterVersion = world.Has<ParameterVersion>(entity) ? world.Read<ParameterVersion>(entity).Value : null;
 
         public void Restore(World world)
         {
             RestoreValue(world, entity, in value);
-            world.OverwriteComponentData(entity, in _viewType);
+            world.Overwrite(entity, in _viewType);
             if (_buildRequested && !world.Has<BuildRequest>(entity))
                 world.Set(entity, default(BuildRequest));
             if (T.Mode != BuildMode.Rerun)
                 return;
             if (_parameterVersion is ulong previous)
             {
-                ulong version = previous == _parameterWriteVersion ? world.ComponentDataWriteVersion<T>(entity) : previous;
-                world.OverwriteComponentData(entity, new ParameterVersion(version));
+                ulong version = previous == _parameterWriteVersion ? world.ComponentWriteVersion<T>(entity) : previous;
+                world.Overwrite(entity, new ParameterVersion(version));
             }
             else if (world.Has<ParameterVersion>(entity))
                 world.Remove<ParameterVersion>(entity);
@@ -242,8 +242,8 @@ internal sealed class ChildChanges
 
         internal void Capture(World world)
         {
-            _exists = world.HasComponentData<T>(entity);
-            _value = _exists ? world.ReadComponentData<T>(entity) : default;
+            _exists = world.Has<T>(entity);
+            _value = _exists ? world.ReadValue<T>(entity) : default;
         }
 
         internal void Clear() => _value = default;
@@ -252,8 +252,8 @@ internal sealed class ChildChanges
         {
             if (_exists)
                 RestoreValue(world, entity, in _value);
-            else if (world.HasComponentData<T>(entity))
-                world.DiscardComponentData<T>(entity);
+            else if (world.Has<T>(entity))
+                world.Discard<T>(entity);
         }
     }
 
@@ -280,18 +280,18 @@ internal sealed class ChildChanges
         {
             Entity entity = _entity;
             ComputationList? computations = _computations;
-            if (world.HasSparse<Computations>(entity))
+            if (world.Has<Computations>(entity))
             {
-                ComputationList current = world.ReadSparse<Computations>(entity).List;
+                ComputationList current = world.Read<Computations>(entity).List;
                 if (!ReferenceEquals(current, computations))
                     current.ReleaseChildren(retained: computations);
                 if (computations is not null)
-                    world.SetSparse(entity, new Computations(computations));
+                    world.Set(entity, new Computations(computations));
                 else
-                    world.RemoveSparse<Computations>(entity);
+                    world.Remove<Computations>(entity);
             }
             else if (computations is not null)
-                world.SetSparse(entity, new Computations(computations));
+                world.Set(entity, new Computations(computations));
             _restored = true;
             Complete();
         }
@@ -306,8 +306,8 @@ internal sealed class ChildChanges
             _entity = default;
             _computations = null;
             if (!_restored)
-                computations?.ReleaseChildren(retained: world.IsAlive(entity) && world.HasSparse<Computations>(entity)
-                    ? world.ReadSparse<Computations>(entity).List : null);
+                computations?.ReleaseChildren(retained: world.IsAlive(entity) && world.Has<Computations>(entity)
+                    ? world.Read<Computations>(entity).List : null);
         }
     }
 

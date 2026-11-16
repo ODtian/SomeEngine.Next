@@ -44,7 +44,7 @@ public static partial class PropertyAnimation
         bool hasLayers = channel.Component != ComponentId<AnimationLayers>.Value && world.Has<AnimationLayers>(target);
         if (hasLayers)
         {
-            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(target);
+            AnimationLayers layers = world.ReadValue<AnimationLayers>(target);
             DevelopmentCheck.Require(layers.Count <= 8 && layer < layers.Count,
                 "A property track requires a defined animation layer.");
             if (layers.Items[layer].Mode == LayerMode.Additive)
@@ -144,7 +144,7 @@ public static partial class PropertyAnimation
                     using var tracks = world.GetBuffer<Track<T>>(animation);
                     tracks.Clear();
                 }
-                Timeline previous = world.ReadComponentData<Timeline>(animation);
+                Timeline previous = world.ReadValue<Timeline>(animation);
                 world.Set(animation, new Timeline { Completions = previous.Completions, Starts = previous.Starts });
                 if (world.Has<Buffer<TimelineStage>>(animation))
                 {
@@ -212,7 +212,7 @@ public static partial class PropertyAnimation
     public static unsafe void Retarget<T>(World world, Entity animation, Channel<T> channel, T value) where T : unmanaged
     {
         DevelopmentCheck.Require(world.IsEnabled<Timeline>(animation), "Retarget requires an enabled animation.");
-        Timeline timeline = world.ReadComponentData<Timeline>(animation);
+        Timeline timeline = world.ReadValue<Timeline>(animation);
         bool found = false;
         int count = BufferCount<Track<T>>(world, animation);
         for (int index = 0; index < count; index++)
@@ -268,14 +268,14 @@ public static partial class PropertyAnimation
 
     public static void Pause(World world, Entity animation)
     {
-        Timeline timeline = world.ReadComponentData<Timeline>(animation);
+        Timeline timeline = world.ReadValue<Timeline>(animation);
         timeline.Paused = true;
         world.Set(animation, timeline);
     }
 
     public static void Resume(World world, Entity animation)
     {
-        Timeline timeline = world.ReadComponentData<Timeline>(animation);
+        Timeline timeline = world.ReadValue<Timeline>(animation);
         timeline.Paused = false;
         world.Set(animation, timeline);
     }
@@ -283,14 +283,14 @@ public static partial class PropertyAnimation
     public static void SetSpeed(World world, Entity animation, float speed)
     {
         DevelopmentCheck.Require(float.IsFinite(speed) && speed >= 0, "Animation speed must be finite and nonnegative.");
-        Timeline timeline = world.ReadComponentData<Timeline>(animation);
+        Timeline timeline = world.ReadValue<Timeline>(animation);
         timeline.Speed = speed;
         world.Set(animation, timeline);
     }
 
     private static Timeline ReadStartingTimeline(World world, Entity animation)
     {
-        Timeline timeline = world.ReadComponentData<Timeline>(animation);
+        Timeline timeline = world.ReadValue<Timeline>(animation);
         if (!world.IsEnabled<Timeline>(animation))
         {
             timeline.Time = 0;

@@ -56,7 +56,7 @@ public struct ClipSystem : ISystem<ImmediateSystemContext>
                             instance.Weight = time.Weight;
                             if (frame.World.Has<AnimationLayers>(instance.Output.Entity))
                             {
-                                AnimationLayers layers = frame.World.ReadComponentData<AnimationLayers>(instance.Output.Entity);
+                                AnimationLayers layers = frame.World.ReadValue<AnimationLayers>(instance.Output.Entity);
                                 if (instance.Placement.Layer < layers.Count) instance.Weight *= layers.Items[instance.Placement.Layer].Weight;
                             }
                             if (instance.Finished) continue;

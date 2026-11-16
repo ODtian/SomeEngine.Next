@@ -16,7 +16,7 @@ public sealed class StructuralCandidateContextTests
         var second = new World();
         Entity left = first.Create(new Value(1));
         Entity right = second.Create(new Value(2));
-        using var checkpoint = new WorldCheckpoint().Capture(first, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(first, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using var rejected = new CommandBuffer(candidate);

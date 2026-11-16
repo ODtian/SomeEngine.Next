@@ -26,7 +26,7 @@ public static class ParallelTransformPropagation<TDomain>
         int rootsPerPacket = 1,
         JobScheduleOptions jobOptions = default)
     {
-        var accesses = new SystemAccesses().ReadRandom<LocalTransform>().WriteRandom<WorldTransform>();
+        var accesses = new SystemAccesses().Read<LocalTransform>().Write<WorldTransform>();
         return HierarchyPropagation<TDomain>.Schedule(world, dirtyCandidates, new TransformPropagationJob(),
             accesses, maintenance, jobOptions, rootsPerRange: rootsPerPacket);
     }

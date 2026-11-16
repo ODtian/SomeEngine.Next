@@ -17,12 +17,13 @@ public sealed partial class EntityBlock : AssetBlock
 
     partial void Initialize() => ExternalReferences = [];
 
-    public void WriteEntities(World world, ReadOnlySpan<Entity> entities, SerializeOptions options = default)
+    public void WriteEntities(World world, ReadOnlySpan<Entity> entities, SaveRegistry registry,
+        SerializeOptions options = default)
     {
         lock (SyncRoot) RequireIdle();
-        var references = new HashSet<ExternalReferenceKey>();
+        var references = new HashSet<AssetReference>();
         using var stream = new MemoryStream();
-        WorldSerializer.WriteEntities(stream, world, entities,
+        WorldSerializer.WriteEntities(stream, world, entities, registry,
             options with { Purpose = SavePurpose.DurableSave, ExternalReferences = references });
         ImmutableArray<AssetId<Asset>> ids = references
             .Select(static reference => new AssetId<Asset>(reference.Value))
@@ -36,7 +37,7 @@ public sealed partial class EntityBlock : AssetBlock
             ExternalReferences = ids;
         }
         if (options.ExternalReferences is { } output)
-            foreach (ExternalReferenceKey reference in references) output.Add(reference);
+            foreach (AssetReference reference in references) output.Add(reference);
     }
 
     protected override void ValidateContent()

@@ -15,7 +15,6 @@ namespace SomeEngine.Graphics.Direct3D12;
 /// <para><b>Thread safety:</b> Thread-safe. Immutable snapshots may be shared.</para>
 /// <para><b>Ownership:</b> Pure value; owns no native objects.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; a previously captured snapshot remains readable.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct D3D12MemoryAllocatorInfo(
     ulong PooledHeapBytes,

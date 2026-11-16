@@ -39,8 +39,7 @@ public static class NavigationSurfaceBuilder
             accesses[^1] = JobResourceAccess.Write(scheduler.GetResourceToken(state.Columns), index, 1);
             handles[index] = scheduler.Schedule(new BuildTile(state, index), accesses, dependency);
         }
-        JobHandle complete = scheduler.Schedule(new CreateSurface(state),
-            JobResourceAccess.Read(scheduler.GetResourceToken(state.Tiles)), scheduler.CombineDependencies(handles));
+        JobHandle complete = scheduler.Schedule(new CreateSurface(state), [JobResourceAccess.Read(scheduler.GetResourceToken(state.Tiles))], scheduler.CombineDependencies(handles));
         return new(state, complete);
     }
 

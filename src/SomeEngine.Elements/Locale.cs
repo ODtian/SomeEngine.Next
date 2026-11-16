@@ -49,7 +49,7 @@ public struct Locale : ITrackedComponent
         Entity source = Find(world, required: false);
         if (source == Entity.Null)
             return null;
-        string name = track ? Views.Scope.Read<Locale>(source).Name : world.ReadComponentData<Locale>(source).Name;
+        string name = track ? Views.Scope.Read<Locale>(source).Name : world.ReadValue<Locale>(source).Name;
         LocaleEntity data = s_entities.GetValue(world, static _ => new LocaleEntity());
         if (data.Culture is null)
         {

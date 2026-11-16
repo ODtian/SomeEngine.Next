@@ -25,11 +25,11 @@ public class WorldSparseTests
     {
         var world = new World();
         var e = world.Create();
-        world.AddSparse(e, new Damage { Amount = 25 });
-        Assert.True(world.HasSparse<Damage>(e));
-        Assert.Equal(25, world.ReadSparse<Damage>(e).Amount);
-        world.ReplaceSparse(e, new Damage { Amount = 30 });
-        Assert.Equal(30, world.ReadSparse<Damage>(e).Amount);
+        world.Add(e, new Damage { Amount = 25 });
+        Assert.True(world.Has<Damage>(e));
+        Assert.Equal(25, world.Read<Damage>(e).Amount);
+        world.Set(e, new Damage { Amount = 30 });
+        Assert.Equal(30, world.Read<Damage>(e).Amount);
     }
 
     [Fact]
@@ -37,18 +37,9 @@ public class WorldSparseTests
     {
         var world = new World();
         var e = world.Create();
-        world.SetSparse(e, new Damage { Amount = 10 });
-        world.RemoveSparse<Damage>(e);
-        Assert.False(world.HasSparse<Damage>(e));
-    }
-
-    [Fact]
-    public void ReplaceSparse_Missing_Throws()
-    {
-        using var world = new World();
-        var entity = world.Create();
-        Assert.Throws<InvalidOperationException>(() => world.ReplaceSparse(entity, new Damage { Amount = 10 }));
-        Assert.False(world.HasSparse<Damage>(entity));
+        world.Set(e, new Damage { Amount = 10 });
+        world.Remove<Damage>(e);
+        Assert.False(world.Has<Damage>(e));
     }
 
     [Fact]
@@ -56,13 +47,13 @@ public class WorldSparseTests
     {
         var world = new World();
         var e = world.Create(new Position { X = 1, Y = 2 });
-        world.SetSparse(e, new Damage { Amount = 50 });
+        world.Set(e, new Damage { Amount = 50 });
         // Archetype 不变：仍有 Position
         Assert.True(world.Has<Position>(e));
         Assert.Equal(1f, world.Read<Position>(e).X);
         // Sparse 独立
-        Assert.True(world.HasSparse<Damage>(e));
-        world.RemoveSparse<Damage>(e);
+        Assert.True(world.Has<Damage>(e));
+        world.Remove<Damage>(e);
         Assert.True(world.Has<Position>(e)); // Archetype 不变
     }
 
@@ -71,9 +62,9 @@ public class WorldSparseTests
     {
         var world = new World();
         var e = world.Create();
-        world.SetSparse(e, new Damage { Amount = 10 });
+        world.Set(e, new Damage { Amount = 10 });
         world.Destroy(e);
-        Assert.False(world.HasSparse<Damage>(e));
+        Assert.False(world.Has<Damage>(e));
     }
 
     [Fact]
@@ -82,13 +73,13 @@ public class WorldSparseTests
         var world = new World();
         var e1 = world.Create();
         var e2 = world.Create();
-        world.SetSparse(e1, new Damage { Amount = 10 });
-        world.SetSparse(e2, new Damage { Amount = 20 });
+        world.Set(e1, new Damage { Amount = 10 });
+        world.Set(e2, new Damage { Amount = 20 });
 
         int sum = 0;
         int count = 0;
         {
-            var sparseScope = world.OpenSparseRead<Damage>();
+            var sparseScope = world.OpenSparseValues<Damage>();
             try
             {
                 ReadOnlySpan<Entity> entities = sparseScope.Entities;
@@ -102,7 +93,7 @@ ReadOnlySpan<Damage> values = sparseScope.Values;
             finally { sparseScope.Dispose(); }
         };
         {
-            var sparseScope = world.OpenSparseRead<Damage>();
+            var sparseScope = world.OpenSparseValues<Damage>();
             try
             {
                 ReadOnlySpan<Entity> entities = sparseScope.Entities;
@@ -123,11 +114,11 @@ count = entities.Length;
         Entity first = world.Create();
         Entity second = world.Create();
         Entity third = world.Create();
-        world.SetSparse(first, new Damage { Amount = 10 });
-        world.SetSparse(second, new Damage { Amount = 20 });
+        world.Set(first, new Damage { Amount = 10 });
+        world.Set(second, new Damage { Amount = 20 });
 
         {
-            var sparseScope = world.OpenSparseWrite<Damage>();
+            var sparseScope = world.OpenSparseValueWrites<Damage>();
             try
             {
                 ReadOnlySpan<Entity> entities = sparseScope.Entities;
@@ -138,16 +129,16 @@ Span<Damage> values = sparseScope.Values;
                 values[i].Amount += entities[i] == first ? 1 : 2;
 
             Assert.Throws<InvalidOperationException>(
-                () => world.SetSparse(third, new Damage { Amount = 30 }));
-            Assert.Throws<InvalidOperationException>(() => world.RemoveSparse<Damage>(first));
+                () => world.Set(third, new Damage { Amount = 30 }));
+            Assert.Throws<InvalidOperationException>(() => world.Remove<Damage>(first));
 
             }
             finally { sparseScope.Dispose(); }
         };
 
-        Assert.Equal(11, world.ReadSparse<Damage>(first).Amount);
-        Assert.Equal(22, world.ReadSparse<Damage>(second).Amount);
-        Assert.False(world.HasSparse<Damage>(third));
+        Assert.Equal(11, world.Read<Damage>(first).Amount);
+        Assert.Equal(22, world.Read<Damage>(second).Amount);
+        Assert.False(world.Has<Damage>(third));
     }
 
     [Fact]
@@ -157,12 +148,12 @@ Span<Damage> values = sparseScope.Values;
         Entity first = world.Create();
         Entity second = world.Create();
         Entity later = world.Create();
-        world.SetSparse(first, new Damage { Amount = 10 });
-        world.SetSparse(second, new Damage { Amount = 20 });
+        world.Set(first, new Damage { Amount = 10 });
+        world.Set(second, new Damage { Amount = 20 });
 
         Assert.Throws<ProbeException>((Action)(() =>
             {
-            var sparseScope = world.OpenSparseWrite<Damage>();
+            var sparseScope = world.OpenSparseValueWrites<Damage>();
             try
             {
                 Span<Damage> values = sparseScope.Values;
@@ -174,10 +165,10 @@ Span<Damage> values = sparseScope.Values;
             finally { sparseScope.Dispose(); }
         }));
 
-        Assert.Equal(99, world.ReadSparse<Damage>(first).Amount);
+        Assert.Equal(99, world.Read<Damage>(first).Amount);
 
-        world.SetSparse(later, new Damage { Amount = 30 });
-        Assert.Equal(30, world.ReadSparse<Damage>(later).Amount);
+        world.Set(later, new Damage { Amount = 30 });
+        Assert.Equal(30, world.Read<Damage>(later).Amount);
     }
 
     [Fact]
@@ -185,13 +176,13 @@ Span<Damage> values = sparseScope.Values;
     {
         var world = new World();
         Entity original = world.Create();
-        world.SetSparse(original, new Damage { Amount = 10 });
+        world.Set(original, new Damage { Amount = 10 });
 
         world.Destroy(original);
 
         int count = -1;
         {
-            var sparseScope = world.OpenSparseRead<Damage>();
+            var sparseScope = world.OpenSparseValues<Damage>();
             try
             {
                 ReadOnlySpan<Entity> entities = sparseScope.Entities;
@@ -208,10 +199,10 @@ ReadOnlySpan<Damage> values = sparseScope.Values;
         Entity reused = world.Create();
         Assert.Equal(original.Id, reused.Id);
         Assert.NotEqual(original, reused);
-        world.SetSparse(reused, new Damage { Amount = 20 });
+        world.Set(reused, new Damage { Amount = 20 });
 
         {
-            var sparseScope = world.OpenSparseRead<Damage>();
+            var sparseScope = world.OpenSparseValues<Damage>();
             try
             {
                 ReadOnlySpan<Entity> entities = sparseScope.Entities;
@@ -230,14 +221,14 @@ ReadOnlySpan<Damage> values = sparseScope.Values;
     {
         var world = new World();
         Entity source = world.Create();
-        world.SetSparse(source, new Damage { Amount = 10 });
+        world.Set(source, new Damage { Amount = 10 });
         Entity copy = world.Clone(source);
-        world.SetSparse(copy, new Damage { Amount = 99 });
-        Assert.Equal(10, world.ReadSparse<Damage>(source).Amount);
-        Assert.Equal(99, world.ReadSparse<Damage>(copy).Amount);
-        world.RemoveSparse<Damage>(copy);
-        Assert.True(world.HasSparse<Damage>(source));
-        Assert.False(world.HasSparse<Damage>(copy));
+        world.Set(copy, new Damage { Amount = 99 });
+        Assert.Equal(10, world.Read<Damage>(source).Amount);
+        Assert.Equal(99, world.Read<Damage>(copy).Amount);
+        world.Remove<Damage>(copy);
+        Assert.True(world.Has<Damage>(source));
+        Assert.False(world.Has<Damage>(copy));
     }
 
     [Fact]
@@ -246,7 +237,7 @@ ReadOnlySpan<Damage> values = sparseScope.Values;
     {
         var world = new World();
         Entity entity = world.Create();
-        world.SetSparse(entity, new Damage { Amount = 10 });
+        world.Set(entity, new Damage { Amount = 10 });
         int visits = 0;
         for (int i = 0; i < 128; i++)
             CountSparse(world, ref visits);
@@ -260,7 +251,7 @@ ReadOnlySpan<Damage> values = sparseScope.Values;
     private static void CountSparse(World world, ref int visits)
     {
         {
-            var sparseScope = world.OpenSparseRead<Damage>();
+            var sparseScope = world.OpenSparseValues<Damage>();
             try
             {
                 ReadOnlySpan<Entity> entities = sparseScope.Entities;

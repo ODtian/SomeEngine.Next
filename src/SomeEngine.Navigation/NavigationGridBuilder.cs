@@ -64,14 +64,12 @@ public static class NavigationGridBuilder
                 _ => NavigationSurfaceTraversal.RasterizeFootprintSweep(profile.Footprint.Span, cellSize),
             };
             var tileSupports = new List<CellSupport>[surface.Tiles.Length];
-            JobSystem.ExecuteParallel(new CollectSupports(surface, profile, policy, footprint, tileSupports),
-                tileSupports.Length, batchSize: 1);
+            JobSystem.Current.ExecuteParallel(new CollectSupports(surface, profile, policy, footprint, tileSupports), tileSupports.Length, 1);
             var tileStarts = new int[tileSupports.Length + 1];
             for (int tile = 0; tile < tileSupports.Length; tile++)
                 tileStarts[tile + 1] = tileStarts[tile] + tileSupports[tile].Count;
             var supports = new CellSupport[tileStarts[^1]];
-            JobSystem.ExecuteParallel(new WriteSupports(tileSupports, tileStarts, supports), tileSupports.Length,
-                batchSize: 1);
+            JobSystem.Current.ExecuteParallel(new WriteSupports(tileSupports, tileStarts, supports), tileSupports.Length, 1);
             var columns = new Dictionary<NavigationCellOffset, List<int>>();
             for (int cell = 0; cell < supports.Length; cell++)
             {
@@ -81,8 +79,7 @@ public static class NavigationGridBuilder
                 column.Add(cell);
             }
             var edges = new List<NavigationGridEdge>[supports.Length];
-            JobSystem.ExecuteParallel(new ConnectCells(surface, profile, supports, columns, edges), supports.Length,
-                batchSize: JobScheduleOptions.AutomaticBatchSize);
+            JobSystem.Current.ExecuteParallel(new ConnectCells(surface, profile, supports, columns, edges), supports.Length, JobScheduleOptions.AutomaticBatchSize);
             foreach (NavigationGridConnection connection in state.Connections.Span)
             {
                 int from = FindCell(surface, supports, columns, connection.From);
@@ -98,8 +95,7 @@ public static class NavigationGridBuilder
             for (int cell = 0; cell < cells.Length; cell++)
                 edgeStarts[cell + 1] = edgeStarts[cell] + edges[cell].Count;
             var transitions = new NavigationGridEdge[edgeStarts[^1]];
-            JobSystem.ExecuteParallel(new WriteCells(supports, edges, edgeStarts, cells, transitions), cells.Length,
-                batchSize: JobScheduleOptions.AutomaticBatchSize);
+            JobSystem.Current.ExecuteParallel(new WriteCells(supports, edges, edgeStarts, cells, transitions), cells.Length, JobScheduleOptions.AutomaticBatchSize);
             state.Grid = new(surface.Bounds, cellSize, cells, transitions,
                 NavigationGridShape.FromProfile(profile, state.FootprintMode), state.ContentVersion);
         }

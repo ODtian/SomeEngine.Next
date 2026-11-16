@@ -4,7 +4,12 @@ namespace SomeEngine.Job;
 
 internal interface IStagedJob : IJob
 {
-    static abstract int StageCount { get; }
+    int StageCount { get; }
+    /// <summary>
+    /// Accesses registered at submission. They take their place in resource order then, so later submissions that
+    /// conflict with them run after this job; stage accesses inside them register nothing more.
+    /// </summary>
+    void Reserve(ref AccessBuilder<JobResourceAccess> accesses);
     void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses);
     void Release();
 }
@@ -88,6 +93,7 @@ public sealed partial class Scheduler
             AttachToCurrentScope(handle);
             work = data.PrepareTicket();
             RegisterScheduleDependency(handle, dependency, work, waitForWorkOnly: false, ignoreDependencyFault: false);
+            Reserve(handle, data, work);
             SealScheduleDependencies(handle);
             ReleaseScheduleDependency(handle, work, null);
             return handle;
@@ -99,6 +105,26 @@ public sealed partial class Scheduler
             throw;
         }
         finally { data.ReleaseReference(); }
+    }
+
+    private void Reserve<T>(JobHandle handle, StagedJobData<T> data, WorkBatch work) where T : struct, IStagedJob
+    {
+        AccessBuilder<JobResourceAccess> reserved = new();
+        try
+        {
+            data.CollectReservation(ref reserved);
+            if (reserved.Count == 0) return;
+            ResourceAccessRegistration registration = _resources.RegisterAccesses(handle, reserved, typeof(T));
+            SetResourceAccesses(handle, registration);
+            data.Reservation = registration;
+            for (int i = 0; i < registration.DependencyCount; i++)
+            {
+                ResourceDependency resource = registration.GetDependency(i);
+                RegisterScheduleDependency(handle, resource.Handle, work, resource.WaitForWorkOnly,
+                    ignoreDependencyFault: resource.WaitForWorkOnly);
+            }
+        }
+        finally { reserved.Clear(); }
     }
 
     private sealed partial class CompletionStore
@@ -154,6 +180,7 @@ public sealed partial class Scheduler
         private int _stage;
         private int _references;
         private int _released;
+        private ResourceAccessRegistration _reservation;
 
         internal static StagedJobData<T> Rent(Scheduler scheduler, JobHandle handle, in T job)
         {
@@ -172,9 +199,24 @@ public sealed partial class Scheduler
             data.Handle = handle;
             data._job = job;
             data._stage = 0;
+            data._reservation = default;
             data._references = 2;
             data._released = 0;
             return data;
+        }
+
+        internal void CollectReservation(ref AccessBuilder<JobResourceAccess> accesses) => _job.Reserve(ref accesses);
+        internal ResourceAccessRegistration Reservation { set => _reservation = value; }
+
+        // Accesses inside the reservation already hold their place in resource order; only the rest registers now.
+        private void RemoveReserved(ref AccessBuilder<JobResourceAccess> accesses)
+        {
+            if (_reservation.AccessCount == 0 || accesses.Count == 0) return;
+            AccessBuilder<JobResourceAccess> late = new();
+            for (int i = 0; i < accesses.Count; i++)
+                if (!_reservation.Covers(accesses.Get(i))) late.Add(accesses.Get(i));
+            accesses.Clear();
+            accesses = late;
         }
 
         internal WorkBatch PrepareTicket()
@@ -201,6 +243,7 @@ public sealed partial class Scheduler
             if (Interlocked.Decrement(ref _references) != 0) return;
             ReleaseJob();
             _job = default;
+            _reservation = default;
             _scheduler = null!;
             Handle = default;
             lock (FreeLock)
@@ -219,7 +262,7 @@ public sealed partial class Scheduler
         {
             Scheduler scheduler = _scheduler;
             JobHandle handle = Handle;
-            if (_stage == T.StageCount)
+            if (_stage == _job.StageCount)
             {
                 ExceptionDispatchInfo? error = null;
                 try { _job.Execute(); }
@@ -234,6 +277,7 @@ public sealed partial class Scheduler
             try
             {
                 _job.Prepare(_stage++, ref accesses);
+                RemoveReserved(ref accesses);
                 scheduler._completion.BeginAccessStage(handle);
                 barrier = true;
                 ResourceAccessRegistration registration = scheduler._resources.RegisterAccesses(handle, accesses, typeof(T));

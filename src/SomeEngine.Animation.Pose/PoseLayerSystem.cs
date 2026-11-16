@@ -113,7 +113,7 @@ public struct PoseLayerSystem : ISystem<PoseNodeContext>
         var operation = new AnimationLayer { Mode = LayerMode.Override, Weight = 1 };
         if (world.Has<AnimationLayers>(layer.Output.Entity))
         {
-            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(layer.Output.Entity);
+            AnimationLayers layers = world.ReadValue<AnimationLayers>(layer.Output.Entity);
             if (layer.Placement.Layer < layers.Count) operation = layers.Items[layer.Placement.Layer];
         }
         Copy(world, in layer.Base, layer.Samples.Base);

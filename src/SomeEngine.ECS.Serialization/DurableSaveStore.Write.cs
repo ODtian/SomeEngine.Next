@@ -44,8 +44,8 @@ public sealed partial class DurableSaveStore
             {
                 Directory.CreateDirectory(store._directoryPath);
                 _writeLock = store.OpenWriteLock();
-                SaveFilesInspection files = store.InspectVerifiedSlots();
-                if (!files.HasValidSlot && files.HasExistingSlot)
+                SaveFilesInspection files = store.InspectVerifiedFiles();
+                if (!files.HasValidFile && files.HasExistingFile)
                     throw CreateNoValidGenerationException(files);
                 SaveFileInspection? latest = files.Latest;
                 ulong generation = latest?.Generation ?? store._options.MinimumAcceptedGeneration;

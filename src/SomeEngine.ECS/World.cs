@@ -41,7 +41,6 @@ public sealed partial class World : IDisposable
         get
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            RequireCallingThread();
             Execution?.CheckActive();
             return _count;
         }
@@ -51,7 +50,6 @@ public sealed partial class World : IDisposable
     internal ref EntityRecord Resolve(Entity entity)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        RequireCallingThread();
         if ((uint)(entity.Id - 1) >= (uint)Used) throw new ArgumentException("Entity id is outside this world.");
         ref EntityRecord record = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Records), entity.Id);
         if (record.Generation != entity.Generation) throw new ArgumentException("Entity generation has expired.");
@@ -75,6 +73,7 @@ public sealed partial class World : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref readonly T Read<T>(Entity entity) where T : struct
     {
+        if (ComponentType<T>.IsSparseType) return ref ReadSparseValue<T>(entity);
         RequireValue<T>(false);
         if (ComponentType<T>.IsSharedType) return ref ReadSharedValue<T>(entity);
         return ref Access<T>(entity, false);
@@ -83,6 +82,7 @@ public sealed partial class World : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref T Get<T>(Entity entity) where T : struct
     {
+        if (ComponentType<T>.IsSparseType) return ref GetSparseValue<T>(entity);
         RequireValue<T>(true);
         if (ComponentType<T>.IsControlledType || ComponentType<T>.IsIndexedType || ComponentType<T>.IsGroupedType) throw new InvalidOperationException("Use the component's typed write view or Set entry.");
         return ref Access<T>(entity, true);
@@ -104,6 +104,7 @@ public sealed partial class World : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Has<T>(Entity entity) where T : struct
     {
+        if (ComponentType<T>.IsSparseType) return HasSparseValue<T>(entity);
         if (Execution is not null) return HasWithExecution<T>(entity);
         return HasCore<T>(entity);
     }
@@ -111,7 +112,6 @@ public sealed partial class World : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool HasCore<T>(Entity entity) where T : struct
     {
-        RequireCallingThread();
         if (!IsAliveCore(entity)) return false;
         ref EntityRecord record = ref Records[entity.Id];
         ColumnEntry[] columns = record.Chunk!.Columns;
@@ -122,6 +122,7 @@ public sealed partial class World : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Set<T>(Entity entity, in T value) where T : struct
     {
+        if (ComponentType<T>.IsSparseType) { SetSparseValue(entity, value); return; }
         if (Execution is not null) { SetWithExecution(entity, value); return; }
         SetComponent(entity, value);
     }
@@ -178,15 +179,7 @@ public sealed partial class World : IDisposable
     internal void RequireStructure()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        RequireCallingThread();
         if (_readers != 0) throw new InvalidOperationException("Finish the current read scope before changing entity layout.");
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void RequireCallingThread()
-    {
-        if (Execution is null && JobThreads.IsActive)
-            throw new InvalidOperationException("Connect WorldJobs before accessing World from a Job.");
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -299,53 +292,45 @@ public sealed partial class World : IDisposable
         return entity;
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public Entity Create<T1, T2, T3>(in T1 first, in T2 second, in T3 third)
-        where T1 : struct where T2 : struct where T3 : struct
-    {
-        if (Execution is not null) return CreateWithExecution(first, second, third);
-        return CreateCore(first, second, third);
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private Entity CreateWithExecution<T1, T2, T3>(in T1 first, in T2 second, in T3 third)
-        where T1 : struct where T2 : struct where T3 : struct
+    /// <summary>Creates a relationship edge entity with its endpoints and payload in one structural move.</summary>
+    internal Entity CreateEdge<TEndpoints, TPayload>(in TEndpoints endpoints, in TPayload payload)
+        where TEndpoints : struct where TPayload : struct
     {
         using WorldAccess access = OpenStructure();
-        return CreateCore(first, second, third);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private Entity CreateCore<T1, T2, T3>(in T1 first, in T2 second, in T3 third)
-        where T1 : struct where T2 : struct where T3 : struct
-    {
-        if (ComponentType<T1>.HasInitializerType) ComponentType<T1>.ValidateCreate(this, first);
-        if (ComponentType<T2>.HasInitializerType) ComponentType<T2>.ValidateCreate(this, second);
-        if (ComponentType<T3>.HasInitializerType) ComponentType<T3>.ValidateCreate(this, third);
-        Chunk chunk = Find(TypeSet<T1, T2, T3>.Value).WritableChunk;
+        if (ComponentType<TEndpoints>.HasInitializerType) ComponentType<TEndpoints>.ValidateCreate(this, endpoints);
+        if (ComponentType<TPayload>.HasInitializerType) ComponentType<TPayload>.ValidateCreate(this, payload);
+        Chunk chunk = Find(TypeSet<TEndpoints, TPayload>.Value).WritableChunk;
         Entity entity = CreateKnown(ref chunk);
         using MembershipEdit membership = BeginMembershipEdit(entity, created: true);
         int row = chunk.Count - 1;
-        WriteCreatedValue(entity, chunk, row, first);
-        WriteCreatedValue(entity, chunk, row, second);
-        WriteCreatedValue(entity, chunk, row, third);
-        if (ComponentType<T1>.IsIndexedType) IndexCreated(entity, first);
-        if (ComponentType<T2>.IsIndexedType) IndexCreated(entity, second);
-        if (ComponentType<T3>.IsIndexedType) IndexCreated(entity, third);
-        if (ComponentType<T1>.IsGroupedType || ComponentType<T2>.IsGroupedType || ComponentType<T3>.IsGroupedType)
-            ArrangeCreatedGroups(entity);
-        if (ComponentType<T1>.HasInitializerType) ComponentType<T1>.Initialize(this, entity);
-        if (ComponentType<T2>.HasInitializerType) ComponentType<T2>.Initialize(this, entity);
-        if (ComponentType<T3>.HasInitializerType) ComponentType<T3>.Initialize(this, entity);
+        WriteCreatedValue(entity, chunk, row, endpoints);
+        WriteCreatedValue(entity, chunk, row, payload);
+        if (ComponentType<TEndpoints>.IsIndexedType) IndexCreated(entity, endpoints);
+        if (ComponentType<TPayload>.IsIndexedType) IndexCreated(entity, payload);
+        if (ComponentType<TEndpoints>.IsGroupedType || ComponentType<TPayload>.IsGroupedType) ArrangeCreatedGroups(entity);
+        if (ComponentType<TEndpoints>.HasInitializerType) ComponentType<TEndpoints>.Initialize(this, entity);
+        if (ComponentType<TPayload>.HasInitializerType) ComponentType<TPayload>.Initialize(this, entity);
         return entity;
     }
 
     public void Reserve<T>(int capacity) where T : struct
         => ReserveTypes(TypeSet<T>.Value, capacity);
 
-    public void Reserve<T1, T2, T3>(int capacity)
-        where T1 : struct where T2 : struct where T3 : struct
-        => ReserveTypes(TypeSet<T1, T2, T3>.Value, capacity);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void WriteCreatedValue<T>(Entity entity, Chunk chunk, int row, in T value) where T : struct
+    {
+        if (ComponentType<T>.IsSharedType)
+        {
+            var values = Shared<T>();
+            int id = values.Intern(value);
+            ColumnEntry.At<int>(ref chunk.Columns[ComponentType<T>.TypeId], row) = id;
+            values.Groups.Set(entity, -1, id, true);
+        }
+        else if (!ComponentType<T>.IsTagType)
+            ColumnEntry.At<T>(ref chunk.Columns[ComponentType<T>.TypeId], row) =
+                ComponentType<T>.HasValueOperationsType ? ComponentType<T>.CloneValue(this, value) : value;
+    }
+
 
     internal void BeginRead()
         => BeginRead(Execution is not null);
@@ -353,7 +338,6 @@ public sealed partial class World : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void BeginRead(bool withExecution)
     {
-        RequireCallingThread();
         if (!withExecution) _readers++;
         else Interlocked.Increment(ref _readers);
     }

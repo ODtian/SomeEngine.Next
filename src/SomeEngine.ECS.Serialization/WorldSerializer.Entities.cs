@@ -12,27 +12,25 @@ public sealed partial class WorldSerializer
 
     /// <summary>Writes the selected members and their component columns as an entity group.</summary>
     public static void WriteEntities(Stream output, World source, ReadOnlySpan<Entity> entities,
-        SerializeOptions options = default)
-        => new WorldSerializer(SerializationRegistry.Bind(null, options.Codecs))
-            .WriteEntityGroup(output, source, entities, options);
+        SaveRegistry registry, SerializeOptions options = default)
+        => new WorldSerializer(registry).WriteEntityGroup(output, source, entities, options);
 
     /// <summary>Appends a complete entity group and returns its new member identities.</summary>
     public static Entity[] ReadEntities(ReadOnlyMemory<byte> input, World target,
-        SerializationReadOptions options = default)
+        SaveRegistry registry, SerializationReadOptions options = default)
     {
-        var reader = new DataReader(input.Span, options.ReadLimits);
-        return new WorldSerializer(SerializationRegistry.Bind(null, options.Codecs))
-            .ReadEntityGroup(ref reader, input, target, options);
+        var reader = new SaveReader(input.Span, options.ReadLimits);
+        return new WorldSerializer(registry).ReadEntityGroup(ref reader, input, target, options);
     }
 
     /// <summary>Appends a complete entity group from the current stream position.</summary>
-    public static Entity[] ReadEntities(Stream input, World target, SerializationReadOptions options = default)
+    public static Entity[] ReadEntities(Stream input, World target, SaveRegistry registry,
+        SerializationReadOptions options = default)
     {
-        var reader = new DataReader(input, options.ReadLimits);
+        var reader = new SaveReader(input, options.ReadLimits);
         try
         {
-            return new WorldSerializer(SerializationRegistry.Bind(null, options.Codecs))
-                .ReadEntityGroup(ref reader, default, target, options);
+            return new WorldSerializer(registry).ReadEntityGroup(ref reader, default, target, options);
         }
         finally { reader.Dispose(); }
     }
@@ -55,7 +53,7 @@ public sealed partial class WorldSerializer
     {
         ValidateWriteOptions(options);
         using WorldAccess structure = source.OpenStructure(false);
-        using WorldAccess values = source.OpenValues(WorldCheckpoint.CaptureAccesses(source));
+        using WorldAccess values = source.OpenValues(WorldCopy.CaptureAccesses(source));
         source.BeginRead();
         try
         {
@@ -93,10 +91,10 @@ public sealed partial class WorldSerializer
                             && sparse.Types[column.Type] is { } store && store.Has(entities[index]))
                             AddSelected(selected, column, index);
             }
-            EntityWriteColumn[] columns = selected.Values.OrderBy(column => column.Type.Key.StableId).ToArray();
+            EntityWriteColumn[] columns = selected.Values.OrderBy(column => column.Type.Key.Id).ToArray();
             _used.Clear();
             foreach (EntityWriteColumn column in columns) _used.Add(column.Type);
-            var writer = new DataWriter(output, options.ExternalReferences);
+            var writer = new SaveWriter(output, options.ExternalReferences);
             WriteHeader(ref writer, options.Purpose, EntityPayload);
             writer.WriteInt32(entities.Length);
             writer.WriteEntities(entities);
@@ -117,7 +115,7 @@ public sealed partial class WorldSerializer
             {
                 EntityWriteColumn column = columns[index];
                 var bytes = new ArrayBufferWriter<byte>();
-                var fields = new DataWriter(bytes, options.ExternalReferences);
+                var fields = new SaveWriter(bytes, options.ExternalReferences);
                 foreach (int member in column.Members)
                 {
                     Entity entity = entities[member];
@@ -162,9 +160,9 @@ public sealed partial class WorldSerializer
         column.Members.Add(member);
     }
 
-    private sealed class EntityReadColumn(SavedType type, int[] members, bool[]? enabled, int length)
+    private sealed class EntityReadColumn(SavedType? type, int[] members, bool[]? enabled, int length)
     {
-        internal readonly SavedType Type = type;
+        internal readonly SavedType? Type = type;
         internal readonly int[] Members = members;
         internal readonly bool[]? Enabled = enabled;
         internal readonly int Length = length;
@@ -173,10 +171,10 @@ public sealed partial class WorldSerializer
 
     private readonly record struct EntityReadGroup(TypeSet Types, int[] Members);
 
-    private Entity[] ReadEntityGroup(ref DataReader reader, ReadOnlyMemory<byte> input, World target,
+    private Entity[] ReadEntityGroup(ref SaveReader reader, ReadOnlyMemory<byte> input, World target,
         SerializationReadOptions options)
     {
-        SavedType[] types = ReadManifest(ref reader, options.RequiredPurpose, EntityPayload);
+        SavedType?[] types = ReadManifest(ref reader, options.RequiredPurpose, out SavedStorage[] storages, EntityPayload);
         int count = reader.Budget.EntityCount(reader.ReadInt32());
         var sources = new Entity[count];
         for (int index = 0; index < count; index++) sources[index] = reader.ReadEntity();
@@ -185,21 +183,22 @@ public sealed partial class WorldSerializer
         for (int groupIndex = 0; groupIndex < groups.Length; groupIndex++)
         {
             int typeCount = reader.Budget.EntityItemCount(reader.ReadInt32());
-            int[] components = new int[typeCount];
-            for (int index = 0; index < components.Length; index++)
-                components[index] = ((SavedColumn)types[reader.Budget.Count(reader.ReadInt32(), types.Length - 1, "entity type")]).Type;
+            var components = new List<int>(typeCount);
+            for (int index = 0; index < typeCount; index++)
+                if (types[reader.Budget.Count(reader.ReadInt32(), types.Length - 1, "entity type")] is { } type)
+                    components.Add(((SavedColumn)type).Type);
             int memberCount = reader.Budget.Count(reader.ReadInt32(), count, "group member");
             int[] members = new int[memberCount];
             for (int index = 0; index < members.Length; index++)
                 members[index] = reader.Budget.Count(reader.ReadInt32(), count - 1, "group entity");
-            groups[groupIndex] = new(new TypeSet(false, components), members);
+            groups[groupIndex] = new(new TypeSet(false, components.ToArray()), members);
         }
         int columnCount = reader.Budget.Count(reader.ReadInt32(), types.Length, "entity column");
         var columns = new EntityReadColumn[columnCount];
         for (int columnIndex = 0; columnIndex < columns.Length; columnIndex++)
         {
             int typeIndex = reader.Budget.Count(reader.ReadInt32(), types.Length - 1, "entity column type");
-            SavedType type = types[typeIndex];
+            SavedType? type = types[typeIndex];
             int membersCount = reader.Budget.Count(reader.ReadInt32(), count, "column member");
             var members = new int[membersCount];
             for (int index = 0; index < members.Length; index++)
@@ -207,7 +206,7 @@ public sealed partial class WorldSerializer
                 int member = members[index] = reader.Budget.Count(reader.ReadInt32(), count - 1, "column entity");
             }
             bool[]? enabled = null;
-            if (type is SavedColumn)
+            if (storages[typeIndex] is not SavedStorage.Sparse)
             {
                 enabled = new bool[members.Length];
                 for (int index = 0; index < enabled.Length; index++) enabled[index] = reader.ReadBoolean();
@@ -228,9 +227,11 @@ public sealed partial class WorldSerializer
             }
             offset = checked(offset + column.Length);
         }
+        // A retired type's column was read past above and is not restored.
+        columns = Array.FindAll(columns, static column => column.Type is not null);
         using WorldAccess structure = target.OpenStructure();
         using World.BatchVersionScope version = target.BeginBatchVersion(0);
-        foreach (SavedType type in types) type.Activate(target);
+        foreach (SavedType? type in types) type?.Activate(target);
         var bound = new Archetype[count];
         foreach (EntityReadGroup group in groups)
         {
@@ -242,30 +243,32 @@ public sealed partial class WorldSerializer
         foreach (EntityReadColumn column in columns)
         {
             if (column.Type is SavedColumn tableColumn) tableColumn.PrepareRead(target);
-            else ((SavedSparse)column.Type).AllocateAppend(target, membersCreated, column.Members);
+            else ((SavedSparse)column.Type!).AllocateAppend(target, membersCreated, column.Members);
         }
         var references = new EntityGroupReferences(sources, membersCreated, options.MissingReferenceMode);
-        var work = new ReadEntityColumns(target, membersCreated, references, reader.Budget);
-        if (target.Execution is { } execution) execution.ExecuteRanges(columns, columns.Length, work);
-        else JobSystem.Default.ExecuteRanges(columns, columns.Length, work);
+        var work = new ReadEntityColumns(target, columns, membersCreated, references, reader.Budget, reader.FieldMappings);
+        if (target.Execution is { } execution) execution.ExecuteParallel(work, columns.Length);
+        else for (int index = 0; index < columns.Length; index++) work.Execute(index);
         foreach (EntityReadColumn column in columns)
             if (column.Enabled is { } enabled)
                 for (int index = 0; index < enabled.Length; index++)
                     if (!enabled[index])
                     {
                         ref EntityRecord record = ref target.Records[membersCreated[column.Members[index]].Id];
-                        target.SetEnabled(record.Chunk!, column.Type.Type, record.Row, false);
+                        target.SetEnabled(record.Chunk!, column.Type!.Type, record.Row, false);
                     }
         target.CompleteCopies(membersCreated);
         return membersCreated;
     }
 
-    private readonly struct ReadEntityColumns(World world, Entity[] entities, EntityGroupReferences references,
-        SerializationReadBudget budget) : IRangeWork<EntityReadColumn>
+    private readonly struct ReadEntityColumns(World world, EntityReadColumn[] columns, Entity[] entities,
+        EntityGroupReferences references, SerializationReadBudget budget,
+        Dictionary<Guid, FieldMapping>? savedFieldMaps) : IJobParallelFor
     {
-        public void Execute(in EntityReadColumn column)
+        public void Execute(int item)
         {
-            var reader = new DataReader(column.Bytes.Span, budget) { ValuesWorld = world };
+            EntityReadColumn column = columns[item];
+            var reader = new SaveReader(column.Bytes.Span, budget) { ValuesWorld = world, FieldMappings = savedFieldMaps };
             reader.BindEntityReferences(references);
             foreach (int index in column.Members)
             {
@@ -273,9 +276,9 @@ public sealed partial class WorldSerializer
                 if (column.Type is SavedColumn tableColumn)
                 {
                     ref EntityRecord record = ref world.Records[entity.Id];
-                    tableColumn.ReadCell(ref reader, ref record.Chunk!.Columns[column.Type.Type], record.Row);
+                    tableColumn.ReadCell(ref reader, ref record.Chunk!.Columns[column.Type!.Type], record.Row);
                 }
-                else ((SavedSparse)column.Type).ReadCell(ref reader, world, entity);
+                else ((SavedSparse)column.Type!).ReadCell(ref reader, world, entity);
             }
             reader.RequireEndOfInput();
         }

@@ -15,7 +15,7 @@ public sealed class ResourceIntervalTests
         using var written = events.CreateSignal();
         using var read = events.CreateSignal();
         JobHandle writer = scheduler.Schedule(new GatedJob(entered, release, written),
-            JobResourceAccess.Write(resource, secondStart + 1, 1));
+            [JobResourceAccess.Write(resource, secondStart + 1, 1)]);
         entered.Wait();
         JobResourceAccess[] reads = Enumerable.Range(0, 8)
             .Select(index => JobResourceAccess.Read(resource, index % 2 == 0 ? 0 : secondStart, 2)).ToArray();
@@ -42,7 +42,7 @@ public sealed class ResourceIntervalTests
         JobHandle outside = scheduler.Schedule(new GatedJob(entered, release, finished), writes);
         entered.Wait();
 
-        JobHandle inside = scheduler.Schedule(new SignalJob(gap), JobResourceAccess.Write(resource, 2, 2));
+        JobHandle inside = scheduler.Schedule(new SignalJob(gap), [JobResourceAccess.Write(resource, 2, 2)]);
         scheduler.Schedule(new SignalJob(release)).Complete();
         scheduler.CombineDependencies([outside, inside]).Complete();
 
@@ -60,7 +60,7 @@ public sealed class ResourceIntervalTests
         using var finished = events.CreateSignal();
         using var shared = events.CreateSignal();
         JobHandle reader = scheduler.Schedule(new GatedJob(entered, release, finished),
-            JobResourceAccess.Read(resource, 0, 2));
+            [JobResourceAccess.Read(resource, 0, 2)]);
         entered.Wait();
         JobResourceAccess[] accesses = Enumerable.Range(0, 8).Select(index => index % 2 == 0
             ? JobResourceAccess.Read(resource, 0, 2) : JobResourceAccess.Write(resource, 4, 2)).ToArray();

@@ -79,7 +79,7 @@ public struct InertialPoseSystem : ISystem<PoseNodeContext>
         instance.Weight = instance.InputResult.Weight > 0 ? time.Weight : 0;
         if (world.Has<AnimationLayers>(instance.Output.Entity))
         {
-            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(instance.Output.Entity);
+            AnimationLayers layers = world.ReadValue<AnimationLayers>(instance.Output.Entity);
             if (instance.Placement.Layer < layers.Count) instance.Weight *= layers.Items[instance.Placement.Layer].Weight;
         }
         if (instance.Weight == 0) return;
@@ -96,7 +96,7 @@ public struct InertialPoseSystem : ISystem<PoseNodeContext>
             }
         }
         InertialPoseParameters parameters = instance.Definition.Parameters[instance.Index];
-        float delta = world.ReadComponentData<Timeline>(animation).Paused ? 0 : frame.Delta;
+        float delta = world.ReadValue<Timeline>(animation).Paused ? 0 : frame.Delta;
         frame.Jobs.Add(PoseAnimation.GetScheduler(world).Schedule(new InertializeBones(instance.Samples, parameters.DecayRate, parameters.Tolerance,
             delta, !instance.Initialized, instance.Action != instance.PreviousAction), instance.Samples.Accesses));
         instance.Sampled = true;

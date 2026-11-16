@@ -431,7 +431,7 @@ internal static class GraphTrackValues<T, TOps>
     {
         T current = track.Current;
         if (track.Channel.Component != ComponentId<AnimationLayers>.Value && world.Has<AnimationLayers>(target) &&
-            world.ReadComponentData<AnimationLayers>(target).Items[track.Layer].Mode == LayerMode.Additive)
+            world.ReadValue<AnimationLayers>(target).Items[track.Layer].Mode == LayerMode.Additive)
             PropertyAnimation.ReadBase(world, target, track.Channel, ref current);
         int stage = track.GraphMotion == 0 ? track.Stage : track.MotionStage;
         for (int earlier = 0; earlier < index; earlier++)

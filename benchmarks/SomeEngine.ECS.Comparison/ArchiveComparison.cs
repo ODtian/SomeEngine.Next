@@ -109,7 +109,7 @@ internal static class ArchiveComparison
             }
             var report = new
             {
-                Workload = "archive-" + mode, Progress = preserve ? "preserve" : "rebuild", Encoding = raw ? "raw" : "codec", Entities = count,
+                Workload = "archive-" + mode, Progress = preserve ? "preserve" : "rebuild", Encoding = raw ? "raw" : "serializer", Entities = count,
                 ReferenceValueAccess = "concrete-nonvirtual", FileService = mode == "file" ? "DurableSaveStore" : null,
                 FileIntegrity = mode == "file" ? "SHA-256" : null, FileEnvelopeVersion = mode == "file" ? 4 : 0,
                 FileHeaderBytes = mode == "file" ? 64 : 0, FileGenerationSlots = mode == "file" ? 2 : 0,

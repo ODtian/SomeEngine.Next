@@ -27,12 +27,12 @@ internal sealed partial class HierarchyData<TDomain> : IWorldLifecycle where TDo
 
     private void ConfirmAppliedParents()
     {
-        if (!_hasDeferredChanges) _version = _world.Version;
+        if (!_hasDeferredChanges) _version = _world.CompletedVersion;
     }
+
 
     internal HierarchyData(World world)
     {
-        HierarchySerializationType<TDomain>.Register();
         _world = world;
         _applied = new AppliedParent[world.Records.Length];
         _differences = new(world.Records.Length);
@@ -88,7 +88,7 @@ internal sealed partial class HierarchyData<TDomain> : IWorldLifecycle where TDo
         using (var scope = _changes.Open())
             foreach (var rows in scope) entities.AddRange(rows.Entities);
         foreach (Entity entity in entities) InitializeChild(entity);
-        _version = _world.Version;
+        _version = _world.CompletedVersion;
     }
 
     internal void InitializeChild(Entity entity)

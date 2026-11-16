@@ -35,7 +35,7 @@ public class SharedComponentTests
         var world = new World();
         var entity = world.Create();
 
-        world.SetShared(entity, new SceneId { Value = 1 });
+        world.Set(entity, new SceneId { Value = 1 });
 
         Assert.True(world.Has<SceneId>(entity));
     }
@@ -46,10 +46,10 @@ public class SharedComponentTests
         var world = new World();
         var entity = world.Create();
 
-        world.SetShared(entity, new SceneId { Value = 1 });
+        world.Set(entity, new SceneId { Value = 1 });
 
         Assert.Throws<InvalidOperationException>(() => world.Add(entity, new SceneId { Value = 2 }));
-        Assert.Equal(1, world.ReadShared<SceneId>(entity).Value);
+        Assert.Equal(1, world.Read<SceneId>(entity).Value);
     }
 
     [Fact]
@@ -58,9 +58,9 @@ public class SharedComponentTests
         var world = new World();
         var entity = world.Create();
 
-        world.SetShared(entity, new SceneId { Value = 42 });
+        world.Set(entity, new SceneId { Value = 42 });
 
-        var scene = world.ReadShared<SceneId>(entity);
+        var scene = world.Read<SceneId>(entity);
         Assert.Equal(42, scene.Value);
     }
 
@@ -70,10 +70,10 @@ public class SharedComponentTests
         var world = new World();
         var entity = world.Create();
 
-        world.SetShared(entity, new SceneId { Value = 1 });
-        world.SetShared(entity, new SceneId { Value = 2 });
+        world.Set(entity, new SceneId { Value = 1 });
+        world.Set(entity, new SceneId { Value = 2 });
 
-        Assert.Equal(2, world.ReadShared<SceneId>(entity).Value);
+        Assert.Equal(2, world.Read<SceneId>(entity).Value);
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public class SharedComponentTests
         var world = new World();
         var entity = world.Create<Position>(new Position { X = 1, Y = 2 });
 
-        world.SetShared(entity, new SceneId { Value = 10 });
+        world.Set(entity, new SceneId { Value = 10 });
 
         // Position 应该仍然可读
         Assert.Equal(1, world.Read<Position>(entity).X);
@@ -95,12 +95,12 @@ public class SharedComponentTests
         var world = new World();
         var entity = world.Create<Position>(new Position { X = 5, Y = 10 });
 
-        world.SetShared(entity, new SceneId { Value = 1 });
+        world.Set(entity, new SceneId { Value = 1 });
         world.Add(entity, new Health { Value = 100 });
 
         Assert.Equal(5, world.Read<Position>(entity).X);
         Assert.Equal(100, world.Read<Health>(entity).Value);
-        Assert.Equal(1, world.ReadShared<SceneId>(entity).Value);
+        Assert.Equal(1, world.Read<SceneId>(entity).Value);
     }
 
     [Fact]
@@ -110,11 +110,11 @@ public class SharedComponentTests
         var e1 = world.Create();
         var e2 = world.Create();
 
-        world.SetShared(e1, new SceneId { Value = 1 });
-        world.SetShared(e2, new SceneId { Value = 1 });
+        world.Set(e1, new SceneId { Value = 1 });
+        world.Set(e2, new SceneId { Value = 1 });
 
-        Assert.Equal(1, world.ReadShared<SceneId>(e1).Value);
-        Assert.Equal(1, world.ReadShared<SceneId>(e2).Value);
+        Assert.Equal(1, world.Read<SceneId>(e1).Value);
+        Assert.Equal(1, world.Read<SceneId>(e2).Value);
     }
 
     [Fact]
@@ -124,11 +124,11 @@ public class SharedComponentTests
         var e1 = world.Create();
         var e2 = world.Create();
 
-        world.SetShared(e1, new SceneId { Value = 1 });
-        world.SetShared(e2, new SceneId { Value = 2 });
+        world.Set(e1, new SceneId { Value = 1 });
+        world.Set(e2, new SceneId { Value = 2 });
 
-        Assert.Equal(1, world.ReadShared<SceneId>(e1).Value);
-        Assert.Equal(2, world.ReadShared<SceneId>(e2).Value);
+        Assert.Equal(1, world.Read<SceneId>(e1).Value);
+        Assert.Equal(2, world.Read<SceneId>(e2).Value);
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public class SharedComponentTests
         var entity = world.Create();
 
         Assert.Throws<ArgumentException>(() =>
-            world.ReadShared<SceneId>(entity));
+            world.Read<SceneId>(entity));
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public class SharedComponentTests
     {
         var world = new World();
         var entity = world.Create();
-        world.SetShared(entity, new SceneId { Value = 42 });
+        world.Set(entity, new SceneId { Value = 42 });
 
         world.Destroy(entity);
 
@@ -162,11 +162,11 @@ public class SharedComponentTests
     {
         var world = new World();
         var entity = world.Create();
-        world.SetShared(entity, new SceneId { Value = 42 });
+        world.Set(entity, new SceneId { Value = 42 });
 
         world.Destroy(entity);
 
-        Assert.False(world.HasComponentData(entity, ComponentId<SceneId>.Value));
+        Assert.False(world.Has(entity, ComponentId<SceneId>.Value));
     }
 
     [Fact]
@@ -174,8 +174,8 @@ public class SharedComponentTests
     {
         var world = new World();
         var entity = world.Create();
-        world.SetShared(entity, new SceneId { Value = 1 });
-        world.SetShared(entity, new RenderGroup { GroupId = 5, Material = "metal" });
+        world.Set(entity, new SceneId { Value = 1 });
+        world.Set(entity, new RenderGroup { GroupId = 5, Material = "metal" });
 
         world.Destroy(entity);
 
@@ -191,9 +191,11 @@ public class SharedComponentTests
     public void QueryWithSharedFilter_OnlyMatchingChunksIterated()
     {
         using var world = new World();
-        Entity first = world.Create(new Position { X = 1 }, new SceneId { Value = 10 });
-        world.Create(new Position { X = 2 }, new SceneId { Value = 20 });
-        Entity third = world.Create(new Position { X = 3 }, new SceneId { Value = 10 });
+        Entity first = world.Create(new Position { X = 1 });
+        world.Add(first, new SceneId { Value = 10 });
+        world.Add(world.Create(new Position { X = 2 }), new SceneId { Value = 20 });
+        Entity third = world.Create(new Position { X = 3 });
+        world.Add(third, new SceneId { Value = 10 });
         Query query = world.Query(new QueryDescription().WithStored<Position>().WithShared(world.InternShared(new SceneId { Value = 10 })));
         var results = new List<float>();
         using (QueryScope scope = query.OpenRead())
@@ -209,7 +211,7 @@ public class SharedComponentTests
     public void QueryWithSharedFilter_NoMatchingChunks_NoIteration()
     {
         using var world = new World();
-        world.Create(new Position { X = 1 }, new SceneId { Value = 42 });
+        world.Add(world.Create(new Position { X = 1 }), new SceneId { Value = 42 });
         Query query = world.Query(new QueryDescription().WithStored<Position>().WithShared(world.InternShared(new SceneId { Value = 999 })));
         Assert.Equal(0, query.Count);
     }
@@ -218,8 +220,9 @@ public class SharedComponentTests
     public void QueryRowsWithSharedValueReturnsMatchingEntities()
     {
         using var world = new World();
-        Entity first = world.Create(new Position { X = 1 }, new SceneId { Value = 10 });
-        world.Create(new Position { X = 2 }, new SceneId { Value = 20 });
+        Entity first = world.Create(new Position { X = 1 });
+        world.Add(first, new SceneId { Value = 10 });
+        world.Add(world.Create(new Position { X = 2 }), new SceneId { Value = 20 });
         Query query = world.Query(new QueryDescription().WithStored<Position>().WithShared(world.InternShared(new SceneId { Value = 10 })));
         Assert.Equal(1, query.Count);
         Assert.Equal(1, query.Count);

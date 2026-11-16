@@ -5,7 +5,7 @@ using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS;
 
-public struct Buffer<T> : IEnableableComponent, IComponentOperations<Buffer<T>>, IComponentColumnOperations<Buffer<T>>, IBufferJobElements, IEntityReferenceOperations<Buffer<T>> where T : struct
+public struct Buffer<T> : IEnableableComponent, IComponentOperations<Buffer<T>>, IComponentColumnOperations<Buffer<T>>, IBufferJobElements, IEntityReferenceOperations<Buffer<T>>, IEntityReferenceWrapper, IRemovedValueSource where T : struct
 {
     bool IBufferJobElements.IsAliasFree => Registry.JobStorageTypeMetadata<T>.IsAliasFree;
     Buffer<T> IComponentOperations<Buffer<T>>.Clone(World world, in Buffer<T> value)
@@ -27,6 +27,9 @@ public struct Buffer<T> : IEnableableComponent, IComponentOperations<Buffer<T>>,
         if (world.RecyclesBuffers) world.BufferPool<T>().Return(values);
         values.Clear();
     }
+    bool IEntityReferenceWrapper.HoldsEntityReferences => EntityFields<T>.Operations is not null;
+    IRemovedValues? IRemovedValueSource.CreateRemovedValues()
+        => typeof(IRemovedComponent).IsAssignableFrom(typeof(T)) ? new RemovedValueOperations<Buffer<T>>() : null;
     void IEntityReferenceOperations<Buffer<T>>.Remap(ref Buffer<T> value, in EntityMap entities)
     {
         for (int index = 0; index < value.Count; index++) ComponentValues.Remap(ref value.Items![index], entities);

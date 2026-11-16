@@ -58,7 +58,7 @@ public readonly struct PoseLayerLeaf : IAnimationLeaf<PoseLayerParameters>
             Base = PoseAnimation.Resolve(world, target, parameters.Base),
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
-            Samples = new(PoseAnimation.GetScheduler(world), world.ReadComponentData<PoseTarget>(target).Skeleton.Skeleton, parameters.Mask),
+            Samples = new(PoseAnimation.GetScheduler(world), world.ReadValue<PoseTarget>(target).Skeleton.Skeleton, parameters.Mask),
         };
         instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Base, instance.Source], in placement);
         {

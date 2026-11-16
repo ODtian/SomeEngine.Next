@@ -58,14 +58,14 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
                 {
                     Entity entity = change.Entity;
                     SetMesh(entity, _world.IsAlive(entity) && _world.Has<RenderMesh>(entity)
-                        ? _world.ReadComponentData<RenderMesh>(entity) : null);
+                        ? _world.ReadValue<RenderMesh>(entity) : null);
                 }
                 through = membership.Through;
             }
             ulong version;
             using (QueryScope source = _meshQuery.OpenRead())
             {
-                version = _world.Version;
+                version = _world.CompletedVersion;
                 foreach (QueryChunk chunk in source)
                 {
                     if (_initialized && !chunk.WasWritten<RenderMesh>(_lastVersion)) continue;

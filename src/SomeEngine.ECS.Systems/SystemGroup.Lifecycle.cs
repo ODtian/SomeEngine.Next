@@ -4,15 +4,20 @@ using SomeEngine.Diagnostics;
 using SomeEngine.Job;
 
 /// <summary>
-/// Registration-order system container for a single concrete context type.
+/// Runs systems in registration order with one context type. A plain system runs its OnUpdate on the calling thread;
+/// its World calls and the jobs it schedules go through the World's access tracking. A job system is scheduled at its
+/// turn without waiting, ordered against the others by its declared accesses.
 /// </summary>
-public sealed class SystemGroup<TContext> : IDisposable, ISystemVersions
+public sealed partial class SystemGroup<TContext> : IDisposable, ISystemVersions
     where TContext : allows ref struct
 {
     private const int LifecycleControlIdle = 0;
     private const int LifecycleControlActive = 1;
 
     private readonly ISystemDriver<TContext> _driver;
+    private readonly int _rangeRows;
+    private readonly List<JobHandle> _scheduledJobs = [];
+    private JobHandle _previousUpdate;
     private readonly object _gate = new();
     private readonly List<SystemNode<TContext>> _nodes = new();
     private readonly List<SystemState> _states = new();
@@ -20,9 +25,11 @@ public sealed class SystemGroup<TContext> : IDisposable, ISystemVersions
     private int _lifecycleControlState;
     private int _activeLifecycleCallbackThreadId;
 
-    public SystemGroup(ISystemDriver<TContext> driver)
+    /// <param name="rangeRows">Rows per parallel range for the group's job systems.</param>
+    public SystemGroup(ISystemDriver<TContext> driver, int rangeRows = 1024)
     {
         _driver = driver ?? throw new ArgumentNullException(nameof(driver));
+        _rangeRows = rangeRows;
     }
 
     public int Count
@@ -77,6 +84,9 @@ public sealed class SystemGroup<TContext> : IDisposable, ISystemVersions
 
     public int Add<TSystem>(TSystem system)
         where TSystem : ISystem<TContext>
+        => AddNode(new SystemNode<TSystem, TContext>(system));
+
+    private int AddNode(SystemNode<TContext> node)
     {
         ThrowIfLifecycleCallbackReentry();
         ThrowIfJobCallbackWouldWaitForLifecycleControl();
@@ -87,7 +97,7 @@ public sealed class SystemGroup<TContext> : IDisposable, ISystemVersions
             ThrowIfDisposed();
 
             int index = _nodes.Count;
-            _nodes.Add(new SystemNode<TSystem, TContext>(system));
+            _nodes.Add(node);
             var state = new SystemState
             {
                 Index = index,
@@ -168,17 +178,18 @@ public sealed class SystemGroup<TContext> : IDisposable, ISystemVersions
         ThrowIfTeardownFailed(exceptions, "System disable failed.");
     }
 
-    public void Update()
+    /// <summary>Runs every enabled system once and returns the completion of the job systems it scheduled.</summary>
+    public JobHandle Update()
     {
         TContext template = default!;
-        UpdateCore(useTemplate: false, ref template);
+        return UpdateCore(useTemplate: false, ref template);
     }
 
     /// <summary>
     /// Runs the group with one scoped context template. A fresh copy is refreshed for every
     /// system, so a callback cannot corrupt the context observed by a later system.
     /// </summary>
-    public void Update(ref TContext template) =>
+    public JobHandle Update(ref TContext template) =>
         UpdateCore(useTemplate: true, ref template);
 
     /// <summary>
@@ -268,6 +279,7 @@ public sealed class SystemGroup<TContext> : IDisposable, ISystemVersions
                 Exception[] errors = await state.RequireJobLifetime().WaitCurrentRootsAsync().ConfigureAwait(false);
                 if (errors.Length != 0) (failures ??= []).AddRange(errors);
             }
+            await AfterPreviousUpdate().WaitAsync().ConfigureAwait(false);
         }
         finally
         {
@@ -298,6 +310,7 @@ public sealed class SystemGroup<TContext> : IDisposable, ISystemVersions
                 try { state.RequireJobLifetime().CompleteCurrentRoots(failures); }
                 catch (Exception failure) { failures.Add(failure); }
             }
+            AfterPreviousUpdate().Complete();
         }
         finally
         {
@@ -306,7 +319,7 @@ public sealed class SystemGroup<TContext> : IDisposable, ISystemVersions
         ThrowIfTeardownFailed(failures, "System work failed.");
     }
 
-    private unsafe void UpdateCore(bool useTemplate, ref TContext template)
+    private unsafe JobHandle UpdateCore(bool useTemplate, ref TContext template)
     {
         ThrowIfLifecycleCallbackReentry();
         ThrowIfJobCallbackWouldWaitForLifecycleControl();
@@ -316,9 +329,11 @@ public sealed class SystemGroup<TContext> : IDisposable, ISystemVersions
             ThrowIfDisposed();
             Volatile.Write(ref _lifecycleControlState, LifecycleControlActive);
         }
-
+        _scheduledJobs.Clear();
         try
         {
+            // Each group update is one step of the World's event producers.
+            _driver.World?.EndStep();
             // Registration and teardown wait for this execution boundary. The collection cannot
             // change, but no lock is held while drivers or user systems run or wait for Jobs.
             for (int i = 0; i < _nodes.Count; i++)
@@ -332,6 +347,14 @@ public sealed class SystemGroup<TContext> : IDisposable, ISystemVersions
                 SystemNode<TContext> node = _nodes[i];
                 using var trace = EngineTrace.Begin(node.UpdateTrace);
                 using JobSubmissionScope submissions = state.RequireJobLifetime().EnterSubmissionScope();
+                // Job systems reserve their World accesses at submission, and a plain system's World calls register
+                // after them, so the scheduler keeps registration order between conflicting systems of both kinds.
+                if (node is JobSystemNode job)
+                {
+                    _scheduledJobs.Add(job.Schedule(state, JobScheduler));
+                    state.Created = true;
+                    continue;
+                }
                 EnterLifecycleCallback();
                 try
                 {
@@ -371,6 +394,10 @@ public sealed class SystemGroup<TContext> : IDisposable, ISystemVersions
         {
             CompleteLifecycleControl();
         }
+        if (_scheduledJobs.Count == 0) return _previousUpdate = default;
+        _previousUpdate = JobScheduler.CombineDependencies(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_scheduledJobs));
+        _scheduledJobs.Clear();
+        return _previousUpdate;
     }
 
     /// <summary>

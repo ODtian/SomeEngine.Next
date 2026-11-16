@@ -261,7 +261,7 @@ public sealed partial class SkinRenderExtractor : IRenderExtractionSystem
         foreach (SourceSection section in _sections.Values)
         {
             section.SwapCapture();
-            destination.GetKnown(section.Entity) = section.Data;
+            destination.Get(section.Entity) = section.Data;
         }
     }
 

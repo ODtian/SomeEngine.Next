@@ -18,7 +18,7 @@ public sealed partial class HitTestSystem
         _drags.Clear();
         foreach (Entity node in _nodes)
         {
-            Drag drag = world.ReadComponentData<Drag>(node);
+            Drag drag = world.ReadValue<Drag>(node);
             drag.Active = false;
             drag.Delta = Vector2.Zero;
             _drags.Add(node, drag);
@@ -68,7 +68,7 @@ public sealed partial class HitTestSystem
     {
         foreach (var (node, drag) in _drags)
         {
-            Drag previous = world.ReadComponentData<Drag>(node);
+            Drag previous = world.ReadValue<Drag>(node);
             if (drag.Active != previous.Active || drag.Delta != previous.Delta ||
                 drag.Total != previous.Total || drag.Count != previous.Count)
                 world.Set(node, drag);

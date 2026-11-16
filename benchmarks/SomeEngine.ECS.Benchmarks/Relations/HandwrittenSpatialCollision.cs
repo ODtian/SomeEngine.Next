@@ -41,12 +41,12 @@ public static partial class HandwrittenSpatialCollision
                 var entities = EntityOrder.OrderPair(first.Entity, second.Entity);
                 if (!members.Contains(entities.Item1) || !members.Contains(entities.Item2))
                     continue;
-                ref readonly Body firstBody = ref values.ReadKnown(entities.Item1);
-                ref readonly Body secondBody = ref values.ReadKnown(entities.Item2);
+                ref readonly Body firstBody = ref values.Read(entities.Item1);
+                ref readonly Body secondBody = ref values.Read(entities.Item2);
                 if (firstBody.Kind != MotionKind.Dynamic && secondBody.Kind != MotionKind.Dynamic)
                     continue;
                 if (hairs.Has(entities.Item1) && hairs.Has(entities.Item2) &&
-                    hairs.ReadKnown(entities.Item1).Character == hairs.ReadKnown(entities.Item2).Character)
+                    hairs.Read(entities.Item1).Character == hairs.Read(entities.Item2).Character)
                     continue;
                 if (!output.Add(in entities))
                     return false;

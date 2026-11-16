@@ -1,9 +1,11 @@
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.ECS.Comparison;
 
-internal static class ChangeChecks
+internal static partial class ChangeChecks
 {
+    private partial struct ScoreExtra : IComponentBundle { internal Score Score; internal Extra Extra; }
     internal static void Run()
     {
         BatchStampMatchesScalar();
@@ -53,7 +55,7 @@ internal static class ChangeChecks
             "destroyed entities remain readable until their old values are consumed");
         world.ClearRemoved<Score>();
         Require(!world.IsAlive(retained), "consuming the final retained fact completes identity release");
-        using (var values = world.OpenCachedWrite<Score>()) values.Set(entities[100], new Score { Value = 8 });
+        using (var values = world.OpenWrite<Score>()) values.Set(entities[100], new Score { Value = 8 });
         changed.Since(beforeRead);
         Require(Count(changed) == 1, "cached writes publish their version to ordinary changed queries");
         Console.WriteLine("Added, Changed, Removed and cleanup lifecycle behavior: passed.");
@@ -140,7 +142,7 @@ internal static class ChangeChecks
     {
         using var world = new World();
         Entity[] members = [world.Create(new Score { Value = 1 }),
-            world.Create(new Score { Value = 2 }, new Extra()), world.Create(new Score { Value = 3 })];
+            world.Spawn(new ScoreExtra { Score = new() { Value = 2 }, Extra = new() }), world.Create(new Score { Value = 3 })];
         world.Remove<Score>(members);
         var first = world.Read<Removed<Score>>(members[0]);
         var second = world.Read<Removed<Score>>(members[1]);
@@ -164,5 +166,5 @@ internal static class ChangeChecks
         if (!condition) throw new InvalidOperationException(behavior);
     }
 
-    private struct Score : IAddedComponent, IRemovedComponent { internal int Value; }
+    private struct Score : IAddedComponent, IRemovedComponent<Score> { internal int Value; }
 }

@@ -17,13 +17,13 @@ public static partial class Scope
         occurrences.TryGetValue(key, out int occurrence);
         occurrences[key] = occurrence + 1;
 
-        if (!current.World.HasSparse<RememberedValues>(current.Entity))
+        if (!current.World.Has<RememberedValues>(current.Entity))
         {
-            current.World.SetSparse(current.Entity, new RememberedValues(new()));
+            current.World.Set(current.Entity, new RememberedValues(new()));
             if (!current.World.Has<LocalState>(current.Entity))
                 current.World.Set(current.Entity, default(LocalState));
         }
-        var values = current.World.ReadSparse<RememberedValues>(current.Entity).Values;
+        var values = current.World.Read<RememberedValues>(current.Entity).Values;
         if (values.TryGetValue((key, occurrence), out object? value))
             return (T)value!;
         T initialized = init!();

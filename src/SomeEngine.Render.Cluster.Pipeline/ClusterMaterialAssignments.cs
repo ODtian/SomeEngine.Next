@@ -537,9 +537,9 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
                 foreach (RenderMaterialReference value in chunk.Read<RenderMaterialReference>()) _update.SetValue(value.Material);
         }
         private readonly struct CollectAssignments(ClusterMaterialAssignmentSet source, HashSet<Entity> membership,
-            ulong version) : IRangeWork<AssignmentChunk>
+            ulong version, AssignmentChunk[] chunks) : IJobParallelFor
         {
-            public void Execute(in AssignmentChunk input) => input.Range.Collect(input.Chunk, version, source, membership);
+            public void Execute(int index) => chunks[index].Range.Collect(chunks[index].Chunk, version, source, membership);
         }
         internal void Collect(scoped QueryScope query, World entities, ulong version, ref AssignmentChunk[] chunks)
         {
@@ -562,10 +562,10 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
             }
             try
             {
-                var work = new CollectAssignments(source, _membership, version);
-                if (entities.Execution is { } execution) execution.ExecuteRanges(chunks, count, work);
+                var work = new CollectAssignments(source, _membership, version, chunks);
+                if (entities.Execution is { } execution) execution.ExecuteParallel(work, count);
                 else
-                    for (int index = 0; index < count; index++) work.Execute(in chunks[index]);
+                    for (int index = 0; index < count; index++) work.Execute(index);
                 for (int index = 0; index < count; index++)
                 {
                     AssignmentRange range = ranges[index];

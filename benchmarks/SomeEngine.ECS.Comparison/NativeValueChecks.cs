@@ -1,6 +1,8 @@
+using SomeEngine.ECS.Systems;
+
 namespace SomeEngine.ECS.Comparison;
 
-internal static class NativeValueChecks
+internal static partial class NativeValueChecks
 {
     internal static void Run()
     {
@@ -10,27 +12,26 @@ internal static class NativeValueChecks
         using var world = new World(64);
         using (var chunks = new World(24, chunkCapacity: 8))
         {
-            chunks.Reserve<Position, Velocity, Health>(24);
+            chunks.ReserveBundle<Body>(24);
             var rows = new SomeEngine.ECS.Entities.Entity[24];
-            for (int row = 0; row < rows.Length; row++) rows[row] = chunks.Create(new Position { X = row }, new Velocity { X = 1 }, new Health { Value = 7 });
+            for (int row = 0; row < rows.Length; row++) rows[row] = chunks.Spawn(new Body { Position = new() { X = row }, Velocity = new() { X = 1 }, Health = new() { Value = 7 } });
             Query ranges = chunks.Query<Position, Velocity, Health>();
             Require(ranges.TryGetValues<Position, Velocity, Health>(out _, out _, out _), "filled chunks bind shared columns");
             chunks.Add(rows[0], new Extra());
             Require(!ranges.TryGetValues<Position, Velocity, Health>(out _, out _, out _), "partial chunks retain individual ranges");
-            var action = new CountRanges();
-            ranges.ForEach<Position, Velocity, Health, CountRanges>(ref action);
+            RangeCount action = CountRanges(ranges);
             Require(action.Rows == 24 && action.Total == 276 && action.Maximum <= 8
                 && chunks.Read<Position>(rows[0]).Y == 8 && chunks.Read<Position>(rows[23]).Y == 8,
                 "bound column ranges preserve chunk limits, membership and writes after layout changes");
         }
         using (var selection = new World(32))
         {
-            selection.Create(new Health(), new Team());
+            selection.Spawn(new HealthTeam());
             selection.Create(new Position());
             Query selected = selection.Query(new QueryDescription().With<Health>().Without<Extra>());
             Require(selected.TryGetValues<Health>(out var selectedValues) && selectedValues.Length == 1,
                 "one matching chunk binds current values");
-            selection.Create(new Health(), new Team(), new GrowthMarker());
+            selection.Spawn(new HealthTeamGrowth());
             Require(!selected.TryGetValues<Health>(out _) && selected.Count == 2,
                 "new matching archetypes refresh the bound selection");
         }
@@ -40,9 +41,9 @@ internal static class NativeValueChecks
             Query team = tags.Query<Team>();
             Require(!team.TryGetValues<Team>(out _) && team.Count == 1, "tag queries expose membership through the query");
         }
-        world.Reserve<Position, Velocity, Health>(32);
+        world.ReserveBundle<Body>(32);
         var entities = new SomeEngine.ECS.Entities.Entity[32];
-        world.Create(entities, new Position(), new Velocity(), new Health { Value = 10, Max = 20 });
+        world.Spawn(new Body { Health = new() { Value = 10, Max = 20 } }, entities);
         Query pairs = world.Query<Position, Velocity>();
         Require(pairs.TryGetValues<Position, Velocity>(out var pairPositions, out var pairVelocities)
             && pairPositions.Length == 32 && pairVelocities.Length == 32, "two columns share complete row ranges");
@@ -51,7 +52,7 @@ internal static class NativeValueChecks
             && positions.Length == 32 && velocities.Length == 32 && healthValues.Length == 32
             && healthValues[31].Value == 10, "required columns share complete row ranges");
         Span<SomeEngine.ECS.Entities.Entity> other = stackalloc SomeEngine.ECS.Entities.Entity[16];
-        for (int i = 0; i < other.Length; i++) other[i] = world.Create(new Position(), new Velocity());
+        for (int i = 0; i < other.Length; i++) other[i] = world.Spawn(new Motion());
         Require(pairs.Count == 48 && pairs.TryGetValues<Position, Velocity>(out pairPositions, out pairVelocities)
             && pairPositions.Length == 48 && pairVelocities.Length == 48,
             "new archetypes extend the bound column selection");
@@ -67,7 +68,7 @@ internal static class NativeValueChecks
         Require(world.Read<Health>(entities[0]).Max == 21, "view writes reach primary values");
         world.Destroy(entities[31]);
         Require(health.TryGetValues<Health>(out values) && values.Length == 31 && health.Count == 31, "destroy refreshes the visible row count");
-        world.Create(new Position(), new Velocity(), new Health());
+        world.Spawn(new Body());
         Require(health.TryGetValues<Health>(out values) && values.Length == 32, "refill makes ranges complete");
         world.Remove<Health>(entities[0]);
         Require(!health.TryGetValues<Health>(out _) && health.Count == 31, "presence changes invalidate filled ranges");
@@ -79,11 +80,11 @@ internal static class NativeValueChecks
     private static void ContinuousValuesReturnAfterTailRemoval()
     {
         using var world = new World(16, chunkCapacity: 4);
-        world.Reserve<Position, Velocity, Health>(8);
+        world.ReserveBundle<Body>(8);
         var rows = new SomeEngine.ECS.Entities.Entity[7];
         for (int row = 0; row < rows.Length; row++)
-            rows[row] = world.Create(new Position { X = row }, new Velocity { X = 1 }, new Health { Value = 7 });
-        var tail = world.Create(new Position { X = 99 }, new Velocity { X = 2 }, new Health { Value = 9 }, new Extra());
+            rows[row] = world.Spawn(new Body { Position = new() { X = row }, Velocity = new() { X = 1 }, Health = new() { Value = 7 } });
+        var tail = world.Spawn(new ExtraBody { Body = new() { Position = new() { X = 99 }, Velocity = new() { X = 2 }, Health = new() { Value = 9 } } });
         Query values = world.Query<Position, Velocity, Health>();
         Require(!values.TryGetValues<Position, Velocity, Health>(out _, out _, out _),
             "separated live rows use individual ranges");
@@ -97,10 +98,10 @@ internal static class NativeValueChecks
     private static void MiddleGapsKeepChunkRanges()
     {
         using var world = new World(12, chunkCapacity: 4);
-        world.Reserve<Position, Velocity, Health>(12);
+        world.ReserveBundle<Body>(12);
         var rows = new SomeEngine.ECS.Entities.Entity[12];
         for (int row = 0; row < rows.Length; row++)
-            rows[row] = world.Create(new Position { X = row }, new Velocity { X = 1 }, new Health { Value = 7 });
+            rows[row] = world.Spawn(new Body { Position = new() { X = row }, Velocity = new() { X = 1 }, Health = new() { Value = 7 } });
         Query values = world.Query<Position, Velocity, Health>();
         var removed = new SomeEngine.ECS.Entities.Entity[4];
         SomeEngine.ECS.Entities.Entity first, last;
@@ -122,8 +123,7 @@ internal static class NativeValueChecks
         world.Destroy(removed);
         Require(!values.TryGetValues<Position, Velocity, Health>(out _, out _, out _) && values.Count == 8,
             "a gap between live rows retains individual ranges");
-        var action = new CountRanges();
-        values.ForEach<Position, Velocity, Health, CountRanges>(ref action);
+        RangeCount action = CountRanges(values);
         Require(action.Rows == 8 && action.Total == expectedTotal && action.Maximum <= 4
             && world.Read<Position>(first).Y == 8 && world.Read<Position>(last).Y == 8,
             "individual ranges preserve the live values and writes around the gap");
@@ -139,8 +139,8 @@ internal static class NativeValueChecks
         {
             var position = new Position { X = row, Y = row + 100 };
             entities[row] = row < groupCount
-                ? world.Create(position, new SomeCopyNode(), new Team())
-                : world.Create(position, new SomeCopyNode(), new Sleeping());
+                ? world.Spawn(new NodeTeam { Position = position })
+                : world.Spawn(new NodeSleeping { Position = position });
         }
         for (int row = 0; row < entities.Length; row++)
         {
@@ -148,23 +148,22 @@ internal static class NativeValueChecks
                 entities[(row + groupCount) % entities.Length], row, row * 3 + 7);
             world.Set(entities[row], expected[row]);
         }
-        using (var positions = world.OpenCachedRead<Position>())
-        using (var nodes = world.OpenCachedRead<SomeCopyNode>())
+        using (var positions = world.OpenRead<Position>())
+        using (var nodes = world.OpenRead<SomeCopyNode>())
             Require(positions.Has(entities[groupCount]) && nodes.Has(entities[groupCount]),
                 "cached columns include the later layout before growth");
         Query values = world.Query<Position, SomeCopyNode>();
         _ = values.TryGetValues<Position, SomeCopyNode>(out _, out _);
-        world.Reserve<Position, SomeCopyNode, Team>(128);
-        using (var positions = world.OpenCachedRead<Position>())
-        using (var nodes = world.OpenCachedRead<SomeCopyNode>())
+        world.ReserveBundle<NodeTeam>(128);
+        using (var positions = world.OpenRead<Position>())
+        using (var nodes = world.OpenRead<SomeCopyNode>())
             for (int row = groupCount; row < entities.Length; row++)
             {
                 Position position = positions.Read(entities[row]);
                 Require(position.X == row && position.Y == row + 100 && nodes.Read(entities[row]) == expected[row],
                     "cached reads retain each later entity's complete values after earlier layout growth");
             }
-        var action = new MatchNodeRows(expected);
-        values.ForEach<Position, SomeCopyNode, MatchNodeRows>(ref action);
+        NodeMatch action = MatchNodeRows(values, expected);
         Require(action.Rows == entities.Length && action.OrdinalBits == (1UL << entities.Length) - 1,
             "two-column ranges retain all corresponding rows after earlier layout growth");
     }
@@ -174,36 +173,47 @@ internal static class NativeValueChecks
         if (!condition) throw new InvalidOperationException(behavior);
     }
 
-    private struct MatchNodeRows(SomeCopyNode[] expected) : IComponentAction<Position, SomeCopyNode>
+    private struct NodeMatch { internal int Rows; internal ulong OrdinalBits; }
+
+    private static NodeMatch MatchNodeRows(Query query, SomeCopyNode[] expected)
     {
-        internal int Rows;
-        internal ulong OrdinalBits;
-        public void Execute(Span<Position> positions, ReadOnlySpan<SomeCopyNode> nodes)
+        var match = new NodeMatch();
+        using QueryScope scope = query.Open();
+        foreach (QueryChunk chunk in scope)
         {
+            Span<Position> positions = chunk.Write<Position>();
+            ReadOnlySpan<SomeCopyNode> nodes = chunk.Read<SomeCopyNode>();
             for (int row = 0; row < positions.Length; row++)
             {
                 int ordinal = (int)positions[row].X;
                 Require(positions[row].Y == ordinal + 100 && nodes[row] == expected[ordinal],
-                    "two-column callbacks pair each position with its complete node value");
-                Rows++;
-                OrdinalBits |= 1UL << ordinal;
+                    "two-column ranges pair each position with its complete node value");
+                match.Rows++;
+                match.OrdinalBits |= 1UL << ordinal;
             }
         }
+        return match;
     }
 
-    private struct CountRanges : IComponentAction<Position, Velocity, Health>
+    private struct RangeCount { internal int Rows, Maximum; internal long Total; }
+
+    private static RangeCount CountRanges(Query query)
     {
-        internal int Rows, Maximum;
-        internal long Total;
-        public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<Health> health)
+        var count = new RangeCount();
+        using QueryScope scope = query.Open();
+        foreach (QueryChunk chunk in scope)
         {
-            Rows += positions.Length;
-            Maximum = Math.Max(Maximum, positions.Length);
+            Span<Position> positions = chunk.Write<Position>();
+            ReadOnlySpan<Velocity> velocities = chunk.Read<Velocity>();
+            ReadOnlySpan<Health> health = chunk.Read<Health>();
+            count.Rows += positions.Length;
+            count.Maximum = Math.Max(count.Maximum, positions.Length);
             for (int row = 0; row < positions.Length; row++)
             {
-                Total += (int)positions[row].X;
+                count.Total += (int)positions[row].X;
                 positions[row].Y = velocities[row].X + health[row].Value;
             }
         }
+        return count;
     }
 }

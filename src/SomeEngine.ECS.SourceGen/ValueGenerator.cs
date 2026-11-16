@@ -14,12 +14,12 @@ internal static class ValueGenerator
         internal readonly ISymbol Symbol = symbol;
         internal readonly ITypeSymbol Type = type;
         internal string Name => EcsGenerator.Identifier(Symbol.Name);
-        internal INamedTypeSymbol? Codec => Symbol.GetAttributes().FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString()
-            == "SomeEngine.ECS.Serialization.FieldCodecAttribute")?.ConstructorArguments[0].Value as INamedTypeSymbol;
+        internal INamedTypeSymbol? Serializer => Symbol.GetAttributes().FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString()
+            == "SomeEngine.ECS.Serialization.SerializeWithAttribute")?.ConstructorArguments[0].Value as INamedTypeSymbol;
     }
     private sealed class Unsupported(ITypeSymbol type) : Exception { internal readonly ITypeSymbol Type = type; }
 
-    internal static void Emit(SourceProductionContext output, INamedTypeSymbol type, bool component, bool codec)
+    internal static void Emit(SourceProductionContext output, INamedTypeSymbol type, bool component, bool serializer)
     {
         var members = new List<Member>();
         foreach (ISymbol symbol in type.GetMembers().OrderBy(value => value.Locations.FirstOrDefault()?.SourceSpan.Start ?? int.MaxValue))
@@ -32,6 +32,8 @@ internal static class ValueGenerator
         bool remap = component && members.Any(member => References(member.Type))
             && !type.AllInterfaces.Any(value => value.Name == "IEntityReferenceValue");
         if (remap) interfaces.Add("global::SomeEngine.ECS.IEntityReferenceValue<" + self + ">");
+        bool operations = component && members.Any(member => Owned(member.Type));
+        if (operations) interfaces.Add("global::SomeEngine.ECS.Storage.IComponentOperations<" + self + ">");
         var code = new StringBuilder();
         code.Append("private readonly struct __ValueInput { }\nprivate ").Append(EcsGenerator.Identifier(type.Name)).Append("(__ValueInput __input");
         for (int i = 0; i < members.Count; i++) code.Append(", ").Append(EcsGenerator.Name(members[i].Type)).Append(" __value").Append(i);
@@ -44,39 +46,38 @@ internal static class ValueGenerator
         code.Append("}\n");
         try
         {
-            if (codec) EmitCodec(code, type, self, members);
-            if (component && members.Any(member => Owned(member.Type))) EmitOperations(code, type, self, members);
+            if (serializer) EmitSerializer(code, type, self, members);
+            if (operations) EmitOperations(code, self, members);
             if (remap) EmitRemap(code, self, members);
             if (component) EmitFields(code, self, members);
         }
         catch (Unsupported unsupported)
-        { EcsGenerator.Error(output, type, "Provide FieldCodec or generated value operations for " + unsupported.Type.ToDisplayString() + "."); return; }
+        { EcsGenerator.Error(output, type, "Provide SerializeWith or generated value operations for " + unsupported.Type.ToDisplayString() + "."); return; }
         EcsGenerator.Add(output, type, "Value", EcsGenerator.Wrap(type, string.Join(", ", interfaces), code.ToString()));
     }
 
     private static void Construct(StringBuilder code, string self, IEnumerable<string> values)
         => code.Append("new ").Append(self).Append("(default(__ValueInput)").Append(string.Concat(values.Select(value => ", " + value + "!"))).Append(')');
 
-    private static void EmitCodec(StringBuilder code, INamedTypeSymbol type, string self, List<Member> members)
+    private static void EmitSerializer(StringBuilder code, INamedTypeSymbol type, string self, List<Member> members)
     {
-        code.Append("public readonly struct Codec : global::SomeEngine.ECS.Serialization.IDurableComponentCodec<").Append(self).Append("> {\n")
-            .Append("public void Write(ref global::SomeEngine.ECS.Serialization.DataWriter writer, in ").Append(self).Append(" value) {\n");
+        code.Append("public readonly struct Serializer : global::SomeEngine.ECS.Serialization.IValueSerializer<").Append(self).Append("> {\n")
+            .Append("public void Write(ref global::SomeEngine.ECS.Serialization.SaveWriter writer, in ").Append(self).Append(" value) {\n");
         int id = 0;
         foreach (Member member in members)
-            if (member.Codec is { } codec) code.Append("new ").Append(EcsGenerator.Name(codec)).Append("().Write(ref writer, value.").Append(member.Name).Append(");\n");
+            if (member.Serializer is { } serializer) code.Append("new ").Append(EcsGenerator.Name(serializer)).Append("().Write(ref writer, value.").Append(member.Name).Append(");\n");
             else Write(code, member.Type, "value." + member.Name, ref id);
-        code.Append("}\npublic void Read(ref global::SomeEngine.ECS.Serialization.DataReader reader, out ").Append(self).Append(" value) {\n");
+        code.Append("}\npublic void Read(ref global::SomeEngine.ECS.Serialization.SaveReader reader, out ").Append(self).Append(" value) {\n");
         for (int i = 0; i < members.Count; i++)
         {
             Member member = members[i]; string local = "__value" + i;
-            if (member.Codec is { } codec) code.Append("new ").Append(EcsGenerator.Name(codec)).Append("().Read(ref reader, out ")
+            if (member.Serializer is { } serializer) code.Append("new ").Append(EcsGenerator.Name(serializer)).Append("().Read(ref reader, out ")
                 .Append(EcsGenerator.Name(member.Type)).Append(' ').Append(local).Append(");\n");
             else Read(code, member.Type, local, ref id);
         }
         code.Append("value = "); Construct(code, self, Enumerable.Range(0, members.Count).Select(i => "__value" + i));
-        string registration = EcsGenerator.HasInterface(type, "SomeEngine.ECS.ISharedComponent") ? "RegisterShared" : "Register";
-        code.Append(";\n}\n}\npublic static global::SomeEngine.ECS.Serialization.SerializationRegistry RegisterCodec(global::SomeEngine.ECS.Serialization.SerializationRegistry registry, global::SomeEngine.ECS.Serialization.SerializationTypeKey key) => registry.").Append(registration).Append('<')
-            .Append(self).Append(", Codec>(key);\n");
+        code.Append(";\n}\n}\npublic static global::SomeEngine.ECS.Serialization.SaveRegistry RegisterSerializer(global::SomeEngine.ECS.Serialization.SaveRegistry registry, global::SomeEngine.ECS.Serialization.SavedTypeKey key) => registry.Register<")
+            .Append(self).Append(", Serializer>(key);\n");
     }
 
     private static string? Primitive(ITypeSymbol type) => type.SpecialType switch
@@ -107,8 +108,8 @@ internal static class ValueGenerator
                 .Append(value).Append(" is not null) foreach (var __item").Append(number).Append(" in ").Append(value).Append(") {\n");
             Write(code, array.ElementType, "__item" + number, ref id); code.Append("}\n"); return;
         }
-        if (EcsGenerator.HasAttribute(type, "SomeEngine.ECS.Serialization.GenerateCodecAttribute"))
-        { code.Append("new ").Append(EcsGenerator.Name(type)).Append(".Codec().Write(ref writer, ").Append(value).Append(");\n"); return; }
+        if (EcsGenerator.HasAttribute(type, "SomeEngine.ECS.Serialization.GenerateSerializerAttribute"))
+        { code.Append("new ").Append(EcsGenerator.Name(type)).Append(".Serializer().Write(ref writer, ").Append(value).Append(");\n"); return; }
         throw new Unsupported(type);
     }
 
@@ -136,8 +137,8 @@ internal static class ValueGenerator
             Read(code, array.ElementType, "__item" + number, ref id);
             code.Append(local).Append("[__index").Append(number).Append("] = __item").Append(number).Append(";\n}\n}\n"); return;
         }
-        if (EcsGenerator.HasAttribute(type, "SomeEngine.ECS.Serialization.GenerateCodecAttribute"))
-        { code.Append("new ").Append(EcsGenerator.Name(type)).Append(".Codec().Read(ref reader, out ").Append(EcsGenerator.Name(type)).Append(' ').Append(local).Append(");\n"); return; }
+        if (EcsGenerator.HasAttribute(type, "SomeEngine.ECS.Serialization.GenerateSerializerAttribute"))
+        { code.Append("new ").Append(EcsGenerator.Name(type)).Append(".Serializer().Read(ref reader, out ").Append(EcsGenerator.Name(type)).Append(' ').Append(local).Append(");\n"); return; }
         throw new Unsupported(type);
     }
 
@@ -151,7 +152,7 @@ internal static class ValueGenerator
             || member is IPropertySymbol property && !property.IsStatic && !property.IsIndexer && property.SetMethod is not null && Owned(property.Type));
     }
 
-    private static void EmitOperations(StringBuilder code, INamedTypeSymbol type, string self, List<Member> members)
+    private static void EmitOperations(StringBuilder code, string self, List<Member> members)
     {
         code.Append("public readonly struct ValueOperations : global::SomeEngine.ECS.Storage.IComponentOperations<").Append(self).Append("> {\n")
             .Append("public ").Append(self).Append(" Clone(global::SomeEngine.ECS.World world, in ").Append(self).Append(" value) {\n");
@@ -161,12 +162,12 @@ internal static class ValueGenerator
         code.Append(";\n}\npublic void Release(global::SomeEngine.ECS.World world, ref ").Append(self).Append(" value) {\n");
         foreach (Member member in members) Release(code, member.Type, "value." + member.Name, ref id);
         code.Append("value = default;\n}\n}\n");
-        bool module = type.TypeParameters.Length == 0;
-        for (INamedTypeSymbol? parent = type; parent is not null; parent = parent.ContainingType)
-            module &= parent.TypeParameters.Length == 0 && parent.DeclaredAccessibility is Accessibility.Internal or Accessibility.Public;
-        if (module) code.Append("[global::System.Runtime.CompilerServices.ModuleInitializer]\n");
-        code.Append("public static void RegisterComponentOperations() => global::SomeEngine.ECS.ComponentValues.Register<")
-            .Append(self).Append(", ValueOperations>(new ValueOperations());\n");
+        // The value supplies its own operations, so the World needs no registration to find them.
+        const string Operations = "global::SomeEngine.ECS.Storage.IComponentOperations<";
+        code.Append(self).Append(' ').Append(Operations).Append(self).Append(">.Clone(global::SomeEngine.ECS.World world, in ")
+            .Append(self).Append(" value) => new ValueOperations().Clone(world, value);\n");
+        code.Append("void ").Append(Operations).Append(self).Append(">.Release(global::SomeEngine.ECS.World world, ref ")
+            .Append(self).Append(" value) => new ValueOperations().Release(world, ref value);\n");
     }
 
     private static void Clone(StringBuilder code, ITypeSymbol type, string value, string local, ref int id)

@@ -79,7 +79,7 @@ public abstract class GltfSceneImporter : IAssetImporter<Scene, GltfSceneSetting
         var block = new EntityBlock();
         try
         {
-            block.WriteEntities(world, members, new SerializeOptions(Codecs: SceneSerialization.Codecs));
+            block.WriteEntities(world, members, SceneSerialization.CreateRegistry());
             output.SetBlock(block);
         }
         catch { block.Dispose(); throw; }

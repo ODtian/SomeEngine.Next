@@ -15,11 +15,11 @@ internal static class PackedValueLayout
             DynamicallyAccessedMemberTypes.PublicFields |
             DynamicallyAccessedMemberTypes.NonPublicFields)] T>(
         int expectedSize,
-        ulong expectedFingerprint)
+        ulong expectedHash)
         where T : struct
     {
         if (expectedSize < 0 ||
-            expectedFingerprint == 0 ||
+            expectedHash == 0 ||
             !BitConverter.IsLittleEndian ||
             RuntimeHelpers.IsReferenceOrContainsReferences<T>() ||
             Unsafe.SizeOf<T>() != expectedSize)
@@ -61,9 +61,9 @@ internal static class PackedValueLayout
         }
 
         return nextOffset == expectedSize &&
-               ComputeFingerprint(
+               ComputeLayoutHash(
                    expectedSize,
-                   CollectionsMarshal.AsSpan(fieldLayouts)) == expectedFingerprint;
+                   CollectionsMarshal.AsSpan(fieldLayouts)) == expectedHash;
     }
 
     private static bool TryGetFixedWidthPrimitive(Type type, out uint kind, out int size)
@@ -103,7 +103,7 @@ internal static class PackedValueLayout
         return true;
     }
 
-    private static ulong ComputeFingerprint(
+    private static ulong ComputeLayoutHash(
         int size,
         ReadOnlySpan<FieldLayout> fields)
     {

@@ -51,7 +51,7 @@ internal sealed class RuntimeViewPrepareSystem : ISystem<RenderPrepareSystemCont
             _hasView = false;
         }
 
-        if (context.World.World.ReadComponentData<RenderView>(_viewEntity) != next)
+        if (context.World.World.ReadValue<RenderView>(_viewEntity) != next)
             context.World.World.Set(_viewEntity, next);
     }
 }

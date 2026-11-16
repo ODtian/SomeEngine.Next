@@ -43,16 +43,16 @@ public class EntityCopyTests
         var world = new World();
         var source = world.Create(new Position { X = 10, Y = 20 });
         world.Add(source, default(PlayerTag));
-        world.SetShared(source, new SceneId { Value = 7 });
+        world.Set(source, new SceneId { Value = 7 });
         world.AddBuffer<IntElement>(source);
         AddBufferValue(world, source, new IntElement { Value = 1 });
 
         var target = world.Create(new Health { Value = 5 });
         world.Add(target, default(EnemyTag));
-        world.SetShared(target, new RenderGroup { GroupId = 3, Material = "old" });
+        world.Set(target, new RenderGroup { GroupId = 3, Material = "old" });
         world.AddBuffer<FloatElement>(target);
         AddBufferValue(world, target, new FloatElement { X = 9, Y = 9 });
-        world.SetSparse(target, new Damage { Amount = 99 });
+        world.Set(target, new Damage { Amount = 99 });
 
         world.Copy(source, target);
 
@@ -64,9 +64,9 @@ public class EntityCopyTests
         Assert.False(world.Has<RenderGroup>(target));
         Assert.True(world.Has<Buffer<IntElement>>(target));
         Assert.False(world.Has<Buffer<FloatElement>>(target));
-        Assert.False(world.HasSparse<Damage>(target));
+        Assert.False(world.Has<Damage>(target));
         Assert.Equal(10, world.Read<Position>(target).X);
-        Assert.Equal(7, world.ReadShared<SceneId>(target).Value);
+        Assert.Equal(7, world.Read<SceneId>(target).Value);
         Assert.Equal(1, SnapshotBuffer<IntElement>(world, target)[0].Value);
     }
 
@@ -107,12 +107,12 @@ public class EntityCopyTests
         var world = new World();
         var source = world.Create(new Position { X = 1 });
         var target = world.Create(new Position { X = 2 });
-        world.SetShared(source, new SceneId { Value = 11 });
-        world.SetShared(target, new SceneId { Value = 22 });
+        world.Set(source, new SceneId { Value = 11 });
+        world.Set(target, new SceneId { Value = 22 });
 
         world.Copy(source, target);
 
-        Assert.Equal(11, world.ReadShared<SceneId>(target).Value);
+        Assert.Equal(11, world.Read<SceneId>(target).Value);
 
         int reusedIndex = target.Id;
         world.Destroy(target);
@@ -165,25 +165,26 @@ public class EntityCopyTests
         var world = new World();
         var source = world.Create();
         var target = world.Create();
-        world.SetSparse(source, new Damage { Amount = 12 });
-        world.SetSparse(target, new Damage { Amount = 99 });
+        world.Set(source, new Damage { Amount = 12 });
+        world.Set(target, new Damage { Amount = 99 });
 
         world.Copy(source, target);
 
-        Assert.True(world.HasSparse<Damage>(target));
-        Assert.Equal(12, world.ReadSparse<Damage>(target).Amount);
+        Assert.True(world.Has<Damage>(target));
+        Assert.Equal(12, world.Read<Damage>(target).Amount);
 
-        world.RemoveSparse<Damage>(source);
+        world.Remove<Damage>(source);
         world.Copy(source, target);
 
-        Assert.False(world.HasSparse<Damage>(target));
+        Assert.False(world.Has<Damage>(target));
     }
 
     [Fact]
     public void CloneCopiesTheStoredCleanupValue()
     {
         using var world = new World();
-        Entity source = world.Create(new Position { X = 3 }, new CleanupMarker { Value = 8 });
+        Entity source = world.Create(new Position { X = 3 });
+        world.Add(source, new CleanupMarker { Value = 8 });
         Entity clone = world.Clone(source);
         Assert.True(world.Has<Position>(clone));
         Assert.True(world.Has<CleanupMarker>(clone));
@@ -238,7 +239,7 @@ public class EntityCopyTests
                 Generation = referenced.Generation,
             },
         });
-        world.SetShared(source, new SceneId { Value = 100 });
+        world.Set(source, new SceneId { Value = 100 });
         world.AddBuffer<SmallInlineElement>(source);
         {
             var buffer = world.GetBuffer<SmallInlineElement>(source);
@@ -252,7 +253,7 @@ public class EntityCopyTests
             }
             finally { buffer.Dispose(); }
         };
-        world.SetSparse(source, new Damage { Amount = 6 });
+        world.Set(source, new Damage { Amount = 6 });
 
         var clone = world.Clone(source);
         world.Set(clone, new MaterialPassTemplate
@@ -260,7 +261,7 @@ public class EntityCopyTests
             ShaderId = 2,
             Reference = world.Read<MaterialPassTemplate>(clone).Reference,
         });
-        world.SetShared(clone, new SceneId { Value = 200 });
+        world.Set(clone, new SceneId { Value = 200 });
         {
             var buffer = world.GetBuffer<SmallInlineElement>(clone);
             try
@@ -269,18 +270,18 @@ buffer[0] = new SmallInlineElement { Value = 99 };
             }
             finally { buffer.Dispose(); }
         };
-        world.SetSparse(clone, new Damage { Amount = 60 });
+        world.Set(clone, new Damage { Amount = 60 });
 
         Assert.Equal(1, world.Read<MaterialPassTemplate>(source).ShaderId);
         Assert.Equal(referenced.Id, world.Read<MaterialPassTemplate>(source).Reference.Index);
-        Assert.Equal(100, world.ReadShared<SceneId>(source).Value);
+        Assert.Equal(100, world.Read<SceneId>(source).Value);
         Assert.Equal([3, 4, 5], SnapshotBuffer<SmallInlineElement>(world, source).Select(x => x.Value));
-        Assert.Equal(6, world.ReadSparse<Damage>(source).Amount);
+        Assert.Equal(6, world.Read<Damage>(source).Amount);
 
         Assert.Equal(2, world.Read<MaterialPassTemplate>(clone).ShaderId);
-        Assert.Equal(200, world.ReadShared<SceneId>(clone).Value);
+        Assert.Equal(200, world.Read<SceneId>(clone).Value);
         Assert.Equal([99, 4, 5], SnapshotBuffer<SmallInlineElement>(world, clone).Select(x => x.Value));
-        Assert.Equal(60, world.ReadSparse<Damage>(clone).Amount);
+        Assert.Equal(60, world.Read<Damage>(clone).Amount);
     }
 
     private static int CountRows(World world, Query query) => query.Count;

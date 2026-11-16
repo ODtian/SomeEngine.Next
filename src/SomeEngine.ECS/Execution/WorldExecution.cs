@@ -33,16 +33,18 @@ internal readonly struct WorldExecutionQueryPolicy(WorldExecution execution) : I
 
 public abstract class WorldExecution
 {
-    /// <summary>Executes row ranges under this World's current access scope.</summary>
-    public void ExecuteRanges<TWork, TItem>(TItem[] items, int count, in TWork work, JobScheduleOptions options = default)
-        where TWork : struct, IRangeWork<TItem>
-        => Scheduler!.ExecuteRanges(items, count, work, CurrentAccess, options);
+    /// <summary>Executes one index per item under this World's current access grant.</summary>
+    public void ExecuteParallel<TJob>(in TJob job, int length, JobScheduleOptions options = default)
+        where TJob : struct, IJobParallelFor
+        => Scheduler!.ExecuteParallel(job, length, options: options, grant: CurrentAccess);
 
     public virtual Scheduler? Scheduler => null;
     public virtual JobResourceAccess[] StructureRead => [];
     public virtual JobResourceAccess[] StructureWrite => [];
     public virtual JobResourceAccess[] CollectReadAccess(Query query) => [];
     internal virtual JobHandle CurrentAccess => default;
+    /// <summary>The write version already allocated for the calling thread's job, or 0.</summary>
+    internal virtual ulong OpenWriteVersion => 0;
     internal virtual void RegisterEventAccess(JobResourceAccess access) { }
     internal virtual void CheckActive() { }
     internal virtual void ValidateDisposePreconditions() { }
@@ -173,7 +175,6 @@ public sealed partial class World
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void RequireValue<T>(bool write, WorldValueKind kind = WorldValueKind.Table) where T : struct
     {
-        RequireCallingThread();
         if (Execution is { } execution)
             RequireValueWithExecution<T>(execution, write, kind);
     }
@@ -184,7 +185,13 @@ public sealed partial class World
 
     public T ReadValue<T>(Entities.Entity entity) where T : struct
     {
+        if (ComponentType<T>.IsSparseType)
+        {
+            using WorldAccess sparse = OpenValues<T>(false, WorldValueKind.Sparse);
+            return Sparse<T>().Get(entity);
+        }
         using WorldAccess access = OpenValues<T>(false);
+        if (ComponentType<T>.IsTagType) return default;
         if (ComponentType<T>.IsSharedType)
             return ReadSharedValue<T>(entity, SharedValueArray<T>());
         return Access<T>(entity, false);

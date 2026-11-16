@@ -14,7 +14,7 @@ public sealed partial class DurableSaveStore
 
     internal long ReadPayloadLength()
     {
-        SaveFilesInspection slots = InspectSlots();
+        SaveFilesInspection slots = InspectFiles();
         return slots.Latest is { } latest ? latest.PayloadLength : throw CreateNoValidGenerationException(slots);
     }
     private SaveRead ReadFileCore(SaveOperation operation)
@@ -23,10 +23,10 @@ public sealed partial class DurableSaveStore
 
         for (int attempt = 0; attempt < maximumConcurrentWriteRetries; attempt++)
         {
-            SaveFilesInspection slots = InspectSlots();
+            SaveFilesInspection slots = InspectFiles();
             if (slots.Latest is null)
             {
-                if (!slots.HasExistingSlot)
+                if (!slots.HasExistingFile)
                 {
                     throw new FileNotFoundException(
                         "No durable-save generation exists.",
@@ -71,7 +71,7 @@ public sealed partial class DurableSaveStore
     private CandidateFileRead OpenCandidate(SaveFileInspection candidate, SaveOperation operation)
     {
         FileStream file;
-        try { file = OpenSlot(candidate.Path); }
+        try { file = OpenSaveFile(candidate.Path); }
         catch (FileNotFoundException) { return CandidateFileRead.Retry; }
         catch (DirectoryNotFoundException) { return CandidateFileRead.Retry; }
         bool transferred = false;

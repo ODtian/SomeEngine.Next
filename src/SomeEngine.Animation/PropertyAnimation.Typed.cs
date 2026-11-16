@@ -190,7 +190,7 @@ public static partial class PropertyAnimation
             if (presentationChanged) current = presented;
         }
         if (world.Has<AnimationLayers>(target) && (endpoints == TrackEndpoints.Displacement || !previous.SourceActive &&
-            world.ReadComponentData<AnimationLayers>(target).Items[layer].Mode == LayerMode.Additive)) ReadBase(world, target, channel, ref current);
+            world.ReadValue<AnimationLayers>(target).Items[layer].Mode == LayerMode.Additive)) ReadBase(world, target, channel, ref current);
         T from = endpoints == TrackEndpoints.Displacement ? TOps.Add(in current, in value) : current;
         T to = endpoints == TrackEndpoints.Displacement ? current : value;
         var values = new MotionValues<T>(from, to, from);
@@ -393,7 +393,7 @@ public static partial class PropertyAnimation
                 using var tracks = world.GetBuffer<Track<T>>(available.Animation);
                 tracks.Clear();
             }
-            Timeline previousTimeline = world.ReadComponentData<Timeline>(available.Animation);
+            Timeline previousTimeline = world.ReadValue<Timeline>(available.Animation);
             world.Set(available.Animation, new Timeline { Starts = previousTimeline.Starts, Completions = previousTimeline.Completions });
             if (world.Has<Buffer<TimelineStage>>(available.Animation))
             {
@@ -456,7 +456,7 @@ public static partial class PropertyAnimation
         }
         T value = track.Current;
         if (track.Endpoints != TrackEndpoints.Values && world.Has<AnimationLayers>(target) &&
-            world.ReadComponentData<AnimationLayers>(target).Items[track.Layer].Mode == LayerMode.Additive)
+            world.ReadValue<AnimationLayers>(target).Items[track.Layer].Mode == LayerMode.Additive)
         {
             T basis = track.To;
             ReadBase(world, target, track.Channel, ref basis);

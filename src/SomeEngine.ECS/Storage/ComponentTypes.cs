@@ -18,7 +18,6 @@ namespace SomeEngine.ECS.Storage
     public abstract class ComponentType
     {
         public readonly int Id;
-        internal object? SerializationDescription;
         public static ComponentType Of<T>() where T : struct => ComponentValues.Bind<T>();
         internal readonly int Size;
         internal readonly bool ContainsReferences;
@@ -70,7 +69,10 @@ namespace SomeEngine.ECS.Storage
         internal abstract void InitializeEntity(World world, Entities.Entity entity);
         internal abstract void Remap(ref ColumnEntry column, int row, in EntityMap entities);
         internal abstract int InternShared(World source, World target, in ColumnEntry column, int row, in EntityMap entities);
-        internal IRemovedValues? RemovedValues;
+        /// <summary>Keeps removed values of this type, or null when it does not keep them.</summary>
+        internal abstract IRemovedValues? RemovedValues { get; }
+        /// <summary>Groups a World by this type, or null when the type is not a group component.</summary>
+        internal abstract IGroupActivation? GroupActivation { get; }
         internal ComponentType RemovedType => RemovedValues!.Type;
     }
 
@@ -120,9 +122,26 @@ namespace SomeEngine.ECS.Storage
             ComponentOperations.Declares<ITrackedComponent>(typeof(T)), ComponentOperations.Declares<IAddedComponent>(typeof(T)),
             ComponentOperations.Declares<IRemovedComponent>(typeof(T)), ComponentOperations.Declares<ICleanupComponent>(typeof(T)),
             Operations is not null, typeof(ISharedComponent).IsAssignableFrom(typeof(T)),
-            typeof(T).GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IIndexedComponent<>)),
+            typeof(IIndexedComponent).IsAssignableFrom(typeof(T)),
             typeof(IGroupComponent).IsAssignableFrom(typeof(T)), typeof(IComputedComponent).IsAssignableFrom(typeof(T)), Initialization is not null,
             EntityFields<T>.Operations is not null) { }
+
+        private static readonly IGroupActivation? Grouping = default(T) as IGroupActivation;
+        internal override IGroupActivation? GroupActivation => Grouping;
+        private IRemovedValues? _removedValues;
+        internal override IRemovedValues? RemovedValues
+        {
+            get
+            {
+                if (!KeepsRemoved) return null;
+                if (Volatile.Read(ref _removedValues) is { } values) return values;
+                // Creating the capture here for every T would make each Removed<T> create one for Removed<Removed<T>>,
+                // a type chain NativeAOT cannot finish compiling. The declaring type creates it instead.
+                lock (this) return _removedValues ??= (default(T) as IRemovedValueSource)?.CreateRemovedValues()
+                    ?? throw new InvalidOperationException(
+                        $"{typeof(T).Name} keeps removed values; declare IRemovedComponent<{typeof(T).Name}>.");
+            }
+        }
 
         internal override ColumnEntry Allocate(int capacity, int columnPlusOne)
         {

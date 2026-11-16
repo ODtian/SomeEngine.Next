@@ -157,8 +157,8 @@ public sealed class RenderLightSet
         internal bool UpdateMembership(World world, Entity entity)
         {
             if (world.IsAlive(entity) && world.Has<T>(entity))
-                return Set(entity, world.ReadComponentData<T>(entity), world.Has<RenderLightCookie>(entity)
-                    ? world.ReadComponentData<RenderLightCookie>(entity) : null);
+                return Set(entity, world.ReadValue<T>(entity), world.Has<RenderLightCookie>(entity)
+                    ? world.ReadValue<RenderLightCookie>(entity) : null);
             if (!_rows.Remove(entity, out int index)) return false;
             int last = Values.Count - 1;
             if (index != last)

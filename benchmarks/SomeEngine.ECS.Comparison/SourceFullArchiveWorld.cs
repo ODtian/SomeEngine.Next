@@ -42,6 +42,8 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
     internal readonly World World;
     internal readonly Entity[] Entities, Edges;
     internal readonly Entity FirstRoot, SecondRoot, Dead;
+    // Destroyed-entity progress is saved only for a named consumer.
+    private static readonly Guid DestroyedConsumer = new("3f6c1a52-7d0e-4b8a-9c41-5e2d8f7a6b13");
     internal readonly SaveSystemVersions Systems = new();
     internal readonly SaveResource InitialResource;
     private readonly ResourceCounter _resourceCounter = new();
@@ -58,18 +60,17 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
         int capacity = count * 2 + 16;
         World = new(capacity, execution: scheduler is null ? null : new WorldJobs(scheduler)); Entities = new Entity[count]; Edges = new Entity[count];
         using var structure = World.OpenStructureWrite();
-        _destroyed = World.WatchDestroyed();
+        _destroyed = World.WatchDestroyed(DestroyedConsumer);
         World.GroupBy<SaveShared>(); World.Index<IndexedNumber, int>();
         for (int i = 0; i < count; i++)
         {
-            var p = new Position { X = i }; var v = new Velocity { X = 1, Y = 2 }; var h = new Health { Value = 100, Max = 100 };
-            var counter = new SaveCounter(i + 2, i); var step = new SaveStep(2);
-            var indexed = new IndexedNumber(i % 16, i); var shared = new SaveShared(i % 16);
-            Entity entity = Entities[i] = i % 4 == 0
-                ? World.Create(p, v, h, counter, step, default(Buffer<SaveLink>), indexed, shared, new Team(), new Sleeping())
-                : i % 2 == 0
-                    ? World.Create(p, v, h, counter, step, default(Buffer<SaveLink>), indexed, shared, new Team())
-                    : World.Create(p, v, h, counter, step, default(Buffer<SaveLink>), indexed, shared);
+            var archive = new ArchiveBody
+            {
+                Body = Body.Moving(new Position { X = i }), Counter = new(i + 2, i), Step = new(2),
+                Number = new(i % 16, i), Shared = new(i % 16),
+            };
+            Entity entity = Entities[i] = i % 4 == 0 ? World.Spawn(new ArchiveSleepingTeamBody { Archive = archive })
+                : i % 2 == 0 ? World.Spawn(new ArchiveTeamBody { Archive = archive }) : World.Spawn(archive);
             if (i % 4 == 0) World.Disable<SaveStep>(entity);
         }
         Span<SaveLink> links = stackalloc SaveLink[4];
@@ -78,7 +79,7 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
             Entity entity = Entities[i], next = Entities[(i + 1) % count];
             NativeFullArchiveWorld.WriteLinks(links, entity, next, i);
             using (var buffer = World.GetBuffer<SaveLink>(entity)) buffer.AddRange(links);
-            if (i % 4 == 0) World.SetSparse(entity, new SaveLink(next, i * 7L));
+            if (i % 4 == 0) World.Set(entity, new SaveLink(next, i * 7L));
             if (i % 100 == 0) { World.Remove<SaveCounter>(entity); World.RemoveBuffer<SaveLink>(entity); }
         }
         FirstRoot = World.Create(); SecondRoot = World.Create();
@@ -103,36 +104,36 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
         _contract = raw ? SavePurpose.RawCheckpoint : SavePurpose.DurableSave;
         _serializer = new(CreateRegistry(raw));
     }
-    private SerializationRegistry CreateRegistry(bool raw)
+    private SaveRegistry CreateRegistry(bool raw)
     {
-        var registry = new SerializationRegistry();
+        var registry = new SaveRegistry().RegisterDestroyedReader(DestroyedConsumer);
         if (raw) registry.Register<Team>(SaveSchema.Key(4, "Team")).Register<Sleeping>(SaveSchema.Key(5, "Sleeping"));
-        else registry.Register<Team, EmptyArchiveCodec<Team>>(SaveSchema.Key(4, "Team"))
-            .Register<Sleeping, EmptyArchiveCodec<Sleeping>>(SaveSchema.Key(5, "Sleeping"));
+        else registry.Register<Team, EmptyArchiveSerializer<Team>>(SaveSchema.Key(4, "Team"))
+            .Register<Sleeping, EmptyArchiveSerializer<Sleeping>>(SaveSchema.Key(5, "Sleeping"));
         if (raw)
             registry.Register<Position>(SaveSchema.Key(1, "Position")).Register<Velocity>(SaveSchema.Key(2, "Velocity"))
                 .Register<Health>(SaveSchema.Key(3, "Health")).Register<SaveCounter>(SaveSchema.Key(6, "Counter"))
                 .Register<SaveStep>(SaveSchema.Key(7, "Step")).Register<IndexedNumber>(SaveSchema.Key(8, "Index"))
-                .RegisterShared<SaveShared>(SaveSchema.Key(9, "Shared")).RegisterBuffer<SaveLink>(SaveSchema.Key(13, "Buffer"))
-                .RegisterSparse<SaveLink>(SaveSchema.Key(22, "Sparse"));
+                .Register<SaveShared>(SaveSchema.Key(9, "Shared")).RegisterBuffer<SaveLink>(SaveSchema.Key(13, "Buffer"))
+                .Register<SaveLink>(SaveSchema.Key(22, "Sparse"));
         else
-            registry.Register<Position, SaveSchema.PositionCodec>(SaveSchema.Key(1, "Position"))
-                .Register<Velocity, SaveSchema.VelocityCodec>(SaveSchema.Key(2, "Velocity"))
-                .Register<Health, SaveSchema.HealthCodec>(SaveSchema.Key(3, "Health"))
-                .Register<SaveCounter, SaveSchema.CounterCodec>(SaveSchema.Key(6, "Counter"))
-                .Register<SaveStep, SaveSchema.StepCodec>(SaveSchema.Key(7, "Step"))
-                .Register<IndexedNumber, SaveSchema.IndexCodec>(SaveSchema.Key(8, "Index"))
-                .RegisterShared<SaveShared, SaveSchema.SharedCodec>(SaveSchema.Key(9, "Shared"))
-                .RegisterBuffer<SaveLink, SaveSchema.LinkCodec>(SaveSchema.Key(13, "Buffer"))
-                .RegisterSparse<SaveLink, SaveSchema.LinkCodec>(SaveSchema.Key(22, "Sparse"));
+            registry.Register<Position, SaveSchema.PositionSerializer>(SaveSchema.Key(1, "Position"))
+                .Register<Velocity, SaveSchema.VelocitySerializer>(SaveSchema.Key(2, "Velocity"))
+                .Register<Health, SaveSchema.HealthSerializer>(SaveSchema.Key(3, "Health"))
+                .Register<SaveCounter, SaveSchema.CounterSerializer>(SaveSchema.Key(6, "Counter"))
+                .Register<SaveStep, SaveSchema.StepSerializer>(SaveSchema.Key(7, "Step"))
+                .Register<IndexedNumber, SaveSchema.IndexSerializer>(SaveSchema.Key(8, "Index"))
+                .Register<SaveShared, SaveSchema.SharedSerializer>(SaveSchema.Key(9, "Shared"))
+                .RegisterBuffer<SaveLink, SaveSchema.LinkSerializer>(SaveSchema.Key(13, "Buffer"))
+                .Register<SaveLink, SaveSchema.LinkSerializer>(SaveSchema.Key(22, "Sparse"));
         ArchiveResources.Register(registry, _resourceCounter);
-        return registry.RegisterResource<SaveResource, SaveSchema.ResourceCodec>(SaveSchema.Key(23, "Resource"))
+        return registry.RegisterResource<SaveResource, SaveSchema.ResourceSerializer>(SaveSchema.Key(23, "Resource"))
             .RegisterHierarchy<SaveTree>(SaveSchema.Key(24, "Tree"))
-            .RegisterRelation<SaveEdge, SaveSchema.EdgeCodec>(SaveSchema.Key(19, "Edge"));
+            .RegisterRelation<SaveEdge, SaveSchema.EdgeSerializer>(SaveSchema.Key(19, "Edge"));
     }
-    internal override IDisposable Capture(bool preserve) => new WorldCheckpoint().Capture(World, Progress(preserve), Systems);
-    internal override void Restore(IDisposable snapshot) => ((WorldCheckpoint)snapshot).Restore(World, Systems);
-    private static CheckpointProgress Progress(bool preserve) => preserve ? CheckpointProgress.Preserve : CheckpointProgress.Rebuild;
+    internal override IDisposable Capture(bool preserve) => new WorldCopy().Capture(World, Progress(preserve), Systems);
+    internal override void Restore(IDisposable snapshot) => ((WorldCopy)snapshot).Restore(World, Systems);
+    private static ProgressMode Progress(bool preserve) => preserve ? ProgressMode.Keep : ProgressMode.Reset;
     internal override void Save(IBufferWriter<byte> output, bool preserve) => _serializer.Save(World, output, _contract, Progress(preserve), Systems);
     internal override void Save(Stream output, bool preserve) => _serializer.Save(World, output, _contract, Progress(preserve), Systems);
     internal override void Load(ReadOnlySpan<byte> input) => _serializer.Load(World, input, null, Systems);
@@ -144,7 +145,7 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
     {
         Entity entity = Entities[1]; World.Set(entity, new SaveCounter(999, 1)); World.Disable<SaveStep>(entity);
         using (var buffer = World.GetBuffer<SaveLink>(entity)) buffer[0] = new(entity, 999);
-        World.SetSparse(Entities[0], new SaveLink(entity, 999));
+        World.Set(Entities[0], new SaveLink(entity, 999));
         using (var resource = World.OpenResourceWrite<SaveResource>()) resource.Value.Items[0] = 999;
         Systems.Values[0] = 999; Complete(); World.Create();
         ulong through; using (var facts = _destroyed.Open()) through = facts.Through; _destroyed.Advance(through);
@@ -162,13 +163,15 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
         Span<SaveLink> links = stackalloc SaveLink[4];
         for (int i = 0; i < edits.Length; i++)
         {
-            Entity entity = World.Create(new Position { X = i }, new Velocity { X = 1, Y = 2 },
-                new Health { Value = 100, Max = 100 }, new SaveCounter(i + 2, i), new SaveStep(2), default(Buffer<SaveLink>),
-                new IndexedNumber(i % 16, i), new SaveShared(i % 16));
+            Entity entity = World.Spawn(new ArchiveBody
+            {
+                Body = Body.Moving(new Position { X = i }), Counter = new(i + 2, i), Step = new(2),
+                Number = new(i % 16, i), Shared = new(i % 16),
+            });
             if (i % 4 == 0) World.Disable<SaveStep>(entity);
             NativeFullArchiveWorld.WriteLinks(links, entity, Entities[i % Entities.Length], i);
             using (var buffer = World.GetBuffer<SaveLink>(entity)) buffer.AddRange(links);
-            if (i % 4 == 0) World.SetSparse(entity, new SaveLink(Entities[i % Entities.Length], i * 7L));
+            if (i % 4 == 0) World.Set(entity, new SaveLink(Entities[i % Entities.Length], i * 7L));
             if (i % 100 == 0) { World.Remove<SaveCounter>(entity); World.RemoveBuffer<SaveLink>(entity); }
             GrowthEntities.Add(entity);
             edits[i] = new(entity, FirstRoot);
@@ -189,7 +192,9 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
     }
     internal override void CheckDisposed()
     {
-        if (World.EntityCount != 0 || !_destroyed.IsCompleted)
+        bool rejected = false;
+        try { _ = World.EntityCount; } catch (ObjectDisposedException) { rejected = true; }
+        if (!rejected || !_destroyed.IsCompleted)
             throw new InvalidOperationException("Source mixed lifecycle final completion differs.");
     }
     internal override void Check(bool preserved, bool maintained = false)
@@ -219,7 +224,7 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
                 using var buffer = World.ReadBuffer<SaveLink>(entity);
                 valid &= buffer.AsSpan().SequenceEqual(NativeFullArchiveWorld.Links(entity, next, i));
             }
-            if (i % 4 == 0) using (var sparse = World.OpenSparseRead<SaveLink>()) valid &= sparse.Read(entity) == new SaveLink(next, i * 7L);
+            if (i % 4 == 0) using (var sparse = World.OpenRead<SaveLink>()) valid &= sparse.Read(entity) == new SaveLink(next, i * 7L);
             var endpoints = World.ReadValue<RelationEndpoints<SaveEdge>>(Edges[i]);
             valid &= endpoints.Source == (i % 4 == 0 ? SecondRoot : FirstRoot) && endpoints.Target == entity
                 && World.ReadValue<SaveEdge>(Edges[i]) == SaveEdge.Create(i)
@@ -248,7 +253,8 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
         ArchiveResources.Check(ArchiveResources.Capture(new SourceArchiveResources(World, _resourceCounter)));
         using (var facts = _destroyed.Open())
         {
-            if (facts.Count != (preserved ? 1 : 0)) throw new InvalidOperationException("Source archive destruction progress differs.");
+            if (facts.Count != (preserved ? 1 : 0))
+                throw new InvalidOperationException($"Source archive destruction progress differs: {facts.Count} unread, preserve={preserved}, maintained={maintained}.");
             foreach (DestroyedEntity fact in facts) if (fact.Entity != Dead) throw new InvalidOperationException("Source archive destruction identity differs.");
         }
         for (int i = 0; i < growth; i++)
@@ -272,7 +278,7 @@ internal sealed partial class SourceFullArchiveWorld : FullArchiveWorld
                 using var buffer = World.ReadBuffer<SaveLink>(entity);
                 valid &= buffer.AsSpan().SequenceEqual(NativeFullArchiveWorld.Links(entity, Entities[i % count], i));
             }
-            if (i % 4 == 0) using (var sparse = World.OpenSparseRead<SaveLink>()) valid &= sparse.Read(entity) == new SaveLink(Entities[i % count], i * 7L);
+            if (i % 4 == 0) using (var sparse = World.OpenRead<SaveLink>()) valid &= sparse.Read(entity) == new SaveLink(Entities[i % count], i * 7L);
             if (!valid) throw new InvalidOperationException("Source archive growth values differ at " + i);
         }
     }

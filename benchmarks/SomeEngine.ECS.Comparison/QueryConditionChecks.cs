@@ -1,7 +1,9 @@
+using SomeEngine.ECS.Components;
 namespace SomeEngine.ECS.Comparison;
 
-internal static class QueryConditionChecks
+internal static partial class QueryConditionChecks
 {
+    private partial struct PositionSecond : IComponentBundle { internal Position Position; internal Second Second; }
     internal static void Run()
     {
         using var world = new World(16, chunkCapacity: 32);
@@ -53,7 +55,7 @@ internal static class QueryConditionChecks
         Require(query.Count == expected && query.Any(), "Count and Any use the same filtered membership as enumeration");
         world.Clear();
         Require(query.Count == 0 && !query.Any(), "clear updates existing query aggregates");
-        world.Create(new Position(), new Second { Value = 9 });
+        world.Spawn(new PositionSecond { Second = new() { Value = 9 } });
         Require(query.Count == 1 && query.Any(), "query aggregates observe subsequent creation");
         Console.WriteLine("Any predicates, optional values, enabled state, Count and Any: passed.");
     }

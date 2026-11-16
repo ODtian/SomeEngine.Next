@@ -74,6 +74,6 @@ public sealed class EntityQueryLookupTests
             foreach (QueryChunk chunk in scope)
                 Assert.ThrowsAny<InvalidOperationException>(() => chunk.Write<Position>(0).X = 9);
         }
-        Assert.Equal(1, world.ReadComponentData<Position>(entity).X);
+        Assert.Equal(1, world.ReadValue<Position>(entity).X);
     }
 }

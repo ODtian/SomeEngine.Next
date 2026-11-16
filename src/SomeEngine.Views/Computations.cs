@@ -77,7 +77,7 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
         BuildQueue.For(World).CountComputation();
         RebuildDiagnostics.Record(this, frame);
         Frame = frame;
-        ComputationList? calculations = HasCreatedChildren ? World.ReadSparse<Computations>(Entity).List : null;
+        ComputationList? calculations = HasCreatedChildren ? World.Read<Computations>(Entity).List : null;
         ComputationList? previous = Async is null ? calculations?.TakeAsyncChildren(this) : null;
         calculations?.ReleaseChildren(this);
         Reads.Clear();
@@ -122,17 +122,17 @@ internal sealed class Computation(World world, Entity entity, Computation? paren
 
     private void RestoreError(Exception? previousError)
     {
-        if (previousError is null || !World.HasSparse<BuildError>(Entity) ||
-            !ReferenceEquals(World.ReadSparse<BuildError>(Entity).Exception, previousError))
+        if (previousError is null || !World.Has<BuildError>(Entity) ||
+            !ReferenceEquals(World.Read<BuildError>(Entity).Exception, previousError))
             return;
         Computation? failed = null;
-        foreach (Computation computation in World.ReadSparse<Computations>(Entity).List.Items)
+        foreach (Computation computation in World.Read<Computations>(Entity).List.Items)
             if (computation.Error is not null && (failed is null || computation.Frame >= failed.Frame))
                 failed = computation;
         if (failed is null)
-            World.RemoveSparse<BuildError>(Entity);
+            World.Remove<BuildError>(Entity);
         else
-            World.SetSparse(Entity, new BuildError { Exception = failed.Error!, Frame = failed.Frame });
+            World.Set(Entity, new BuildError { Exception = failed.Error!, Frame = failed.Frame });
     }
 
     internal void Rebuild(ulong frame)

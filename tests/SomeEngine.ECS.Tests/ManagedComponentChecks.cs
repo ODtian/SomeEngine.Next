@@ -39,7 +39,7 @@ internal static class ManagedComponentChecks
 
         Collect();
 
-        CheckReferences(world.ReadSparse<SparseReferences>(entity), references);
+        CheckReferences(world.Read<SparseReferences>(entity), references);
     }
 
     internal static void ReferenceFieldsCanBeWrittenThroughTraversal(bool sparse)
@@ -113,8 +113,8 @@ internal static class ManagedComponentChecks
 
         if (sparse)
         {
-            world.RemoveSparse<SparseReferences>(removed);
-            Require(!world.HasSparse<SparseReferences>(removed), "Removed sparse component is still present.");
+            world.Remove<SparseReferences>(removed);
+            Require(!world.Has<SparseReferences>(removed), "Removed sparse component is still present.");
         }
         else
         {
@@ -172,7 +172,7 @@ internal static class ManagedComponentChecks
     {
         TableReferences value = CreateTableReferences();
         if (sparse)
-            world.SetSparse(entity, new SparseReferences(value.Text, value.Callback, value.Data));
+            world.Set(entity, new SparseReferences(value.Text, value.Callback, value.Data));
         else
             world.Set(entity, value);
 
@@ -189,7 +189,7 @@ internal static class ManagedComponentChecks
         if (sparse)
         {
             {
-            var sparseScope = world.OpenSparseWrite<SparseReferences>();
+            var sparseScope = world.OpenSparseValueWrites<SparseReferences>();
             try
             {
                 Span<SparseReferences> values = sparseScope.Values;
@@ -229,7 +229,7 @@ internal static class ManagedComponentChecks
     private static void CheckStoredReferences(World world, Entity entity, bool sparse, ReferenceObservers references)
     {
         if (sparse)
-            CheckReferences(world.ReadSparse<SparseReferences>(entity), references);
+            CheckReferences(world.Read<SparseReferences>(entity), references);
         else
             CheckReferences(world.Read<TableReferences>(entity), references);
     }
@@ -239,7 +239,7 @@ internal static class ManagedComponentChecks
         if (sparse)
         {
             {
-            var sparseScope = world.OpenSparseRead<SparseReferences>();
+            var sparseScope = world.OpenSparseValues<SparseReferences>();
             try
             {
                 ReadOnlySpan<Entity> entities = sparseScope.Entities;
@@ -299,7 +299,7 @@ ReadOnlySpan<SparseReferences> values = sparseScope.Values;
     {
         TableReferences fields = CreateTableReferences();
         var value = new SparseReferences(fields.Text, fields.Callback, fields.Data);
-        world.SetSparse(entity, value);
+        world.Set(entity, value);
         return new(value.Text, value.Callback, value.Data);
     }
 
@@ -346,7 +346,7 @@ ReadOnlySpan<SparseReferences> values = sparseScope.Values;
 
     private record struct TableReferences(string Text, Func<int> Callback, ReferenceData Data) : IAddedComponent;
 
-    private record struct RemovedTableReferences(string Text, Func<int> Callback, ReferenceData Data) : IAddedComponent, IRemovedComponent;
+    private record struct RemovedTableReferences(string Text, Func<int> Callback, ReferenceData Data) : IAddedComponent, IRemovedComponent<RemovedTableReferences>;
 
     private record struct SparseReferences(string Text, Func<int> Callback, ReferenceData Data) : ISparseComponent;
 

@@ -58,7 +58,7 @@ public sealed class MembershipChangesTests
         Entity entity = world.Create(new Position());
         Query query = world.Query(new QueryDescription().WithStored<Position>().Without<Velocity>());
         using EventReader<MembershipChange> changes = world.WatchMembership(query);
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using (var commands = new CommandBuffer(candidate))

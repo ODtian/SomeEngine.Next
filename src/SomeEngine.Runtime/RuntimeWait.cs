@@ -15,7 +15,7 @@ internal static class RuntimeWait
             work.GetAwaiter().GetResult();
             return;
         }
-        SomeEngine.Job.JobHandle completion = SomeEngine.Job.JobSystem.CreateExternalFenceHandle(work);
+        SomeEngine.Job.JobHandle completion = SomeEngine.Job.JobSystem.Current.CreateExternalFenceHandle(work);
         Task(completion.WaitAsync().AsTask(), window, timeout);
     }
 

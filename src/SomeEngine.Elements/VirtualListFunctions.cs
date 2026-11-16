@@ -10,7 +10,7 @@ public static partial class VirtualListFunctions
     /// <summary>Reads the viewport and offset, records the list extent, and returns buffered row indices.</summary>
     public static VisibleRange Visible(Entity list, int count)
     {
-        DevelopmentCheck.Require(Scope.World.HasSparse<VirtualList>(list),
+        DevelopmentCheck.Require(Scope.World.Has<VirtualList>(list),
             "Visible requires a VirtualList node in the active World.");
         DevelopmentCheck.Require(count >= 0, "Visible requires an item count of zero or greater.");
         float rowHeight = Scope.Read<VirtualList>(list).RowHeight;

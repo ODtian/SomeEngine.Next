@@ -15,7 +15,7 @@ public sealed class HierarchyCandidateTests
         Entity next = world.Create();
         Entity child = world.Create();
         Hierarchy<Domain>.SetParent(world, child, parent);
-        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var checkpoint = new WorldCopy().Capture(world, ProgressMode.Keep);
         using var candidate = new World();
         checkpoint.Restore(candidate);
         using (var commands = new CommandBuffer(candidate))

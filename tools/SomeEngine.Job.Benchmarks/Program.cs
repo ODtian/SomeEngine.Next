@@ -107,8 +107,8 @@ try
             const int count = 10_000;
             var handles = new JobHandle[count];
             for (int i = 0; i < handles.Length; i++)
-                handles[i] = JobSystem.Schedule(new EmptyJob());
-            JobSystem.CombineDependencies(handles).Complete();
+                handles[i] = JobSystem.Current.Schedule(new EmptyJob());
+            JobSystem.Current.CombineDependencies(handles).Complete();
         });
 
     Run(
@@ -124,10 +124,10 @@ try
             {
                 var handles = new JobHandle[jobsPerProducer];
                 for (int i = 0; i < handles.Length; i++)
-                    handles[i] = JobSystem.Schedule(new EmptyJob());
-                groups[producer] = JobSystem.CombineDependencies(handles);
+                    handles[i] = JobSystem.Current.Schedule(new EmptyJob());
+                groups[producer] = JobSystem.Current.CombineDependencies(handles);
             });
-            JobSystem.CombineDependencies(groups).Complete();
+            JobSystem.Current.CombineDependencies(groups).Complete();
         });
 
     var lightValues = new int[parallelLength];
@@ -138,20 +138,14 @@ try
         "parallel-light",
         warmups,
         samples,
-        () => JobSystem.ScheduleParallel(
-            new LightParallelJob(lightValues),
-            lightValues.Length,
-            batchSize).Complete());
+        () => JobSystem.Current.ScheduleParallel(new LightParallelJob(lightValues), lightValues.Length, batchSize).Complete());
 
     var variableValues = new long[parallelLength];
     Run(
         "parallel-variable",
         warmups,
         samples,
-        () => JobSystem.ScheduleParallel(
-            new VariableParallelJob(variableValues),
-            variableValues.Length,
-            batchSize).Complete());
+        () => JobSystem.Current.ScheduleParallel(new VariableParallelJob(variableValues), variableValues.Length, batchSize).Complete());
 }
 finally
 {

@@ -14,7 +14,7 @@ internal readonly struct EasyTripleQuery(EasyEcs.World world) : INativeTripleQue
     public int EntityCount => world.EntityCount;
     public void Build(NativeQueryRanges<EasyTripleRange> ranges)
     { var collect = new Collect(ranges); world.ForEachBatch<Position, Velocity, JobOrdinal, Collect>(ref collect); }
-    public void Execute<TAction>(ref TAction action) where TAction : struct, IComponentAction<Position, Velocity, JobOrdinal>
+    public void Execute<TAction>(ref TAction action) where TAction : struct, IColumnPass<Position, Velocity, JobOrdinal>
     { var apply = new Apply<TAction>(action); world.ForEachBatch<Position, Velocity, JobOrdinal, Apply<TAction>>(ref apply); }
     private struct Collect(NativeQueryRanges<EasyTripleRange> ranges) : EasyEcs.IForEachBatch<Position, Velocity, JobOrdinal>
     {
@@ -31,7 +31,7 @@ internal readonly struct EasyTripleQuery(EasyEcs.World world) : INativeTripleQue
         }
     }
     private struct Apply<TAction>(TAction action) : EasyEcs.IForEachBatch<Position, Velocity, JobOrdinal>
-        where TAction : struct, IComponentAction<Position, Velocity, JobOrdinal>
+        where TAction : struct, IColumnPass<Position, Velocity, JobOrdinal>
     {
         public static int Writes => 1;
         public void Execute(EasyEcs.EntitySpan entities, Span<Position> positions, Span<Velocity> velocities, Span<JobOrdinal> ordinals)
@@ -50,7 +50,7 @@ internal readonly struct FrifloTripleQuery(Friflo.Engine.ECS.EntityStore world,
     Friflo.Engine.ECS.ArchetypeQuery<Position, Velocity, JobOrdinal> query) : INativeTripleQuery<FrifloTripleRange>
 {
     public int EntityCount => world.Count;
-    public void Execute<TAction>(ref TAction action) where TAction : struct, IComponentAction<Position, Velocity, JobOrdinal>
+    public void Execute<TAction>(ref TAction action) where TAction : struct, IColumnPass<Position, Velocity, JobOrdinal>
     { foreach (var (positions, velocities, ordinals, _) in query.Chunks) action.Execute(positions.Span, velocities.Span, ordinals.Span); }
     public void Build(NativeQueryRanges<FrifloTripleRange> ranges)
     {
@@ -76,7 +76,7 @@ internal readonly struct ArchTripleRange(Arch.Core.Chunk chunk, int start, int c
 internal readonly struct ArchTripleQuery(Arch.Core.World world, Arch.Core.QueryDescription query) : INativeTripleQuery<ArchTripleRange>
 {
     public int EntityCount => world.Size;
-    public void Execute<TAction>(ref TAction action) where TAction : struct, IComponentAction<Position, Velocity, JobOrdinal>
+    public void Execute<TAction>(ref TAction action) where TAction : struct, IColumnPass<Position, Velocity, JobOrdinal>
     {
         foreach (ref var chunk in world.Query(in query).GetChunkIterator())
             action.Execute(chunk.GetSpan<Position>()[..chunk.Count], chunk.GetSpan<Velocity>()[..chunk.Count], chunk.GetSpan<JobOrdinal>()[..chunk.Count]);
@@ -102,7 +102,7 @@ internal readonly struct DefaultTripleRange(DefaultEcs.World world, int start, i
 internal readonly struct DefaultTripleQuery(DefaultEcs.World world) : INativeTripleQuery<DefaultTripleRange>
 {
     public int EntityCount => Math.Max(world.GetAll<Position>().Length, Math.Max(world.GetAll<Velocity>().Length, world.GetAll<JobOrdinal>().Length));
-    public void Execute<TAction>(ref TAction action) where TAction : struct, IComponentAction<Position, Velocity, JobOrdinal>
+    public void Execute<TAction>(ref TAction action) where TAction : struct, IColumnPass<Position, Velocity, JobOrdinal>
     {
         ReadOnlySpan<JobOrdinal> ordinals = world.GetAll<JobOrdinal>();
         action.Execute(world.GetAll<Position>()[..ordinals.Length], world.GetAll<Velocity>()[..ordinals.Length], ordinals);

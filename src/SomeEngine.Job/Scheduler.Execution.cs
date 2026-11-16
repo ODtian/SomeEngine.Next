@@ -178,7 +178,7 @@ public sealed partial class Scheduler
             try
             {
                 for (int index = 0; index < externalContinuationCount; index++)
-                    externalContinuations[index].InvokeAndSuppressObserverExceptions();
+                    externalContinuations[index].Invoke();
             }
             finally
             {

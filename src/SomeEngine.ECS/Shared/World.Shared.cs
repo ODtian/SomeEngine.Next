@@ -63,7 +63,6 @@ public sealed partial class World
         int type = ComponentType<T>.TypeId;
         return (uint)type < (uint)_shared.Length && _shared[type] is { } values ? ((SharedValues<T>)values).Count : 0;
     }
-    public ref readonly T ReadShared<T>(Entity entity) where T : struct, ISharedComponent => ref ReadSharedValue<T>(entity);
     public ref readonly T ReadShared<T>(SharedId<T> id) where T : struct, ISharedComponent
     {
         RequireValue<T>(false);
@@ -74,16 +73,6 @@ public sealed partial class World
     {
         int type = ComponentType<T>.TypeId;
         return (uint)type < (uint)_shared.Length && _shared[type] is SharedValues<T> values ? values.Values : [];
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal ref readonly T ReadSharedValueKnown<T>(Entity entity, T[] values) where T : struct
-    {
-        ref EntityRecord record = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Records), (nint)(uint)entity.Id);
-        ColumnEntry[] columns = record.Chunk!.Columns;
-        ref ColumnEntry column = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(columns), ComponentType<T>.TypeId);
-        int id = ColumnEntry.At<int>(ref column, record.Row);
-        return ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(values), (nint)(uint)id);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -141,8 +130,6 @@ public sealed partial class World
         return new(this, values.Groups.Members(id.Value));
     }
 
-    public void SetShared<T>(Entity entity, in T value) where T : struct, ISharedComponent => Set(entity, value);
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void SetShared<T>(Entity entity, SharedId<T> id) where T : struct, ISharedComponent
     {
@@ -173,8 +160,6 @@ public sealed partial class World
             grouping.SetKnown(entity, ref record, values.Values[id.Value], id.Value);
         else SetSharedId<T>(entity, ref record, id.Value);
     }
-
-    public void RemoveShared<T>(Entity entity) where T : struct, ISharedComponent => Remove<T>(entity);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void SetSharedValue<T>(Entity entity, in T value) where T : struct

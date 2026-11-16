@@ -50,14 +50,14 @@ public struct FootLockSystem : ISystem<ImmediateSystemContext>
             FootLockInstance instance = step.Instance;
             FootLockSamples samples = instance.Samples;
             float elapsed = Math.Min(step.Time.Time.Time, samples.Parameters.Duration);
-            GpuPoseTarget target = context.World.ReadComponentData<GpuPoseTarget>(instance.Target);
+            GpuPoseTarget target = context.World.ReadValue<GpuPoseTarget>(instance.Target);
             float weight = step.Time.Weight;
             if (context.World.Has<AnimationLayers>(instance.Target))
             {
-                AnimationLayers layers = context.World.ReadComponentData<AnimationLayers>(instance.Target);
+                AnimationLayers layers = context.World.ReadValue<AnimationLayers>(instance.Target);
                 if (instance.Placement.Layer < layers.Count) weight *= layers.Items[instance.Placement.Layer].Weight;
             }
-            samples.Update(elapsed, target.CalculationTime, context.World.ReadComponentData<WorldTransform>(instance.Actor).Qvvs.ToMatrix(), weight,
+            samples.Update(elapsed, target.CalculationTime, context.World.ReadValue<WorldTransform>(instance.Actor).Qvvs.ToMatrix(), weight,
                 in instance.Source, in instance.Movement);
             {
                 using var goals = context.World.GetBuffer<GpuPoseGoal>(instance.Target);

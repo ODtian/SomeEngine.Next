@@ -5,17 +5,17 @@ namespace SomeEngine.ECS.Comparison;
 
 internal static class ArchiveSequence
 {
-    internal static void Write<T, TCodec>(ref DataWriter writer, IEnumerable<T> values, int count, TCodec codec)
-        where TCodec : struct, IValueCodec<T>
+    internal static void Write<T, TSerializer>(ref SaveWriter writer, IEnumerable<T> values, int count, TSerializer serializer)
+        where TSerializer : struct, IValueSerializer<T>
     {
         writer.WriteInt32(count);
-        foreach (T value in values) { TCodec item = codec; item.Write(ref writer, value); }
+        foreach (T value in values) { TSerializer item = serializer; item.Write(ref writer, value); }
     }
-    internal static void Read<T, TCodec>(ref DataReader reader, ICollection<T> values, TCodec codec)
-        where TCodec : struct, IValueCodec<T>
+    internal static void Read<T, TSerializer>(ref SaveReader reader, ICollection<T> values, TSerializer serializer)
+        where TSerializer : struct, IValueSerializer<T>
     {
         values.Clear(); int count = reader.ReadInt32();
-        for (int i = 0; i < count; i++) { TCodec item = codec; item.Read(ref reader, out T value); values.Add(value); }
+        for (int i = 0; i < count; i++) { TSerializer item = serializer; item.Read(ref reader, out T value); values.Add(value); }
     }
 }
 
@@ -53,28 +53,28 @@ internal sealed partial class ReferenceHierarchy<TEntity, TValues>
         }
         _edits.Clear(); _forestSeen.Clear(); _headCounts.Clear(); _headKeys.Clear(); _incoming.Clear(); _subtree.Clear();
     }
-    internal void WriteProgress<TCodec>(ref DataWriter writer, TCodec codec) where TCodec : struct, IValueCodec<TEntity>
+    internal void WriteProgress<TSerializer>(ref SaveWriter writer, TSerializer serializer) where TSerializer : struct, IValueSerializer<TEntity>
     {
         writer.WriteUInt64(Version); writer.WriteInt32(_applied.Length);
         foreach (Applied applied in _applied)
-        { codec.Write(ref writer, applied.Entity); codec.Write(ref writer, applied.Parent); writer.WriteInt32(applied.Place); }
-        ArchiveSequence.Write(ref writer, _targets, _targets.Length, codec);
-        ArchiveSequence.Write(ref writer, _pending, _pending.Count, codec);
-        ArchiveSequence.Write(ref writer, _destroyed, _destroyed.Count, codec);
-        ArchiveSequence.Write(ref writer, _oldParents, _oldParents.Count, codec);
-        ArchiveSequence.Write(ref writer, _oldChildren, _oldChildren.Count, codec);
-        ArchiveSequence.Write(ref writer, _ordered, _ordered.Count, codec);
+        { serializer.Write(ref writer, applied.Entity); serializer.Write(ref writer, applied.Parent); writer.WriteInt32(applied.Place); }
+        ArchiveSequence.Write(ref writer, _targets, _targets.Length, serializer);
+        ArchiveSequence.Write(ref writer, _pending, _pending.Count, serializer);
+        ArchiveSequence.Write(ref writer, _destroyed, _destroyed.Count, serializer);
+        ArchiveSequence.Write(ref writer, _oldParents, _oldParents.Count, serializer);
+        ArchiveSequence.Write(ref writer, _oldChildren, _oldChildren.Count, serializer);
+        ArchiveSequence.Write(ref writer, _ordered, _ordered.Count, serializer);
     }
-    internal void ReadProgress<TCodec>(ref DataReader reader, TCodec codec) where TCodec : struct, IValueCodec<TEntity>
+    internal void ReadProgress<TSerializer>(ref SaveReader reader, TSerializer serializer) where TSerializer : struct, IValueSerializer<TEntity>
     {
         _version = reader.ReadUInt64(); _applied = new Applied[reader.ReadInt32()];
         for (int i = 0; i < _applied.Length; i++)
-        { codec.Read(ref reader, out _applied[i].Entity); codec.Read(ref reader, out _applied[i].Parent); _applied[i].Place = reader.ReadInt32(); }
+        { serializer.Read(ref reader, out _applied[i].Entity); serializer.Read(ref reader, out _applied[i].Parent); _applied[i].Place = reader.ReadInt32(); }
         _targets = new TEntity[reader.ReadInt32()];
-        for (int i = 0; i < _targets.Length; i++) codec.Read(ref reader, out _targets[i]);
-        ArchiveSequence.Read(ref reader, _pending, codec); ArchiveSequence.Read(ref reader, _destroyed, codec);
-        ArchiveSequence.Read(ref reader, _oldParents, codec); ArchiveSequence.Read(ref reader, _oldChildren, codec);
-        ArchiveSequence.Read(ref reader, _ordered, codec);
+        for (int i = 0; i < _targets.Length; i++) serializer.Read(ref reader, out _targets[i]);
+        ArchiveSequence.Read(ref reader, _pending, serializer); ArchiveSequence.Read(ref reader, _destroyed, serializer);
+        ArchiveSequence.Read(ref reader, _oldParents, serializer); ArchiveSequence.Read(ref reader, _oldChildren, serializer);
+        ArchiveSequence.Read(ref reader, _ordered, serializer);
         _differences.Clear();
         for (int i = 0; i < _targets.Length; i++)
             if (!Empty(_targets[i]))
@@ -126,27 +126,27 @@ internal sealed partial class ReferenceRelations<TEntity, TIdentity, TValues, TP
         _future.Clear(); foreach (var pair in source._future) _future.Add(pair.Key, new(pair.Value));
         _futureOrders.Clear(); foreach (var pair in source._futureOrders) _futureOrders.Add(pair.Key, new(pair.Value));
     }
-    private static void WriteApplied<TECodec, TICodec>(ref DataWriter writer, Applied value, TECodec entity, TICodec identity)
-        where TECodec : struct, IValueCodec<TEntity> where TICodec : struct, IValueCodec<TIdentity>
+    private static void WriteApplied<TESerializer, TISerializer>(ref SaveWriter writer, Applied value, TESerializer entity, TISerializer identity)
+        where TESerializer : struct, IValueSerializer<TEntity> where TISerializer : struct, IValueSerializer<TIdentity>
     {
         entity.Write(ref writer, value.Source); entity.Write(ref writer, value.Target); identity.Write(ref writer, value.Identity);
         writer.WriteInt32(value.SourcePlace); writer.WriteInt32(value.TargetPlace);
     }
-    private static Applied ReadApplied<TECodec, TICodec>(ref DataReader reader, TECodec entity, TICodec identity)
-        where TECodec : struct, IValueCodec<TEntity> where TICodec : struct, IValueCodec<TIdentity>
+    private static Applied ReadApplied<TESerializer, TISerializer>(ref SaveReader reader, TESerializer entity, TISerializer identity)
+        where TESerializer : struct, IValueSerializer<TEntity> where TISerializer : struct, IValueSerializer<TIdentity>
     {
         Applied value = default; entity.Read(ref reader, out value.Source); entity.Read(ref reader, out value.Target);
         identity.Read(ref reader, out value.Identity); value.SourcePlace = reader.ReadInt32(); value.TargetPlace = reader.ReadInt32(); return value;
     }
-    private static void WriteHead<TECodec, TICodec>(ref DataWriter writer, Head head, TECodec entity, TICodec identity)
-        where TECodec : struct, IValueCodec<TEntity> where TICodec : struct, IValueCodec<TIdentity>
+    private static void WriteHead<TESerializer, TISerializer>(ref SaveWriter writer, Head head, TESerializer entity, TISerializer identity)
+        where TESerializer : struct, IValueSerializer<TEntity> where TISerializer : struct, IValueSerializer<TIdentity>
     {
         identity.Write(ref writer, head.Identity); writer.WriteInt32(head.CountFlags);
         for (int i = 0; i < head.Count; i++)
         { entity.Write(ref writer, head.Items![i].Other); entity.Write(ref writer, head.Items[i].Edge); }
     }
-    private static Head ReadHead<TECodec, TICodec>(ref DataReader reader, TECodec entity, TICodec identity)
-        where TECodec : struct, IValueCodec<TEntity> where TICodec : struct, IValueCodec<TIdentity>
+    private static Head ReadHead<TESerializer, TISerializer>(ref SaveReader reader, TESerializer entity, TISerializer identity)
+        where TESerializer : struct, IValueSerializer<TEntity> where TISerializer : struct, IValueSerializer<TIdentity>
     {
         Head head = default; identity.Read(ref reader, out head.Identity); head.CountFlags = reader.ReadInt32();
         if (head.Count > 0) head.Items = ArrayPool<ReferenceRelationEntry<TEntity>>.Shared.Rent(head.Count);
@@ -154,8 +154,8 @@ internal sealed partial class ReferenceRelations<TEntity, TIdentity, TValues, TP
         { entity.Read(ref reader, out TEntity other); entity.Read(ref reader, out TEntity edge); head.Items![i] = new(other, edge); }
         return head;
     }
-    internal void WriteProgress<TECodec, TICodec>(ref DataWriter writer, TECodec entity, TICodec identity)
-        where TECodec : struct, IValueCodec<TEntity> where TICodec : struct, IValueCodec<TIdentity>
+    internal void WriteProgress<TESerializer, TISerializer>(ref SaveWriter writer, TESerializer entity, TISerializer identity)
+        where TESerializer : struct, IValueSerializer<TEntity> where TISerializer : struct, IValueSerializer<TIdentity>
     {
         writer.WriteUInt64(Version); writer.WriteBoolean(_usesOrder);
         writer.WriteInt32(_outgoing.Length); foreach (Head head in _outgoing) WriteHead(ref writer, head, entity, identity);
@@ -183,15 +183,15 @@ internal sealed partial class ReferenceRelations<TEntity, TIdentity, TValues, TP
         foreach (var pair in _futureOrders)
         { entity.Write(ref writer, pair.Key.Entity); writer.WriteBoolean(pair.Key.Incoming); ArchiveSequence.Write(ref writer, pair.Value, pair.Value.Count, entity); }
     }
-    private static void WriteClaims<TECodec, TICodec>(ref DataWriter writer, EndpointClaim[]? claims, TECodec entity, TICodec identity)
-        where TECodec : struct, IValueCodec<TEntity> where TICodec : struct, IValueCodec<TIdentity>
+    private static void WriteClaims<TESerializer, TISerializer>(ref SaveWriter writer, EndpointClaim[]? claims, TESerializer entity, TISerializer identity)
+        where TESerializer : struct, IValueSerializer<TEntity> where TISerializer : struct, IValueSerializer<TIdentity>
     {
         writer.WriteInt32(claims?.Length ?? 0);
         if (claims is not null) foreach (EndpointClaim claim in claims)
         { identity.Write(ref writer, claim.Identity); entity.Write(ref writer, claim.Edge); }
     }
-    private static EndpointClaim[]? ReadClaims<TECodec, TICodec>(ref DataReader reader, TECodec entity, TICodec identity)
-        where TECodec : struct, IValueCodec<TEntity> where TICodec : struct, IValueCodec<TIdentity>
+    private static EndpointClaim[]? ReadClaims<TESerializer, TISerializer>(ref SaveReader reader, TESerializer entity, TISerializer identity)
+        where TESerializer : struct, IValueSerializer<TEntity> where TISerializer : struct, IValueSerializer<TIdentity>
     {
         int count = reader.ReadInt32(); if (count == 0) return null;
         var claims = new EndpointClaim[count];
@@ -199,8 +199,8 @@ internal sealed partial class ReferenceRelations<TEntity, TIdentity, TValues, TP
         { identity.Read(ref reader, out TIdentity key); entity.Read(ref reader, out TEntity edge); claims[i] = new(key, edge); }
         return claims;
     }
-    internal void ReadProgress<TECodec, TICodec>(ref DataReader reader, TECodec entity, TICodec identity)
-        where TECodec : struct, IValueCodec<TEntity> where TICodec : struct, IValueCodec<TIdentity>
+    internal void ReadProgress<TESerializer, TISerializer>(ref SaveReader reader, TESerializer entity, TISerializer identity)
+        where TESerializer : struct, IValueSerializer<TEntity> where TISerializer : struct, IValueSerializer<TIdentity>
     {
         _version = reader.ReadUInt64(); _usesOrder = reader.ReadBoolean();
         _outgoing = new Head[reader.ReadInt32()]; for (int i = 0; i < _outgoing.Length; i++) _outgoing[i] = ReadHead(ref reader, entity, identity);

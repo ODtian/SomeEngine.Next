@@ -159,9 +159,9 @@ public sealed class NavigationStreaming(NavigationScene scene, Scheduler? schedu
         {
             var data = new TileConversions(scene, loaded, removed);
             JobResourceToken sceneResource = scheduler.GetResourceToken(scene);
-            JobHandle converted = scheduler.Schedule(new ReadTileInputs(data, scheduler), JobResourceAccess.Read(sceneResource));
-            JobHandle installed = scheduler.Schedule(new InstallTiles(data, scheduler), JobResourceAccess.Write(sceneResource), converted);
-            _ = scheduler.Schedule(new RetryTiles(data, scheduler), installed);
+            JobHandle converted = scheduler.Schedule(new ReadTileInputs(data, scheduler), [JobResourceAccess.Read(sceneResource)]);
+            JobHandle installed = scheduler.Schedule(new InstallTiles(data, scheduler), [JobResourceAccess.Write(sceneResource)], converted);
+            _ = scheduler.Schedule(new RetryTiles(data, scheduler), dependency: installed);
         }
     }
 

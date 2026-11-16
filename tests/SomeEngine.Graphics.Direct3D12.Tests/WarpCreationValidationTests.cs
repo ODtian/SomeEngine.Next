@@ -43,9 +43,9 @@ public sealed class WarpCreationValidationTests
     public void Unrequested_feature_capabilities_are_not_enabled()
     {
         using var backend = D3D12GraphicsBackend.Create();
-        AdapterInfo warp = D3D12TestSupport.SelectWarp(backend);
+        AdapterId warp = D3D12TestSupport.WarpAdapterId();
         using Device device = backend.CreateDevice(new DeviceDesc(
-            warp.Id,
+            warp,
             [new DeviceQueueDesc(QueueType.Graphics)]));
 
         Assert.False(backend.TryGetCapability<Presentation>(device, out _));
@@ -69,9 +69,9 @@ public sealed class WarpCreationValidationTests
     public void Unavailable_optional_feature_does_not_disable_the_device()
     {
         using var backend = D3D12GraphicsBackend.Create();
-        AdapterInfo warp = D3D12TestSupport.SelectWarp(backend);
+        AdapterId warp = D3D12TestSupport.WarpAdapterId();
         using Device device = backend.CreateDevice(new DeviceDesc(
-            warp.Id,
+            warp,
             [new DeviceQueueDesc(QueueType.Graphics)],
             optionalFeatures: DeviceFeatures.LinkedAdapters));
 
@@ -84,7 +84,7 @@ public sealed class WarpCreationValidationTests
     {
         using D3D12TestWindow window = new();
         using var backend = D3D12GraphicsBackend.Create();
-        AdapterInfo warp = D3D12TestSupport.SelectWarp(backend);
+        AdapterId warp = D3D12TestSupport.WarpAdapterId();
         using Surface surface = backend.CreateSurface(new SurfaceDesc(
             NativeWindowType.Win32,
             window.Handle));
@@ -99,7 +99,7 @@ public sealed class WarpCreationValidationTests
             false,
             2);
         using (Device disabled = backend.CreateDevice(new DeviceDesc(
-            warp.Id,
+            warp,
             copyQueues,
             optionalFeatures: DeviceFeatures.Presentation)))
         {
@@ -117,14 +117,14 @@ public sealed class WarpCreationValidationTests
 
         GraphicsException missing = Assert.Throws<GraphicsException>(() =>
             backend.CreateDevice(new DeviceDesc(
-                warp.Id,
+                warp,
                 copyQueues,
                 requiredFeatures: DeviceFeatures.Presentation)));
         Assert.Equal(GraphicsError.NativeFailure, missing.Error);
         Assert.Null(missing.NativeCode);
 
         using Device enabled = backend.CreateDevice(new DeviceDesc(
-            warp.Id,
+            warp,
             graphicsQueues,
             optionalFeatures: DeviceFeatures.Presentation));
         Assert.True(backend.TryGetCapability<Presentation>(enabled, out Presentation? presentation));
@@ -144,12 +144,12 @@ public sealed class WarpCreationValidationTests
     public void Missing_required_feature_is_a_retryable_graphics_failure()
     {
         using var backend = D3D12GraphicsBackend.Create();
-        AdapterInfo warp = D3D12TestSupport.SelectWarp(backend);
+        AdapterId warp = D3D12TestSupport.WarpAdapterId();
         DeviceQueueDesc[] queues = [new(QueueType.Graphics)];
 
         GraphicsException failure = Assert.Throws<GraphicsException>(() =>
             backend.CreateDevice(new DeviceDesc(
-                warp.Id,
+                warp,
                 queues,
                 requiredFeatures: DeviceFeatures.LinkedAdapters)));
 
@@ -157,7 +157,7 @@ public sealed class WarpCreationValidationTests
         Assert.Null(failure.NativeCode);
 
         using Device device = backend.CreateDevice(new DeviceDesc(
-            warp.Id,
+            warp,
             queues));
         Assert.Equal(DeviceStatus.Active, device.Status);
     }
@@ -179,34 +179,34 @@ public sealed class WarpCreationValidationTests
     public void Device_description_rejects_malformed_queue_topology_before_native_creation()
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
-        AdapterInfo adapter = D3D12TestSupport.SelectWarp(backend);
+        AdapterId adapter = D3D12TestSupport.WarpAdapterId();
 
         Assert.Throws<ArgumentException>(() => backend.CreateDevice(new DeviceDesc(
-            adapter.Id,
+            adapter,
             [])));
         Assert.Throws<ArgumentOutOfRangeException>(() => backend.CreateDevice(new DeviceDesc(
-            adapter.Id,
+            adapter,
             [new DeviceQueueDesc(QueueType.Graphics, Count: 0)])));
         Assert.Throws<ArgumentException>(() => backend.CreateDevice(new DeviceDesc(
-            adapter.Id,
+            adapter,
             [new DeviceQueueDesc(QueueType.Graphics), new DeviceQueueDesc(QueueType.Graphics)])));
         Assert.Throws<ArgumentOutOfRangeException>(() => backend.CreateDevice(new DeviceDesc(
-            adapter.Id,
+            adapter,
             [new DeviceQueueDesc(QueueType.Graphics, Priority: float.NaN)])));
         Assert.Throws<ArgumentOutOfRangeException>(() => backend.CreateDevice(new DeviceDesc(
-            adapter.Id,
+            adapter,
             [new DeviceQueueDesc((QueueType)byte.MaxValue)])));
         Assert.Throws<ArgumentOutOfRangeException>(() => backend.CreateDevice(new DeviceDesc(
-            adapter.Id,
+            adapter,
             [new DeviceQueueDesc(QueueType.Graphics, NodeIndex: 1)],
             enabledNodeMask: 1)));
         Assert.Throws<ArgumentOutOfRangeException>(() => backend.CreateDevice(new DeviceDesc(
-            adapter.Id,
+            adapter,
             [new DeviceQueueDesc(QueueType.Graphics)],
             requiredFeatures: (DeviceFeatures)(1UL << 63))));
 
         using Device valid = backend.CreateDevice(new DeviceDesc(
-            adapter.Id,
+            adapter,
             [new DeviceQueueDesc(QueueType.Graphics)]));
         Assert.Equal(QueueType.Graphics, backend.GetQueue(valid, QueueType.Graphics).Type);
     }

@@ -9,6 +9,20 @@ internal interface IRemovedValues
     void Capture(World world, Entity entity, ref EntityRecord record, ulong version);
 }
 
+/// <summary>A value type that supplies how its removed values are kept.</summary>
+public interface IRemovedValueSource
+{
+    internal IRemovedValues? CreateRemovedValues() => null;
+}
+
+/// <summary>Keeps the last value of a removed component as <see cref="Removed{T}"/> until the next update.</summary>
+/// <remarks>The value type declares itself so the World creates its capture without reflection or registration.</remarks>
+public interface IRemovedComponent<TSelf> : IRemovedComponent, IRemovedValueSource
+    where TSelf : struct, IRemovedComponent<TSelf>
+{
+    IRemovedValues? IRemovedValueSource.CreateRemovedValues() => new RemovedValueOperations<TSelf>();
+}
+
 internal interface IRemovedValue<T> : IRemovedValues where T : struct
 {
     void Capture(World world, Entity entity, in T value, ulong version);

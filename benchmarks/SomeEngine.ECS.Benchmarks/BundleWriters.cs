@@ -72,9 +72,9 @@ internal static partial class EcsBenchmarkSuite
             var index = new StorageIndex(item % IndexBucketCount);
             var bucket = new StorageBucket(item % SharedBucketCount);
             var sparse = new StorageSparse(item);
-            view.WriteShared(in bucket);
+            view.Write(in bucket);
             view.Write(in index);
-            view.WriteSparse(in sparse);
+            view.Write(in sparse);
             ReadOnlyMemory<BenchmarkBufferElement> buffer = InitialBufferValues.AsMemory();
             view.WriteBuffer(in buffer);
         }
@@ -88,9 +88,9 @@ internal static partial class EcsBenchmarkSuite
             var index = new StorageIndex(item % IndexBucketCount);
             var bucket = new StorageBucket(item % SharedBucketCount);
             var sparse = new StorageSparse(item);
-            view.WriteShared(in bucket);
+            view.Write(in bucket);
             view.Write(in index);
-            view.WriteSparse(in sparse);
+            view.Write(in sparse);
         }
     }
 

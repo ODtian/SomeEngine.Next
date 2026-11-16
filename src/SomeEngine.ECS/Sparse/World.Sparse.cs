@@ -18,27 +18,26 @@ public sealed partial class World
             return (_sparse ??= new SparseStores(this, Records.Length)).GetOrCreate<T>();
     }
 
-    public bool HasSparse<T>(Entity entity) where T : struct
+    private bool HasSparseValue<T>(Entity entity) where T : struct
     {
         using WorldAccess access = OpenStructure(false);
         return _sparse?.Find<T>() is { } store && store.Has(entity);
     }
 
-    public ref readonly T ReadSparse<T>(Entity entity) where T : struct
+    private ref readonly T ReadSparseValue<T>(Entity entity) where T : struct
     {
         RequireValue<T>(false, WorldValueKind.Sparse);
         return ref Sparse<T>().Get(entity);
     }
 
-    public ref T GetSparse<T>(Entity entity) where T : struct
+    private ref T GetSparseValue<T>(Entity entity) where T : struct
     {
         RequireValue<T>(true, WorldValueKind.Sparse);
         if (ComponentType<T>.IsControlledType) throw new InvalidOperationException("Use the component's typed write view.");
         return ref Sparse<T>().Get(entity, ComponentType<T>.TracksWritesType ? NextVersion() : 0);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void AddSparse<T>(Entity entity, in T value) where T : struct
+    private void AddSparseValue<T>(Entity entity, in T value) where T : struct
     {
         if (ComponentType<T>.IsControlledType) throw new InvalidOperationException("Use the component's typed write view.");
         using WorldAccess access = OpenStructure();
@@ -50,19 +49,7 @@ public sealed partial class World
         store.Set(this, _sparse!, entity, value);
     }
 
-    public void ReplaceSparse<T>(Entity entity, in T value) where T : struct
-    {
-        if (ComponentType<T>.IsControlledType) throw new InvalidOperationException("Use the component's typed write view.");
-        using WorldAccess access = OpenValues<T>(true, WorldValueKind.Sparse);
-        ref EntityRecord record = ref Resolve(entity);
-        RequireActiveWrite<T>(in record);
-        if (_sparse?.Find<T>() is not { } store || !store.Has(entity))
-            throw new InvalidOperationException("The entity requires this sparse component before replacing it.");
-        store.Set(this, _sparse, entity, value);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void SetSparse<T>(Entity entity, in T value) where T : struct
+    private void SetSparseValue<T>(Entity entity, in T value) where T : struct
     {
         if (ComponentType<T>.IsControlledType) throw new InvalidOperationException("Use the component's typed write view.");
         if (Execution is not null) { SetSparseWithExecution(entity, value); return; }
@@ -71,7 +58,7 @@ public sealed partial class World
         Sparse<T>().Set(this, _sparse!, entity, value);
     }
 
-    public void RemoveSparse<T>(Entity entity) where T : struct
+    private void RemoveSparseValue<T>(Entity entity) where T : struct
     {
         using WorldAccess access = OpenStructure();
         RequireStructure();
@@ -81,59 +68,55 @@ public sealed partial class World
         if (ComponentType<T>.IsCleanupType) ReleaseAfterCleanup(entity);
     }
 
-    public SparseReadScope<T> OpenSparseRead<T>() where T : struct => new(this, Sparse<T>());
-    public SparseWriteScope<T> OpenSparseWrite<T>() where T : struct => new(this, Sparse<T>());
+    /// <summary>Borrows the dense member arrays of a sparse component for whole-store reads.</summary>
+    public SparseValues<T> OpenSparseValues<T>() where T : struct
+    {
+        BeginValueRead<T>(false, WorldValueKind.Sparse);
+        return new(this, Sparse<T>());
+    }
+
+    /// <summary>Borrows the dense member arrays of a sparse component for whole-store writes.</summary>
+    public SparseValueWrites<T> OpenSparseValueWrites<T>() where T : struct
+    {
+        if (ComponentType<T>.IsControlledType) throw new InvalidOperationException("Use the typed write view of this component.");
+        BeginValueRead<T>(true, WorldValueKind.Sparse);
+        return new(this, Sparse<T>());
+    }
 }
 
-public ref struct SparseReadScope<T> where T : struct
+/// <summary>The dense entity and value arrays of one sparse component, read together.</summary>
+public readonly ref struct SparseValues<T> where T : struct
 {
     private readonly World _world;
     private readonly SparseStore<T> _store;
-
-    internal SparseReadScope(World world, SparseStore<T> store, bool write = false)
-    {
-        _world = world;
-        _store = store;
-        world.BeginValueRead<T>(write, WorldValueKind.Sparse);
-    }
-
+    internal SparseValues(World world, SparseStore<T> store) => (_world, _store) = (world, store);
     public int Count => _store.Count;
     public ReadOnlySpan<Entity> Entities => _store.Entities.AsSpan(0, _store.Count);
     public ReadOnlySpan<T> Values => _store.Values.AsSpan(0, _store.Count);
-    public bool Has(Entity entity) => _store.Has(entity);
-    public ref readonly T Read(Entity entity) => ref Access(entity);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal ref T Access(Entity entity, ulong writeVersion = 0)
-    {
-        return ref _store.Get(entity, writeVersion);
-    }
-
-    internal Span<T> MutableValues(ulong writeVersion)
-    {
-        if (writeVersion != 0)
-            for (int row = 0; row < _store.Count; row++)
-                _store.Changes![0].Stamp(row, writeVersion, false, ComponentType<T>.TracksAddedType);
-        return _store.Values.AsSpan(0, _store.Count);
-    }
-    internal ulong WriteVersion(ref ulong version) => _world.WriteVersion(ref version);
     public void Dispose() => _world.EndValueRead();
 }
 
-public ref struct SparseWriteScope<T> where T : struct
+/// <summary>The dense entity and value arrays of one sparse component; values are written as one batch.</summary>
+public ref struct SparseValueWrites<T> where T : struct
 {
-    private SparseReadScope<T> _read;
+    private readonly World _world;
+    private readonly SparseStore<T> _store;
     private ulong _version;
-    internal SparseWriteScope(World world, SparseStore<T> store)
+    internal SparseValueWrites(World world, SparseStore<T> store) => (_world, _store) = (world, store);
+    public int Count => _store.Count;
+    public ReadOnlySpan<Entity> Entities => _store.Entities.AsSpan(0, _store.Count);
+    public Span<T> Values
     {
-        if (ComponentType<T>.IsControlledType) throw new InvalidOperationException("Use the component's typed write view.");
-        _read = new(world, store, true);
+        get
+        {
+            if (ComponentType<T>.TracksWritesType)
+            {
+                ulong version = _world.WriteVersion(ref _version);
+                for (int row = 0; row < _store.Count; row++)
+                    _store.Changes![0].Stamp(row, version, false, ComponentType<T>.TracksAddedType);
+            }
+            return _store.Values.AsSpan(0, _store.Count);
+        }
     }
-    public int Count => _read.Count;
-    public ReadOnlySpan<Entity> Entities => _read.Entities;
-    public Span<T> Values => _read.MutableValues(ComponentType<T>.TracksWritesType ? _read.WriteVersion(ref _version) : 0);
-    public ref T Get(Entity entity)
-        => ref _read.Access(entity, ComponentType<T>.TracksWritesType ? _read.WriteVersion(ref _version) : 0);
-    public bool Has(Entity entity) => _read.Has(entity);
-    public void Dispose() => _read.Dispose();
+    public void Dispose() => _world.EndValueRead();
 }

@@ -6,7 +6,7 @@ namespace SomeEngine.Assets;
 
 internal readonly partial struct NavigationSaveCodec
 {
-    private static void WriteWorld(ref DataWriter writer, NavigationSavedSource[] sources, NavigationSavedRegion[] regions, NavigationSavedCrowd[] crowd)
+    private static void WriteWorld(ref SaveWriter writer, NavigationSavedSource[] sources, NavigationSavedRegion[] regions, NavigationSavedCrowd[] crowd)
     {
         writer.WriteInt32(sources.Length);
         foreach (NavigationSavedSource source in sources)
@@ -39,7 +39,7 @@ internal readonly partial struct NavigationSaveCodec
         { writer.WriteEntity(actor.Entity); writer.WriteSingle(actor.Weight); writer.WriteBoolean(actor.Enabled); }
     }
 
-    private static void ReadWorld(ref DataReader reader, out NavigationSavedSource[] sources, out NavigationSavedRegion[] regions, out NavigationSavedCrowd[] crowd)
+    private static void ReadWorld(ref SaveReader reader, out NavigationSavedSource[] sources, out NavigationSavedRegion[] regions, out NavigationSavedCrowd[] crowd)
     {
         sources = new NavigationSavedSource[reader.ReadInt32()];
         for (int index = 0; index < sources.Length; index++) sources[index] = new(reader.ReadEntity(), reader.ReadInt32(), reader.ReadBoolean(),
@@ -69,7 +69,7 @@ internal readonly partial struct NavigationSaveCodec
         for (int index = 0; index < crowd.Length; index++) crowd[index] = new(reader.ReadEntity(), reader.ReadSingle(), reader.ReadBoolean());
     }
 
-    private static void WriteWorldResource(ref DataWriter writer, NavigationSavedResource resource)
+    private static void WriteWorldResource(ref SaveWriter writer, NavigationSavedResource resource)
     {
         switch (resource)
         {
@@ -93,7 +93,7 @@ internal readonly partial struct NavigationSaveCodec
         }
     }
 
-    private static NavigationSavedResource ReadWorldResource(byte kind, ref DataReader reader)
+    private static NavigationSavedResource ReadWorldResource(byte kind, ref SaveReader reader)
     {
         switch (kind)
         {
@@ -111,7 +111,7 @@ internal readonly partial struct NavigationSaveCodec
         }
     }
 
-    private static void WriteLink(ref DataWriter writer, NavigationLink value)
+    private static void WriteLink(ref SaveWriter writer, NavigationLink value)
     {
         writer.WriteInt32(value.Id); writer.WriteInt32(value.From.Region); writer.WriteInt32(value.From.Port);
         writer.WriteInt32(value.To.Region); writer.WriteInt32(value.To.Port); writer.WriteInt32(value.Action);
@@ -119,17 +119,17 @@ internal readonly partial struct NavigationSaveCodec
         writer.WriteSingle(value.Parameters.X); writer.WriteSingle(value.Parameters.Y); writer.WriteSingle(value.Parameters.Z); writer.WriteSingle(value.Parameters.W);
         writer.WriteSingle(value.EntryRange); writer.WriteSingle(value.ExitRange); writer.WriteBoolean(value.Enabled); writer.WriteInt32(value.Capacity);
     }
-    private static NavigationLink ReadLink(ref DataReader reader) => new(reader.ReadInt32(), new(reader.ReadInt32(), reader.ReadInt32()),
+    private static NavigationLink ReadLink(ref SaveReader reader) => new(reader.ReadInt32(), new(reader.ReadInt32(), reader.ReadInt32()),
         new(reader.ReadInt32(), reader.ReadInt32()), reader.ReadInt32(), reader.ReadSingle(), reader.ReadUInt64(), reader.ReadBoolean(),
         new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()), reader.ReadSingle(), reader.ReadSingle(), reader.ReadBoolean(), reader.ReadInt32());
-    private static void WriteMatrix(ref DataWriter writer, Matrix4x4 value)
+    private static void WriteMatrix(ref SaveWriter writer, Matrix4x4 value)
     {
         writer.WriteSingle(value.M11); writer.WriteSingle(value.M12); writer.WriteSingle(value.M13); writer.WriteSingle(value.M14);
         writer.WriteSingle(value.M21); writer.WriteSingle(value.M22); writer.WriteSingle(value.M23); writer.WriteSingle(value.M24);
         writer.WriteSingle(value.M31); writer.WriteSingle(value.M32); writer.WriteSingle(value.M33); writer.WriteSingle(value.M34);
         writer.WriteSingle(value.M41); writer.WriteSingle(value.M42); writer.WriteSingle(value.M43); writer.WriteSingle(value.M44);
     }
-    private static Matrix4x4 ReadMatrix(ref DataReader reader) => new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(),
+    private static Matrix4x4 ReadMatrix(ref SaveReader reader) => new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(),
         reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(),
         reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
 }

@@ -6,8 +6,9 @@ internal sealed partial class RelationData<T>
 {
     private void ConfirmApplied()
     {
-        if (!_hasDeferredChanges) _version = _world.Version;
+        if (!_hasDeferredChanges) _version = _world.CompletedVersion;
     }
+
 
     internal void Initialize()
     {
@@ -15,7 +16,7 @@ internal sealed partial class RelationData<T>
         using (var scope = _main.Open())
             foreach (var rows in scope) entities.AddRange(rows.Entities);
         foreach (Entity entity in entities) InitializeEdge(entity);
-        _version = _world.Version;
+        _version = _world.CompletedVersion;
     }
 
     internal void ValidateCreate(in RelationEndpoints<T> value)

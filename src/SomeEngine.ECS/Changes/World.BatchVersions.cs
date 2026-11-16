@@ -27,6 +27,22 @@ public sealed partial class World
         { if (_restore) { s_batchWorld = _previous; s_batchVersion = _version; s_batchNewVersion = _newVersion; } }
     }
 
+    /// <summary>
+    /// The newest version whose writes are complete as seen from the calling thread. A consumer records this as what it
+    /// has observed: inside a write batch or job whose version is already allocated, later writes still carry that
+    /// version, so it is not complete yet.
+    /// </summary>
+    public ulong CompletedVersion
+    {
+        get
+        {
+            ulong completed = Volatile.Read(ref _version);
+            if (ReferenceEquals(s_batchWorld, this) && s_batchVersion != 0) completed = Math.Min(completed, s_batchVersion - 1);
+            if (Execution?.OpenWriteVersion is > 0 and var open) completed = Math.Min(completed, open - 1);
+            return completed;
+        }
+    }
+
     private ulong BatchVersion()
     {
         if (!ReferenceEquals(s_batchWorld, this)) return NextVersionCore();

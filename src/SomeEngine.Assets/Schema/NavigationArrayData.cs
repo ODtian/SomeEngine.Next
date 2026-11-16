@@ -10,7 +10,7 @@ internal static class NavigationArrayData
     internal static ReadOnlyMemory<byte> Encode<T>(ReadOnlyMemory<T> values) where T : unmanaged
     {
         var result = new byte[1][];
-        JobSystem.Schedule(new EncodeArray<T>(values, result),
+        JobSystem.Current.Schedule(new EncodeArray<T>(values, result),
             [JobResourceAccess.Read(values), JobResourceAccess.Write(result)]).Complete();
         return result[0];
     }
@@ -18,7 +18,7 @@ internal static class NavigationArrayData
     internal static T[] Decode<T>(ReadOnlyMemory<byte> bytes) where T : unmanaged
     {
         var result = new T[1][];
-        JobSystem.Schedule(new DecodeArray<T>(bytes, result),
+        JobSystem.Current.Schedule(new DecodeArray<T>(bytes, result),
             [JobResourceAccess.Read(bytes), JobResourceAccess.Write(result)]).Complete();
         return result[0];
     }

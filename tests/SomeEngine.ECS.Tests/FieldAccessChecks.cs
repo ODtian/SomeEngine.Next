@@ -30,7 +30,7 @@ internal static class FieldAccessChecks
         using var world = new World();
         Entity first = world.Create(new FieldData<Box> { Reference = new Box() });
         Entity second = world.Create(new FieldData<Box> { Reference = new Box() });
-        ulong before = world.ComponentDataWriteVersion<FieldData<Box>>(first);
+        ulong before = world.ComponentWriteVersion<FieldData<Box>>(first);
         var roots = world.OpenWrite<FieldData<Box>>();
         try
         {
@@ -38,10 +38,10 @@ internal static class FieldAccessChecks
             ReferenceAccess.Write(ref roots.Get(second), 7f);
         }
         finally { roots.Dispose(); }
-        ulong version = world.ComponentDataWriteVersion<FieldData<Box>>(first);
+        ulong version = world.ComponentWriteVersion<FieldData<Box>>(first);
         Require(version != before);
         RequireEqual((version, version, 7f, 7f), (
-            world.ComponentDataWriteVersion<FieldData<Box>>(first), world.ComponentDataWriteVersion<FieldData<Box>>(second),
+            world.ComponentWriteVersion<FieldData<Box>>(first), world.ComponentWriteVersion<FieldData<Box>>(second),
             world.ReadField<FieldData<Box>, float, ReferenceAccess>(first), world.ReadField<FieldData<Box>, float, ReferenceAccess>(second)));
     }
 
@@ -50,20 +50,20 @@ internal static class FieldAccessChecks
         using var world = new World();
         Entity first = world.Create();
         Entity second = world.Create();
-        world.SetSparse(first, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
-        world.SetSparse(second, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
-        ulong before = world.ComponentDataWriteVersion<SparseFields>(first);
-        var roots = world.OpenSparseWrite<SparseFields>();
+        world.Set(first, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
+        world.Set(second, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
+        ulong before = world.ComponentWriteVersion<SparseFields>(first);
+        var roots = world.OpenWrite<SparseFields>();
         try
         {
             SparseAccess<ReferenceAccess>.Write(ref roots.Get(first), 7f);
             SparseAccess<ReferenceAccess>.Write(ref roots.Get(second), 7f);
         }
         finally { roots.Dispose(); }
-        ulong version = world.ComponentDataWriteVersion<SparseFields>(first);
+        ulong version = world.ComponentWriteVersion<SparseFields>(first);
         Require(version != before);
         RequireEqual((version, version, 7f, 7f), (
-            world.ComponentDataWriteVersion<SparseFields>(first), world.ComponentDataWriteVersion<SparseFields>(second),
+            world.ComponentWriteVersion<SparseFields>(first), world.ComponentWriteVersion<SparseFields>(second),
             world.ReadField<SparseFields, float, SparseAccess<ReferenceAccess>>(first),
             world.ReadField<SparseFields, float, SparseAccess<ReferenceAccess>>(second)));
     }
@@ -89,7 +89,7 @@ internal static class FieldAccessChecks
     {
         using var world = new World();
         Entity entity = world.Create();
-        world.SetSparse(entity, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
+        world.Set(entity, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
 
         world.WriteField<SparseFields, float, SparseAccess<NumberAccess>>(entity, 1f);
         world.WriteField<SparseFields, float, SparseAccess<NestedAccess>>(entity, 2f);
@@ -119,23 +119,23 @@ internal static class FieldAccessChecks
     {
         using var world = new World();
         Entity entity = world.Create(new FieldData<Box> { Reference = new Box() });
-        ulong version = world.ComponentDataWriteVersion<FieldData<Box>>(entity);
+        ulong version = world.ComponentWriteVersion<FieldData<Box>>(entity);
 
         world.WriteField<FieldData<Box>, float, ReferenceAccess>(entity, 3f);
 
-        RequireDifferent(version, world.ComponentDataWriteVersion<FieldData<Box>>(entity));
+        RequireDifferent(version, world.ComponentWriteVersion<FieldData<Box>>(entity));
     }
 
     internal static void SparseReferenceLeafWritesAdvanceTheRootWriteVersion()
     {
         using var world = new World();
         Entity entity = world.Create();
-        world.SetSparse(entity, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
-        ulong version = world.ComponentDataWriteVersion<SparseFields>(entity);
+        world.Set(entity, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
+        ulong version = world.ComponentWriteVersion<SparseFields>(entity);
 
         world.WriteField<SparseFields, float, SparseAccess<ReferenceAccess>>(entity, 3f);
 
-        RequireDifferent(version, world.ComponentDataWriteVersion<SparseFields>(entity));
+        RequireDifferent(version, world.ComponentWriteVersion<SparseFields>(entity));
     }
 
     internal static void QueryFieldWritesAppearInChangedQueries()
@@ -182,13 +182,13 @@ internal static class FieldAccessChecks
         using var world = new World();
         Entity entity = world.Create(new FieldData<Box> { Reference = new Box() });
         Query query = world.Query(new QueryDescription().WithStored<FieldData<Box>>());
-        ulong before = world.ComponentDataWriteVersion<FieldData<Box>>(entity);
+        ulong before = world.ComponentWriteVersion<FieldData<Box>>(entity);
         using (QueryScope scope = query.Open()) WriteNestedFields(scope);
-        ulong firstVersion = world.ComponentDataWriteVersion<FieldData<Box>>(entity);
+        ulong firstVersion = world.ComponentWriteVersion<FieldData<Box>>(entity);
 
         using (QueryScope scope = query.Open()) WriteNestedFields(scope);
 
-        Require(firstVersion != before && world.ComponentDataWriteVersion<FieldData<Box>>(entity) != firstVersion);
+        Require(firstVersion != before && world.ComponentWriteVersion<FieldData<Box>>(entity) != firstVersion);
     }
 
     internal static void ManagedGenericBufferElementsKeepReferencesThroughGrowthAndRemoval()

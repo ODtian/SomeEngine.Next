@@ -3,7 +3,7 @@ using Friflo.Engine.ECS;
 
 namespace SomeEngine.ECS.Comparison;
 
-public struct ScoreValue : IAddedComponent, IRemovedComponent
+public struct ScoreValue : IAddedComponent, IRemovedComponent<ScoreValue>
 {
     public int Value, Max;
 }

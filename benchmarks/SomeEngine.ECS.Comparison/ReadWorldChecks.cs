@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Relations;
@@ -5,26 +6,28 @@ using SomeEngine.ECS.Serialization;
 
 namespace SomeEngine.ECS.Comparison;
 
-internal static class ReadWorldChecks
+internal static partial class ReadWorldChecks
 {
+    private partial struct MarkedRow : IComponentBundle { internal Marker Marker; internal EnabledValue Enabled; internal OptionalValue Optional; }
+    private partial struct ReferenceRow : IComponentBundle { internal ReferenceValue Reference; internal AutomaticReference Automatic; }
     private sealed class Counter { internal int Patches, Disposals; }
     private readonly record struct Marker(int Value) : IAddedComponent;
     private readonly record struct OptionalValue(int Value) : IComponent;
     private readonly record struct EnabledValue(int Value) : IEnableableComponent;
-    private readonly record struct ReferenceValue(Entity Link, int Value) : IRemovedComponent, IEntityReferenceValue<ReferenceValue>
+    private readonly record struct ReferenceValue(Entity Link, int Value) : IRemovedComponent<ReferenceValue>, IEntityReferenceValue<ReferenceValue>
     {
         static void IEntityReferenceValue<ReferenceValue>.Remap(ref ReferenceValue value, in EntityMap entities)
             => throw new InvalidOperationException("The explicitly bound patcher replaces generated reference handling.");
     }
-    private readonly record struct AutomaticReference(Entity Link) : IRemovedComponent, IEntityReferenceValue<AutomaticReference>
+    private readonly record struct AutomaticReference(Entity Link) : IRemovedComponent<AutomaticReference>, IEntityReferenceValue<AutomaticReference>
     {
         static void IEntityReferenceValue<AutomaticReference>.Remap(ref AutomaticReference value, in EntityMap entities)
             => value = new(entities.Map(value.Link));
     }
-    private readonly record struct SparseReference(Entity Link);
+    private readonly record struct SparseReference(Entity Link) : ISparseComponent;
     private readonly record struct PreservedIndex(int Key) : IIndexedComponent<int>
     { public int GetKey() => Key; }
-    private readonly record struct GroupedReference(Entity GroupEntity, int Kind) : ISharedComponent, IGroupComponent
+    private readonly record struct GroupedReference(Entity GroupEntity, int Kind) : ISharedComponent, IGroupComponent<GroupedReference>
     { public int GetGroup() => GroupEntity.Id; }
     private sealed class ResourceReference(Entity link, Counter counter) : IDisposable
     {
@@ -50,7 +53,7 @@ internal static class ReadWorldChecks
     {
         using var source = new World();
         Entity hole = source.Create();
-        Entity first = source.Create(new ReferenceValue(default, 10), new AutomaticReference(default));
+        Entity first = source.Spawn(new ReferenceRow { Reference = new(default, 10), Automatic = new(default) });
         Entity second = source.Create(new Marker(20));
         Entity removed = source.Create(new ReferenceValue(second, 30));
         source.Set(first, new ReferenceValue(second, 10));
@@ -59,31 +62,31 @@ internal static class ReadWorldChecks
         source.AddBuffer<ReferenceValue>(first);
         using (var elements = source.GetBuffer<ReferenceValue>(first))
         { elements.Add(new(second, 40)); elements.Add(new(first, 50)); }
-        source.SetSparse(first, new SparseReference(second));
+        source.Set(first, new SparseReference(second));
         source.SetResource(new ResourceReference(second, new()));
         source.Destroy(hole);
         var patches = new Counter();
-        var registry = new SerializationRegistry()
-            .RegisterCodec<ReferenceValue, ReferenceCodec, ReferencePatcher>(Key(1), new(), new(patches))
-            .RegisterCodec<AutomaticReference, AutomaticCodec>(Key(2), new())
+        var registry = new SaveRegistry()
+            .Register<ReferenceValue, ReferenceSerializer, ReferencePatcher>(Key(1), new(), new(patches))
+            .Register<AutomaticReference, AutomaticSerializer>(Key(2), new())
             .Register<Marker>(Key(3))
-            .RegisterBufferCodec<ReferenceValue, ReferenceCodec, ReferencePatcher>(Key(4), new(), new(patches))
-            .RegisterSparse<SparseReference, SparseCodec, SparsePatcher>(Key(5), new(), new(patches))
-            .RegisterResource<ResourceReference, ResourceCodec, ResourcePatcher>(Key(6), new(new()), new(patches));
+            .RegisterBuffer<ReferenceValue, ReferenceSerializer, ReferencePatcher>(Key(4), new(), new(patches))
+            .Register<SparseReference, SparseSerializer, SparsePatcher>(Key(5), new(), new(patches))
+            .RegisterResource<ResourceReference, ResourceSerializer, ResourcePatcher>(Key(6), new(new()), new(patches));
         using var bytes = new MemoryStream();
-        new WorldSerializer(registry).Save(source, bytes, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(source, bytes, progress: ProgressMode.Keep);
         bytes.Position = 0;
         using World target = WorldSerializer.ReadWorld(bytes, registry,
             new(EntityIdentityMode.Remap, RequiredPurpose: SavePurpose.RawCheckpoint));
         Entity targetFirst = new(1, first.Generation), targetSecond = new(2, second.Generation), targetRemoved = new(3, removed.Generation);
         Require(target.ReadValue<ReferenceValue>(targetFirst) == new ReferenceValue(targetSecond, 10)
             && target.ReadValue<AutomaticReference>(targetFirst).Link == targetSecond,
-            "ordinary codecs retain source identities until the complete map patches forward references");
+            "ordinary serializers retain source identities until the complete map patches forward references");
         using var buffer = target.ReadBuffer<ReferenceValue>(targetFirst);
         Require(buffer.Count == 2 && buffer[0] == new ReferenceValue(targetSecond, 40)
             && buffer[1] == new ReferenceValue(targetFirst, 50), "the bound element patcher maps each buffer value once");
         Require(target.Read<Removed<ReferenceValue>>(targetRemoved).Value.Link == targetSecond
-            && target.ReadSparse<SparseReference>(targetFirst).Link == targetSecond
+            && target.Read<SparseReference>(targetFirst).Link == targetSecond
             && target.ReadResource<ResourceReference>().Link == targetSecond && patches.Patches == 6,
             "removed, sparse and class resource values share their registered patcher instances");
     }
@@ -94,9 +97,9 @@ internal static class ReadWorldChecks
         Entity expired = source.Create();
         Entity holder = source.Create(new AutomaticReference(expired));
         source.Destroy(expired);
-        var registry = new SerializationRegistry().RegisterCodec<AutomaticReference, AutomaticCodec>(Key(1), new());
+        var registry = new SaveRegistry().Register<AutomaticReference, AutomaticSerializer>(Key(1), new());
         using var bytes = new MemoryStream();
-        new WorldSerializer(registry).Save(source, bytes, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(source, bytes, progress: ProgressMode.Keep);
         bytes.Position = 0;
         using (World target = WorldSerializer.ReadWorld(bytes, registry, new(EntityIdentityMode.Remap, MissingReferenceMode.Clear)))
             Require(target.ReadValue<AutomaticReference>(new(1, holder.Generation)).Link == Entity.Null,
@@ -121,10 +124,10 @@ internal static class ReadWorldChecks
         source.Set(holder, new AutomaticReference(referenced));
         source.Remove<AutomaticReference>(holder);
         source.Destroy(hole);
-        var registry = new SerializationRegistry()
-            .RegisterCodec<AutomaticReference, AutomaticCodec>(Key(1), new()).Register<Marker>(Key(2));
+        var registry = new SaveRegistry()
+            .Register<AutomaticReference, AutomaticSerializer>(Key(1), new()).Register<Marker>(Key(2));
         using var bytes = new MemoryStream();
-        new WorldSerializer(registry).Save(source, bytes, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(source, bytes, progress: ProgressMode.Keep);
         bytes.Position = 0;
         using World target = WorldSerializer.ReadWorld(bytes, registry, new(EntityIdentityMode.Remap));
         Entity targetHolder = new(1, holder.Generation), targetReference = new(2, referenced.Generation);
@@ -140,9 +143,9 @@ internal static class ReadWorldChecks
         Entity first = source.Create(new PreservedIndex(7)), second = source.Create(new PreservedIndex(7));
         source.Index<PreservedIndex, int>();
         source.Destroy(hole);
-        var registry = new SerializationRegistry().Register<PreservedIndex>(Key(1));
+        var registry = new SaveRegistry().Register<PreservedIndex>(Key(1));
         using var bytes = new MemoryStream();
-        new WorldSerializer(registry).Save(source, bytes, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(source, bytes, progress: ProgressMode.Keep);
         bytes.Position = 0;
         using (World target = WorldSerializer.ReadWorld(bytes, registry))
             Require(target.IsAlive(first) && target.IsAlive(second) && target.ReadValue<PreservedIndex>(first).Key == 7,
@@ -163,10 +166,10 @@ internal static class ReadWorldChecks
         Hierarchy<Tree>.SetParentDeferred(source, child, parent);
         Entity edge = source.CreateRelation(parent, child, new Link()).Entity;
         source.DestroyDeferred(parent);
-        var registry = new SerializationRegistry().Register<Marker>(Key(1))
-            .RegisterHierarchy<Tree>(Key(2)).RegisterRelation<Link, LinkCodec>(Key(3)).RegisterDestroyedReader(consumer);
+        var registry = new SaveRegistry().Register<Marker>(Key(1))
+            .RegisterHierarchy<Tree>(Key(2)).RegisterRelation<Link, LinkSerializer>(Key(3)).RegisterDestroyedReader(consumer);
         using var bytes = new MemoryStream();
-        new WorldSerializer(registry).Save(source, bytes, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(source, bytes, progress: ProgressMode.Keep);
         bytes.Position = 0;
         using World target = WorldSerializer.ReadWorld(bytes, registry, new(EntityIdentityMode.Remap));
         Entity targetChild = new(1, child.Generation), targetEdge = new(2, edge.Generation);
@@ -195,20 +198,20 @@ internal static class ReadWorldChecks
         using var source = new World();
         Entity firstOwner = source.Create(), secondOwner = source.Create();
         ulong baseline = source.Version;
-        Entity first = source.Create(new Marker(10), new EnabledValue(5), new OptionalValue(1));
-        Entity second = source.Create(new Marker(20), new EnabledValue(6), new OptionalValue(2));
-        source.SetShared(first, new GroupedReference(firstOwner, 7));
-        source.SetShared(second, new GroupedReference(secondOwner, 7));
+        Entity first = source.Spawn(new MarkedRow { Marker = new(10), Enabled = new(5), Optional = new(1) });
+        Entity second = source.Spawn(new MarkedRow { Marker = new(20), Enabled = new(6), Optional = new(2) });
+        source.Set(first, new GroupedReference(firstOwner, 7));
+        source.Set(second, new GroupedReference(secondOwner, 7));
         source.GroupBy<GroupedReference>();
         source.Remove<OptionalValue>(second);
         source.Disable<EnabledValue>(second);
         source.Destroy(firstOwner); source.Destroy(secondOwner);
-        var registry = new SerializationRegistry().Register<Marker>(Key(1)).Register<EnabledValue>(Key(2))
+        var registry = new SaveRegistry().Register<Marker>(Key(1)).Register<EnabledValue>(Key(2))
             .Register<OptionalValue>(Key(3))
-            .RegisterShared<GroupedReference, GroupedCodec, GroupedPatcher>(Key(4), new(), new());
+            .Register<GroupedReference, GroupedSerializer, GroupedPatcher>(Key(4), new(), new());
         var savedVersions = new Versions { Last = 7, Current = 11 };
         using var bytes = new MemoryStream();
-        new WorldSerializer(registry).Save(source, bytes, SavePurpose.RawCheckpoint, CheckpointProgress.Preserve, savedVersions);
+        new WorldSerializer(registry).Save(source, bytes, SavePurpose.RawCheckpoint, ProgressMode.Keep, savedVersions);
         bytes.Position = 0;
         var restoredVersions = new Versions();
         var bound = new BindingResult();
@@ -234,10 +237,10 @@ internal static class ReadWorldChecks
         using var source = new World();
         source.SetResource(new ResourceReference(new Entity(100, 1), new()));
         var lifetime = new Counter();
-        var registry = new SerializationRegistry()
-            .RegisterResource<ResourceReference, ResourceCodec, ResourcePatcher>(Key(1), new(lifetime), new(new()));
+        var registry = new SaveRegistry()
+            .RegisterResource<ResourceReference, ResourceSerializer, ResourcePatcher>(Key(1), new(lifetime), new(new()));
         using var bytes = new MemoryStream();
-        new WorldSerializer(registry).Save(source, bytes, progress: CheckpointProgress.Preserve);
+        new WorldSerializer(registry).Save(source, bytes, progress: ProgressMode.Keep);
         bytes.Position = 0;
         bool failed = false;
         try { using World target = WorldSerializer.ReadWorld(bytes, registry, new(EntityIdentityMode.Remap)); }
@@ -245,55 +248,55 @@ internal static class ReadWorldChecks
         Require(failed && lifetime.Disposals == 1, "candidate failure releases its decoded class resource");
     }
 
-    private readonly struct ReferenceCodec : IComponentCodec<ReferenceValue>
+    private readonly struct ReferenceSerializer : IValueSerializer<ReferenceValue>
     {
-        public void Write(ref DataWriter writer, in ReferenceValue value) { writer.WriteEntity(value.Link); writer.WriteInt32(value.Value); }
-        public void Read(ref DataReader reader, out ReferenceValue value) => value = new(reader.ReadEntity(), reader.ReadInt32());
+        public void Write(ref SaveWriter writer, in ReferenceValue value) { writer.WriteEntity(value.Link); writer.WriteInt32(value.Value); }
+        public void Read(ref SaveReader reader, out ReferenceValue value) => value = new(reader.ReadEntity(), reader.ReadInt32());
     }
     private readonly struct ReferencePatcher(Counter counter) : IReferencePatcher<ReferenceValue>
     {
         public void Remap(ref ReferenceValue value, IReferenceRemapper remapper)
         { remapper.TryMap(value.Link, out Entity link); value = new(link, value.Value); counter.Patches++; }
     }
-    private readonly struct AutomaticCodec : IComponentCodec<AutomaticReference>
+    private readonly struct AutomaticSerializer : IValueSerializer<AutomaticReference>
     {
-        public void Write(ref DataWriter writer, in AutomaticReference value) => writer.WriteEntity(value.Link);
-        public void Read(ref DataReader reader, out AutomaticReference value) => value = new(reader.ReadEntity());
+        public void Write(ref SaveWriter writer, in AutomaticReference value) => writer.WriteEntity(value.Link);
+        public void Read(ref SaveReader reader, out AutomaticReference value) => value = new(reader.ReadEntity());
     }
-    private readonly struct SparseCodec : IComponentCodec<SparseReference>
+    private readonly struct SparseSerializer : IValueSerializer<SparseReference>
     {
-        public void Write(ref DataWriter writer, in SparseReference value) => writer.WriteEntity(value.Link);
-        public void Read(ref DataReader reader, out SparseReference value) => value = new(reader.ReadEntity());
+        public void Write(ref SaveWriter writer, in SparseReference value) => writer.WriteEntity(value.Link);
+        public void Read(ref SaveReader reader, out SparseReference value) => value = new(reader.ReadEntity());
     }
     private readonly struct SparsePatcher(Counter counter) : IReferencePatcher<SparseReference>
     {
         public void Remap(ref SparseReference value, IReferenceRemapper remapper)
         { remapper.TryMap(value.Link, out Entity link); value = new(link); counter.Patches++; }
     }
-    private readonly struct ResourceCodec(Counter counter) : IValueCodec<ResourceReference>
+    private readonly struct ResourceSerializer(Counter counter) : IValueSerializer<ResourceReference>
     {
-        public void Write(ref DataWriter writer, in ResourceReference value) => writer.WriteEntity(value.Link);
-        public void Read(ref DataReader reader, out ResourceReference value) => value = new(reader.ReadEntity(), counter);
+        public void Write(ref SaveWriter writer, in ResourceReference value) => writer.WriteEntity(value.Link);
+        public void Read(ref SaveReader reader, out ResourceReference value) => value = new(reader.ReadEntity(), counter);
     }
     private readonly struct ResourcePatcher(Counter counter) : IReferencePatcher<ResourceReference>
     {
         public void Remap(ref ResourceReference value, IReferenceRemapper remapper)
         { remapper.TryMap(value.Link, out Entity link); value.Link = link; counter.Patches++; }
     }
-    private readonly struct GroupedCodec : IComponentCodec<GroupedReference>
+    private readonly struct GroupedSerializer : IValueSerializer<GroupedReference>
     {
-        public void Write(ref DataWriter writer, in GroupedReference value) { writer.WriteEntity(value.GroupEntity); writer.WriteInt32(value.Kind); }
-        public void Read(ref DataReader reader, out GroupedReference value) => value = new(reader.ReadEntity(), reader.ReadInt32());
+        public void Write(ref SaveWriter writer, in GroupedReference value) { writer.WriteEntity(value.GroupEntity); writer.WriteInt32(value.Kind); }
+        public void Read(ref SaveReader reader, out GroupedReference value) => value = new(reader.ReadEntity(), reader.ReadInt32());
     }
     private readonly struct GroupedPatcher : IReferencePatcher<GroupedReference>
     {
         public void Remap(ref GroupedReference value, IReferenceRemapper remapper)
         { remapper.TryMap(value.GroupEntity, out Entity groupEntity); value = new(groupEntity, value.Kind); }
     }
-    private readonly struct LinkCodec : IComponentCodec<Link>
+    private readonly struct LinkSerializer : IValueSerializer<Link>
     {
-        public void Write(ref DataWriter writer, in Link value) { }
-        public void Read(ref DataReader reader, out Link value) => value = default;
+        public void Write(ref SaveWriter writer, in Link value) { }
+        public void Read(ref SaveReader reader, out Link value) => value = default;
     }
     private sealed class Versions : ISystemVersions
     {
@@ -302,7 +305,7 @@ internal static class ReadWorldChecks
         public void CopyVersions(Span<ulong> values) { values[0] = Last; values[1] = Current; }
         public void RestoreVersions(ReadOnlySpan<ulong> values) { Last = values[0]; Current = values[1]; }
     }
-    private static SerializationTypeKey Key(int value)
+    private static SavedTypeKey Key(int value)
         => new(new Guid(value, 0x56e2, 0x42a5, 0x98, 0x63, 0x16, 0x2a, 0x34, 0x61, 0x90, 0x21), "ReadWorld." + value, 1);
     private static void Require(bool condition, string behavior)
     { if (!condition) throw new InvalidOperationException(behavior); }

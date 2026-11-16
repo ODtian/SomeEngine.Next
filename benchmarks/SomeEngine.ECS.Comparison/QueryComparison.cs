@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Systems;
 using EasyEcs;
 using Friflo.Engine.ECS;
 using System.Runtime.CompilerServices;
@@ -6,8 +7,7 @@ namespace SomeEngine.ECS.Comparison;
 
 // Fixed mode caps each public range at 256 rows. SomeEngine uses fixed 256-row storage chunks;
 // the references expose bounded views over their native chunks or columns.
-internal struct QueryAppendPass(int[] members, int rangeLimit) : IComponentAction<Position, Velocity, Health>,
-    EasyEcs.IForEachBatch<Position, Velocity, Health>
+internal struct QueryAppendPass(int[] members, int rangeLimit) : EasyEcs.IForEachBatch<Position, Velocity, Health>
 {
     internal int Count, Ranges, MaximumRange;
     internal long Total;
@@ -98,6 +98,7 @@ internal abstract partial class ComparisonWorld
 internal sealed partial class SomeEngineWorld
 {
     private Query _queryAppend;
+    private Body[] _queryAppendBodies = [];
     private SomeEngine.ECS.Entities.Entity[] _queryAdded = [];
     private void PrepareQueryAppend(string workload)
     {
@@ -109,10 +110,15 @@ internal sealed partial class SomeEngineWorld
     internal override void QueryAppendCycle()
     {
         if (_queryAdded.Length == 0) _queryAdded = new SomeEngine.ECS.Entities.Entity[Count + 1];
-        _world.Reserve<Position, Velocity, Health>(Count * 3 / 2);
-        _world.Create<Position, Velocity, Health>(_queryAdded.AsSpan(0, Count), PositionInputs.Append(Count),
-            new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 });
-        _queryAdded[Count] = _world.Create(new Position { X = Count * 2 }, new Velocity { X = 1, Y = 2 }, new Health { Value = 100, Max = 100 }, new GrowthMarker());
+        _world.ReserveBundle<Body>(Count * 3 / 2);
+        if (_queryAppendBodies.Length != Count)
+        {
+            ReadOnlySpan<Position> appended = PositionInputs.Append(Count);
+            _queryAppendBodies = new Body[Count];
+            for (int row = 0; row < Count; row++) _queryAppendBodies[row] = Body.Moving(appended[row]);
+        }
+        _world.Spawn<Body>(_queryAppendBodies, _queryAdded.AsSpan(0, Count));
+        _queryAdded[Count] = _world.Spawn(new GrowthBody { Body = Body.Moving(new Position { X = Count * 2 }) });
         var expanded = NewQueryAppendPass(false);
         int expandedCount = ExecuteQueryPass(ref expanded);
         _world.Destroy(_queryAdded);
@@ -142,7 +148,10 @@ internal sealed partial class SomeEngineWorld
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void QueryBindRanges(ref QueryAppendPass pass)
-        => _queryAppend.ForEach<Position, Velocity, Health, QueryAppendPass>(ref pass);
+    {
+        using QueryScope scope = _queryAppend.Open();
+        foreach (QueryChunk chunk in scope) pass.Execute(chunk.Write<Position>(), chunk.Read<Velocity>(), chunk.Read<Health>());
+    }
 
 }
 

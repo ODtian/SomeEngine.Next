@@ -11,12 +11,12 @@ internal interface INativeTripleQuery<T> where T : struct, INativeTripleRange
 {
     int EntityCount { get; }
     void Build(NativeQueryRanges<T> ranges);
-    void Execute<TAction>(ref TAction action) where TAction : struct, IComponentAction<Position, Velocity, JobOrdinal>;
+    void Execute<TAction>(ref TAction action) where TAction : struct, IColumnPass<Position, Velocity, JobOrdinal>;
 }
 
 internal sealed class NativeQueryJobs<T, TQuery, TAction> : IQueryJobs
     where T : struct, INativeTripleRange where TQuery : struct, INativeTripleQuery<T>
-    where TAction : struct, IComponentAction<Position, Velocity, JobOrdinal>
+    where TAction : struct, IColumnPass<Position, Velocity, JobOrdinal>
 {
     private readonly Scheduler _scheduler;
     private readonly TQuery _query;
@@ -114,7 +114,8 @@ internal sealed class NativeQueryJobs<T, TQuery, TAction> : IQueryJobs
     private struct Stages(NativeQueryJobs<T, TQuery, TAction> jobs, bool parallel) : IStagedJob
     {
         private NativeQueryRanges<T>? _ranges;
-        public static int StageCount => 2;
+        public int StageCount => 2;
+        public void Reserve(ref AccessBuilder<JobResourceAccess> accesses) { }
         public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses)
         {
             if (stage == 0) accesses.Add(JobResourceAccess.Read(jobs._structure));

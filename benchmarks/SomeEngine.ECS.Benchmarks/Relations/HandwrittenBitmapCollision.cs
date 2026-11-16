@@ -16,8 +16,8 @@ public static class HandwrittenBitmapCollision
         {
             if (!query.Contains(pair.Item1) || !query.Contains(pair.Item2) ||
                 !layers.Has(pair.Item1) || !layers.Has(pair.Item2)) continue;
-            ref readonly CollisionLayer first = ref layers.ReadKnown(pair.Item1);
-            ref readonly CollisionLayer second = ref layers.ReadKnown(pair.Item2);
+            ref readonly CollisionLayer first = ref layers.Read(pair.Item1);
+            ref readonly CollisionLayer second = ref layers.Read(pair.Item2);
             if ((first.AllowedCategories & second.Categories) == 0) continue;
             if (!output.Add(in pair)) return false;
         }
@@ -34,8 +34,8 @@ public static class HandwrittenBitmapCollision
         {
             if (!query.Contains(pair.Item1) || !query.Contains(pair.Item2) ||
                 !layers.Has(pair.Item1) || !layers.Has(pair.Item2)) continue;
-            ref readonly CollisionLayer first = ref layers.ReadKnown(pair.Item1);
-            ref readonly CollisionLayer second = ref layers.ReadKnown(pair.Item2);
+            ref readonly CollisionLayer first = ref layers.Read(pair.Item1);
+            ref readonly CollisionLayer second = ref layers.Read(pair.Item2);
             if ((first.AllowedCategories & second.Categories) == 0 ||
                 (second.AllowedCategories & first.Categories) == 0) continue;
             if (!output.Add(in pair)) return false;

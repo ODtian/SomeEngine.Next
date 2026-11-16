@@ -8,7 +8,7 @@ namespace SomeEngine.ECS.Hierarchy;
 public interface IHierarchyDomain;
 public readonly struct DefaultHierarchyDomain : IHierarchyDomain;
 
-public readonly record struct Parent<TDomain>(Entity Value) : IAddedComponent, IRemovedComponent,
+public readonly record struct Parent<TDomain>(Entity Value) : IAddedComponent, IRemovedComponent<Parent<TDomain>>,
     IControlledComponent, IComponentInitialization<Parent<TDomain>>,
     IEntityReferenceValue<Parent<TDomain>>, IEntityReferenceOperations<Parent<TDomain>> where TDomain : struct, IHierarchyDomain
 {
@@ -28,7 +28,7 @@ public readonly record struct Parent<TDomain>(Entity Value) : IAddedComponent, I
 
 }
 
-public readonly struct Children<TDomain> : IAddedComponent, IRemovedComponent, IComputedComponent,
+public readonly struct Children<TDomain> : IAddedComponent, IRemovedComponent<Children<TDomain>>, IComputedComponent,
     IComponentInitialization<Children<TDomain>>, IComponentOperations<Children<TDomain>>,
     IEntityReferenceValue<Children<TDomain>>, IEntityReferenceOperations<Children<TDomain>> where TDomain : struct, IHierarchyDomain
 {

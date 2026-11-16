@@ -167,9 +167,8 @@ public sealed class NavigationSourceSystem<TTransform, TReader>
                     const int recordsPerRange = 128;
                     var changedByRange = new HashSet<int>[(records.Length + recordsPerRange - 1) / recordsPerRange];
                     float comparisonPadding = NavigationSurfaceTraversal.GetRotationRadius(settings.Profile.Footprint.Span) + 3 * settings.Surface.CellSize;
-                    JobSystem.ExecuteParallel(new CompareSources(records, current.Count, current, previous,
-                        region.Bounds, tileWidth, width, depth, comparisonPadding, recordsPerRange, changedByRange),
-                        changedByRange.Length, batchSize: 1);
+                    JobSystem.Current.ExecuteParallel(new CompareSources(records, current.Count, current, previous,
+                        region.Bounds, tileWidth, width, depth, comparisonPadding, recordsPerRange, changedByRange), changedByRange.Length, 1);
                     foreach (HashSet<int> range in changedByRange)
                         foreach (int tile in range) changed[tile] = true;
                 }

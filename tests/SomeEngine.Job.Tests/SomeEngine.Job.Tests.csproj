@@ -20,6 +20,5 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\SomeEngine.Job\SomeEngine.Job.csproj" />
-    <ProjectReference Include="..\..\src\SomeEngine.Job.Dots\SomeEngine.Job.Dots.csproj" />
   </ItemGroup>
 </Project>

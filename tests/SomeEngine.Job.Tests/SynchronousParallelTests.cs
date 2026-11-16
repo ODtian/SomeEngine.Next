@@ -10,7 +10,7 @@ public sealed class SynchronousParallelTests
         int[] values = new int[4];
 
         scheduler.ExecuteParallel(new RangeJob(index =>
-            scheduler.Schedule(new CallbackJob(() => values[index] = 11), JobResourceAccess.Write(resource))),
+            scheduler.Schedule(new CallbackJob(() => values[index] = 11), [JobResourceAccess.Write(resource)])),
             values.Length, batchSize: 1, [JobResourceAccess.Read(resource)]);
 
         Assert.Equal([11, 11, 11, 11], values);
@@ -23,7 +23,7 @@ public sealed class SynchronousParallelTests
         JobResource resource = scheduler.CreateResource();
         JobHandle parent = scheduler.Schedule(new CallbackJob(() =>
             scheduler.ExecuteParallel(new RangeJob(_ => { }), 2, batchSize: 1,
-                [JobResourceAccess.Write(resource)])), JobResourceAccess.Read(resource));
+                [JobResourceAccess.Write(resource)])), [JobResourceAccess.Read(resource)]);
 
         Assert.Throws<JobResourceSafetyException>(parent.Complete);
     }
@@ -68,7 +68,7 @@ public sealed class SynchronousParallelTests
         JobResource resource = scheduler.CreateResource();
         int input = 0;
         int[] values = new int[4];
-        scheduler.Schedule(new CallbackJob(() => input = 9), JobResourceAccess.Write(resource));
+        scheduler.Schedule(new CallbackJob(() => input = 9), [JobResourceAccess.Write(resource)]);
 
         scheduler.ExecuteParallel(new RangeJob(index => values[index] = input), values.Length,
             batchSize: 1, [JobResourceAccess.Read(resource)]);
@@ -116,7 +116,7 @@ public sealed class SynchronousParallelTests
                     Assert.True(helperFinished.Wait(TimeSpan.FromSeconds(10)));
                 else
                 {
-                    failure = Record.Exception(() => scheduler.Schedule(new CallbackJob(() => { }), parent));
+                    failure = Record.Exception(() => scheduler.Schedule(new CallbackJob(() => { }), dependency: parent));
                     helperFinished.Set();
                 }
             }), 2);

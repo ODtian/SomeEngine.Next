@@ -28,7 +28,7 @@ internal sealed class ComponentCopy<T>(Entity entity, T value) : ComponentCopy w
     internal override ref byte Bytes => ref Unsafe.As<T, byte>(ref Value);
     internal override bool CanReuse => _animationBuilds == 0;
 
-    internal static bool HasComponent(World world, Entity entity) => world.HasComponentData<T>(entity);
+    internal static bool HasComponent(World world, Entity entity) => world.Has<T>(entity);
 
     internal override void Clear()
     {
@@ -40,7 +40,7 @@ internal sealed class ComponentCopy<T>(Entity entity, T value) : ComponentCopy w
     internal override void Commit(World world, ChildChanges changes, bool reuseData)
     {
         bool exists = HasComponent(world, entity);
-        T previous = exists ? world.ReadComponentData<T>(entity) : default;
+        T previous = exists ? world.ReadValue<T>(entity) : default;
         T presented = Value;
         if (AnimatedFields.PreservePresentation(world, entity, ref presented, in previous))
             changes.WriteAnimation(this);
@@ -51,15 +51,15 @@ internal sealed class ComponentCopy<T>(Entity entity, T value) : ComponentCopy w
         else
             changes.RememberComponent<T>(world, entity);
         if (exists)
-            world.ReplaceComponentData(entity, in presented);
+            world.Set(entity, in presented);
         else
-            world.AddComponentData(entity, in presented);
+            world.Add(entity, in presented);
     }
 
     internal override void CommitAnimations(World world)
     {
         if (_animationsCommitted) return;
-        _previousTarget = world.ReadComponentData<T>(entity);
+        _previousTarget = world.ReadValue<T>(entity);
         AnimatedFields.RestoreBase(world, entity, ref _previousTarget);
         AnimatedFields.SubmitTargets(world, entity, ref Value);
         _animationsCommitted = true;

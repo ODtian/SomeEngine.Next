@@ -7,37 +7,39 @@ namespace SomeEngine.ECS.Serialization;
 
 public sealed partial class DurableSaveStore
 {
-    private const uint FormatVersion = 4;
+    // Not published yet: change the layout freely and leave this at 0. The first release that ships
+    // saves gives it its published number; from then on keep a reader for every published version.
+    private const uint FormatVersion = 0;
     private const int HeaderSize = 64;
     private const int HashOffset = 32;
     private const int AuthenticationKindOffset = 14;
     private const int CopyBufferSize = 64 * 1024;
 
-    private SaveFilesInspection InspectSlots()
+    private SaveFilesInspection InspectFiles()
     {
-        SaveFileInspection primary = InspectSlot(PrimaryPath);
-        SaveFileInspection previous = InspectSlot(PreviousPath);
+        SaveFileInspection primary = InspectFile(PrimaryPath);
+        SaveFileInspection previous = InspectFile(PreviousPath);
         return new SaveFilesInspection(primary, previous);
     }
 
-    private SaveFilesInspection InspectVerifiedSlots()
+    private SaveFilesInspection InspectVerifiedFiles()
     {
-        SaveFileInspection primary = InspectSlot(PrimaryPath, verifyDigest: true);
-        SaveFileInspection previous = InspectSlot(PreviousPath, verifyDigest: true);
+        SaveFileInspection primary = InspectFile(PrimaryPath, verifyDigest: true);
+        SaveFileInspection previous = InspectFile(PreviousPath, verifyDigest: true);
         return new SaveFilesInspection(primary, previous);
     }
 
-    private SaveFileInspection InspectSlot(string path)
+    private SaveFileInspection InspectFile(string path)
     {
-        return InspectSlot(path, verifyDigest: false);
+        return InspectFile(path, verifyDigest: false);
     }
 
     private SaveFileInspection VerifyTemporaryFile(string path)
     {
-        return InspectSlot(path, verifyDigest: true);
+        return InspectFile(path, verifyDigest: true);
     }
 
-    private SaveFileInspection InspectSlot(string path, bool verifyDigest)
+    private SaveFileInspection InspectFile(string path, bool verifyDigest)
     {
         try
         {
@@ -248,7 +250,7 @@ public sealed partial class DurableSaveStore
         return actualHash.FixedTimeEquals(header.EnvelopeHash);
     }
 
-    private static FileStream OpenSlot(string path) =>
+    private static FileStream OpenSaveFile(string path) =>
         new(
             path,
             FileMode.Open,
@@ -257,7 +259,8 @@ public sealed partial class DurableSaveStore
             CopyBufferSize,
             FileOptions.SequentialScan);
 
-    private static ReadOnlySpan<byte> Magic => "SEDSAVE4"u8;
+    // Identifies the file kind only; the version is the field after it.
+    private static ReadOnlySpan<byte> Magic => "SEDSAVES"u8;
 
     private EnvelopeAuthenticationKind WriteAuthenticationKind =>
         _authenticationKey is null

@@ -1,0 +1,76 @@
+using System.Text;
+using SomeEngine.ECS.Entities;
+using SomeEngine.Serialization;
+
+namespace SomeEngine.ECS.Serialization.Tests;
+
+// Malformed inputs follow the version 5 wire fields and are read through public APIs.
+internal static class SaveBytes
+{
+    internal static UTF8Encoding Utf8 { get; } = new(false, true);
+
+    internal static void WriteTypeKey(BinaryWriter writer, SavedTypeKey key)
+    {
+        Span<byte> id = stackalloc byte[16];
+        BinaryPrimitiveEncoding.WriteGuid(id, key.Id);
+        writer.Write(id);
+        WriteString(writer, key.Name);
+        writer.Write(key.FieldHash);
+    }
+
+    internal static void WriteString(BinaryWriter writer, string? value)
+    {
+        writer.Write(value?.Length ?? -1);
+        if (value is not null)
+            writer.Write(Utf8.GetBytes(value));
+    }
+
+    internal static string? ReadString(BinaryReader reader)
+    {
+        int count = reader.ReadInt32();
+        return count == -1 ? null : new string(reader.ReadChars(count));
+    }
+
+    internal static void WriteEntity(BinaryWriter writer, Entity entity)
+    {
+        writer.Write(entity.Id);
+        writer.Write(entity.Generation);
+    }
+
+    internal static void SkipHeader(BinaryReader reader)
+    {
+        reader.ReadUInt32();
+        reader.ReadUInt16();
+        reader.ReadByte();
+        reader.ReadByte();
+        reader.ReadBytes(16);
+        int count = reader.ReadInt32();
+        for (int i = 0; i < count; i++)
+        {
+            reader.ReadBytes(16);
+            ReadString(reader);
+            reader.ReadUInt64();
+            reader.ReadByte();
+            reader.ReadInt32();
+            reader.ReadInt32(); // field list index
+        }
+        SkipFieldLists(reader);
+    }
+
+    /// <summary>Skips the saved field lists that follow the type manifest.</summary>
+    internal static void SkipFieldLists(BinaryReader reader)
+    {
+        int lists = reader.ReadInt32();
+        for (int list = 0; list < lists; list++)
+        {
+            reader.ReadBytes(16 + sizeof(ulong));
+            int fields = reader.ReadInt32();
+            for (int field = 0; field < fields; field++)
+            {
+                reader.ReadBytes(reader.ReadInt32());
+                reader.ReadByte();
+                reader.ReadInt32();
+            }
+        }
+    }
+}

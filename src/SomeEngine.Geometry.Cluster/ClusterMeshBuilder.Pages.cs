@@ -30,7 +30,7 @@ public static partial class ClusterMeshBuilder
             var encoders = new VertexData[batchCount];
             for (int batch = 0; batch < batchCount; batch++) encoders[batch] = mesh.Attributes.CreateBatch();
             var encoded = new EncodedClusterGeometry[meshlets.Meshlets.Count];
-            JobSystem.ExecuteParallel(new EncodeClusters(mesh, meshlets.Meshlets, encoders, strategy, encoded), batchCount);
+            JobSystem.Current.ExecuteParallel(new EncodeClusters(mesh, meshlets.Meshlets, encoders, strategy, encoded), batchCount);
             int regionCount = materialCount ?? checked((int)((ulong)materialIndices.Max() + 1));
             MeshRegion[] regions = Enumerable.Range(0, regionCount).Select(static index => new MeshRegion { Name = "Material " + index.ToString(System.Globalization.CultureInfo.InvariantCulture) }).ToArray();
             return ClusterMeshPages.Build(name, attributes.Compatibility, encoded, CreateBounds(meshlets.Bounds), regions);

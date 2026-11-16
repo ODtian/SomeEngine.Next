@@ -14,7 +14,7 @@ public sealed class SchedulerKernelTests
     {
         _data.Counter = 0;
 
-        JobSystem.Schedule(new SchedulerData.IncrementJob(_data)).Complete();
+        JobSystem.Current.Schedule(new SchedulerData.IncrementJob(_data)).Complete();
 
         Assert.Equal(1, _data.Counter);
     }
@@ -25,7 +25,7 @@ public sealed class SchedulerKernelTests
         JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         _data.Counter = 0;
 
-        JobSystem.Schedule(new SchedulerData.IncrementJob(_data)).Complete();
+        JobSystem.Current.Schedule(new SchedulerData.IncrementJob(_data)).Complete();
 
         Assert.Equal(1, _data.Counter);
     }
@@ -38,10 +38,10 @@ public sealed class SchedulerKernelTests
 
         for (var i = 0; i < handles.Length; i++)
         {
-            handles[i] = JobSystem.Schedule(new SchedulerData.IncrementJob(_data));
+            handles[i] = JobSystem.Current.Schedule(new SchedulerData.IncrementJob(_data));
         }
 
-        JobSystem.CombineDependencies(handles).Complete();
+        JobSystem.Current.CombineDependencies(handles).Complete();
 
         Assert.Equal(handles.Length, _data.Counter);
     }
@@ -51,10 +51,10 @@ public sealed class SchedulerKernelTests
     {
         _data.Counter = 0;
 
-        JobSystem.Schedule(new SchedulerData.IncrementJob(_data)).Complete();
+        JobSystem.Current.Schedule(new SchedulerData.IncrementJob(_data)).Complete();
         JobSystem.Shutdown();
         JobSystem.Initialize(new JobConfiguration { WorkerCount = 1 });
-        JobSystem.Schedule(new SchedulerData.IncrementJob(_data)).Complete();
+        JobSystem.Current.Schedule(new SchedulerData.IncrementJob(_data)).Complete();
 
         Assert.Equal(2, _data.Counter);
     }

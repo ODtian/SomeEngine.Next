@@ -1,5 +1,4 @@
 using System.Reflection;
-using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.ECS.Relations;
 
@@ -18,8 +17,6 @@ public sealed class RelationSchemaAttribute(RelationDirection direction, Relatio
 
 public readonly record struct RelationSchema(RelationDirection Direction, RelationCardinality Cardinality, bool AllowSelfEdge)
 {
-    public static void Register<T>(RelationSchema schema) where T : struct => RelationType<T>.Register(schema);
-
     public static RelationSchema For<T>() where T : struct
     {
         RelationSchema schema = RelationType<T>.Schema;
@@ -47,14 +44,6 @@ internal static class RelationType<T> where T : struct
             var declared = new SchemaValue(Read());
             return (Interlocked.CompareExchange(ref s_schema, declared, null) ?? declared).Value;
         }
-    }
-
-    internal static void Register(RelationSchema schema)
-    {
-        var declared = new SchemaValue(schema);
-        SchemaValue? existing = Interlocked.CompareExchange(ref s_schema, declared, null);
-        DevelopmentCheck.Require(existing is null || existing.Value == schema,
-            "A relation type uses one schema for its lifetime.");
     }
 
     private static RelationSchema Read()

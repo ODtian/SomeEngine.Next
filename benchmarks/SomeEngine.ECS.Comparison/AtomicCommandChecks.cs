@@ -70,8 +70,8 @@ internal static class AtomicCommandChecks
     {
         try
         {
-            using var data = new WorldCheckpoint();
-            data.Capture(source, CheckpointProgress.Preserve, sourceSystems);
+            using var data = new WorldCopy();
+            data.Capture(source, ProgressMode.Keep, sourceSystems);
             data.Restore(candidate, candidateSystems);
             using var commands = new CommandBuffer(candidate);
             record(commands);

@@ -50,7 +50,7 @@ public sealed partial class GlyphAtlas
         if (newGlyphs.Count == 0) return;
         var bitmaps = new GlyphBitmap[newGlyphs.Count];
         int rangeCount = (newGlyphs.Count + GlyphsPerRange - 1) / GlyphsPerRange;
-        JobSystem.ExecuteParallel(new GlyphRasterJob(newGlyphs, bitmaps, FontSize, DistanceSpread), rangeCount);
+        JobSystem.Current.ExecuteParallel(new GlyphRasterJob(newGlyphs, bitmaps, FontSize, DistanceSpread), rangeCount);
         for (int index = 0; index < newGlyphs.Count; index++)
         {
             var glyph = newGlyphs[index];

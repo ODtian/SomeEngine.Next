@@ -66,7 +66,7 @@ public sealed class ResourceLifetimeTests
         JobHandle dependency = scheduler.CreateExternalFenceHandle(ready);
         JobHandle work = scheduler.Schedule(
             new StartDataReader(scheduler, token, new WeakReference(values), entered, release, result),
-            JobResourceAccess.Read(token), dependency);
+            [JobResourceAccess.Read(token)], dependency);
         try
         {
             Assert.Throws<JobResourceSafetyException>(() => scheduler.ReleaseResourceToken(token));
@@ -132,7 +132,7 @@ public sealed class ResourceLifetimeTests
         JobResourceToken token = scheduler.GetResourceToken(values);
         JobHandle work = scheduler.Schedule(
             new StartDataReader(scheduler, token, data, entered, release, result),
-            JobResourceAccess.Read(token),
+            [JobResourceAccess.Read(token)],
             dependency);
         return (work, data);
     }
@@ -153,7 +153,7 @@ public sealed class ResourceLifetimeTests
         int[] Result) : IJob
     {
         public void Execute() => Scheduler.Schedule(
-            new ReadData(Data, Entered, Release, Result), JobResourceAccess.Read(Token));
+            new ReadData(Data, Entered, Release, Result), [JobResourceAccess.Read(Token)]);
     }
 
     private readonly record struct ReadData(

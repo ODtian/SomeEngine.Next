@@ -562,8 +562,8 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         }
         int pointStart = source.Directional.Count;
         var job = new EncodeLightsJob(source, _gpuLights, pointStart, pointStart + source.Points.Count);
-        if (scheduler is not null) scheduler.ExecuteParallel(job, count, batchSize: JobScheduleOptions.AutomaticBatchSize);
-        else JobSystem.ExecuteParallel(job, count, batchSize: JobScheduleOptions.AutomaticBatchSize);
+        if (scheduler is not null) scheduler.ExecuteParallel(job, count, JobScheduleOptions.AutomaticBatchSize);
+        else JobSystem.Current.ExecuteParallel(job, count, JobScheduleOptions.AutomaticBatchSize);
     }
 
     private readonly struct EncodeLightsJob(RenderLightSet source, GpuLight[] destination, int pointStart, int spotStart) : IJobParallelFor

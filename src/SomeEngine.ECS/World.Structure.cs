@@ -10,6 +10,7 @@ public sealed partial class World
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Add<T>(Entity entity, in T value) where T : struct
     {
+        if (ComponentType<T>.IsSparseType) { AddSparseValue(entity, value); return; }
         if (Execution is not null) { AddWithExecution(entity, value); return; }
         AddCore(entity, value);
     }
@@ -70,12 +71,14 @@ public sealed partial class World
 
     public void Remove<T>(Entity entity) where T : struct
     {
+        if (ComponentType<T>.IsSparseType) { RemoveSparseValue<T>(entity); return; }
         if (Execution is not null) { RemoveWithExecution<T>(entity); return; }
         RemoveCore<T>(entity);
     }
 
     public void Remove<T>(ReadOnlySpan<Entity> entities) where T : struct
     {
+        if (ComponentType<T>.IsSparseType) { foreach (Entity entity in entities) RemoveSparseValue<T>(entity); return; }
         using WorldAccess access = OpenStructure();
         RequireStructure();
         if (ComponentType<T>.IsControlledRemovalType) throw new InvalidOperationException("Use the component's typed removal entry.");
@@ -257,7 +260,7 @@ public sealed partial class World
     private void DestroyCore(Entity entity)
     {
         RequireStructure();
-        if (_lifecycleCount != 0 || HasDestroyedReaders) { DestroyObserved(entity, false); return; }
+        if (_lifecycleCount != 0 || HasDestroyedReaders) { DestroyObserved(entity, false); PublishDestroyed(entity); return; }
         ref EntityRecord record = ref Resolve(entity);
         if (HasDestroyed(in record)) throw new InvalidOperationException("Destroy an active entity.");
         DestroyComponents(entity, ref record);
@@ -316,8 +319,15 @@ public sealed partial class World
             else
             {
                 PrepareDestroyColumns(entities);
+                // Lifecycle hooks may destroy entities themselves, so the batch keeps its own list.
+                var destroyed = new List<Entity>(entities.Length);
                 foreach (Entity entity in entities)
-                    if (IsAliveCore(entity) && !HasDestroyed(in Records[entity.Id])) DestroyObserved(entity, false);
+                    if (IsAliveCore(entity) && !HasDestroyed(in Records[entity.Id]))
+                    {
+                        DestroyObserved(entity, false);
+                        destroyed.Add(entity);
+                    }
+                PublishDestroyed(CollectionsMarshal.AsSpan(destroyed));
                 return;
             }
         }

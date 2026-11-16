@@ -149,8 +149,7 @@ internal sealed partial class ClusterMeshes
                 JobHandle cleanup;
                 try
                 {
-                    cleanup = scheduler.ScheduleFinally(new ReleaseMeshInputs(this, data, failure),
-                        [access], JobScheduleOptions.Default, default);
+                    cleanup = scheduler.ScheduleFinally(new ReleaseMeshInputs(this, data, failure), [access], default, JobScheduleOptions.Default);
                 }
                 catch
                 {

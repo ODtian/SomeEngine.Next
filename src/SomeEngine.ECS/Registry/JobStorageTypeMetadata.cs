@@ -1,37 +1,22 @@
-using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Registry;
 
 /// <summary>
-/// Generated or lazily derived type data for values borrowed directly by an ECS Job.
-/// Alias-free storage cannot contain a managed reference, byref, pointer, native-sized handle,
-/// fixed buffer, or a recursively nested value with one of those shapes.
+/// Whether a value can be borrowed by reference from inside an ECS Job. Alias-free storage holds no managed
+/// reference, pointer, native-sized handle or fixed buffer, directly or in a nested value.
 /// </summary>
+/// <remarks>
+/// The answer comes from the type itself: managed references are a runtime fact, and a value that holds native
+/// handles declares <see cref="INativeHandleValue"/>. The ECS generator turns an undeclared handle into a build error,
+/// so only a type no generator run ever saw can be misjudged as alias-free.
+/// </remarks>
 internal static class JobStorageTypeMetadata<T>
     where T : struct
 {
-    private static int s_aliasFree;
-
-    internal static bool IsAliasFree
-    {
-        get
-        {
-            int value = Volatile.Read(ref s_aliasFree);
-            if (value == 0)
-            {
-                value = !RuntimeHelpers.IsReferenceOrContainsReferences<T>() &&
-                    JobStorageTypeShape.IsAliasFree(typeof(T)) ? 1 : -1;
-                Interlocked.CompareExchange(ref s_aliasFree, value, 0);
-            }
-            return value > 0;
-        }
-    }
-
-    internal static bool GetIsAliasFree() => IsAliasFree;
-
-    internal static void Register(bool isAliasFree) =>
-        Volatile.Write(ref s_aliasFree, isAliasFree ? 1 : -1);
+    internal static readonly bool IsAliasFree = !RuntimeHelpers.IsReferenceOrContainsReferences<T>()
+        && !typeof(INativeHandleValue).IsAssignableFrom(typeof(T))
+        && (default(T) is not IJobStorageWrapper wrapper || wrapper.IsAliasFree);
 
     internal static void RequireAliasFree(string storageKind)
     {
@@ -45,43 +30,8 @@ internal static class JobStorageTypeMetadata<T>
     }
 }
 
-internal static class JobStorageTypeShape
+/// <summary>An engine value that embeds another value and is alias-free exactly when that value is.</summary>
+internal interface IJobStorageWrapper
 {
-    internal static bool IsAliasFree(Type type)
-    {
-        ArgumentNullException.ThrowIfNull(type);
-        return IsAliasFree(type, new HashSet<Type>());
-    }
-
-    private static bool IsAliasFree(Type type, HashSet<Type> visited)
-    {
-        if (type.IsPointer ||
-            type.IsByRef ||
-            type.IsFunctionPointer ||
-            type.IsByRefLike ||
-            type == typeof(IntPtr) ||
-            type == typeof(UIntPtr))
-        {
-            return false;
-        }
-
-        if (!type.IsValueType)
-            return false;
-        if (type.IsPrimitive || type.IsEnum || !visited.Add(type))
-            return true;
-
-        const BindingFlags fields =
-            BindingFlags.Instance |
-            BindingFlags.Public |
-            BindingFlags.NonPublic;
-        foreach (FieldInfo field in type.GetFields(fields))
-        {
-            if (field.IsDefined(typeof(FixedBufferAttribute), inherit: false) ||
-                !IsAliasFree(field.FieldType, visited))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
+    bool IsAliasFree { get; }
 }

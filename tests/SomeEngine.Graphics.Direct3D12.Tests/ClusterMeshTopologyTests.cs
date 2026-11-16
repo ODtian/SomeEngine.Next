@@ -2,8 +2,7 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-[Xunit.Collection("Direct3D12 shader compilation")]
-public sealed class ClusterMeshTopologyTests(D3D12TestCompiler shaderCompiler)
+public sealed class ClusterMeshTopologyTests(D3D12TestCompiler shaderCompiler) : Xunit.IClassFixture<D3D12TestCompiler>
 {
     [Theory]
     [InlineData(0, 256)]

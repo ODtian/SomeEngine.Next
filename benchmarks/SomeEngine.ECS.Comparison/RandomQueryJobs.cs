@@ -17,7 +17,7 @@ internal interface IRandomJobApi
     float ReadVelocityX(int index);
     void IncrementExtra(int index);
 }
-internal struct NativeReadRandom<TApi>(TApi api) : IComponentAction<Position, Velocity, JobOrdinal>
+internal struct NativeReadRandom<TApi>(TApi api) : IColumnPass<Position, Velocity, JobOrdinal>
     where TApi : struct, IRandomJobApi
 {
     public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<JobOrdinal> ordinals)
@@ -29,7 +29,7 @@ internal struct NativeReadRandom<TApi>(TApi api) : IComponentAction<Position, Ve
         }
     }
 }
-internal struct NativeWriteRandom<TApi>(TApi api) : IComponentAction<Position, Velocity, JobOrdinal>
+internal struct NativeWriteRandom<TApi>(TApi api) : IColumnPass<Position, Velocity, JobOrdinal>
     where TApi : struct, IRandomJobApi
 {
     public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<JobOrdinal> ordinals)
@@ -51,19 +51,20 @@ internal sealed partial class SomeEngineWorld
         if (!_randomJobColumnsReady)
             for (int i = 0; i < _entities.Length; i++)
             { _world.Add(_entities[i], new JobOrdinal(i)); if (mode == 2) _world.Add(_entities[i], new JobExtra()); }
-        if (mode == 1) { using var binding = _world.OpenCachedRead<Velocity>(); }
-        else { using var binding = _world.OpenCachedWrite<JobExtra>(); }
+        if (mode == 1) { using var binding = _world.OpenRead<Velocity>(); }
+        else { using var binding = _world.OpenWrite<JobExtra>(); }
         Query query = _world.Query<Position, Velocity, JobOrdinal>();
-        var runner = new SystemRunner(_world, GetJobScheduler());
+        var runner = new SystemRunner(_world);
         QueryJobs = mode == 1
-            ? new SourceRandomJobs<ReadRandomJob>(runner, query, new(_world, _entities), new SystemAccesses().ReadRandom<Velocity>())
-            : new SourceRandomJobs<WriteRandomJob>(runner, query, new(_world, _entities), new SystemAccesses().WriteRandom<JobExtra>());
+            ? new SourceRandomJobs<ReadRandomJob>(_world, runner, query, new(_world, _entities))
+            : new SourceRandomJobs<WriteRandomJob>(_world, runner, query, new(_world, _entities));
     }
-    private readonly struct ReadRandomJob(World world, Entity[] entities) : IComponentAction<Position, Velocity, JobOrdinal>
+    [JobRead(typeof(Velocity))]
+    private readonly partial struct ReadRandomJob(World world, Entity[] entities) : IJobChunk, IColumnPass<Position, Velocity, JobOrdinal>
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<JobOrdinal> ordinals)
         {
-            using CachedReadLookup<Velocity> lookup = world.OpenCachedRead<Velocity>();
+            using ReadLookup<Velocity> lookup = world.OpenRead<Velocity>();
             for (int row = 0; row < positions.Length; row++)
             {
                 positions[row].X += velocities[row].X + lookup.Read(entities[RandomJobInputs.Pick(ordinals[row].Value, entities.Length)]).X;
@@ -71,11 +72,12 @@ internal sealed partial class SomeEngineWorld
             }
         }
     }
-    private readonly struct WriteRandomJob(World world, Entity[] entities) : IComponentAction<Position, Velocity, JobOrdinal>
+    [JobWrite(typeof(JobExtra))]
+    private readonly partial struct WriteRandomJob(World world, Entity[] entities) : IJobChunk, IColumnPass<Position, Velocity, JobOrdinal>
     {
         public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<JobOrdinal> ordinals)
         {
-            using CachedWriteLookup<JobExtra> lookup = world.OpenCachedWrite<JobExtra>();
+            using WriteLookup<JobExtra> lookup = world.OpenWrite<JobExtra>();
             for (int row = 0; row < positions.Length; row++)
             {
                 positions[row].X += velocities[row].X; positions[row].Y += velocities[row].Y;
@@ -83,18 +85,25 @@ internal sealed partial class SomeEngineWorld
             }
         }
     }
-    private sealed class SourceRandomJobs<TAction>(SystemRunner runner, Query query, TAction action, SystemAccesses accesses) : IQueryJobs
-        where TAction : struct, IComponentAction<Position, Velocity, JobOrdinal>
+    private sealed class SourceRandomJobs<TAction>(World world, SystemRunner runner, Query query, TAction action) : IQueryJobs
+        where TAction : struct, IChunkAction, IColumnPass<Position, Velocity, JobOrdinal>
     {
         public void Run(bool scheduled, bool parallel, bool dependent)
         {
             if (scheduled)
             {
-                JobHandle first = runner.Schedule<Position, Velocity, JobOrdinal, TAction>(query, action, accesses, parallel: parallel);
-                (dependent ? runner.Schedule<Position, Velocity, JobOrdinal, TAction>(query, action, accesses, first, parallel) : first).Complete();
+                JobHandle first = runner.Schedule(query, action, parallel: parallel);
+                (dependent ? runner.Schedule(query, action, first, parallel) : first).Complete();
             }
-            else if (parallel) runner.ExecuteParallel<Position, Velocity, JobOrdinal, TAction>(query, action, accesses);
-            else { TAction local = action; runner.Execute<Position, Velocity, JobOrdinal, TAction>(query, ref local, accesses); }
+            else if (parallel) runner.ExecuteParallel(query, action);
+            else
+            {
+                // The current thread holds the whole World so the body's random lookups need no declaration.
+                using var exclusive = world.OpenStructureWrite();
+                using QueryScope scope = query.Open();
+                foreach (QueryChunk chunk in scope)
+                    action.Execute(chunk.Write<Position>(), chunk.Read<Velocity>(), chunk.Read<JobOrdinal>());
+            }
         }
         public void Dispose() { }
     }
@@ -132,7 +141,7 @@ internal readonly struct ArchRandomApi(Arch.Core.World world, Arch.Core.Entity[]
         value.Value++;
     }
 }
-internal readonly struct DefaultReadRandom(DefaultEcs.World world, DefaultEcs.Entity[] entities) : IComponentAction<Position, Velocity, JobOrdinal>
+internal readonly struct DefaultReadRandom(DefaultEcs.World world, DefaultEcs.Entity[] entities) : IColumnPass<Position, Velocity, JobOrdinal>
 {
     public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<JobOrdinal> ordinals)
     {
@@ -146,7 +155,7 @@ internal readonly struct DefaultReadRandom(DefaultEcs.World world, DefaultEcs.En
         }
     }
 }
-internal readonly struct DefaultWriteRandom(DefaultEcs.World world, DefaultEcs.Entity[] entities) : IComponentAction<Position, Velocity, JobOrdinal>
+internal readonly struct DefaultWriteRandom(DefaultEcs.World world, DefaultEcs.Entity[] entities) : IColumnPass<Position, Velocity, JobOrdinal>
 {
     public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities, ReadOnlySpan<JobOrdinal> ordinals)
     {

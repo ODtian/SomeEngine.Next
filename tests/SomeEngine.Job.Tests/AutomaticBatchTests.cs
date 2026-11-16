@@ -91,7 +91,7 @@ public sealed class AutomaticBatchTests
         var options = new JobScheduleOptions { Category = category };
         int[] result = [0];
 
-        JobHandle work = scheduler.Schedule(new StartCategoryChild(scheduler, options, submitted, result), options);
+        JobHandle work = scheduler.Schedule(new StartCategoryChild(scheduler, options, submitted, result), options: options);
         Assert.True(submitted.Wait(TimeSpan.FromSeconds(5)));
         work.Complete();
         JobStatistics stats = scheduler.GetStats();
@@ -105,7 +105,7 @@ public sealed class AutomaticBatchTests
     {
         public void Execute()
         {
-            Scheduler.Schedule(new WriteResult(Result), Options);
+            Scheduler.Schedule(new WriteResult(Result), options: Options);
             Submitted.Set();
         }
     }

@@ -52,7 +52,7 @@ public static partial class TextFunctions
     /// <summary>Writes caller-owned text directly, retaining its write version when the text matches.</summary>
     public static Entity SetText(this Entity node, World world, string value)
     {
-        Text previous = world.ReadComponentData<Text>(node);
+        Text previous = world.ReadValue<Text>(node);
         return WriteText(node, world, in previous, new Text(value));
     }
 
@@ -70,7 +70,7 @@ public static partial class TextFunctions
     public static Entity SetText<T>(this Entity node, World world, T value, string format = "", IFormatProvider? provider = null)
         where T : struct, ISpanFormattable
     {
-        Text previous = world.ReadComponentData<Text>(node);
+        Text previous = world.ReadValue<Text>(node);
         var data = new FormattedText<T>(value, format, provider);
         Text text = CreateWrittenText(in previous, in data, provider ?? Locale.ReadCulture(world, track: false));
         return WriteText(node, world, in previous, in text);

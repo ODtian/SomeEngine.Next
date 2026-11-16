@@ -8,18 +8,7 @@ public sealed class GenerateComponentAttribute : Attribute;
 
 public static class ComponentValues
 {
-    public static void RegisterRemoved<T>() where T : struct => Bind<T>();
-    internal static ComponentType Bind<T>() where T : struct
-    {
-        ComponentType type = ComponentType<T>.Value;
-        if (type.KeepsRemoved && type.RemovedValues is null)
-            lock (type) type.RemovedValues ??= new RemovedValueOperations<T>();
-        return type;
-    }
-    /// <summary>Registers the generated value operations before the component's first storage binding.</summary>
-    public static void Register<T, TOperations>(in TOperations operations)
-        where T : struct where TOperations : struct, IComponentOperations<T>
-        => ComponentOperations.Register<T, TOperations>(operations);
+    internal static ComponentType Bind<T>() where T : struct => ComponentType<T>.Value;
     public static T Clone<T>(World world, in T value) where T : struct => ComponentType<T>.CloneValue(world, value);
     public static void Release<T>(World world, ref T value) where T : struct => ComponentType<T>.ReleaseValue(world, ref value);
     public static void Remap<T>(ref T value, in EntityMap entities) where T : struct

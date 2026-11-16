@@ -74,7 +74,7 @@ public sealed partial class ViewRebuildSystem : ISystem<ImmediateSystemContext>
                     continue;
                 if (world.Has<BuildRequest>(entity) || HasBuildChanges(world, entity, recheck: true))
                     ViewTypes.Build(world, entity, _frame);
-                if (world.IsAlive(entity) && world.Has<ViewType>(entity) && world.HasSparse<Computations>(entity))
+                if (world.IsAlive(entity) && world.Has<ViewType>(entity) && world.Has<Computations>(entity))
                     RebuildComputations(world, entity);
             }
         }
@@ -97,7 +97,7 @@ public sealed partial class ViewRebuildSystem : ISystem<ImmediateSystemContext>
     private void CollectComputations(World world, Entity entity)
     {
         _computations.Clear();
-        _computations.AddRange(world.ReadSparse<Computations>(entity).List.Items);
+        _computations.AddRange(world.Read<Computations>(entity).List.Items);
     }
 
     private void RebuildComputations(World world, Entity entity)

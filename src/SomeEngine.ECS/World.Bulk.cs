@@ -79,47 +79,5 @@ public sealed partial class World
         }
     }
 
-    public void Create<T1, T2, T3>(Span<Entity> entities, in T1 first, in T2 second, in T3 third)
-        where T1 : struct where T2 : struct where T3 : struct
-    {
-        using WorldAccess access = OpenStructure();
-        if (ComponentType<T1>.IsSharedType || ComponentType<T2>.IsSharedType || ComponentType<T3>.IsSharedType
-            || ComponentType<T1>.HasValueOperationsType || ComponentType<T2>.HasValueOperationsType || ComponentType<T3>.HasValueOperationsType
-            || ComponentType<T1>.HasInitializerType || ComponentType<T2>.HasInitializerType || ComponentType<T3>.HasInitializerType)
-        {
-            for (int createdIndex = 0; createdIndex < entities.Length; createdIndex++)
-                entities[createdIndex] = Create(first, second, third);
-            return;
-        }
-        RequireStructure();
-        Archetype archetype = Find(TypeSet<T1, T2, T3>.Value);
-        if (ChunkCapacity == 0) { CreateRows(entities, first, second, third, archetype.PrimaryChunk); return; }
-        int offset = 0;
-        while (offset < entities.Length)
-        {
-            Chunk chunk = archetype.WritableChunk.EnsureRow();
-            int count = Math.Min(entities.Length - offset, chunk.Capacity - chunk.Count);
-            CreateRows(entities.Slice(offset, count), first, second, third, chunk);
-            offset += count;
-        }
-    }
 
-    private void CreateRows<T1, T2, T3>(Span<Entity> entities, in T1 first, in T2 second, in T3 third, Chunk chunk)
-        where T1 : struct where T2 : struct where T3 : struct
-    {
-        int start = AllocateCreatedRows(entities, chunk);
-        int count = entities.Length;
-        if (!ComponentType<T1>.IsTagType) ColumnEntry.Span<T1>(ref chunk.Columns[ComponentType<T1>.TypeId], start + count)[start..].Fill(first);
-        if (!ComponentType<T2>.IsTagType) ColumnEntry.Span<T2>(ref chunk.Columns[ComponentType<T2>.TypeId], start + count)[start..].Fill(second);
-        if (!ComponentType<T3>.IsTagType) ColumnEntry.Span<T3>(ref chunk.Columns[ComponentType<T3>.TypeId], start + count)[start..].Fill(third);
-        CompleteCreatedRows(chunk, start, count);
-        if (ComponentType<T1>.IsIndexedType)
-            foreach (Entity entity in entities) IndexCreated(entity, first);
-        if (ComponentType<T2>.IsIndexedType)
-            foreach (Entity entity in entities) IndexCreated(entity, second);
-        if (ComponentType<T3>.IsIndexedType)
-            foreach (Entity entity in entities) IndexCreated(entity, third);
-        if (ComponentType<T1>.IsGroupedType || ComponentType<T2>.IsGroupedType || ComponentType<T3>.IsGroupedType)
-            foreach (Entity entity in entities) ArrangeCreatedGroups(entity);
-    }
 }

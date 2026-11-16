@@ -137,7 +137,7 @@ public readonly struct PhysicsPoseLeaf : IAnimationLeaf<PhysicsPoseParameters>
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
             ActorTransform = Matrix4x4.Identity,
-            Samples = new(parameters.Map, parameters.Mask, world.ReadComponentData<PoseTarget>(target).Skeleton),
+            Samples = new(parameters.Map, parameters.Mask, world.ReadValue<PoseTarget>(target).Skeleton),
         };
         short[] bones = parameters.Map.Bodies.ToArray().Select(static body => (short)body.Bone).ToArray();
         instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement, bones);

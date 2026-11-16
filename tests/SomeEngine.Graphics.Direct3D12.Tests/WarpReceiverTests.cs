@@ -5,8 +5,7 @@ using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-[Xunit.Collection("Direct3D12 shader compilation")]
-public sealed class WarpReceiverTests(D3D12TestCompiler shaderCompiler)
+public sealed class WarpReceiverTests(D3D12TestCompiler shaderCompiler) : Xunit.IClassFixture<D3D12TestCompiler>
 {
     [Fact]
     public void Warp_copy_round_trips_upload_and_readback_memory()

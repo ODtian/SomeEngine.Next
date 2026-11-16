@@ -75,7 +75,7 @@ public sealed partial class TerrainScene
         if (_world is null) return [];
         var result = new List<TerrainChunk>();
         foreach ((ChunkKey key, ChunkData chunk) in _chunks)
-            if (key.PlacementId == placementId) result.Add(_world.ReadComponentData<TerrainChunk>(chunk.Entity));
+            if (key.PlacementId == placementId) result.Add(_world.ReadValue<TerrainChunk>(chunk.Entity));
         return result.ToArray();
     }
 
@@ -189,13 +189,13 @@ public sealed partial class TerrainScene
         {
             if (!completed.Contains(chunk.GeometryId)) continue;
             GeometryData geometry = _geometryById[chunk.GeometryId];
-            TerrainChunk value = _world!.ReadComponentData<TerrainChunk>(chunk.Entity);
+            TerrainChunk value = _world!.ReadValue<TerrainChunk>(chunk.Entity);
             _world.Set(chunk.Entity, value with { Revision = geometry.Revision });
             if (geometry.Mesh is { } mesh)
             {
                 if (!_world.Has<MeshInstance>(chunk.Entity))
                     _world.Set(chunk.Entity, new MeshInstance { Mesh = mesh });
-                else if (!ReferenceEquals(_world.ReadComponentData<MeshInstance>(chunk.Entity).Mesh, mesh))
+                else if (!ReferenceEquals(_world.ReadValue<MeshInstance>(chunk.Entity).Mesh, mesh))
                     _world.Set(chunk.Entity, new MeshInstance { Mesh = mesh });
             }
             else if (_world.Has<MeshInstance>(chunk.Entity))
@@ -258,7 +258,7 @@ public sealed partial class TerrainScene
                 if (_placements.ContainsKey(placement.Id))
                     foreach (GeometryData geometry in placement.Selection) selected.Add(geometry.Id);
             int[] ids = selected.Order().ToArray();
-            if (!_world!.ReadComponentData<TerrainGpuSelection>(_selection).GeometryIds.AsSpan().SequenceEqual(ids))
+            if (!_world!.ReadValue<TerrainGpuSelection>(_selection).GeometryIds.AsSpan().SequenceEqual(ids))
                 _world.Set(_selection, new TerrainGpuSelection(RenderKey, ids));
         }
 

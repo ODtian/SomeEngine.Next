@@ -148,7 +148,7 @@ public sealed class NavigationCrowdSystem<TMotion, TReader>
                      JobResourceAccess.Write(scheduler.GetResourceToken(state.Density), range.CellStart, range.CellCount),
                      JobResourceAccess.Write(scheduler.GetResourceToken(state.Velocity), range.CellStart, range.CellCount)]);
             }
-            scheduler.Schedule(new CompleteField(state), JobResourceAccess.Write(scheduler.GetResourceToken(state)), scheduler.CombineDependencies(jobs));
+            scheduler.Schedule(new CompleteField(state), [JobResourceAccess.Write(scheduler.GetResourceToken(state))], scheduler.CombineDependencies(jobs));
         }
     }
 

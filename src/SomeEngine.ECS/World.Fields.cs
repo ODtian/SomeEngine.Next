@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Sparse;
 using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS;
@@ -10,7 +11,7 @@ public sealed partial class World
     public TValue ReadField<TComponent, TValue, TAccess>(Entity entity)
         where TComponent : struct, IComponent where TValue : unmanaged
         where TAccess : struct, IFieldAccess<TComponent, TValue>
-        => TAccess.Read(in ReadComponentReference<TComponent>(entity));
+        => TAccess.Read(ReadValue<TComponent>(entity));
 
     public void WriteField<TComponent, TValue, TAccess>(Entity entity, in TValue value)
         where TComponent : struct, IComponent where TValue : unmanaged
@@ -19,8 +20,7 @@ public sealed partial class World
         using WorldAccess access = OpenValues([new(ComponentType<TComponent>.TypeId,
             ComponentType<TComponent>.IsSparseType ? WorldValueKind.Sparse : WorldValueKind.Table, true,
             ComponentType<TComponent>.TracksWritesType)]);
-        if (ComponentType<TComponent>.IsSparseType) TAccess.Write(ref GetSparse<TComponent>(entity), in value);
-        else TAccess.Write(ref Get<TComponent>(entity), in value);
+        TAccess.Write(ref Get<TComponent>(entity), in value);
     }
 
     public ref readonly byte ReadBytes(Entity entity, int component)
@@ -44,10 +44,16 @@ public sealed partial class World
         using WorldAccess access = OpenValues([new(component,
             type.IsSparse ? WorldValueKind.Sparse : WorldValueKind.Table, write, type.TracksWrites)]);
         if (type.IsSparse)
-            return ref Unsafe.Add(ref _sparse!.Types[component]!.Bytes(entity,
-                write && type.TracksWrites ? NextVersion() : 0), offset);
+        {
+            SparseStore? store = _sparse is { } stores && (uint)component < (uint)stores.Types.Length ? stores.Types[component] : null;
+            if (store is null || !store.Has(entity))
+                throw new InvalidOperationException("Component byte access requires the entity to have the sparse component.");
+            return ref Unsafe.Add(ref store.Bytes(entity, write && type.TracksWrites ? NextVersion() : 0), offset);
+        }
         ref EntityRecord record = ref Resolve(entity);
         Chunk chunk = record.Chunk!;
+        if ((uint)component >= (uint)chunk.Columns.Length || !chunk.Columns[component].Has(record.Row))
+            throw new InvalidOperationException("Component byte access requires the entity to have the component.");
         ref ColumnEntry column = ref chunk.Columns[component];
         if (write)
         {

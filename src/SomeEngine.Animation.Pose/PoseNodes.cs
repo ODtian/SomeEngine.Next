@@ -43,7 +43,7 @@ public static partial class PoseAnimation
     {
         if (!world.Has<Buffer<PoseNodeEntry>>(animation)) world.AddBuffer<PoseNodeEntry>(animation);
         if (!world.Has<PoseNodeGraph>(animation)) world.Add(animation, new PoseNodeGraph { Starts = placement.Starts });
-        PoseNodeGraph graph = world.ReadComponentData<PoseNodeGraph>(animation);
+        PoseNodeGraph graph = world.ReadValue<PoseNodeGraph>(animation);
         if (graph.Starts != placement.Starts)
         {
             {
@@ -73,7 +73,7 @@ public static partial class PoseAnimation
     /// <summary>Compiles the installed graph's acyclic pose connections after all leaves are installed.</summary>
     public static void CompleteNodes(World world, Entity animation)
     {
-        PoseNodeGraph graph = world.ReadComponentData<PoseNodeGraph>(animation);
+        PoseNodeGraph graph = world.ReadValue<PoseNodeGraph>(animation);
         if (graph.Complete) return;
         graph.Complete = true;
         world.Set(animation, graph);
@@ -114,7 +114,7 @@ public static partial class PoseAnimation
             node.Level = -1;
             var parents = new List<PoseResultReference>();
             if (node.ModelBones.Length != 0)
-                for (SkeletonInstance? parent = world.ReadComponentData<PoseTarget>(node.Output.Entity).Skeleton.ParentInstance;
+                for (SkeletonInstance? parent = world.ReadValue<PoseTarget>(node.Output.Entity).Skeleton.ParentInstance;
                     parent is not null; parent = parent.ParentInstance)
                     if (sources.TryGetValue(parent, out PoseResultReference source)) parents.Add(source);
             node.ModelInputs = parents.ToArray();
@@ -191,7 +191,7 @@ public static partial class PoseAnimation
             nodes.Clear();
 
         }
-        PoseNodeGraph graph = world.ReadComponentData<PoseNodeGraph>(animation);
+        PoseNodeGraph graph = world.ReadValue<PoseNodeGraph>(animation);
         graph.Complete = false;
         world.Set(animation, graph);
         CpuBoneDemands.For(world).Changed = true;

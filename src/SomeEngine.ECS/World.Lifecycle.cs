@@ -154,6 +154,18 @@ public sealed partial class World
         _lifecycleCount = 0;
     }
 
+    /// <summary>
+    /// Ends one step of this World's event producers (destroyed entities and query membership).
+    /// System groups call this once per update; a reader that stays behind for the configured
+    /// number of steps is reported in Debug builds.
+    /// </summary>
+    public void EndStep()
+    {
+        using WorldAccess access = OpenStructure(false);
+        _destroyedLog?.EndStep();
+        foreach (QueryData query in _membershipQueries) query.MembershipLog?.EndStep();
+    }
+
     private void DisposeEventLogs()
     {
         _destroyedLog?.Dispose();
@@ -168,7 +180,11 @@ public sealed partial class World
     {
         using WorldAccess access = OpenStructure();
         RequireStructure();
-        if (_lifecycleCount != 0 || HasDestroyedReaders) DestroyObserved(entity, true);
+        if (_lifecycleCount != 0 || HasDestroyedReaders)
+        {
+            DestroyObserved(entity, true);
+            PublishDestroyed(entity);
+        }
         else
         {
             ref var record = ref Resolve(entity);
@@ -177,6 +193,7 @@ public sealed partial class World
         }
     }
 
+    /// <summary>Runs lifecycle hooks and removes the values; the caller publishes the destroyed facts once.</summary>
     private void DestroyObserved(Entity entity, bool deferred)
     {
         using MembershipEdit membership = BeginMembershipEdit(entity);
@@ -187,6 +204,5 @@ public sealed partial class World
         for (int i = 0; i < count; i++) lifecycles[i].BeforeDestroy(entity, deferred);
         ref var record = ref Resolve(entity);
         DestroyComponents(entity, ref record);
-        PublishDestroyed(entity);
     }
 }
