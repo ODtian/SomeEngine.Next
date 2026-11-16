@@ -108,7 +108,7 @@ internal static partial class ChunkChecks
     }
     private struct Element : IComponent { internal int Value; }
     private sealed class ReleaseCount { internal int Count; }
-    private readonly struct OwnedValue(ReleaseCount releases, int value) : IComponent, IDisposable
+    private readonly struct OwnedValue(ReleaseCount releases, int value) : IComponent, IDisposable, SomeEngine.ECS.Storage.IDisposableComponent<OwnedValue>
     {
         internal int Value => value;
         public void Dispose() => releases.Count++;

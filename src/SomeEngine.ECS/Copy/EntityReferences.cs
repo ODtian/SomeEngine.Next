@@ -101,9 +101,18 @@ public readonly unsafe ref struct EntityMap
     }
 }
 
-public interface IEntityReferenceValue<T> where T : struct
+/// <summary>Supplies the operations that remap the entity references inside a value.</summary>
+public interface IEntityReferenceSource<T> where T : struct
+{
+    Storage.IEntityReferenceOperations<T> ReferenceOperations { get; }
+}
+
+/// <summary>A value whose entity references a static <see cref="Remap"/> rewrites.</summary>
+public interface IEntityReferenceValue<T> : IEntityReferenceSource<T> where T : struct, IEntityReferenceValue<T>
 {
     static abstract void Remap(ref T value, in EntityMap entities);
+
+    Storage.IEntityReferenceOperations<T> IEntityReferenceSource<T>.ReferenceOperations => Storage.ValueReferenceOperations<T>.Instance;
 }
 
 public interface IEntityFieldWriter<T> where T : struct

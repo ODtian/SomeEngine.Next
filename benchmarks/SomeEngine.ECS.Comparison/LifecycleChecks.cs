@@ -58,5 +58,5 @@ internal static class LifecycleChecks
         if (!condition) throw new InvalidOperationException(behavior);
     }
 
-    private readonly record struct RemovedValue(int Value) : IRemovedComponent;
+    private readonly record struct RemovedValue(int Value) : IRemovedComponent<RemovedValue>;
 }

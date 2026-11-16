@@ -243,7 +243,7 @@ public sealed partial class WorldSerializer
         foreach (EntityReadColumn column in columns)
         {
             if (column.Type is SavedColumn tableColumn) tableColumn.PrepareRead(target);
-            else ((SavedSparse)column.Type).AllocateAppend(target, membersCreated, column.Members);
+            else ((SavedSparse)column.Type!).AllocateAppend(target, membersCreated, column.Members);
         }
         var references = new EntityGroupReferences(sources, membersCreated, options.MissingReferenceMode);
         var work = new ReadEntityColumns(target, columns, membersCreated, references, reader.Budget, reader.SavedFieldMaps);
@@ -255,7 +255,7 @@ public sealed partial class WorldSerializer
                     if (!enabled[index])
                     {
                         ref EntityRecord record = ref target.Records[membersCreated[column.Members[index]].Id];
-                        target.SetEnabled(record.Chunk!, column.Type.Type, record.Row, false);
+                        target.SetEnabled(record.Chunk!, column.Type!.Type, record.Row, false);
                     }
         target.CompleteCopies(membersCreated);
         return membersCreated;
@@ -276,9 +276,9 @@ public sealed partial class WorldSerializer
                 if (column.Type is SavedColumn tableColumn)
                 {
                     ref EntityRecord record = ref world.Records[entity.Id];
-                    tableColumn.ReadCell(ref reader, ref record.Chunk!.Columns[column.Type.Type], record.Row);
+                    tableColumn.ReadCell(ref reader, ref record.Chunk!.Columns[column.Type!.Type], record.Row);
                 }
-                else ((SavedSparse)column.Type).ReadCell(ref reader, world, entity);
+                else ((SavedSparse)column.Type!).ReadCell(ref reader, world, entity);
             }
             reader.RequireEndOfInput();
         }

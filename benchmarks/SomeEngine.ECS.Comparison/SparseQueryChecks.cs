@@ -90,7 +90,7 @@ internal static partial class SparseQueryChecks
         if (!condition) throw new InvalidOperationException(behavior);
     }
 
-    private struct Attachment : ISparseComponent, IAddedComponent, IRemovedComponent { internal int Value; }
+    private struct Attachment : ISparseComponent, IAddedComponent, IRemovedComponent<Attachment> { internal int Value; }
     private struct OtherAttachment : ISparseComponent { }
     private struct CleanupAttachment : ISparseComponent, ICleanupComponent { internal int Value; }
 }

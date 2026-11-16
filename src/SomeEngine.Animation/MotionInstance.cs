@@ -42,7 +42,7 @@ internal struct MotionDeclaration<T> : IBufferElement where T : unmanaged
     internal int Type, Capacity;
 }
 
-internal unsafe struct MotionStop : IBufferElement
+internal unsafe struct MotionStop : IBufferElement, INativeHandleValue
 {
     internal int Type;
     internal int ValueType;

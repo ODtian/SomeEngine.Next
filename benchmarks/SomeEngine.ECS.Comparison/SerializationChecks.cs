@@ -13,10 +13,10 @@ internal static partial class SerializationChecks
 {
     private partial struct ArchiveRow : IComponentBundle { internal ArchiveValue Value; internal ArchiveStep Step; }
     private partial struct ArchivePosition : IComponentBundle { internal ArchiveValue Value; internal ArchiveStep Step; internal Position Position; }
-    private struct ArchiveValue(int value) : IAddedComponent, IRemovedComponent { internal int Value = value; }
+    private struct ArchiveValue(int value) : IAddedComponent, IRemovedComponent<ArchiveValue> { internal int Value = value; }
     private readonly record struct ArchiveStep(int Value) : IEnableableComponent;
-    private readonly record struct ArchiveShared(int Value) : ISharedComponent, IGroupComponent { public int GetGroup() => Value; }
-    private readonly record struct ArchiveLink(Entity Entity, long Value) : ISparseComponent, IAddedComponent, IRemovedComponent, IEntityReferenceValue<ArchiveLink>
+    private readonly record struct ArchiveShared(int Value) : ISharedComponent, IGroupComponent<ArchiveShared> { public int GetGroup() => Value; }
+    private readonly record struct ArchiveLink(Entity Entity, long Value) : ISparseComponent, IAddedComponent, IRemovedComponent<ArchiveLink>, IEntityReferenceValue<ArchiveLink>
     {
         public static void Remap(ref ArchiveLink value, in EntityMap entities) => value = value with { Entity = entities.Map(value.Entity) };
     }

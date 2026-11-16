@@ -32,6 +32,8 @@ internal static class ValueGenerator
         bool remap = component && members.Any(member => References(member.Type))
             && !type.AllInterfaces.Any(value => value.Name == "IEntityReferenceValue");
         if (remap) interfaces.Add("global::SomeEngine.ECS.IEntityReferenceValue<" + self + ">");
+        bool operations = component && members.Any(member => Owned(member.Type));
+        if (operations) interfaces.Add("global::SomeEngine.ECS.Storage.IComponentOperations<" + self + ">");
         var code = new StringBuilder();
         code.Append("private readonly struct __ValueInput { }\nprivate ").Append(EcsGenerator.Identifier(type.Name)).Append("(__ValueInput __input");
         for (int i = 0; i < members.Count; i++) code.Append(", ").Append(EcsGenerator.Name(members[i].Type)).Append(" __value").Append(i);
@@ -45,7 +47,7 @@ internal static class ValueGenerator
         try
         {
             if (codec) EmitCodec(code, type, self, members);
-            if (component && members.Any(member => Owned(member.Type))) EmitOperations(code, type, self, members);
+            if (operations) EmitOperations(code, self, members);
             if (remap) EmitRemap(code, self, members);
             if (component) EmitFields(code, self, members);
         }
@@ -150,7 +152,7 @@ internal static class ValueGenerator
             || member is IPropertySymbol property && !property.IsStatic && !property.IsIndexer && property.SetMethod is not null && Owned(property.Type));
     }
 
-    private static void EmitOperations(StringBuilder code, INamedTypeSymbol type, string self, List<Member> members)
+    private static void EmitOperations(StringBuilder code, string self, List<Member> members)
     {
         code.Append("public readonly struct ValueOperations : global::SomeEngine.ECS.Storage.IComponentOperations<").Append(self).Append("> {\n")
             .Append("public ").Append(self).Append(" Clone(global::SomeEngine.ECS.World world, in ").Append(self).Append(" value) {\n");
@@ -160,12 +162,12 @@ internal static class ValueGenerator
         code.Append(";\n}\npublic void Release(global::SomeEngine.ECS.World world, ref ").Append(self).Append(" value) {\n");
         foreach (Member member in members) Release(code, member.Type, "value." + member.Name, ref id);
         code.Append("value = default;\n}\n}\n");
-        bool module = type.TypeParameters.Length == 0;
-        for (INamedTypeSymbol? parent = type; parent is not null; parent = parent.ContainingType)
-            module &= parent.TypeParameters.Length == 0 && parent.DeclaredAccessibility is Accessibility.Internal or Accessibility.Public;
-        if (module) code.Append("[global::System.Runtime.CompilerServices.ModuleInitializer]\n");
-        code.Append("public static void RegisterComponentOperations() => global::SomeEngine.ECS.ComponentValues.Register<")
-            .Append(self).Append(", ValueOperations>(new ValueOperations());\n");
+        // The value supplies its own operations, so the World needs no registration to find them.
+        const string Operations = "global::SomeEngine.ECS.Storage.IComponentOperations<";
+        code.Append(self).Append(' ').Append(Operations).Append(self).Append(">.Clone(global::SomeEngine.ECS.World world, in ")
+            .Append(self).Append(" value) => new ValueOperations().Clone(world, value);\n");
+        code.Append("void ").Append(Operations).Append(self).Append(">.Release(global::SomeEngine.ECS.World world, ref ")
+            .Append(self).Append(" value) => new ValueOperations().Release(world, ref value);\n");
     }
 
     private static void Clone(StringBuilder code, ITypeSymbol type, string value, string local, ref int id)

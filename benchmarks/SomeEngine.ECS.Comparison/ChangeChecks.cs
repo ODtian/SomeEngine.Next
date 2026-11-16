@@ -166,5 +166,5 @@ internal static partial class ChangeChecks
         if (!condition) throw new InvalidOperationException(behavior);
     }
 
-    private struct Score : IAddedComponent, IRemovedComponent { internal int Value; }
+    private struct Score : IAddedComponent, IRemovedComponent<Score> { internal int Value; }
 }

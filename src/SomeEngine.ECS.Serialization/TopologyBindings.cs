@@ -8,22 +8,6 @@ using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS.Serialization;
 
-internal interface ISavedGroupBinding
-{
-    void Activate(World world);
-}
-
-internal readonly struct SavedGroupBinding<T> : ISavedGroupBinding where T : struct, IGroupComponent
-{
-    public void Activate(World world) => world.GroupBy<T>();
-}
-
-internal static class SavedGroups
-{
-    internal static ISavedGroupBinding? Create(Type type) => typeof(IGroupComponent).IsAssignableFrom(type)
-        ? (ISavedGroupBinding)Activator.CreateInstance(typeof(SavedGroupBinding<>).MakeGenericType(type))! : null;
-}
-
 internal readonly struct ParentCodec<T> : IComponentCodec<Parent<T>>, ISelectionCodec<Parent<T>> where T : struct, IHierarchyDomain
 {
     public bool Includes(in Parent<T> value, IReadOnlySet<Entity> entities) => entities.Contains(value.Value);

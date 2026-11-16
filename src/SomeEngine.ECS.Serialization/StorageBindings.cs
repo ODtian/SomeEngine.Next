@@ -284,7 +284,8 @@ internal sealed class SavedResource<T, TCodec>(SerializationTypeKey key, TCodec 
     : SavedResource(key, ResourceType<T>.Id, typeof(T), typeof(TCodec), CodecTraits.Of<T, TCodec>(codec))
     where TCodec : struct, IValueCodec<T>
 {
-    private readonly IReferencePatcher<T>? _patcher = patcher ?? ReferencePatchers.Default<T>();
+    // Resources may be classes, so their entity patcher is never inferred: register one when a resource holds entities.
+    private readonly IReferencePatcher<T>? _patcher = patcher;
     internal override void Write(ref DataWriter writer, ResourceValue value)
     {
         long start = writer.Position;

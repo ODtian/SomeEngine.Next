@@ -7,12 +7,8 @@ namespace SomeEngine.ECS.Relations.Tests;
 public sealed class GeneratedMetadataTests
 {
     [Fact]
-    public void RegisteredSchemaAndStorageDriveOrdinaryEdgeAndQueryJobAccess()
+    public void DeclaredSchemaAndStorageDriveOrdinaryEdgeAndQueryJobAccess()
     {
-        RelationSchema.Register<RegisteredLink<int>>(
-            new RelationSchema(RelationDirection.Directed, RelationCardinality.UniquePair, false));
-        GeneratedEcsTypes.RegisterJobStorage<RegisteredValue<int>>(true);
-        GeneratedEcsTypes.RegisterJobStorage<RelationEndpoints<RegisteredLink<int>>>(true);
         using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         var worldJobs = new WorldJobs(jobs);
         using var world = new World(execution: worldJobs);
@@ -89,9 +85,10 @@ public struct RegisteredValue<T> : IComponent where T : unmanaged
     public T Value;
 }
 
+[RelationSchema(RelationDirection.Directed, RelationCardinality.UniquePair, AllowSelfEdge = false)]
 public struct RegisteredLink<T> : IComponent where T : unmanaged;
 
-public struct NativeAddress<T> : IComponent where T : unmanaged
+public struct NativeAddress<T> : IComponent, INativeHandleValue where T : unmanaged
 {
     public nint Address { get; set; }
 }

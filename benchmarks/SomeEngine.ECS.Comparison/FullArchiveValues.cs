@@ -7,11 +7,11 @@ using SomeEngine.ECS.Serialization;
 
 namespace SomeEngine.ECS.Comparison;
 
-public record struct SaveCounter(int Value, int Ordinal) : IAddedComponent, IRemovedComponent, EasyEcs.IComponent, Friflo.Engine.ECS.IComponent;
+public record struct SaveCounter(int Value, int Ordinal) : IAddedComponent, IRemovedComponent<SaveCounter>, EasyEcs.IComponent, Friflo.Engine.ECS.IComponent;
 public readonly record struct SaveStep(int Value) : IEnableableComponent, EasyEcs.IComponent, Friflo.Engine.ECS.IComponent;
-public readonly record struct SaveShared(int Value) : ISharedComponent, IGroupComponent
+public readonly record struct SaveShared(int Value) : ISharedComponent, IGroupComponent<SaveShared>
 { public int GetGroup() => Value; }
-public readonly record struct SaveLink(Entity Entity, long Value) : ISparseComponent, IAddedComponent, IRemovedComponent;
+public readonly record struct SaveLink(Entity Entity, long Value) : ISparseComponent, IAddedComponent, IRemovedComponent<SaveLink>;
 internal readonly record struct SaveSparseRow(SaveLink Value, ulong Added, ulong Written);
 public readonly record struct SaveNativeFlags(bool Disabled) : EasyEcs.IComponent, Friflo.Engine.ECS.IComponent;
 public record struct SaveNativeVersions(ulong Added, ulong Written) : EasyEcs.IComponent, Friflo.Engine.ECS.IComponent;

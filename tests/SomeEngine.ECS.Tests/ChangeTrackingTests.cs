@@ -424,7 +424,7 @@ public class ChangeTrackingTests
         Assert.Equal(22, world.Read<Position>(second).X);
     }
 
-    private struct RecordedPosition : IAddedComponent, IRemovedComponent
+    private struct RecordedPosition : IAddedComponent, IRemovedComponent<RecordedPosition>
     {
         public float X, Y;
     }

@@ -9,6 +9,18 @@ public interface IGroupComponent : IComponent
     int GetGroup();
 }
 
+/// <summary>Lets code that only knows a component type, such as a save being loaded, group a World by it.</summary>
+public interface IGroupActivation
+{
+    void GroupBy(World world);
+}
+
+/// <summary>A group component that groups a World by itself. Group components implement this with their own type.</summary>
+public interface IGroupComponent<TSelf> : IGroupComponent, IGroupActivation where TSelf : struct, IGroupComponent<TSelf>
+{
+    void IGroupActivation.GroupBy(World world) => world.GroupBy<TSelf>();
+}
+
 internal abstract class ComponentGrouping(int type)
 {
     internal readonly int Type = type;

@@ -5,7 +5,7 @@ using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS;
 
-public readonly struct Removed<T>(T value, ulong version) : ICleanupComponent, IComponentOperations<Removed<T>>, IEntityReferenceOperations<Removed<T>> where T : struct
+public readonly struct Removed<T>(T value, ulong version) : ICleanupComponent, IComponentOperations<Removed<T>>, IEntityReferenceOperations<Removed<T>>, IEntityReferenceWrapper, Registry.IJobStorageWrapper where T : struct
 {
     internal readonly T PreviousValue = value;
     public T Value => PreviousValue;
@@ -18,6 +18,8 @@ public readonly struct Removed<T>(T value, ulong version) : ICleanupComponent, I
         ComponentValues.Release(world, ref old);
         value = default;
     }
+    bool IEntityReferenceWrapper.HoldsEntityReferences => EntityFields<T>.Operations is not null;
+    bool Registry.IJobStorageWrapper.IsAliasFree => Registry.JobStorageTypeMetadata<T>.IsAliasFree;
     void IEntityReferenceOperations<Removed<T>>.Remap(ref Removed<T> value, in EntityMap entities)
     {
         T old = value.Value;

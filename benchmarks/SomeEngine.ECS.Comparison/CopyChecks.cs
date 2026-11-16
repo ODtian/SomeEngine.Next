@@ -83,7 +83,7 @@ internal static class CopyChecks
     {
         public static void Remap(ref LinkedValue value, in EntityMap entities) => value = value with { Entity = entities.Map(value.Entity) };
     }
-    private readonly record struct SharedLabel(int Value) : ISharedComponent, IGroupComponent { public int GetGroup() => Value; }
+    private readonly record struct SharedLabel(int Value) : ISharedComponent, IGroupComponent<SharedLabel> { public int GetGroup() => Value; }
     private struct CopiedSignal : IEnableableComponent { internal int Value; }
     private readonly struct CopyTree : IHierarchyDomain;
     private static void Require(bool condition, string behavior)

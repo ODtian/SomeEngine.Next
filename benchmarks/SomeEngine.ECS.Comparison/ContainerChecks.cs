@@ -144,9 +144,9 @@ internal static partial class ContainerChecks
     {
         if (!condition) throw new InvalidOperationException(behavior);
     }
-    private struct Element : IAddedComponent, IRemovedComponent { internal int Value; }
+    private struct Element : IAddedComponent, IRemovedComponent<Element> { internal int Value; }
     private sealed class ReleaseCount { internal int Count; }
-    private readonly struct ResourceCounter(ReleaseCount releases, int value) : ISparseComponent, IDisposable
+    private readonly struct ResourceCounter(ReleaseCount releases, int value) : ISparseComponent, IDisposable, SomeEngine.ECS.Storage.IDisposableComponent<ResourceCounter>
     {
         internal int Value { get; } = value;
         public void Dispose() => releases.Count++;

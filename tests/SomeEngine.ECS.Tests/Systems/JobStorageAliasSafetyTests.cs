@@ -181,7 +181,7 @@ public sealed partial class JobStorageAliasSafetyTests : JobTest
         internal object? Value { get; set; }
     }
 
-    private struct NativeHandleTable : IComponent
+    private struct NativeHandleTable : IComponent, INativeHandleValue
     {
         internal nint Value { get; set; }
     }
@@ -191,7 +191,7 @@ public sealed partial class JobStorageAliasSafetyTests : JobTest
         internal nuint Value { get; set; }
     }
 
-    private struct NestedNativeHandleTable : IComponent
+    private struct NestedNativeHandleTable : IComponent, INativeHandleValue
     {
         internal NativeHandleLeaf Value { get; set; }
     }

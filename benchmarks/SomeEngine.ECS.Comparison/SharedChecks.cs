@@ -82,6 +82,6 @@ internal static partial class SharedChecks
     {
         if (!condition) throw new InvalidOperationException(behavior);
     }
-    private struct Color : ISharedComponent, IAddedComponent, IRemovedComponent, IEnableableComponent { internal int Value; }
+    private struct Color : ISharedComponent, IAddedComponent, IRemovedComponent<Color>, IEnableableComponent { internal int Value; }
     private struct Season : ISharedComponent { internal int Value; }
 }

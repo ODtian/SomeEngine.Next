@@ -32,6 +32,7 @@ public sealed class EcsGenerator : IIncrementalGenerator
             foreach (INamedTypeSymbol? type in all)
             {
                 if (type is null || !seen.Add(type)) continue;
+                if (type.TypeKind == TypeKind.Struct) RequireDeclaredOperations(output, type);
                 bool entity = HasInterface(type, "SomeEngine.ECS.Systems.IJobEntity");
                 bool chunk = HasInterface(type, "SomeEngine.ECS.Systems.IJobChunk");
                 bool component = HasAttribute(type, "SomeEngine.ECS.GenerateComponentAttribute");
@@ -44,6 +45,29 @@ public sealed class EcsGenerator : IIncrementalGenerator
             }
         });
     }
+
+    // The World learns how to release a value and how to group by it from the value type itself, so these
+    // declarations replace what used to be found by reflection at run time.
+    private static void RequireDeclaredOperations(SourceProductionContext output, INamedTypeSymbol type)
+    {
+        bool storage = type.AllInterfaces.Any(value => value.ToDisplayString() is "SomeEngine.ECS.IComponent"
+            or "SomeEngine.ECS.Components.IBufferElement" or "SomeEngine.ECS.IBufferElement");
+        if (!storage) return;
+        if (HasInterface(type, "System.IDisposable") && !ImplementsWithSelf(type, "SomeEngine.ECS.Storage.IComponentOperations<T>"))
+            Error(output, type, type.Name + " implements IDisposable; declare SomeEngine.ECS.Storage.IDisposableComponent<" +
+                type.Name + "> so the World disposes released values.");
+        if (HasInterface(type, "SomeEngine.ECS.IGroupComponent") && !ImplementsWithSelf(type, "SomeEngine.ECS.IGroupComponent<TSelf>"))
+            Error(output, type, type.Name + " is a group component; declare SomeEngine.ECS.IGroupComponent<" +
+                type.Name + "> so a loaded save can group the World by it.");
+        if (HasInterface(type, "SomeEngine.ECS.IRemovedComponent") && !ImplementsWithSelf(type, "SomeEngine.ECS.IRemovedComponent<TSelf>")
+            && !HasInterface(type, "SomeEngine.ECS.IBufferElement") && !HasInterface(type, "SomeEngine.ECS.Components.IBufferElement"))
+            Error(output, type, type.Name + " keeps removed values; declare SomeEngine.ECS.IRemovedComponent<" +
+                type.Name + "> so the World can keep them.");
+    }
+
+    private static bool ImplementsWithSelf(INamedTypeSymbol type, string definition)
+        => type.AllInterfaces.Any(value => value.OriginalDefinition.ToDisplayString() == definition
+            && SymbolEqualityComparer.Default.Equals(value.TypeArguments[0], type));
 
     internal static bool Partial(INamedTypeSymbol type)
     {

@@ -3,7 +3,7 @@ using Friflo.Engine.ECS;
 
 namespace SomeEngine.ECS.Comparison;
 
-public readonly record struct GroupedNumber(int Value, int Ordinal) : IGroupComponent, EasyEcs.IComponent, EasyEcs.IGroup,
+public readonly record struct GroupedNumber(int Value, int Ordinal) : IGroupComponent<GroupedNumber>, EasyEcs.IComponent, EasyEcs.IGroup,
     Friflo.Engine.ECS.IComponent
 {
     public int GetGroup() { GroupProjection.Calls++; return Value; }

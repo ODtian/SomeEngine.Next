@@ -139,6 +139,6 @@ public class CleanupComponentTests
         Assert.False(world.IsAlive(entity));
         Assert.False(world.IsPendingCleanup(entity));
     }
-    private readonly record struct RemovedNumber(int Value) : IRemovedComponent;
+    private readonly record struct RemovedNumber(int Value) : IRemovedComponent<RemovedNumber>;
 
 }

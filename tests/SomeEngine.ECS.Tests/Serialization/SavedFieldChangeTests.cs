@@ -438,14 +438,14 @@ public struct GateAfter : IComponent, IEnableableComponent
 }
 
 [SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b2200")]
-public struct ScrapBefore : IComponent, IRemovedComponent
+public struct ScrapBefore : IComponent, IRemovedComponent<ScrapBefore>
 {
     public int Mass;
     public int Grade;
 }
 
 [SerializableComponent("3f1c0a52-7d1e-4c1b-9a51-0d6c2f9b2300")]
-public struct ScrapAfter : IComponent, IRemovedComponent
+public struct ScrapAfter : IComponent, IRemovedComponent<ScrapAfter>
 {
     public int Grade;
 }

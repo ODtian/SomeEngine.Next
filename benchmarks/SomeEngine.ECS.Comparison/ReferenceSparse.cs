@@ -246,7 +246,7 @@ internal readonly ref struct ReferenceSparseRead<T, TEntity, TAccess>
 }
 
 internal interface ISparseOrdinal { int Ordinal { get; } }
-internal struct SparseNumber(ResourceCounter counter, int value, int ordinal) : ISparseComponent, IDisposable, ISparseOrdinal
+internal struct SparseNumber(ResourceCounter counter, int value, int ordinal) : ISparseComponent, IDisposable, SomeEngine.ECS.Storage.IDisposableComponent<SparseNumber>, ISparseOrdinal
 {
     internal ResourceCounter Counter = counter;
     internal int Value = value;

@@ -58,7 +58,7 @@ public ref struct DataReader
     internal int ReadFrameLength() => Budget.PayloadLength(ReadInt32());
 
     /// <summary>Checks that a type's data used exactly the bytes its frame declared.</summary>
-    internal readonly void EndFrame(long start, int length)
+    internal void EndFrame(long start, int length)
     {
         if (Position - start != length) throw new InvalidDataException("A type's saved data differs from its declared length.");
     }

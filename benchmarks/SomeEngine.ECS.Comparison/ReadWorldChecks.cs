@@ -14,12 +14,12 @@ internal static partial class ReadWorldChecks
     private readonly record struct Marker(int Value) : IAddedComponent;
     private readonly record struct OptionalValue(int Value) : IComponent;
     private readonly record struct EnabledValue(int Value) : IEnableableComponent;
-    private readonly record struct ReferenceValue(Entity Link, int Value) : IRemovedComponent, IEntityReferenceValue<ReferenceValue>
+    private readonly record struct ReferenceValue(Entity Link, int Value) : IRemovedComponent<ReferenceValue>, IEntityReferenceValue<ReferenceValue>
     {
         static void IEntityReferenceValue<ReferenceValue>.Remap(ref ReferenceValue value, in EntityMap entities)
             => throw new InvalidOperationException("The explicitly bound patcher replaces generated reference handling.");
     }
-    private readonly record struct AutomaticReference(Entity Link) : IRemovedComponent, IEntityReferenceValue<AutomaticReference>
+    private readonly record struct AutomaticReference(Entity Link) : IRemovedComponent<AutomaticReference>, IEntityReferenceValue<AutomaticReference>
     {
         static void IEntityReferenceValue<AutomaticReference>.Remap(ref AutomaticReference value, in EntityMap entities)
             => value = new(entities.Map(value.Link));
@@ -27,7 +27,7 @@ internal static partial class ReadWorldChecks
     private readonly record struct SparseReference(Entity Link) : ISparseComponent;
     private readonly record struct PreservedIndex(int Key) : IIndexedComponent<int>
     { public int GetKey() => Key; }
-    private readonly record struct GroupedReference(Entity GroupEntity, int Kind) : ISharedComponent, IGroupComponent
+    private readonly record struct GroupedReference(Entity GroupEntity, int Kind) : ISharedComponent, IGroupComponent<GroupedReference>
     { public int GetGroup() => GroupEntity.Id; }
     private sealed class ResourceReference(Entity link, Counter counter) : IDisposable
     {

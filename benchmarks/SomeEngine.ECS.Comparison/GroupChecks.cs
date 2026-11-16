@@ -85,14 +85,14 @@ internal static partial class GroupChecks
     {
         if (!condition) throw new InvalidOperationException(behavior);
     }
-    private struct Zone : IGroupComponent, IIndexedComponent<int>, IAddedComponent, IRemovedComponent, IEnableableComponent
+    private struct Zone : IGroupComponent<Zone>, IIndexedComponent<int>, IAddedComponent, IRemovedComponent<Zone>, IEnableableComponent
     {
         internal static int Groups, Keys;
         internal int Group, Ordinal;
         public readonly int GetGroup() { Groups++; return Group; }
         public readonly int GetKey() { Keys++; return Group; }
     }
-    private struct Layer : IGroupComponent
+    private struct Layer : IGroupComponent<Layer>
     {
         internal int Group;
         public readonly int GetGroup() => Group;

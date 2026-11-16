@@ -26,6 +26,8 @@ internal sealed class JobStorageTypeAnalysis
             return true;
         if (type is not INamedTypeSymbol named || named.TypeKind == TypeKind.Enum)
             return true;
+        if (IsFrameworkHandle(named))
+            return false;
         named = WithAllFields(named);
         if (!seen.Add(named))
             return true;
@@ -38,6 +40,15 @@ internal sealed class JobStorageTypeAnalysis
         }
         return true;
     }
+
+    // Reference assemblies replace these structs' private handle fields with placeholders, so their fields cannot
+    // show that they hold a native-sized handle.
+    private static bool IsFrameworkHandle(INamedTypeSymbol type) => type.ContainingNamespace?.ToDisplayString() switch
+    {
+        "System" => type.Name is "RuntimeTypeHandle" or "RuntimeMethodHandle" or "RuntimeFieldHandle" or "ModuleHandle",
+        "System.Runtime.InteropServices" => type.Name is "GCHandle" or "PinnedGCHandle" or "WeakGCHandle",
+        _ => false,
+    };
 
     private INamedTypeSymbol WithAllFields(INamedTypeSymbol type)
     {

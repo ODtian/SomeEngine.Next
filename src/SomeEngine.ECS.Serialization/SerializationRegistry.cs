@@ -33,7 +33,6 @@ internal abstract class SavedType(SerializationTypeKey key, SavedStorage storage
     /// <summary>The fields its generated codec writes, or null for a hand-written codec.</summary>
     internal readonly ValueSchema? Schema = codecTraits.FieldList;
     internal virtual object? EntityPatcher => null;
-    private readonly ISavedGroupBinding? _group = SavedGroups.Create(valueType);
     internal bool SupportsDurable = storage == SavedStorage.Tag || !codecTraits.CopiesMemory;
     internal readonly SerializationTypeKey CheckpointKey = key with
     {
@@ -42,7 +41,11 @@ internal abstract class SavedType(SerializationTypeKey key, SavedStorage storage
         SchemaFingerprint = codecTraits.CopiesMemory ? RawSchema(key, valueType, width) : key.SchemaFingerprint,
     };
     internal SerializationTypeKey KeyFor(SavePurpose format) => format == SavePurpose.RawCheckpoint ? CheckpointKey : Key;
-    internal virtual void Activate(World world) => _group?.Activate(world);
+    /// <summary>Groups the World by this type when the type is a group component, before its saved tables are restored.</summary>
+    internal void Activate(World world)
+    {
+        if (Storage != SavedStorage.Resource) ComponentTypes.Get(Type).GroupActivation?.GroupBy(world);
+    }
     private static string TypeBuild(Type type) => type.AssemblyQualifiedName + "#" + type.Module.ModuleVersionId
         + (type.IsGenericType ? "[" + string.Join(';', type.GetGenericArguments().Select(TypeBuild)) + "]" : "");
     private static ulong RawSchema(SerializationTypeKey key, Type valueType, int width)

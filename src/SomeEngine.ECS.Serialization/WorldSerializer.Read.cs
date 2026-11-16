@@ -420,7 +420,7 @@ public sealed partial class WorldSerializer
         length = reader.ReadFrameLength();
         start = reader.Position;
         binding = type;
-        if (type is not null) return true;
+        if (binding is not null) return true;
         reader.Skip(length);
         return false;
     }

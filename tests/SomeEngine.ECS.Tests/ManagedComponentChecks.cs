@@ -346,7 +346,7 @@ ReadOnlySpan<SparseReferences> values = sparseScope.Values;
 
     private record struct TableReferences(string Text, Func<int> Callback, ReferenceData Data) : IAddedComponent;
 
-    private record struct RemovedTableReferences(string Text, Func<int> Callback, ReferenceData Data) : IAddedComponent, IRemovedComponent;
+    private record struct RemovedTableReferences(string Text, Func<int> Callback, ReferenceData Data) : IAddedComponent, IRemovedComponent<RemovedTableReferences>;
 
     private record struct SparseReferences(string Text, Func<int> Callback, ReferenceData Data) : ISparseComponent;
 

@@ -42,7 +42,7 @@ internal struct FlipFrame : IComponent
 }
 
 /// <summary>The caller's motion settings for this entity's layout transitions.</summary>
-internal struct FlipSettings : IComponent
+internal struct FlipSettings : IComponent, INativeHandleValue
 {
     internal Spec Spec;
 }
